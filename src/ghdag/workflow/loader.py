@@ -6,7 +6,17 @@ from pathlib import Path
 
 import yaml
 
-from ghdag.workflow.schema import PhaseHandler, TriggerConfig, WorkflowConfig
+from ghdag.workflow.schema import (
+    HandlerConfig,
+    OnTriggerConfig,
+    StepConfig,
+    TriggerConfig,
+    WorkflowConfig,
+)
+
+
+class ValidationError(ValueError):
+    """YAML バリデーションエラー。"""
 
 
 def load_workflows(directory: str | Path) -> list[WorkflowConfig]:
@@ -37,25 +47,7 @@ def load_workflows(directory: str | Path) -> list[WorkflowConfig]:
             raise ValueError(f"YAML ルートはマッピングである必要があります: {path.name}")
 
         _validate(data, path.name)
-
-        triggers = [TriggerConfig(label=t["label"]) for t in data["triggers"]]
-        handlers = [
-            PhaseHandler(
-                name=h["name"],
-                template=h["template"],
-                agent=h.get("agent", "claude"),
-                model=h.get("model"),
-            )
-            for h in data["handlers"]
-        ]
-        configs.append(
-            WorkflowConfig(
-                name=data["name"],
-                triggers=triggers,
-                handlers=handlers,
-                polling_interval=data.get("polling_interval", 30),
-            )
-        )
+        configs.append(_parse(data))
 
     return configs
 
@@ -63,8 +55,83 @@ def load_workflows(directory: str | Path) -> list[WorkflowConfig]:
 def _validate(data: dict, filename: str) -> None:
     """必須フィールドの存在チェック。"""
     if "name" not in data:
-        raise ValueError(f"'name' フィールドが必須です: {filename}")
+        raise ValidationError(f"'name' フィールドが必須です: {filename}")
     if "triggers" not in data or not data["triggers"]:
-        raise ValueError(f"'triggers' フィールドが必須で空でない必要があります: {filename}")
+        raise ValidationError(f"'triggers' フィールドが必須で空でない必要があります: {filename}")
     if "handlers" not in data or data["handlers"] is None:
-        raise ValueError(f"'handlers' フィールドが必須です: {filename}")
+        raise ValidationError(f"'handlers' フィールドが必須です: {filename}")
+
+    # handlers の各エントリを検証
+    handlers = data["handlers"]
+    if not isinstance(handlers, dict):
+        raise ValidationError(f"'handlers' はマッピングである必要があります: {filename}")
+
+    for handler_name, handler_data in handlers.items():
+        if handler_data is None:
+            continue
+        if not isinstance(handler_data, dict):
+            raise ValidationError(f"ハンドラー '{handler_name}' はマッピングである必要があります: {filename}")
+
+        # reset ハンドラーは steps 不要
+        handler_type = handler_data.get("type")
+        if handler_type == "reset":
+            continue
+
+        steps = handler_data.get("steps")
+        if steps is None:
+            raise ValidationError(f"ハンドラー '{handler_name}' に 'steps' が必須です: {filename}")
+
+        for i, step in enumerate(steps):
+            if not isinstance(step, dict):
+                raise ValidationError(f"ハンドラー '{handler_name}' の step[{i}] はマッピングである必要があります: {filename}")
+            if "template" not in step:
+                raise ValidationError(f"ハンドラー '{handler_name}' の step[{i}] に 'template' が必須です: {filename}")
+            if "model" not in step:
+                raise ValidationError(f"ハンドラー '{handler_name}' の step[{i}] に 'model' が必須です: {filename}")
+
+
+def _parse(data: dict) -> WorkflowConfig:
+    """バリデーション済み dict を WorkflowConfig に変換。"""
+    triggers = [
+        TriggerConfig(label=t["label"], handler=t["handler"])
+        for t in data["triggers"]
+    ]
+
+    handlers: dict[str, HandlerConfig] = {}
+    for name, h in data["handlers"].items():
+        if h is None:
+            h = {}
+
+        handler_type = h.get("type")
+
+        # on_trigger パース
+        on_trigger_data = h.get("on_trigger")
+        on_trigger = None
+        if on_trigger_data and isinstance(on_trigger_data, dict):
+            on_trigger = OnTriggerConfig(
+                issue_context=on_trigger_data.get("issue_context", False)
+            )
+
+        if handler_type == "reset":
+            handlers[name] = HandlerConfig(steps=[], on_trigger=on_trigger, type="reset")
+            continue
+
+        steps = []
+        for s in h.get("steps", []):
+            steps.append(
+                StepConfig(
+                    id=s.get("id"),
+                    template=s["template"],
+                    model=s["model"],
+                    depends=s.get("depends", []),
+                )
+            )
+
+        handlers[name] = HandlerConfig(steps=steps, on_trigger=on_trigger, type=handler_type)
+
+    return WorkflowConfig(
+        name=data["name"],
+        triggers=triggers,
+        handlers=handlers,
+        polling_interval=data.get("polling_interval", 30),
+    )

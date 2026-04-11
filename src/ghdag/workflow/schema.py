@@ -2,25 +2,45 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+@dataclass
+class StepConfig:
+    template: str           # order テンプレートファイル名（拡張子なし）
+    model: str              # 実行モデル（必須）
+    id: str | None = None   # ステップ ID（depends 参照用）
+    depends: list[str] = field(default_factory=list)  # 依存ステップ ID リスト
+
+
+@dataclass
+class OnTriggerConfig:
+    issue_context: bool = False  # True: Issue body + comments を design.md に書き出し
+
+
+@dataclass
+class HandlerConfig:
+    steps: list[StepConfig]
+    on_trigger: OnTriggerConfig | None = None
+    type: str | None = None  # "reset" 等の特殊ハンドラー種別
 
 
 @dataclass
 class TriggerConfig:
-    label: str  # マッチするラベルパターン (例: "pipeline:draft-ready")
+    label: str     # マッチするラベル（例: "pipeline:draft-ready"）
+    handler: str   # ハンドラー名（handlers の key）
 
 
 @dataclass
-class PhaseHandler:
-    name: str           # フェーズ名 (例: "draft_design")
-    template: str       # order テンプレートファイル名 (拡張子なし)
-    agent: str = "claude"       # 実行エージェント
-    model: str | None = None    # モデル上書き (None ならシステム既定)
+class DispatchResult:
+    status: str              # "dispatched" | "skipped" | "reset"
+    reason: str = ""
+    exec_lines: list[str] = field(default_factory=list)
 
 
 @dataclass
 class WorkflowConfig:
-    name: str                           # ワークフロー名
-    triggers: list[TriggerConfig]       # トリガー条件リスト
-    handlers: list[PhaseHandler]        # フェーズハンドラーリスト
-    polling_interval: int = 30          # ポーリング間隔（秒）
+    name: str                              # ワークフロー名
+    triggers: list[TriggerConfig]          # トリガー条件リスト（定義順が序列）
+    handlers: dict[str, HandlerConfig]     # ハンドラー名 → HandlerConfig
+    polling_interval: int = 30             # ポーリング間隔（秒）

@@ -3,12 +3,22 @@
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.github import GitHubIssueClient
 from ghdag.workflow.loader import load_workflows
-from ghdag.workflow.schema import PhaseHandler, TriggerConfig, WorkflowConfig
+from ghdag.workflow.schema import (
+    DispatchResult,
+    HandlerConfig,
+    OnTriggerConfig,
+    StepConfig,
+    TriggerConfig,
+    WorkflowConfig,
+)
 
 __all__ = [
     "WorkflowConfig",
     "TriggerConfig",
-    "PhaseHandler",
+    "HandlerConfig",
+    "StepConfig",
+    "OnTriggerConfig",
+    "DispatchResult",
     "load_workflows",
     "WorkflowDispatcher",
     "GitHubIssueClient",

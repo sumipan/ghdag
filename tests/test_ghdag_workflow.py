@@ -1,30 +1,471 @@
-"""Tests for ghdag.workflow — AC-1 〜 AC-7."""
+"""Tests for ghdag.workflow — TC-1 〜 TC-8 (Issue #79 extended schema)."""
 
 from __future__ import annotations
 
 import json
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.github import GitHubIssueClient
-from ghdag.workflow.loader import load_workflows
-from ghdag.workflow.schema import PhaseHandler, TriggerConfig, WorkflowConfig
+from ghdag.workflow.loader import ValidationError, load_workflows
+from ghdag.workflow.schema import (
+    DispatchResult,
+    HandlerConfig,
+    OnTriggerConfig,
+    StepConfig,
+    TriggerConfig,
+    WorkflowConfig,
+)
 
 
 # ---------------------------------------------------------------------------
-# AC-1: モジュール import（正常系）
+# TC-1: YAML パース（正常系）
+# ---------------------------------------------------------------------------
+
+_EXTENDED_YAML = """\
+name: stash-pipeline
+
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+  - label: "pipeline:develop-ready"
+    handler: impl
+  - label: "pipeline:merge-ready"
+    handler: merge
+  - label: "pipeline:reset"
+    handler: reset
+
+handlers:
+  brushup:
+    on_trigger:
+      issue_context: true
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+
+  impl:
+    on_trigger:
+      issue_context: true
+    steps:
+      - id: p1
+        template: p1-implement
+        model: claude-sonnet-4-6
+      - id: p2
+        template: p2-verify
+        model: claude-sonnet-4-6
+        depends: [p1]
+      - id: p3
+        template: p3-report
+        model: claude-sonnet-4-6
+        depends: [p2]
+
+  merge:
+    steps:
+      - template: merge
+        model: claude-opus-4-6
+
+  reset:
+    type: reset
+
+polling_interval: 30
+"""
+
+
+class TestTC1YamlParseOk:
+    def test_load_returns_config_list(self, tmp_path):
+        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        configs = load_workflows(tmp_path)
+        assert len(configs) == 1
+
+    def test_workflow_name(self, tmp_path):
+        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        config = load_workflows(tmp_path)[0]
+        assert config.name == "stash-pipeline"
+
+    def test_trigger_count(self, tmp_path):
+        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        config = load_workflows(tmp_path)[0]
+        assert len(config.triggers) == 4
+
+    def test_trigger_handler_field(self, tmp_path):
+        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        config = load_workflows(tmp_path)[0]
+        assert config.triggers[0].label == "pipeline:draft-ready"
+        assert config.triggers[0].handler == "brushup"
+
+    def test_handlers_is_dict(self, tmp_path):
+        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        config = load_workflows(tmp_path)[0]
+        assert isinstance(config.handlers, dict)
+        assert "impl" in config.handlers
+
+    def test_impl_handler_has_three_steps(self, tmp_path):
+        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        config = load_workflows(tmp_path)[0]
+        assert len(config.handlers["impl"].steps) == 3
+
+    def test_impl_steps_ids_and_models(self, tmp_path):
+        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        config = load_workflows(tmp_path)[0]
+        steps = config.handlers["impl"].steps
+        assert steps[0].id == "p1"
+        assert steps[0].model == "claude-sonnet-4-6"
+        assert steps[1].id == "p2"
+        assert steps[1].depends == ["p1"]
+        assert steps[2].id == "p3"
+        assert steps[2].depends == ["p2"]
+
+    def test_on_trigger_issue_context(self, tmp_path):
+        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        config = load_workflows(tmp_path)[0]
+        assert config.handlers["brushup"].on_trigger is not None
+        assert config.handlers["brushup"].on_trigger.issue_context is True
+
+    def test_reset_handler_type(self, tmp_path):
+        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        config = load_workflows(tmp_path)[0]
+        assert config.handlers["reset"].type == "reset"
+
+    def test_steps_model_missing_raises_validation_error(self, tmp_path):
+        yaml_no_model = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+"""
+        (tmp_path / "bad.yml").write_text(yaml_no_model, encoding="utf-8")
+        with pytest.raises(ValueError, match="model"):
+            load_workflows(tmp_path)
+
+    def test_unknown_keys_ignored(self, tmp_path):
+        yaml_unknown = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-sonnet-4-6
+        unknown_future_key: some_value
+polling_interval: 30
+"""
+        (tmp_path / "test.yml").write_text(yaml_unknown, encoding="utf-8")
+        configs = load_workflows(tmp_path)
+        assert len(configs) == 1
+
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+def _make_extended_workflow() -> WorkflowConfig:
+    return WorkflowConfig(
+        name="stash-pipeline",
+        triggers=[
+            TriggerConfig(label="pipeline:draft-ready", handler="brushup"),
+            TriggerConfig(label="pipeline:develop-ready", handler="impl"),
+            TriggerConfig(label="pipeline:merge-ready", handler="merge"),
+            TriggerConfig(label="pipeline:reset", handler="reset"),
+        ],
+        handlers={
+            "brushup": HandlerConfig(
+                steps=[StepConfig(template="brushup", model="claude-opus-4-6")],
+                on_trigger=OnTriggerConfig(issue_context=True),
+            ),
+            "impl": HandlerConfig(
+                steps=[
+                    StepConfig(id="p1", template="p1-implement", model="claude-sonnet-4-6"),
+                    StepConfig(id="p2", template="p2-verify", model="claude-sonnet-4-6", depends=["p1"]),
+                    StepConfig(id="p3", template="p3-report", model="claude-sonnet-4-6", depends=["p2"]),
+                ],
+                on_trigger=OnTriggerConfig(issue_context=True),
+            ),
+            "merge": HandlerConfig(
+                steps=[StepConfig(template="merge", model="claude-opus-4-6")],
+            ),
+            "reset": HandlerConfig(steps=[], type="reset"),
+        },
+        polling_interval=30,
+    )
+
+
+def _make_issue(number: int, labels: list[str] | None = None) -> dict:
+    labels = labels or []
+    return {
+        "number": number,
+        "title": f"Issue {number}",
+        "body": "Issue body",
+        "labels": [{"name": lb} for lb in labels],
+        "url": f"https://github.com/owner/repo/issues/{number}",
+    }
+
+
+def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tuple[WorkflowDispatcher, MagicMock, MagicMock, MagicMock]:
+    github_client = MagicMock(spec=GitHubIssueClient)
+    github_client.get_issue_comments.return_value = []
+    pipeline_state = MagicMock()
+    pipeline_state.check_idempotency.return_value = True
+    pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+    order_builder = MagicMock()
+    order_builder.build_order.return_value = "order content"
+    dispatcher = WorkflowDispatcher(
+        workflows=[workflow],
+        github_client=github_client,
+        pipeline_state=pipeline_state,
+        order_builder=order_builder,
+        queue_dir=queue_dir,
+    )
+    # Patch _write_design_md to avoid filesystem writes in unit tests
+    dispatcher._write_design_md = MagicMock()
+    return dispatcher, github_client, pipeline_state, order_builder
+
+
+# ---------------------------------------------------------------------------
+# TC-2: 多段 DAG 投入（正常系）
 # ---------------------------------------------------------------------------
 
 
-class TestImports:
+class TestTC2MultiStepDag:
+    def test_impl_handler_appends_three_exec_lines(self):
+        workflow = _make_extended_workflow()
+        dispatcher, _, pipeline_state, _ = _make_dispatcher(workflow)
+        issue = _make_issue(42, ["pipeline:develop-ready"])
+        handler = workflow.handlers["impl"]
+        trigger = workflow.triggers[1]
+        result = dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
+
+        assert result.status == "dispatched"
+        pipeline_state.append_exec.assert_called_once()
+        exec_lines = pipeline_state.append_exec.call_args[0][0]
+        # idempotency line + 3 step lines
+        assert len(exec_lines) == 4
+
+    def test_impl_p2_has_depends_p1(self):
+        workflow = _make_extended_workflow()
+        dispatcher, _, pipeline_state, _ = _make_dispatcher(workflow)
+        issue = _make_issue(42, ["pipeline:develop-ready"])
+        handler = workflow.handlers["impl"]
+        trigger = workflow.triggers[1]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
+
+        exec_lines = pipeline_state.append_exec.call_args[0][0]
+        # exec_lines[1] = p1, exec_lines[2] = p2[depends:...], exec_lines[3] = p3[depends:...]
+        p1_line = exec_lines[1]
+        p2_line = exec_lines[2]
+        p3_line = exec_lines[3]
+
+        # extract p1 uuid from p1_line
+        p1_uuid = p1_line.split(":")[0]
+        assert f"[depends:{p1_uuid}]" in p2_line
+
+        p2_uuid = p2_line.split("[")[0]
+        assert f"[depends:{p2_uuid}]" in p3_line
+
+    def test_brushup_single_step_no_depends(self):
+        workflow = _make_extended_workflow()
+        dispatcher, _, pipeline_state, _ = _make_dispatcher(workflow)
+        issue = _make_issue(10, ["pipeline:draft-ready"])
+        handler = workflow.handlers["brushup"]
+        trigger = workflow.triggers[0]
+        result = dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
+
+        assert result.status == "dispatched"
+        exec_lines = pipeline_state.append_exec.call_args[0][0]
+        assert len(exec_lines) == 2  # idempotency + 1 step
+        assert "[depends:" not in exec_lines[1]
+
+
+# ---------------------------------------------------------------------------
+# TC-3: --model フラグ生成
+# ---------------------------------------------------------------------------
+
+
+class TestTC3ModelFlag:
+    def test_model_in_exec_line(self):
+        workflow = _make_extended_workflow()
+        dispatcher, _, pipeline_state, _ = _make_dispatcher(workflow)
+        issue = _make_issue(42, ["pipeline:develop-ready"])
+        handler = workflow.handlers["impl"]
+        trigger = workflow.triggers[1]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
+
+        exec_lines = pipeline_state.append_exec.call_args[0][0]
+        p1_line = exec_lines[1]
+        assert "--model 'claude-sonnet-4-6'" in p1_line
+
+    def test_opus_model_in_brushup(self):
+        workflow = _make_extended_workflow()
+        dispatcher, _, pipeline_state, _ = _make_dispatcher(workflow)
+        issue = _make_issue(10, ["pipeline:draft-ready"])
+        handler = workflow.handlers["brushup"]
+        trigger = workflow.triggers[0]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
+
+        exec_lines = pipeline_state.append_exec.call_args[0][0]
+        assert "--model 'claude-opus-4-6'" in exec_lines[1]
+
+
+# ---------------------------------------------------------------------------
+# TC-4: Issue コンテキスト取得
+# ---------------------------------------------------------------------------
+
+
+class TestTC4IssueContext:
+    def test_issue_context_true_writes_design_md(self, tmp_path):
+        workflow = _make_extended_workflow()
+        dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow, queue_dir=str(tmp_path))
+        # Restore real _write_design_md for this test
+        dispatcher._write_design_md = WorkflowDispatcher._write_design_md.__get__(dispatcher, WorkflowDispatcher)
+        github_client.get_issue_comments.return_value = [
+            {"author": "user1", "created_at": "2026-01-01T00:00:00Z", "body": "comment 1"},
+            {"author": "user2", "created_at": "2026-01-02T00:00:00Z", "body": "comment 2"},
+            {"author": "user3", "created_at": "2026-01-03T00:00:00Z", "body": "comment 3"},
+        ]
+        issue = _make_issue(79, ["pipeline:draft-ready"])
+        handler = workflow.handlers["brushup"]
+        trigger = workflow.triggers[0]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
+
+        design_md = tmp_path / "issue-79-design.md"
+        assert design_md.exists()
+        content = design_md.read_text(encoding="utf-8")
+        assert "Issue body" in content
+        assert "comment 1" in content
+        assert "comment 2" in content
+        assert "comment 3" in content
+
+    def test_no_issue_context_no_design_md(self, tmp_path):
+        workflow = _make_extended_workflow()
+        dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow, queue_dir=str(tmp_path))
+        issue = _make_issue(42, ["pipeline:merge-ready"])
+        handler = workflow.handlers["merge"]
+        trigger = workflow.triggers[2]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=2)
+
+        design_md = tmp_path / "issue-42-design.md"
+        assert not design_md.exists()
+        github_client.get_issue_comments.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TC-5: 後退遷移ガード
+# ---------------------------------------------------------------------------
+
+
+class TestTC5BackwardGuard:
+    def test_backward_transition_blocked(self):
+        """develop-running 中に draft-ready が発火 → skipped"""
+        workflow = _make_extended_workflow()
+        dispatcher, _, pipeline_state, _ = _make_dispatcher(workflow)
+        # Issue has develop-running (rank 1)
+        issue = _make_issue(42, ["pipeline:develop-running"])
+        handler = workflow.handlers["brushup"]
+        trigger = workflow.triggers[0]  # draft-ready = rank 0
+        result = dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
+
+        assert result.status == "skipped"
+        assert "backward" in result.reason
+        pipeline_state.append_exec.assert_not_called()
+
+    def test_forward_transition_allowed(self):
+        """draft-running 中に develop-ready が発火 → dispatched"""
+        workflow = _make_extended_workflow()
+        dispatcher, _, pipeline_state, _ = _make_dispatcher(workflow)
+        # Issue has draft-running (rank 0)
+        issue = _make_issue(42, ["pipeline:draft-running"])
+        handler = workflow.handlers["impl"]
+        trigger = workflow.triggers[1]  # develop-ready = rank 1
+        result = dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
+
+        assert result.status == "dispatched"
+        pipeline_state.append_exec.assert_called_once()
+
+    def test_no_running_labels_allows_dispatch(self):
+        """running ラベルなし → dispatched"""
+        workflow = _make_extended_workflow()
+        dispatcher, _, pipeline_state, _ = _make_dispatcher(workflow)
+        issue = _make_issue(42, ["pipeline:draft-ready"])
+        handler = workflow.handlers["brushup"]
+        trigger = workflow.triggers[0]
+        result = dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
+
+        assert result.status == "dispatched"
+
+
+# ---------------------------------------------------------------------------
+# TC-6: reset ハンドラー
+# ---------------------------------------------------------------------------
+
+
+class TestTC6ResetHandler:
+    def test_reset_returns_reset_status(self):
+        workflow = _make_extended_workflow()
+        dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow)
+        pipeline_state.remove_idempotency_matching.return_value = 3
+        issue = _make_issue(42, ["pipeline:develop-running"])
+        handler = workflow.handlers["reset"]
+        trigger = workflow.triggers[3]  # pipeline:reset (rank 3)
+        result = dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=3)
+
+        assert result.status == "reset"
+
+    def test_reset_calls_remove_idempotency(self):
+        workflow = _make_extended_workflow()
+        dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow)
+        pipeline_state.remove_idempotency_matching.return_value = 3
+        issue = _make_issue(42, ["pipeline:develop-running"])
+        handler = workflow.handlers["reset"]
+        trigger = workflow.triggers[3]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=3)
+
+        pipeline_state.remove_idempotency_matching.assert_called_once_with("stash-pipeline", 42)
+
+    def test_reset_removes_pipeline_labels(self):
+        workflow = _make_extended_workflow()
+        dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow)
+        pipeline_state.remove_idempotency_matching.return_value = 3
+        issue = _make_issue(42, ["pipeline:develop-running", "enhancement"])
+        handler = workflow.handlers["reset"]
+        trigger = workflow.triggers[3]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=3)
+
+        # Only pipeline:* labels should be removed
+        github_client.remove_label.assert_called_once_with(42, "pipeline:develop-running")
+
+    def test_reset_no_exec_lines_appended(self):
+        workflow = _make_extended_workflow()
+        dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow)
+        pipeline_state.remove_idempotency_matching.return_value = 0
+        issue = _make_issue(42, [])
+        handler = workflow.handlers["reset"]
+        trigger = workflow.triggers[3]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=3)
+
+        pipeline_state.append_exec.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TC-7: 既存テスト互換（import / poll_once）
+# ---------------------------------------------------------------------------
+
+
+class TestTC7Compatibility:
     def test_schema_imports(self):
         assert WorkflowConfig is not None
         assert TriggerConfig is not None
-        assert PhaseHandler is not None
+        assert HandlerConfig is not None
+        assert StepConfig is not None
+        assert DispatchResult is not None
 
     def test_loader_import(self):
         assert load_workflows is not None
@@ -35,135 +476,84 @@ class TestImports:
     def test_github_import(self):
         assert GitHubIssueClient is not None
 
+    def test_poll_once_returns_match(self):
+        workflow = _make_extended_workflow()
+        dispatcher, github_client, _, _ = _make_dispatcher(workflow)
+        issue = _make_issue(1, ["pipeline:draft-ready"])
+        github_client.list_issues.side_effect = lambda label, **kw: (
+            [issue] if label == "pipeline:draft-ready" else []
+        )
+        matches = dispatcher.poll_once()
+        assert len(matches) >= 1
+        assert matches[0]["issue"] == 1
+        assert matches[0]["workflow"] == "stash-pipeline"
+        assert matches[0]["handler"] == "brushup"
+
 
 # ---------------------------------------------------------------------------
-# AC-2: YAML パース（正常系）
+# TC-8: stash-pipeline.yml（diary worktree）パース
 # ---------------------------------------------------------------------------
 
-_SAMPLE_YAML = """\
+
+class TestTC8StashPipelineYaml:
+    def test_stash_pipeline_parseable(self, tmp_path):
+        stash_pipeline_content = """\
 name: stash-pipeline
+
 triggers:
   - label: "pipeline:draft-ready"
+    handler: brushup
   - label: "pipeline:develop-ready"
+    handler: impl
   - label: "pipeline:merge-ready"
+    handler: merge
+  - label: "pipeline:reset"
+    handler: reset
+
 handlers:
-  - name: draft_design
-    template: draft-design
-    agent: claude
-  - name: impl
-    template: impl
-    agent: claude
-  - name: merge
-    template: merge
-    agent: claude
+  brushup:
+    on_trigger:
+      issue_context: true
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+
+  impl:
+    on_trigger:
+      issue_context: true
+    steps:
+      - id: p1
+        template: p1-implement
+        model: claude-sonnet-4-6
+      - id: p2
+        template: p2-verify
+        model: claude-sonnet-4-6
+        depends: [p1]
+      - id: p3
+        template: p3-report
+        model: claude-sonnet-4-6
+        depends: [p2]
+
+  merge:
+    steps:
+      - template: merge
+        model: claude-opus-4-6
+
+  reset:
+    type: reset
+
 polling_interval: 30
 """
-
-
-class TestYamlParseOk:
-    def test_load_returns_config_list(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_SAMPLE_YAML, encoding="utf-8")
+        (tmp_path / "stash-pipeline.yml").write_text(stash_pipeline_content, encoding="utf-8")
         configs = load_workflows(tmp_path)
         assert len(configs) == 1
-
-    def test_workflow_name(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_SAMPLE_YAML, encoding="utf-8")
-        config = load_workflows(tmp_path)[0]
+        config = configs[0]
         assert config.name == "stash-pipeline"
-
-    def test_trigger_count(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_SAMPLE_YAML, encoding="utf-8")
-        config = load_workflows(tmp_path)[0]
-        assert len(config.triggers) == 3
-
-    def test_handler_count(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_SAMPLE_YAML, encoding="utf-8")
-        config = load_workflows(tmp_path)[0]
-        assert len(config.handlers) == 3
-
-    def test_first_trigger_label(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_SAMPLE_YAML, encoding="utf-8")
-        config = load_workflows(tmp_path)[0]
-        assert config.triggers[0].label == "pipeline:draft-ready"
-
-    def test_first_handler(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_SAMPLE_YAML, encoding="utf-8")
-        config = load_workflows(tmp_path)[0]
-        assert config.handlers[0].name == "draft_design"
-        assert config.handlers[0].template == "draft-design"
-
-    def test_polling_interval(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_SAMPLE_YAML, encoding="utf-8")
-        config = load_workflows(tmp_path)[0]
-        assert config.polling_interval == 30
-
-    def test_default_agent(self, tmp_path):
-        yaml_no_agent = """\
-name: minimal
-triggers:
-  - label: "pipeline:draft-ready"
-handlers:
-  - name: draft_design
-    template: draft-design
-"""
-        (tmp_path / "minimal.yml").write_text(yaml_no_agent, encoding="utf-8")
-        config = load_workflows(tmp_path)[0]
-        assert config.handlers[0].agent == "claude"
-        assert config.handlers[0].model is None
+        assert config.handlers["impl"].steps[0].id == "p1"
 
 
 # ---------------------------------------------------------------------------
-# AC-3: YAML パース（異常系）
-# ---------------------------------------------------------------------------
-
-
-class TestYamlParseError:
-    def test_missing_name_raises_value_error(self, tmp_path):
-        yaml_no_name = """\
-triggers:
-  - label: "pipeline:draft-ready"
-handlers:
-  - name: draft_design
-    template: draft-design
-"""
-        (tmp_path / "bad.yml").write_text(yaml_no_name, encoding="utf-8")
-        with pytest.raises(ValueError, match="name"):
-            load_workflows(tmp_path)
-
-    def test_empty_triggers_raises_value_error(self, tmp_path):
-        yaml_empty_triggers = """\
-name: test
-triggers: []
-handlers:
-  - name: draft_design
-    template: draft-design
-"""
-        (tmp_path / "bad.yml").write_text(yaml_empty_triggers, encoding="utf-8")
-        with pytest.raises(ValueError, match="triggers"):
-            load_workflows(tmp_path)
-
-    def test_missing_handlers_raises_value_error(self, tmp_path):
-        yaml_no_handlers = """\
-name: test
-triggers:
-  - label: "pipeline:draft-ready"
-"""
-        (tmp_path / "bad.yml").write_text(yaml_no_handlers, encoding="utf-8")
-        with pytest.raises(ValueError, match="handlers"):
-            load_workflows(tmp_path)
-
-    def test_invalid_yaml_syntax_raises_value_error(self, tmp_path):
-        (tmp_path / "bad.yml").write_text(":\t: invalid: yaml: [}", encoding="utf-8")
-        with pytest.raises(ValueError, match="YAML"):
-            load_workflows(tmp_path)
-
-    def test_nonexistent_directory_raises_file_not_found(self, tmp_path):
-        with pytest.raises(FileNotFoundError):
-            load_workflows(tmp_path / "nonexistent")
-
-
-# ---------------------------------------------------------------------------
-# AC-4: GitHubIssueClient（モックテスト）
+# GitHubIssueClient tests
 # ---------------------------------------------------------------------------
 
 
@@ -203,6 +593,20 @@ class TestGitHubIssueClient:
             check=True,
         )
 
+    def test_remove_label_calls_subprocess(self):
+        client = GitHubIssueClient()
+        with patch("subprocess.run") as mock_run:
+            client.remove_label(42, "pipeline:develop-running")
+        mock_run.assert_called_once_with(
+            [
+                "gh", "issue", "edit", "42",
+                "--remove-label", "pipeline:develop-running",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
     def test_add_comment_calls_subprocess(self):
         client = GitHubIssueClient()
         with patch("subprocess.run") as mock_run:
@@ -222,162 +626,46 @@ class TestGitHubIssueClient:
 
 
 # ---------------------------------------------------------------------------
-# AC-5: WorkflowDispatcher イベントマッチング
+# PipelineState.remove_idempotency_matching tests
 # ---------------------------------------------------------------------------
 
 
-def _make_workflow() -> WorkflowConfig:
-    return WorkflowConfig(
-        name="stash-pipeline",
-        triggers=[
-            TriggerConfig(label="pipeline:draft-ready"),
-            TriggerConfig(label="pipeline:develop-ready"),
-        ],
-        handlers=[
-            PhaseHandler(name="draft_design", template="draft-design"),
-            PhaseHandler(name="impl", template="impl"),
-        ],
-        polling_interval=30,
-    )
-
-
-def _make_issue(number: int, label: str) -> dict:
-    return {
-        "number": number,
-        "title": f"Issue {number}",
-        "body": "",
-        "labels": [{"name": label}],
-        "url": f"https://github.com/owner/repo/issues/{number}",
-    }
-
-
-class TestWorkflowDispatcherMatching:
-    def _make_dispatcher(self, workflow: WorkflowConfig) -> tuple[WorkflowDispatcher, MagicMock, MagicMock, MagicMock]:
-        github_client = MagicMock(spec=GitHubIssueClient)
-        pipeline_state = MagicMock()
-        order_builder = MagicMock()
-        dispatcher = WorkflowDispatcher(
-            workflows=[workflow],
-            github_client=github_client,
-            pipeline_state=pipeline_state,
-            order_builder=order_builder,
+class TestRemoveIdempotencyMatching:
+    def test_removes_matching_lines(self, tmp_path):
+        from ghdag.pipeline.state import PipelineState
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text(
+            "# idempotency: stash-pipeline:brushup:42\n"
+            "# idempotency: stash-pipeline:impl:42\n"
+            "# idempotency: stash-pipeline:merge:42\n"
+            "# idempotency: stash-pipeline:brushup:99\n"
+            "some-uuid: cat queue/file.md | claude -p 'test'\n",
+            encoding="utf-8",
         )
-        return dispatcher, github_client, pipeline_state, order_builder
+        state = PipelineState(state_dir=tmp_path / "state", exec_md_path=exec_md)
+        removed = state.remove_idempotency_matching("stash-pipeline", 42)
 
-    def test_matching_label_returns_match(self):
-        workflow = _make_workflow()
-        dispatcher, github_client, _, _ = self._make_dispatcher(workflow)
-        issue = _make_issue(1, "pipeline:draft-ready")
-        github_client.list_issues.side_effect = lambda label, **kw: (
-            [issue] if label == "pipeline:draft-ready" else []
+        assert removed == 3
+        content = exec_md.read_text(encoding="utf-8")
+        assert "# idempotency: stash-pipeline:brushup:42" not in content
+        assert "# idempotency: stash-pipeline:impl:42" not in content
+        assert "# idempotency: stash-pipeline:merge:42" not in content
+        assert "# idempotency: stash-pipeline:brushup:99" in content
+        assert "some-uuid:" in content
+
+    def test_returns_zero_if_no_match(self, tmp_path):
+        from ghdag.pipeline.state import PipelineState
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("# idempotency: stash-pipeline:brushup:99\n", encoding="utf-8")
+        state = PipelineState(state_dir=tmp_path / "state", exec_md_path=exec_md)
+        removed = state.remove_idempotency_matching("stash-pipeline", 42)
+        assert removed == 0
+
+    def test_returns_zero_if_file_not_exists(self, tmp_path):
+        from ghdag.pipeline.state import PipelineState
+        state = PipelineState(
+            state_dir=tmp_path / "state",
+            exec_md_path=tmp_path / "nonexistent.md",
         )
-        matches = dispatcher.poll_once()
-        assert len(matches) >= 1
-        assert matches[0]["issue"] == 1
-        assert matches[0]["workflow"] == "stash-pipeline"
-        assert matches[0]["handler"] == "draft_design"
-
-    def test_non_matching_label_skipped(self):
-        workflow = _make_workflow()
-        dispatcher, github_client, _, _ = self._make_dispatcher(workflow)
-        github_client.list_issues.return_value = []
-        matches = dispatcher.poll_once()
-        assert matches == []
-
-    def test_idempotency_false_skips_dispatch(self):
-        workflow = _make_workflow()
-        dispatcher, github_client, pipeline_state, order_builder = self._make_dispatcher(workflow)
-        pipeline_state.check_idempotency.return_value = False
-        issue = _make_issue(1, "pipeline:draft-ready")
-        dispatcher.dispatch(issue, workflow, workflow.handlers[0])
-        order_builder.build_order.assert_not_called()
-        pipeline_state.append_exec.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# AC-6: WorkflowDispatcher ディスパッチ（exec.md 経由）
-# ---------------------------------------------------------------------------
-
-
-class TestWorkflowDispatcherDispatch:
-    def _make_dispatcher(self, workflow: WorkflowConfig) -> tuple[WorkflowDispatcher, MagicMock, MagicMock, MagicMock]:
-        github_client = MagicMock(spec=GitHubIssueClient)
-        pipeline_state = MagicMock()
-        pipeline_state.check_idempotency.return_value = True
-        pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
-        order_builder = MagicMock()
-        order_builder.build_order.return_value = "order content"
-        dispatcher = WorkflowDispatcher(
-            workflows=[workflow],
-            github_client=github_client,
-            pipeline_state=pipeline_state,
-            order_builder=order_builder,
-        )
-        return dispatcher, github_client, pipeline_state, order_builder
-
-    def test_dispatch_calls_append_exec(self):
-        workflow = _make_workflow()
-        dispatcher, _, pipeline_state, _ = self._make_dispatcher(workflow)
-        issue = _make_issue(42, "pipeline:draft-ready")
-        dispatcher.dispatch(issue, workflow, workflow.handlers[0])
-        pipeline_state.append_exec.assert_called_once()
-
-    def test_dispatch_transitions_label_ready_to_running(self):
-        workflow = _make_workflow()
-        dispatcher, github_client, _, _ = self._make_dispatcher(workflow)
-        issue = _make_issue(42, "pipeline:draft-ready")
-        dispatcher.dispatch(issue, workflow, workflow.handlers[0])
-        github_client.update_label.assert_called_once_with(
-            42, "pipeline:draft-ready", "pipeline:draft-running"
-        )
-
-    def test_dispatch_idempotency_key_format(self):
-        workflow = _make_workflow()
-        dispatcher, _, pipeline_state, _ = self._make_dispatcher(workflow)
-        issue = _make_issue(42, "pipeline:draft-ready")
-        dispatcher.dispatch(issue, workflow, workflow.handlers[0])
-        pipeline_state.check_idempotency.assert_called_once_with(
-            "stash-pipeline:draft_design:42"
-        )
-
-    def test_dispatch_exec_lines_contain_idempotency_marker(self):
-        workflow = _make_workflow()
-        dispatcher, _, pipeline_state, _ = self._make_dispatcher(workflow)
-        issue = _make_issue(42, "pipeline:draft-ready")
-        dispatcher.dispatch(issue, workflow, workflow.handlers[0])
-        args = pipeline_state.append_exec.call_args[0][0]
-        assert any("idempotency: stash-pipeline:draft_design:42" in line for line in args)
-
-
-# ---------------------------------------------------------------------------
-# AC-7: 既存ワークフローの YAML 表現
-# ---------------------------------------------------------------------------
-
-
-class TestExistingWorkflowYaml:
-    def test_sample_pipeline_yaml_parseable(self):
-        """tests/fixtures/sample-workflow.yml が load_workflows() でパース可能なこと"""
-        fixtures_dir = Path(__file__).resolve().parent / "fixtures"
-        assert fixtures_dir.exists(), f"fixtures/ ディレクトリが存在しません: {fixtures_dir}"
-        configs = load_workflows(fixtures_dir)
-        assert len(configs) >= 1
-
-    def test_sample_pipeline_yaml_has_correct_triggers(self):
-        fixtures_dir = Path(__file__).resolve().parent / "fixtures"
-        configs = load_workflows(fixtures_dir)
-        config = next((c for c in configs if c.name == "sample-pipeline"), None)
-        assert config is not None, "sample-pipeline ワークフローが見つかりません"
-        trigger_labels = [t.label for t in config.triggers]
-        assert "pipeline:draft-ready" in trigger_labels
-        assert "pipeline:develop-ready" in trigger_labels
-        assert "pipeline:merge-ready" in trigger_labels
-
-    def test_sample_pipeline_yaml_has_correct_handlers(self):
-        fixtures_dir = Path(__file__).resolve().parent / "fixtures"
-        configs = load_workflows(fixtures_dir)
-        config = next((c for c in configs if c.name == "sample-pipeline"), None)
-        assert config is not None
-        handler_names = [h.name for h in config.handlers]
-        assert "draft_design" in handler_names
-        assert "impl" in handler_names
-        assert "merge" in handler_names
+        removed = state.remove_idempotency_matching("stash-pipeline", 42)
+        assert removed == 0

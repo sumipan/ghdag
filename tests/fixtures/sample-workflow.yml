@@ -1,16 +1,27 @@
 name: sample-pipeline
+
 triggers:
   - label: "pipeline:draft-ready"
+    handler: draft_design
   - label: "pipeline:develop-ready"
+    handler: impl
   - label: "pipeline:merge-ready"
+    handler: merge
+
 handlers:
-  - name: draft_design
-    template: draft-design
-    agent: claude
-  - name: impl
-    template: impl
-    agent: claude
-  - name: merge
-    template: merge
-    agent: claude
+  draft_design:
+    steps:
+      - template: draft-design
+        model: claude-opus-4-6
+
+  impl:
+    steps:
+      - template: impl
+        model: claude-sonnet-4-6
+
+  merge:
+    steps:
+      - template: merge
+        model: claude-opus-4-6
+
 polling_interval: 30
