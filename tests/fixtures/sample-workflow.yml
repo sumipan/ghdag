@@ -1,0 +1,16 @@
+name: sample-pipeline
+triggers:
+  - label: "pipeline:draft-ready"
+  - label: "pipeline:develop-ready"
+  - label: "pipeline:merge-ready"
+handlers:
+  - name: draft_design
+    template: draft-design
+    agent: claude
+  - name: impl
+    template: impl
+    agent: claude
+  - name: merge
+    template: merge
+    agent: claude
+polling_interval: 30
