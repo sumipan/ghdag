@@ -61,6 +61,15 @@ def _validate(data: dict, filename: str) -> None:
     if "handlers" not in data or data["handlers"] is None:
         raise ValidationError(f"'handlers' フィールドが必須です: {filename}")
 
+    # triggers の各エントリを検証
+    for i, trigger in enumerate(data["triggers"]):
+        if not isinstance(trigger, dict):
+            raise ValidationError(f"triggers[{i}] はマッピングである必要があります: {filename}")
+        if "label" not in trigger:
+            raise ValidationError(f"triggers[{i}] に 'label' が必須です: {filename}")
+        if "handler" not in trigger:
+            raise ValidationError(f"triggers[{i}] に 'handler' が必須です: {filename}")
+
     # handlers の各エントリを検証
     handlers = data["handlers"]
     if not isinstance(handlers, dict):

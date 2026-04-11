@@ -145,6 +145,36 @@ handlers:
         with pytest.raises(ValueError, match="model"):
             load_workflows(tmp_path)
 
+    def test_trigger_missing_handler_raises_validation_error(self, tmp_path):
+        yaml_no_handler = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-sonnet-4-6
+"""
+        (tmp_path / "bad.yml").write_text(yaml_no_handler, encoding="utf-8")
+        with pytest.raises(ValueError, match="handler"):
+            load_workflows(tmp_path)
+
+    def test_trigger_missing_label_raises_validation_error(self, tmp_path):
+        yaml_no_label = """\
+name: test
+triggers:
+  - handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-sonnet-4-6
+"""
+        (tmp_path / "bad.yml").write_text(yaml_no_label, encoding="utf-8")
+        with pytest.raises(ValueError, match="label"):
+            load_workflows(tmp_path)
+
     def test_unknown_keys_ignored(self, tmp_path):
         yaml_unknown = """\
 name: test
