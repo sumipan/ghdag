@@ -47,6 +47,12 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="SEC",
         help="Poll interval in seconds (default: 1.0)",
     )
+    run_parser.add_argument(
+        "--hooks",
+        default=None,
+        metavar="MODULE",
+        help="Python module path for DagHooks implementation (e.g. scripts.diary_hooks)",
+    )
     run_parser.set_defaults(func=_cmd_run)
 
     # ghdag watch
@@ -97,7 +103,45 @@ def _cmd_run(args: argparse.Namespace) -> None:
     from ghdag.dag.models import DagConfig
 
     config = DagConfig(exec_md_path=args.exec_md, poll_interval=args.interval)
-    DagEngine(config).run()
+    hooks = _load_hooks(args.hooks) if args.hooks else None
+    engine = DagEngine(config, hooks)
+    if hooks is not None and hasattr(hooks, "set_engine"):
+        hooks.set_engine(engine)
+    engine.run()
+
+
+def _load_hooks(module_path: str) -> object:
+    """モジュールパスから DagHooks 実装クラスをインスタンス化して返す。
+
+    クラスの探索順:
+    1. モジュールに `HOOKS_CLASS` 属性がある場合はそれを使用
+    2. `on_task_success` を持つ最初の公開クラスを使用
+
+    Raises:
+        SystemExit: モジュールが見つからない、またはクラスが見つからない場合
+    """
+    import importlib
+    import inspect
+
+    try:
+        module = importlib.import_module(module_path)
+    except ImportError as exc:
+        print(f"error: cannot import hooks module '{module_path}': {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if hasattr(module, "HOOKS_CLASS"):
+        cls = module.HOOKS_CLASS
+        return cls()
+
+    for _, obj in inspect.getmembers(module, inspect.isclass):
+        if obj.__module__ == module.__name__ and hasattr(obj, "on_task_success"):
+            return obj()
+
+    print(
+        f"error: no DagHooks-compatible class found in module '{module_path}'",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 def _cmd_watch(args: argparse.Namespace) -> None:

@@ -87,7 +87,7 @@ class TestRunNormal:
         mock_config_cls.assert_called_once_with(
             exec_md_path=str(exec_md), poll_interval=1.0
         )
-        mock_engine_cls.assert_called_once_with(mock_config_cls.return_value)
+        mock_engine_cls.assert_called_once_with(mock_config_cls.return_value, None)
         mock_engine_cls.return_value.run.assert_called_once()
 
     def test_run_with_custom_interval(self, tmp_path):
@@ -105,6 +105,94 @@ class TestRunNormal:
         mock_config_cls.assert_called_once_with(
             exec_md_path=str(exec_md), poll_interval=10.0
         )
+
+
+# ---------------------------------------------------------------------------
+# AC3b: ghdag run --hooks
+# ---------------------------------------------------------------------------
+
+
+class TestRunHooks:
+    def _make_hooks_module_with_class(self):
+        """HOOKS_CLASS 属性を持つモジュール名前空間と hooks クラスを返す。"""
+        import types
+
+        class MyHooks:
+            def __init__(self): self.engine_set = False
+            def set_engine(self, engine): self.engine_set = True
+            def on_task_success(self, uuid, task): pass
+            def on_task_failure(self, uuid, task, returncode, stderr_text): pass
+            def on_task_rejected(self, uuid, task, retry_depth, is_final): pass
+            def on_task_dep_failed(self, uuid, task, failed_dep): pass
+            def on_task_empty_result(self, uuid, task, stderr_text): pass
+            def on_shutdown(self, signum): pass
+            def check_rejected(self, result_path): return False
+
+        mod = types.ModuleType("my_hooks")
+        mod.HOOKS_CLASS = MyHooks
+        return mod, MyHooks
+
+    def test_hooks_module_loaded_and_passed_to_engine(self, tmp_path):
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+        mock_module, MyHooks = self._make_hooks_module_with_class()
+
+        mock_engine_cls = MagicMock()
+        mock_config_cls = MagicMock()
+
+        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
+             patch("ghdag.dag.models.DagConfig", mock_config_cls), \
+             patch("importlib.import_module", return_value=mock_module):
+            from ghdag.cli import main
+            main(["run", str(exec_md), "--hooks", "my_hooks"])
+
+        # DagEngine は hooks インスタンス付きで呼ばれる
+        call_args = mock_engine_cls.call_args
+        assert call_args is not None
+        _, hooks_arg = call_args[0]
+        assert isinstance(hooks_arg, MyHooks)
+
+    def test_hooks_set_engine_called(self, tmp_path):
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+        mock_module, MyHooks = self._make_hooks_module_with_class()
+
+        mock_engine_instance = MagicMock()
+        mock_engine_cls = MagicMock(return_value=mock_engine_instance)
+        mock_config_cls = MagicMock()
+
+        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
+             patch("ghdag.dag.models.DagConfig", mock_config_cls), \
+             patch("importlib.import_module", return_value=mock_module):
+            from ghdag.cli import main
+            main(["run", str(exec_md), "--hooks", "my_hooks"])
+
+        # engine.run() が呼ばれる
+        mock_engine_instance.run.assert_called_once()
+
+    def test_hooks_invalid_module_exits_1(self, tmp_path, capsys):
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+
+        with pytest.raises(SystemExit) as exc:
+            from ghdag.cli import main
+            main(["run", str(exec_md), "--hooks", "nonexistent.module.path"])
+        assert exc.value.code == 1
+        assert "cannot import" in capsys.readouterr().err
+
+    def test_no_hooks_arg_engine_called_with_none(self, tmp_path):
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+
+        mock_engine_cls = MagicMock()
+        mock_config_cls = MagicMock()
+
+        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
+             patch("ghdag.dag.models.DagConfig", mock_config_cls):
+            from ghdag.cli import main
+            main(["run", str(exec_md)])
+
+        mock_engine_cls.assert_called_once_with(mock_config_cls.return_value, None)
 
 
 # ---------------------------------------------------------------------------
