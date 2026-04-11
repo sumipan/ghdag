@@ -123,6 +123,10 @@ def _load_hooks(module_path: str) -> object:
     import importlib
     import inspect
 
+    cwd = os.getcwd()
+    if cwd not in sys.path:
+        sys.path.insert(0, cwd)
+
     try:
         module = importlib.import_module(module_path)
     except ImportError as exc:

@@ -120,12 +120,11 @@ class TestTemplateOrderBuilder:
         builder = TemplateOrderBuilder(self.tmpdir)
         assert builder.build_order("step", {"a": "X", "b": "Y"}) == "X and Y"
 
-    def test_o3_missing_variable_raises(self):
-        """O3: 変数不足 → KeyError 系の例外"""
+    def test_o3_missing_variable_kept(self):
+        """O3: 変数不足 → safe_substitute で未展開のまま保持"""
         self._write_template("step", "$name $missing")
         builder = TemplateOrderBuilder(self.tmpdir)
-        with pytest.raises((KeyError, ValueError)):
-            builder.build_order("step", {"name": "x"})
+        assert builder.build_order("step", {"name": "x"}) == "x $missing"
 
     def test_o4_template_order_builder_normal(self):
         """O4: TemplateOrderBuilder 正常系"""

@@ -45,4 +45,4 @@ class TemplateOrderBuilder:
                 f"テンプレートファイルが見つかりません: {template_path}"
             )
         tmpl = string.Template(template_path.read_text(encoding="utf-8"))
-        return tmpl.substitute(context)
+        return tmpl.safe_substitute(context)
