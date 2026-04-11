@@ -11,10 +11,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Layer 2: CLI (`ghdag run`, `ghdag watch`) and watcher module migrated from diary repo
 - Extended workflow schema: multi-step DAG, `--model` flag, issue context injection, backward guard, reset handler
 - Trigger entry validation for `label` and `handler` fields in the loader
+- `--hooks` option for `ghdag run` to inject DagHooks from external modules
 
 ### Changed
 
 - `requires-python` set to `>=3.11`
+
+### Fixed
+
+- `TemplateOrderBuilder` now uses `safe_substitute()` to avoid `KeyError` on template variables intended as AI instructions (e.g. `$base_branch`)
+- `_load_hooks()` inserts `cwd` into `sys.path` so `--hooks scripts.diary_hooks` resolves correctly
 
 ## [0.2.0] - 2026-03-01
 
