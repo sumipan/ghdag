@@ -87,3 +87,19 @@ class GitHubIssueClient:
             text=True,
             check=True,
         )
+
+    def remove_label(self, number: int, label: str) -> None:
+        """gh issue edit {number} --remove-label {label}。
+
+        Raises:
+            subprocess.CalledProcessError: gh CLI 失敗時
+        """
+        subprocess.run(
+            [
+                "gh", "issue", "edit", str(number),
+                "--remove-label", label,
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )

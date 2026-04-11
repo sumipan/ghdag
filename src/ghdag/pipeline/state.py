@@ -49,6 +49,45 @@ class PipelineState:
         """exec.md に "# idempotency: {key}" を追記。fcntl ロック付き。"""
         self.append_exec([f"# idempotency: {key}"])
 
+    def remove_idempotency_matching(self, workflow_name: str, issue_number: int) -> int:
+        """exec.md から workflow_name:*:issue_number にマッチする idempotency 行を削除。
+
+        Args:
+            workflow_name: ワークフロー名
+            issue_number: Issue 番号
+        Returns:
+            削除した行数
+        Raises:
+            FileNotFoundError: exec.md が存在しない
+        """
+        if not self._exec_md_path.exists():
+            return 0
+
+        prefix = f"# idempotency: {workflow_name}:"
+        suffix = f":{issue_number}"
+        removed = 0
+
+        with open(self._exec_md_path, encoding="utf-8") as f:
+            lines = f.readlines()
+
+        new_lines = []
+        for line in lines:
+            stripped = line.rstrip("\n")
+            if stripped.startswith(prefix) and stripped.endswith(suffix):
+                removed += 1
+            else:
+                new_lines.append(line)
+
+        if removed > 0:
+            with open(self._exec_md_path, "w", encoding="utf-8") as f:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                try:
+                    f.writelines(new_lines)
+                finally:
+                    fcntl.flock(f, fcntl.LOCK_UN)
+
+        return removed
+
     # --- JSON 状態永続化 ---
 
     def save(self, pipeline_id: str, metadata: dict) -> None:
