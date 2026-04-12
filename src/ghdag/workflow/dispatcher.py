@@ -123,6 +123,7 @@ class WorkflowDispatcher:
         ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         exec_lines: list[str] = [f"# idempotency: {idempotency_key}"]
         step_uuid_map: dict[str, str] = {}  # step_id → order_uuid
+        step_result_uuid_map: dict[str, str] = {}  # step_id → result_uuid
 
         for step in handler.steps:
             order_uuid = str(uuid.uuid4())
@@ -130,12 +131,28 @@ class WorkflowDispatcher:
 
             step_id = step.id if step.id else order_uuid
             step_uuid_map[step_id] = order_uuid
+            step_result_uuid_map[step_id] = result_uuid
 
-            context = {
+            result_filename = f"{ts}-claude-result-{result_uuid}.md"
+
+            context: dict[str, str] = {
                 "issue_number": str(issue_number),
                 "workflow_name": workflow.name,
                 "handler_name": handler_name,
+                "ts": ts,
+                "order_uuid": order_uuid,
+                "result_uuid": result_uuid,
+                "result_filename": result_filename,
             }
+
+            # 依存先の result_filename を context に追加
+            for dep_id in step.depends:
+                if dep_id in step_result_uuid_map:
+                    dep_result_uuid = step_result_uuid_map[dep_id]
+                    context[f"{dep_id}_result_filename"] = (
+                        f"{ts}-claude-result-{dep_result_uuid}.md"
+                    )
+
             order_content = self._order_builder.build_order(step.template, context)
             order_filename = self._state.write_order_file(
                 ts, order_uuid, order_content, self._queue_dir
