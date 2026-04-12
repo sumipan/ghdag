@@ -47,6 +47,12 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="SEC",
         help="Poll interval in seconds (default: 1.0)",
     )
+    run_parser.add_argument(
+        "--hooks",
+        default=None,
+        metavar="MODULE",
+        help="Python module path providing a DagHooks-compatible class (e.g. scripts.diary_hooks)",
+    )
     run_parser.set_defaults(func=_cmd_run)
 
     # ghdag watch
@@ -87,6 +93,31 @@ def _setup_logging(args: argparse.Namespace) -> None:
     logging.basicConfig(level=level, force=True)
 
 
+def _load_hooks(module_path: str):
+    """module_path (e.g. 'scripts.diary_hooks') から DagHooks 互換インスタンスを返す。
+
+    モジュール内で最初に見つかった DagHooks 互換クラス（set_engine 属性を持つ）を
+    インスタンス化して返す。見つからなければ RuntimeError。
+    """
+    import importlib
+
+    mod = importlib.import_module(module_path)
+
+    # モジュール内を走査し、DagHooks 互換クラスを探す
+    for attr_name in dir(mod):
+        obj = getattr(mod, attr_name)
+        if (
+            isinstance(obj, type)
+            and hasattr(obj, "set_engine")
+            and hasattr(obj, "on_task_success")
+        ):
+            return obj()
+
+    raise RuntimeError(
+        f"No DagHooks-compatible class found in {module_path!r}"
+    )
+
+
 def _cmd_run(args: argparse.Namespace) -> None:
     """DagConfig を構築し DagEngine.run() を呼ぶ薄いラッパー。"""
     if not os.path.exists(args.exec_md):
@@ -96,8 +127,9 @@ def _cmd_run(args: argparse.Namespace) -> None:
     from ghdag.dag.engine import DagEngine
     from ghdag.dag.models import DagConfig
 
+    hooks = _load_hooks(args.hooks) if args.hooks else None
     config = DagConfig(exec_md_path=args.exec_md, poll_interval=args.interval)
-    DagEngine(config).run()
+    DagEngine(config, hooks=hooks).run()
 
 
 def _cmd_watch(args: argparse.Namespace) -> None:

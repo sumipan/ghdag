@@ -87,7 +87,7 @@ class TestRunNormal:
         mock_config_cls.assert_called_once_with(
             exec_md_path=str(exec_md), poll_interval=1.0
         )
-        mock_engine_cls.assert_called_once_with(mock_config_cls.return_value)
+        mock_engine_cls.assert_called_once_with(mock_config_cls.return_value, hooks=None)
         mock_engine_cls.return_value.run.assert_called_once()
 
     def test_run_with_custom_interval(self, tmp_path):
