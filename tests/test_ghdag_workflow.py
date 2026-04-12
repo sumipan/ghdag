@@ -316,6 +316,73 @@ class TestTC2MultiStepDag:
 
 
 # ---------------------------------------------------------------------------
+# TC-2b: context 拡張（result_filename, 依存先 result）
+# ---------------------------------------------------------------------------
+
+
+class TestTC2bContextExpansion:
+    def test_context_contains_result_filename(self):
+        """context に ts, order_uuid, result_uuid, result_filename が含まれる"""
+        workflow = _make_extended_workflow()
+        dispatcher, _, pipeline_state, order_builder = _make_dispatcher(workflow)
+        issue = _make_issue(10, ["pipeline:draft-ready"])
+        handler = workflow.handlers["brushup"]
+        trigger = workflow.triggers[0]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
+
+        ctx = order_builder.build_order.call_args[0][1]
+        assert "ts" in ctx
+        assert "order_uuid" in ctx
+        assert "result_uuid" in ctx
+        assert "result_filename" in ctx
+        assert ctx["result_filename"] == f"{ctx['ts']}-claude-result-{ctx['result_uuid']}.md"
+
+    def test_context_contains_dep_result_filename(self):
+        """P2 の context に p1_result_filename が含まれる"""
+        workflow = _make_extended_workflow()
+        dispatcher, _, pipeline_state, order_builder = _make_dispatcher(workflow)
+        issue = _make_issue(42, ["pipeline:develop-ready"])
+        handler = workflow.handlers["impl"]
+        trigger = workflow.triggers[1]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
+
+        # build_order は 3 回呼ばれる (p1, p2, p3)
+        calls = order_builder.build_order.call_args_list
+        assert len(calls) == 3
+
+        p1_ctx = calls[0][0][1]
+        p2_ctx = calls[1][0][1]
+        p3_ctx = calls[2][0][1]
+
+        # p1 には依存先がないので dep_result_filename なし
+        assert not any(k.endswith("_result_filename") and k != "result_filename" for k in p1_ctx)
+
+        # p2 には p1_result_filename がある
+        assert "p1_result_filename" in p2_ctx
+        expected_p1_result = f"{p1_ctx['ts']}-claude-result-{p1_ctx['result_uuid']}.md"
+        assert p2_ctx["p1_result_filename"] == expected_p1_result
+
+        # p3 には p2_result_filename がある
+        assert "p2_result_filename" in p3_ctx
+        expected_p2_result = f"{p2_ctx['ts']}-claude-result-{p2_ctx['result_uuid']}.md"
+        assert p3_ctx["p2_result_filename"] == expected_p2_result
+
+    def test_context_preserves_original_fields(self):
+        """context に issue_number, workflow_name, handler_name が引き続き含まれる"""
+        workflow = _make_extended_workflow()
+        dispatcher, _, _, order_builder = _make_dispatcher(workflow)
+        issue = _make_issue(10, ["pipeline:draft-ready"])
+        handler = workflow.handlers["brushup"]
+        trigger = workflow.triggers[0]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
+
+        ctx = order_builder.build_order.call_args[0][1]
+        assert ctx["issue_number"] == "10"
+        assert ctx["workflow_name"] == "stash-pipeline"
+        assert ctx["handler_name"] == "brushup"
+
+
+# ---------------------------------------------------------------------------
 # TC-3: --model フラグ生成
 # ---------------------------------------------------------------------------
 
