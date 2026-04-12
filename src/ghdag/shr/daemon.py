@@ -1,95 +1,116 @@
-"""ghdag.shr.daemon — launchd plist の生成・配置・制御。
+"""ghdag.shr.daemon — overmind (Procfile) ベースのプロセス管理。
 
-macOS launchd 専用。Linux systemd 対応は別 Issue で対応。
+Procfile にエントリを追加・削除し、overmind コマンドで起動・停止を制御する。
 """
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
-LAUNCHAGENTS_DIR: Path = Path.home() / "Library" / "LaunchAgents"
-
-_PLIST_LABEL = "com.ghdag.runner"
-_PLIST_TEMPLATE = """\
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-    "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>{label}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>{runner_dir}/run.sh</string>
-    </array>
-    <key>WorkingDirectory</key>
-    <string>{runner_dir}</string>
-    <key>RunAtLoad</key>
-    <false/>
-    <key>KeepAlive</key>
-    <false/>
-    <key>StandardOutPath</key>
-    <string>{runner_dir}/runner.log</string>
-    <key>StandardErrorPath</key>
-    <string>{runner_dir}/runner.err.log</string>
-</dict>
-</plist>
-"""
+PROCFILE_PATH: Path = Path("Procfile")
+PROCESS_NAME = "shr_runner"
 
 
-def install_plist(runner_dir: Path, label: str) -> Path:
-    """launchd plist を生成して ~/Library/LaunchAgents/ に配置する。
+def _build_procfile_entry(runner_dir: Path, process_name: str) -> str:
+    """Procfile に追加する1行を生成する。"""
+    return f"{process_name}: {runner_dir}/run.sh 2>&1 | python3 scripts/log-timestamp.py"
+
+
+def install_procfile_entry(runner_dir: Path, process_name: str) -> str:
+    """Procfile に runner エントリを追加する。
 
     Args:
         runner_dir: actions-runner が展開されたディレクトリ
-        label: launchd ラベル（例: "com.ghdag.runner"）
+        process_name: overmind プロセス名（例: "shr_runner"）
 
     Returns:
-        配置した plist ファイルのパス
-    """
-    LAUNCHAGENTS_DIR.mkdir(parents=True, exist_ok=True)
-    plist_path = LAUNCHAGENTS_DIR / f"{label}.plist"
-    content = _PLIST_TEMPLATE.format(label=label, runner_dir=str(runner_dir))
-    plist_path.write_text(content, encoding="utf-8")
-    return plist_path
-
-
-def uninstall_plist(plist_path: Path) -> None:
-    """plist ファイルを削除する。存在しない場合は無視する。"""
-    if plist_path.exists():
-        plist_path.unlink()
-
-
-def load(plist_path: Path) -> None:
-    """launchctl load で runner を起動する。
+        追加されたプロセス名
 
     Raises:
-        subprocess.CalledProcessError: launchctl が失敗した場合
+        RuntimeError: 既に同名エントリが存在する場合
+    """
+    procfile = PROCFILE_PATH
+    entry = _build_procfile_entry(runner_dir, process_name)
+
+    if procfile.exists():
+        content = procfile.read_text(encoding="utf-8")
+        pattern = rf"^{re.escape(process_name)}:"
+        if re.search(pattern, content, re.MULTILINE):
+            raise RuntimeError(f"Procfile に既に '{process_name}' エントリが存在します")
+        if not content.endswith("\n"):
+            content += "\n"
+    else:
+        content = ""
+
+    content += f"\n# Self-hosted runner (ghdag shr)\n{entry}\n"
+    procfile.write_text(content, encoding="utf-8")
+    return process_name
+
+
+def uninstall_procfile_entry(process_name: str) -> None:
+    """Procfile から runner エントリを削除する。存在しない場合は無視する。"""
+    procfile = PROCFILE_PATH
+    if not procfile.exists():
+        return
+
+    lines = procfile.read_text(encoding="utf-8").splitlines(keepends=True)
+    pattern = rf"^{re.escape(process_name)}:"
+    comment_pattern = r"^# Self-hosted runner \(ghdag shr\)$"
+
+    filtered: list[str] = []
+    skip_next = False
+    for line in lines:
+        stripped = line.rstrip("\n")
+        if re.match(comment_pattern, stripped):
+            skip_next = True
+            continue
+        if skip_next and re.match(pattern, stripped):
+            skip_next = False
+            continue
+        if re.match(pattern, stripped):
+            continue
+        skip_next = False
+        filtered.append(line)
+
+    procfile.write_text("".join(filtered), encoding="utf-8")
+
+
+def start(process_name: str) -> None:
+    """overmind restart でプロセスを起動する。
+
+    Raises:
+        subprocess.CalledProcessError: overmind が失敗した場合
     """
     subprocess.run(
-        ["launchctl", "load", str(plist_path)],
+        ["overmind", "restart", process_name],
         check=True,
     )
 
 
-def unload(plist_path: Path) -> None:
-    """launchctl unload で runner を停止する。
+def stop(process_name: str) -> None:
+    """overmind stop でプロセスを停止する。
 
     Raises:
-        subprocess.CalledProcessError: launchctl が失敗した場合
+        subprocess.CalledProcessError: overmind が失敗した場合
     """
     subprocess.run(
-        ["launchctl", "unload", str(plist_path)],
+        ["overmind", "stop", process_name],
         check=True,
     )
 
 
-def is_loaded(label: str) -> bool:
-    """launchctl list で runner が起動中か確認する。"""
+def is_running(process_name: str) -> bool:
+    """overmind status でプロセスが起動中か確認する。"""
     result = subprocess.run(
-        ["launchctl", "list", label],
+        ["overmind", "status"],
         capture_output=True,
         text=True,
     )
-    return result.returncode == 0
+    if result.returncode != 0:
+        return False
+    for line in result.stdout.splitlines():
+        if line.strip().startswith(process_name):
+            return "running" in line.lower()
+    return False

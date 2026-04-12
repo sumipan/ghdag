@@ -92,8 +92,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # ghdag shr start / stop / status / teardown
     for name, help_text, func in [
-        ("start", "Start runner via launchd", _cmd_shr_start),
-        ("stop", "Stop runner via launchd", _cmd_shr_stop),
+        ("start", "Start runner via overmind", _cmd_shr_start),
+        ("stop", "Stop runner via overmind", _cmd_shr_stop),
         ("status", "Show runner status", _cmd_shr_status),
         ("teardown", "Unregister and clean up runner", _cmd_shr_teardown),
     ]:
@@ -215,7 +215,7 @@ def _cmd_version(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 
 def _cmd_shr_init(args: argparse.Namespace) -> None:
-    """ghdag shr init: runner DL → config → launchd 登録 → shr.json 保存。"""
+    """ghdag shr init: runner DL → config → Procfile 登録 → shr.json 保存。"""
     import shutil
     from ghdag.shr import config as shr_config
     from ghdag.shr import github as shr_github
@@ -255,11 +255,12 @@ def _cmd_shr_init(args: argparse.Namespace) -> None:
         shutil.rmtree(runner_dir, ignore_errors=True)
         sys.exit(1)
 
-    # 4. launchd plist 生成・配置
+    # 4. Procfile にエントリ追加
+    process_name = shr_daemon.PROCESS_NAME
     try:
-        plist_path = shr_daemon.install_plist(runner_dir, "com.ghdag.runner")
+        shr_daemon.install_procfile_entry(runner_dir, process_name)
     except Exception as exc:
-        print(f"エラー: launchd plist の配置に失敗しました: {exc}", file=sys.stderr)
+        print(f"エラー: Procfile エントリの追加に失敗しました: {exc}", file=sys.stderr)
         shutil.rmtree(runner_dir, ignore_errors=True)
         sys.exit(1)
 
@@ -268,15 +269,15 @@ def _cmd_shr_init(args: argparse.Namespace) -> None:
         repo=args.repo,
         labels=labels,
         runner_dir=str(runner_dir),
-        plist_path=str(plist_path),
+        process_name=process_name,
     )
     shr_config.save_config(cfg)
     print(f"runner を初期化しました: {args.repo} (labels: {labels})")
+    print("overmind を再起動すると runner が起動します。")
 
 
 def _cmd_shr_start(args: argparse.Namespace) -> None:
-    """ghdag shr start: launchctl load で runner を起動する。"""
-    from pathlib import Path
+    """ghdag shr start: overmind restart で runner を起動する。"""
     from ghdag.shr import config as shr_config
     from ghdag.shr import daemon as shr_daemon
 
@@ -286,18 +287,16 @@ def _cmd_shr_start(args: argparse.Namespace) -> None:
         print("エラー: init を先に実行してください。", file=sys.stderr)
         sys.exit(1)
 
-    plist_path = Path(cfg.plist_path)
-    if shr_daemon.is_loaded("com.ghdag.runner"):
+    if shr_daemon.is_running(cfg.process_name):
         print("既に起動中です。")
         return
 
-    shr_daemon.load(plist_path)
+    shr_daemon.start(cfg.process_name)
     print("runner を起動しました。")
 
 
 def _cmd_shr_stop(args: argparse.Namespace) -> None:
-    """ghdag shr stop: launchctl unload で runner を停止する。"""
-    from pathlib import Path
+    """ghdag shr stop: overmind stop で runner を停止する。"""
     from ghdag.shr import config as shr_config
     from ghdag.shr import daemon as shr_daemon
 
@@ -307,12 +306,11 @@ def _cmd_shr_stop(args: argparse.Namespace) -> None:
         print("エラー: init を先に実行してください。", file=sys.stderr)
         sys.exit(1)
 
-    plist_path = Path(cfg.plist_path)
-    if not shr_daemon.is_loaded("com.ghdag.runner"):
+    if not shr_daemon.is_running(cfg.process_name):
         print("停止済みです。")
         return
 
-    shr_daemon.unload(plist_path)
+    shr_daemon.stop(cfg.process_name)
     print("runner を停止しました。")
 
 
@@ -328,7 +326,7 @@ def _cmd_shr_status(args: argparse.Namespace) -> None:
         print("エラー: init を先に実行してください。", file=sys.stderr)
         sys.exit(1)
 
-    local_status = "起動中" if shr_daemon.is_loaded("com.ghdag.runner") else "停止中"
+    local_status = "起動中" if shr_daemon.is_running(cfg.process_name) else "停止中"
 
     try:
         import socket
@@ -341,7 +339,7 @@ def _cmd_shr_status(args: argparse.Namespace) -> None:
 
 
 def _cmd_shr_teardown(args: argparse.Namespace) -> None:
-    """ghdag shr teardown: 登録解除 → plist 削除 → runner 削除 → shr.json 削除。"""
+    """ghdag shr teardown: 登録解除 → Procfile エントリ削除 → runner 削除 → shr.json 削除。"""
     from pathlib import Path
     from ghdag.shr import config as shr_config
     from ghdag.shr import daemon as shr_daemon
@@ -356,11 +354,10 @@ def _cmd_shr_teardown(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     runner_dir = Path(cfg.runner_dir)
-    plist_path = Path(cfg.plist_path)
 
     # 起動中なら先に停止
-    if shr_daemon.is_loaded("com.ghdag.runner"):
-        shr_daemon.unload(plist_path)
+    if shr_daemon.is_running(cfg.process_name):
+        shr_daemon.stop(cfg.process_name)
 
     # remove トークン取得（失敗したらローカルファイルは残す）
     try:
@@ -376,8 +373,8 @@ def _cmd_shr_teardown(args: argparse.Namespace) -> None:
         print(f"エラー: runner の登録解除に失敗しました: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    # plist 削除・runner ディレクトリ削除・shr.json 削除
-    shr_daemon.uninstall_plist(plist_path)
+    # Procfile エントリ削除・runner ディレクトリ削除・shr.json 削除
+    shr_daemon.uninstall_procfile_entry(cfg.process_name)
     shutil.rmtree(runner_dir, ignore_errors=True)
     shr_config.CONFIG_PATH.unlink(missing_ok=True)
     print("runner を削除しました。")
