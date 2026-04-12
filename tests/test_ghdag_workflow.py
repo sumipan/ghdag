@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import json
 import subprocess
-from pathlib import Path
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.github import GitHubIssueClient
-from ghdag.workflow.loader import ValidationError, load_workflows
+from ghdag.workflow.loader import load_workflows
 from ghdag.workflow.schema import (
     DispatchResult,
     HandlerConfig,
