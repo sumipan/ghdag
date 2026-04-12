@@ -2,6 +2,7 @@
 
 Covers AC-1 through AC-6 from the design document.
 All external calls (subprocess.run, file I/O to home dir) are mocked.
+Updated: launchd → overmind (Procfile) ベース.
 """
 
 from __future__ import annotations
@@ -24,12 +25,15 @@ class TestShrInit:
     """AC-1: ghdag shr init --repo owner/repo --labels ghdag"""
 
     def test_init_normal(self, tmp_path):
-        """AC-1-1: 正常系 — runner DL、config.sh、plist 配置、shr.json 保存"""
+        """AC-1-1: 正常系 — runner DL、config.sh、Procfile エントリ追加、shr.json 保存"""
+        procfile = tmp_path / "Procfile"
+        procfile.write_text("# existing\ndag_runner: echo hi\n")
+
         with (
             patch("ghdag.shr.github.get_registration_token", return_value="tok123"),
             patch("ghdag.shr.runner.download_runner") as mock_dl,
             patch("ghdag.shr.runner.configure_runner") as mock_cfg,
-            patch("ghdag.shr.daemon.install_plist", return_value=tmp_path / "com.ghdag.runner.plist") as mock_plist,
+            patch("ghdag.shr.daemon.PROCFILE_PATH", procfile),
             patch("ghdag.shr.config.CONFIG_PATH", tmp_path / "shr.json"),
             patch("ghdag.shr.config.RUNNER_DIR", tmp_path / "runner"),
         ):
@@ -38,11 +42,14 @@ class TestShrInit:
 
         mock_dl.assert_called_once()
         mock_cfg.assert_called_once()
-        mock_plist.assert_called_once()
         assert (tmp_path / "shr.json").exists()
         data = json.loads((tmp_path / "shr.json").read_text())
         assert data["repo"] == "owner/repo"
         assert "ghdag" in data["labels"]
+        assert data["process_name"] == "shr_runner"
+        # Procfile にエントリが追加されていること
+        content = procfile.read_text()
+        assert "shr_runner:" in content
 
     def test_init_missing_repo(self, capsys):
         """AC-1-2: --repo なし → argparse がエラー exit code 2"""
@@ -110,20 +117,20 @@ class TestShrStart:
             "repo": "owner/repo",
             "labels": ["ghdag"],
             "runner_dir": str(tmp_path / "runner"),
-            "plist_path": str(tmp_path / "com.ghdag.runner.plist"),
+            "process_name": "shr_runner",
         }))
         return config_path
 
     def test_start_normal(self, tmp_path):
-        """AC-2-1: 正常系 — launchctl load が実行される、exit code 0"""
+        """AC-2-1: 正常系 — overmind restart が実行される、exit code 0"""
         config_path = self._make_config(tmp_path)
         with (
             patch("ghdag.shr.config.CONFIG_PATH", config_path),
-            patch("ghdag.shr.daemon.is_loaded", return_value=False),
-            patch("ghdag.shr.daemon.load") as mock_load,
+            patch("ghdag.shr.daemon.is_running", return_value=False),
+            patch("ghdag.shr.daemon.start") as mock_start,
         ):
             main(["shr", "start"])
-        mock_load.assert_called_once()
+        mock_start.assert_called_once_with("shr_runner")
 
     def test_start_not_initialized(self, tmp_path, capsys):
         """AC-2-2: shr.json なし → エラー、exit code 1"""
@@ -141,11 +148,11 @@ class TestShrStart:
         config_path = self._make_config(tmp_path)
         with (
             patch("ghdag.shr.config.CONFIG_PATH", config_path),
-            patch("ghdag.shr.daemon.is_loaded", return_value=True),
-            patch("ghdag.shr.daemon.load") as mock_load,
+            patch("ghdag.shr.daemon.is_running", return_value=True),
+            patch("ghdag.shr.daemon.start") as mock_start,
         ):
             main(["shr", "start"])
-        mock_load.assert_not_called()
+        mock_start.assert_not_called()
         captured = capsys.readouterr()
         assert captured.out or captured.err  # 何らかのメッセージ
 
@@ -163,31 +170,31 @@ class TestShrStop:
             "repo": "owner/repo",
             "labels": ["ghdag"],
             "runner_dir": str(tmp_path / "runner"),
-            "plist_path": str(tmp_path / "com.ghdag.runner.plist"),
+            "process_name": "shr_runner",
         }))
         return config_path
 
     def test_stop_normal(self, tmp_path):
-        """AC-3-1: 正常系 — launchctl unload が実行される、exit code 0"""
+        """AC-3-1: 正常系 — overmind stop が実行される、exit code 0"""
         config_path = self._make_config(tmp_path)
         with (
             patch("ghdag.shr.config.CONFIG_PATH", config_path),
-            patch("ghdag.shr.daemon.is_loaded", return_value=True),
-            patch("ghdag.shr.daemon.unload") as mock_unload,
+            patch("ghdag.shr.daemon.is_running", return_value=True),
+            patch("ghdag.shr.daemon.stop") as mock_stop,
         ):
             main(["shr", "stop"])
-        mock_unload.assert_called_once()
+        mock_stop.assert_called_once_with("shr_runner")
 
     def test_stop_already_stopped(self, tmp_path, capsys):
         """AC-3-2: 既に停止中 → メッセージ表示、exit code 0"""
         config_path = self._make_config(tmp_path)
         with (
             patch("ghdag.shr.config.CONFIG_PATH", config_path),
-            patch("ghdag.shr.daemon.is_loaded", return_value=False),
-            patch("ghdag.shr.daemon.unload") as mock_unload,
+            patch("ghdag.shr.daemon.is_running", return_value=False),
+            patch("ghdag.shr.daemon.stop") as mock_stop,
         ):
             main(["shr", "stop"])
-        mock_unload.assert_not_called()
+        mock_stop.assert_not_called()
         captured = capsys.readouterr()
         assert captured.out or captured.err
 
@@ -216,7 +223,7 @@ class TestShrStatus:
             "repo": "owner/repo",
             "labels": ["ghdag"],
             "runner_dir": str(tmp_path / "runner"),
-            "plist_path": str(tmp_path / "com.ghdag.runner.plist"),
+            "process_name": "shr_runner",
         }))
         return config_path
 
@@ -225,7 +232,7 @@ class TestShrStatus:
         config_path = self._make_config(tmp_path)
         with (
             patch("ghdag.shr.config.CONFIG_PATH", config_path),
-            patch("ghdag.shr.daemon.is_loaded", return_value=True),
+            patch("ghdag.shr.daemon.is_running", return_value=True),
             patch("ghdag.shr.github.get_runner_status", return_value="online"),
         ):
             main(["shr", "status"])
@@ -238,7 +245,7 @@ class TestShrStatus:
         config_path = self._make_config(tmp_path)
         with (
             patch("ghdag.shr.config.CONFIG_PATH", config_path),
-            patch("ghdag.shr.daemon.is_loaded", return_value=False),
+            patch("ghdag.shr.daemon.is_running", return_value=False),
             patch("ghdag.shr.github.get_runner_status", return_value="offline"),
         ):
             main(["shr", "status"])
@@ -260,7 +267,7 @@ class TestShrStatus:
         config_path = self._make_config(tmp_path)
         with (
             patch("ghdag.shr.config.CONFIG_PATH", config_path),
-            patch("ghdag.shr.daemon.is_loaded", return_value=True),
+            patch("ghdag.shr.daemon.is_running", return_value=True),
             patch("ghdag.shr.github.get_runner_status", side_effect=RuntimeError("API error")),
         ):
             main(["shr", "status"])  # exit code 0 → SystemExit が起きないこと
@@ -278,31 +285,29 @@ class TestShrTeardown:
 
     def _make_config(self, tmp_path) -> Path:
         config_path = tmp_path / "shr.json"
-        plist_path = tmp_path / "com.ghdag.runner.plist"
-        plist_path.write_text("dummy plist")
         runner_dir = tmp_path / "runner"
         runner_dir.mkdir()
         config_path.write_text(json.dumps({
             "repo": "owner/repo",
             "labels": ["ghdag"],
             "runner_dir": str(runner_dir),
-            "plist_path": str(plist_path),
+            "process_name": "shr_runner",
         }))
         return config_path
 
     def test_teardown_normal(self, tmp_path):
-        """AC-5-1: 正常系 — remove、plist 削除、runner 削除、shr.json 削除"""
+        """AC-5-1: 正常系 — remove、Procfile エントリ削除、runner 削除、shr.json 削除"""
         config_path = self._make_config(tmp_path)
         with (
             patch("ghdag.shr.config.CONFIG_PATH", config_path),
-            patch("ghdag.shr.daemon.is_loaded", return_value=False),
+            patch("ghdag.shr.daemon.is_running", return_value=False),
             patch("ghdag.shr.github.get_removal_token", return_value="rmtok"),
             patch("ghdag.shr.runner.remove_runner") as mock_remove,
-            patch("ghdag.shr.daemon.uninstall_plist") as mock_uninstall,
+            patch("ghdag.shr.daemon.uninstall_procfile_entry") as mock_uninstall,
         ):
             main(["shr", "teardown"])
         mock_remove.assert_called_once()
-        mock_uninstall.assert_called_once()
+        mock_uninstall.assert_called_once_with("shr_runner")
         assert not config_path.exists()
 
     def test_teardown_runner_running(self, tmp_path):
@@ -311,14 +316,14 @@ class TestShrTeardown:
         call_order = []
         with (
             patch("ghdag.shr.config.CONFIG_PATH", config_path),
-            patch("ghdag.shr.daemon.is_loaded", return_value=True),
-            patch("ghdag.shr.daemon.unload", side_effect=lambda p: call_order.append("unload")),
+            patch("ghdag.shr.daemon.is_running", return_value=True),
+            patch("ghdag.shr.daemon.stop", side_effect=lambda p: call_order.append("stop")),
             patch("ghdag.shr.github.get_removal_token", return_value="rmtok"),
             patch("ghdag.shr.runner.remove_runner", side_effect=lambda d, t: call_order.append("remove")),
-            patch("ghdag.shr.daemon.uninstall_plist"),
+            patch("ghdag.shr.daemon.uninstall_procfile_entry"),
         ):
             main(["shr", "teardown"])
-        assert call_order.index("unload") < call_order.index("remove")
+        assert call_order.index("stop") < call_order.index("remove")
 
     def test_teardown_not_initialized(self, tmp_path, capsys):
         """AC-5-3: shr.json なし → エラー、exit code 1"""
@@ -334,7 +339,7 @@ class TestShrTeardown:
         config_path = self._make_config(tmp_path)
         with (
             patch("ghdag.shr.config.CONFIG_PATH", config_path),
-            patch("ghdag.shr.daemon.is_loaded", return_value=False),
+            patch("ghdag.shr.daemon.is_running", return_value=False),
             patch("ghdag.shr.github.get_removal_token", side_effect=RuntimeError("API fail")),
         ):
             with pytest.raises(SystemExit) as exc:
@@ -384,7 +389,7 @@ class TestShrConfig:
             repo="owner/repo",
             labels=["ghdag"],
             runner_dir=str(tmp_path / "runner"),
-            plist_path=str(tmp_path / "com.ghdag.runner.plist"),
+            process_name="shr_runner",
         )
         with patch.object(cfg_module, "CONFIG_PATH", tmp_path / "shr.json"):
             save_config(cfg)
@@ -392,6 +397,7 @@ class TestShrConfig:
 
         assert loaded.repo == "owner/repo"
         assert loaded.labels == ["ghdag"]
+        assert loaded.process_name == "shr_runner"
 
     def test_load_config_missing(self, tmp_path):
         """CONFIG_PATH が存在しない場合 FileNotFoundError"""
@@ -439,49 +445,89 @@ class TestShrGithub:
 
 
 class TestShrDaemon:
-    """ghdag.shr.daemon の単体テスト"""
+    """ghdag.shr.daemon の単体テスト（overmind ベース）"""
 
-    def test_install_plist(self, tmp_path):
-        from ghdag.shr.daemon import install_plist
+    def test_install_procfile_entry(self, tmp_path):
+        from ghdag.shr.daemon import install_procfile_entry
         runner_dir = tmp_path / "runner"
         runner_dir.mkdir()
-        launchagents_dir = tmp_path / "LaunchAgents"
-        launchagents_dir.mkdir()
+        procfile = tmp_path / "Procfile"
+        procfile.write_text("dag_runner: echo hi\n")
 
-        with patch("ghdag.shr.daemon.LAUNCHAGENTS_DIR", launchagents_dir):
-            plist_path = install_plist(runner_dir, "com.ghdag.runner")
-        assert plist_path.exists()
+        with patch("ghdag.shr.daemon.PROCFILE_PATH", procfile):
+            result = install_procfile_entry(runner_dir, "shr_runner")
+        assert result == "shr_runner"
+        content = procfile.read_text()
+        assert "shr_runner:" in content
+        assert "run.sh" in content
 
-    def test_is_loaded_true(self):
-        from ghdag.shr.daemon import is_loaded
+    def test_install_procfile_entry_duplicate(self, tmp_path):
+        from ghdag.shr.daemon import install_procfile_entry
+        runner_dir = tmp_path / "runner"
+        runner_dir.mkdir()
+        procfile = tmp_path / "Procfile"
+        procfile.write_text("shr_runner: echo existing\n")
+
+        with patch("ghdag.shr.daemon.PROCFILE_PATH", procfile):
+            with pytest.raises(RuntimeError, match="既に"):
+                install_procfile_entry(runner_dir, "shr_runner")
+
+    def test_uninstall_procfile_entry(self, tmp_path):
+        from ghdag.shr.daemon import uninstall_procfile_entry
+        procfile = tmp_path / "Procfile"
+        procfile.write_text(
+            "dag_runner: echo hi\n"
+            "\n# Self-hosted runner (ghdag shr)\n"
+            "shr_runner: /path/to/run.sh\n"
+        )
+
+        with patch("ghdag.shr.daemon.PROCFILE_PATH", procfile):
+            uninstall_procfile_entry("shr_runner")
+        content = procfile.read_text()
+        assert "shr_runner" not in content
+        assert "dag_runner" in content
+
+    def test_is_running_true(self):
+        from ghdag.shr.daemon import is_running
         with patch("subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(stdout="PID\tStatus\ncom.ghdag.runner", returncode=0)
-            result = is_loaded("com.ghdag.runner")
-        assert isinstance(result, bool)
+            mock_run.return_value = MagicMock(
+                stdout="shr_runner    running    pid: 12345\n",
+                returncode=0,
+            )
+            result = is_running("shr_runner")
+        assert result is True
 
-    def test_load_calls_launchctl(self, tmp_path):
-        from ghdag.shr.daemon import load
-        plist = tmp_path / "com.ghdag.runner.plist"
-        plist.write_text("dummy")
+    def test_is_running_false(self):
+        from ghdag.shr.daemon import is_running
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(
+                stdout="shr_runner    stopped\n",
+                returncode=0,
+            )
+            result = is_running("shr_runner")
+        assert result is False
+
+    def test_start_calls_overmind(self):
+        from ghdag.shr.daemon import start
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
-            load(plist)
+            start("shr_runner")
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
-        assert "launchctl" in cmd
-        assert "load" in cmd
+        assert "overmind" in cmd
+        assert "restart" in cmd
+        assert "shr_runner" in cmd
 
-    def test_unload_calls_launchctl(self, tmp_path):
-        from ghdag.shr.daemon import unload
-        plist = tmp_path / "com.ghdag.runner.plist"
-        plist.write_text("dummy")
+    def test_stop_calls_overmind(self):
+        from ghdag.shr.daemon import stop
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
-            unload(plist)
+            stop("shr_runner")
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
-        assert "launchctl" in cmd
-        assert "unload" in cmd
+        assert "overmind" in cmd
+        assert "stop" in cmd
+        assert "shr_runner" in cmd
 
 
 class TestShrRunner:

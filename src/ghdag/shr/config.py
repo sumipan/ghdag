@@ -16,7 +16,7 @@ class ShrConfig:
     repo: str
     labels: list[str]
     runner_dir: str
-    plist_path: str
+    process_name: str
 
 
 def load_config() -> ShrConfig:
