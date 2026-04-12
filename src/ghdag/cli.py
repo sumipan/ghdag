@@ -80,6 +80,26 @@ def _build_parser() -> argparse.ArgumentParser:
     version_parser = subparsers.add_parser("version", help="Show version and exit")
     version_parser.set_defaults(func=_cmd_version)
 
+    # ghdag shr
+    shr_parser = subparsers.add_parser("shr", help="Self-hosted runner management")
+    shr_sub = shr_parser.add_subparsers(title="shr commands")
+
+    # ghdag shr init
+    init_p = shr_sub.add_parser("init", help="Download, configure, and register runner")
+    init_p.add_argument("--repo", required=True, help="owner/repo")
+    init_p.add_argument("--labels", required=True, help="Comma-separated labels")
+    init_p.set_defaults(func=_cmd_shr_init)
+
+    # ghdag shr start / stop / status / teardown
+    for name, help_text, func in [
+        ("start", "Start runner via launchd", _cmd_shr_start),
+        ("stop", "Stop runner via launchd", _cmd_shr_stop),
+        ("status", "Show runner status", _cmd_shr_status),
+        ("teardown", "Unregister and clean up runner", _cmd_shr_teardown),
+    ]:
+        p = shr_sub.add_parser(name, help=help_text)
+        p.set_defaults(func=func)
+
     return parser
 
 
@@ -188,3 +208,176 @@ def _cmd_version(args: argparse.Namespace) -> None:
     from ghdag import __version__
 
     print(__version__)
+
+
+# ---------------------------------------------------------------------------
+# shr subcommands
+# ---------------------------------------------------------------------------
+
+def _cmd_shr_init(args: argparse.Namespace) -> None:
+    """ghdag shr init: runner DL → config → launchd 登録 → shr.json 保存。"""
+    import shutil
+    from ghdag.shr import config as shr_config
+    from ghdag.shr import github as shr_github
+    from ghdag.shr import runner as shr_runner
+    from ghdag.shr import daemon as shr_daemon
+    from ghdag.shr.config import ShrConfig
+
+    if shr_config.CONFIG_PATH.exists():
+        print(
+            "エラー: 既に初期化済みです。teardown してから再実行してください。",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    labels = [label.strip() for label in args.labels.split(",")]
+
+    # 1. 登録トークン取得
+    try:
+        token = shr_github.get_registration_token(args.repo)
+    except Exception as exc:
+        print(f"エラー: runner 登録トークンの取得に失敗しました: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    # 2. runner DL・展開
+    runner_dir = shr_config.RUNNER_DIR
+    try:
+        shr_runner.download_runner(runner_dir)
+    except Exception as exc:
+        print(f"エラー: actions-runner のダウンロードに失敗しました: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    # 3. config.sh 実行
+    try:
+        shr_runner.configure_runner(runner_dir, args.repo, token, labels)
+    except Exception as exc:
+        print(f"エラー: runner の設定に失敗しました: {exc}", file=sys.stderr)
+        shutil.rmtree(runner_dir, ignore_errors=True)
+        sys.exit(1)
+
+    # 4. launchd plist 生成・配置
+    try:
+        plist_path = shr_daemon.install_plist(runner_dir, "com.ghdag.runner")
+    except Exception as exc:
+        print(f"エラー: launchd plist の配置に失敗しました: {exc}", file=sys.stderr)
+        shutil.rmtree(runner_dir, ignore_errors=True)
+        sys.exit(1)
+
+    # 5. shr.json 保存
+    cfg = ShrConfig(
+        repo=args.repo,
+        labels=labels,
+        runner_dir=str(runner_dir),
+        plist_path=str(plist_path),
+    )
+    shr_config.save_config(cfg)
+    print(f"runner を初期化しました: {args.repo} (labels: {labels})")
+
+
+def _cmd_shr_start(args: argparse.Namespace) -> None:
+    """ghdag shr start: launchctl load で runner を起動する。"""
+    from pathlib import Path
+    from ghdag.shr import config as shr_config
+    from ghdag.shr import daemon as shr_daemon
+
+    try:
+        cfg = shr_config.load_config()
+    except FileNotFoundError:
+        print("エラー: init を先に実行してください。", file=sys.stderr)
+        sys.exit(1)
+
+    plist_path = Path(cfg.plist_path)
+    if shr_daemon.is_loaded("com.ghdag.runner"):
+        print("既に起動中です。")
+        return
+
+    shr_daemon.load(plist_path)
+    print("runner を起動しました。")
+
+
+def _cmd_shr_stop(args: argparse.Namespace) -> None:
+    """ghdag shr stop: launchctl unload で runner を停止する。"""
+    from pathlib import Path
+    from ghdag.shr import config as shr_config
+    from ghdag.shr import daemon as shr_daemon
+
+    try:
+        cfg = shr_config.load_config()
+    except FileNotFoundError:
+        print("エラー: init を先に実行してください。", file=sys.stderr)
+        sys.exit(1)
+
+    plist_path = Path(cfg.plist_path)
+    if not shr_daemon.is_loaded("com.ghdag.runner"):
+        print("停止済みです。")
+        return
+
+    shr_daemon.unload(plist_path)
+    print("runner を停止しました。")
+
+
+def _cmd_shr_status(args: argparse.Namespace) -> None:
+    """ghdag shr status: ローカル + GitHub の runner 状態を表示する。"""
+    from ghdag.shr import config as shr_config
+    from ghdag.shr import daemon as shr_daemon
+    from ghdag.shr import github as shr_github
+
+    try:
+        cfg = shr_config.load_config()
+    except FileNotFoundError:
+        print("エラー: init を先に実行してください。", file=sys.stderr)
+        sys.exit(1)
+
+    local_status = "起動中" if shr_daemon.is_loaded("com.ghdag.runner") else "停止中"
+
+    try:
+        import socket
+        runner_name = socket.gethostname()
+        github_status = shr_github.get_runner_status(cfg.repo, runner_name)
+    except Exception:
+        github_status = "確認失敗"
+
+    print(f"ローカル: {local_status} / GitHub: {github_status}")
+
+
+def _cmd_shr_teardown(args: argparse.Namespace) -> None:
+    """ghdag shr teardown: 登録解除 → plist 削除 → runner 削除 → shr.json 削除。"""
+    from pathlib import Path
+    from ghdag.shr import config as shr_config
+    from ghdag.shr import daemon as shr_daemon
+    from ghdag.shr import github as shr_github
+    from ghdag.shr import runner as shr_runner
+    import shutil
+
+    try:
+        cfg = shr_config.load_config()
+    except FileNotFoundError:
+        print("エラー: init を先に実行してください。", file=sys.stderr)
+        sys.exit(1)
+
+    runner_dir = Path(cfg.runner_dir)
+    plist_path = Path(cfg.plist_path)
+
+    # 起動中なら先に停止
+    if shr_daemon.is_loaded("com.ghdag.runner"):
+        shr_daemon.unload(plist_path)
+
+    # remove トークン取得（失敗したらローカルファイルは残す）
+    try:
+        remove_token = shr_github.get_removal_token(cfg.repo)
+    except Exception as exc:
+        print(f"エラー: remove トークンの取得に失敗しました: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    # runner 登録解除
+    try:
+        shr_runner.remove_runner(runner_dir, remove_token)
+    except Exception as exc:
+        print(f"エラー: runner の登録解除に失敗しました: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    # plist 削除・runner ディレクトリ削除・shr.json 削除
+    shr_daemon.uninstall_plist(plist_path)
+    shutil.rmtree(runner_dir, ignore_errors=True)
+    shr_config.CONFIG_PATH.unlink(missing_ok=True)
+    print("runner を削除しました。")
