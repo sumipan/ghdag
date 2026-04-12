@@ -1,7 +1,6 @@
 """Tests for ghdag.dag.engine — §5.4 acceptance criteria."""
 
 import signal
-import sys
 import threading
 import time
 from pathlib import Path
