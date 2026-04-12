@@ -650,6 +650,141 @@ polling_interval: 30
 
 
 # ---------------------------------------------------------------------------
+# TC-9: context_hook
+# ---------------------------------------------------------------------------
+
+
+class TestTC9ContextHook:
+    def test_yaml_context_hook_parsed(self, tmp_path):
+        """context_hook が YAML から HandlerConfig にパースされる"""
+        yaml_content = """\
+name: test-pipeline
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    context_hook: "python -m my_hook"
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        configs = load_workflows(tmp_path)
+        assert configs[0].handlers["brushup"].context_hook == "python -m my_hook"
+
+    def test_yaml_no_context_hook_is_none(self, tmp_path):
+        """context_hook 未指定時は None"""
+        yaml_content = """\
+name: test-pipeline
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        configs = load_workflows(tmp_path)
+        assert configs[0].handlers["brushup"].context_hook is None
+
+    def test_context_hook_merges_into_template_context(self):
+        """context_hook の出力が template context にマージされる"""
+        workflow = WorkflowConfig(
+            name="test",
+            triggers=[TriggerConfig(label="pipeline:draft-ready", handler="brushup")],
+            handlers={
+                "brushup": HandlerConfig(
+                    steps=[StepConfig(template="brushup", model="opus")],
+                    context_hook="echo hook",
+                ),
+            },
+        )
+        dispatcher, _, pipeline_state, order_builder = _make_dispatcher(workflow)
+        # Mock _run_context_hook to return extra context
+        dispatcher._run_context_hook = MagicMock(return_value={
+            "pipeline_id": "test-123",
+            "worktree_path": "/tmp/wt",
+        })
+        issue = _make_issue(10, ["pipeline:draft-ready"])
+        handler = workflow.handlers["brushup"]
+        trigger = workflow.triggers[0]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
+
+        dispatcher._run_context_hook.assert_called_once_with("echo hook", 10)
+        ctx = order_builder.build_order.call_args[0][1]
+        assert ctx["pipeline_id"] == "test-123"
+        assert ctx["worktree_path"] == "/tmp/wt"
+        # 基本 context も残っている
+        assert ctx["issue_number"] == "10"
+
+    def test_context_hook_not_called_when_none(self):
+        """context_hook が None のとき _run_context_hook は呼ばれない"""
+        workflow = _make_extended_workflow()
+        dispatcher, _, _, _ = _make_dispatcher(workflow)
+        dispatcher._run_context_hook = MagicMock()
+        issue = _make_issue(10, ["pipeline:draft-ready"])
+        handler = workflow.handlers["brushup"]
+        trigger = workflow.triggers[0]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
+
+        dispatcher._run_context_hook.assert_not_called()
+
+    def test_run_context_hook_parses_json(self):
+        """_run_context_hook が stdout JSON をパースして dict を返す"""
+        workflow = _make_extended_workflow()
+        dispatcher, _, _, _ = _make_dispatcher(workflow)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = '{"key": "value", "num": 42}'
+        with patch("ghdag.workflow.dispatcher.subprocess.run", return_value=mock_result):
+            result = dispatcher._run_context_hook("echo test", 10)
+
+        assert result == {"key": "value", "num": "42"}
+
+    def test_run_context_hook_returns_empty_on_failure(self):
+        """_run_context_hook が失敗時に空 dict を返す"""
+        workflow = _make_extended_workflow()
+        dispatcher, _, _, _ = _make_dispatcher(workflow)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = "error"
+        with patch("ghdag.workflow.dispatcher.subprocess.run", return_value=mock_result):
+            result = dispatcher._run_context_hook("bad-cmd", 10)
+
+        assert result == {}
+
+    def test_run_context_hook_raises_on_invalid_json(self):
+        """_run_context_hook が不正 JSON で ValueError を投げる"""
+        workflow = _make_extended_workflow()
+        dispatcher, _, _, _ = _make_dispatcher(workflow)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "not json"
+        with patch("ghdag.workflow.dispatcher.subprocess.run", return_value=mock_result):
+            with pytest.raises(ValueError, match="JSON"):
+                dispatcher._run_context_hook("echo test", 10)
+
+    def test_run_context_hook_returns_empty_on_empty_stdout(self):
+        """_run_context_hook が空 stdout で空 dict を返す"""
+        workflow = _make_extended_workflow()
+        dispatcher, _, _, _ = _make_dispatcher(workflow)
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        with patch("ghdag.workflow.dispatcher.subprocess.run", return_value=mock_result):
+            result = dispatcher._run_context_hook("echo test", 10)
+
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
 # GitHubIssueClient tests
 # ---------------------------------------------------------------------------
 

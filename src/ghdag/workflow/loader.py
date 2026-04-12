@@ -121,8 +121,13 @@ def _parse(data: dict) -> WorkflowConfig:
                 issue_context=on_trigger_data.get("issue_context", False)
             )
 
+        context_hook = h.get("context_hook")
+
         if handler_type == "reset":
-            handlers[name] = HandlerConfig(steps=[], on_trigger=on_trigger, type="reset")
+            handlers[name] = HandlerConfig(
+                steps=[], on_trigger=on_trigger, type="reset",
+                context_hook=context_hook,
+            )
             continue
 
         steps = []
@@ -136,7 +141,10 @@ def _parse(data: dict) -> WorkflowConfig:
                 )
             )
 
-        handlers[name] = HandlerConfig(steps=steps, on_trigger=on_trigger, type=handler_type)
+        handlers[name] = HandlerConfig(
+            steps=steps, on_trigger=on_trigger, type=handler_type,
+            context_hook=context_hook,
+        )
 
     return WorkflowConfig(
         name=data["name"],
