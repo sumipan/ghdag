@@ -1,0 +1,23 @@
+"""ghdag.shr — Self-hosted runner management package."""
+
+from ghdag.shr.config import ShrConfig, load_config, save_config
+from ghdag.shr.daemon import install_plist, uninstall_plist, load, unload, is_loaded
+from ghdag.shr.github import get_registration_token, get_removal_token, get_runner_status
+from ghdag.shr.runner import download_runner, configure_runner, remove_runner
+
+__all__ = [
+    "ShrConfig",
+    "load_config",
+    "save_config",
+    "install_plist",
+    "uninstall_plist",
+    "load",
+    "unload",
+    "is_loaded",
+    "get_registration_token",
+    "get_removal_token",
+    "get_runner_status",
+    "download_runner",
+    "configure_runner",
+    "remove_runner",
+]
