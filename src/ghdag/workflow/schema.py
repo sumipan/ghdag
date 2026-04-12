@@ -23,6 +23,7 @@ class HandlerConfig:
     steps: list[StepConfig]
     on_trigger: OnTriggerConfig | None = None
     type: str | None = None  # "reset" 等の特殊ハンドラー種別
+    context_hook: str | None = None  # context 生成カスタムスクリプト
 
 
 @dataclass

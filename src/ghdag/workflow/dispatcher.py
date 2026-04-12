@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import shlex
+import subprocess
 import time
 import uuid
 from datetime import datetime, timezone
@@ -119,6 +122,13 @@ class WorkflowDispatcher:
         if handler.on_trigger and handler.on_trigger.issue_context:
             self._write_design_md(issue)
 
+        # 4b. context_hook 実行
+        hook_context: dict[str, str] = {}
+        if handler.context_hook:
+            hook_context = self._run_context_hook(
+                handler.context_hook, issue_number
+            )
+
         # 5. 多段 DAG 構築
         ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         exec_lines: list[str] = [f"# idempotency: {idempotency_key}"]
@@ -144,6 +154,7 @@ class WorkflowDispatcher:
                 "result_uuid": result_uuid,
                 "result_filename": result_filename,
             }
+            context.update(hook_context)
 
             # 依存先の result_filename を context に追加
             for dep_id in step.depends:
@@ -193,13 +204,22 @@ class WorkflowDispatcher:
         while max_iterations is None or count < max_iterations:
             matches = self.poll_once()
             for match in matches:
-                self.dispatch(
-                    match["_issue_data"],
-                    match["_workflow"],
-                    match["_handler"],
-                    trigger=match["_trigger"],
-                    trigger_rank=match["_trigger_rank"],
-                )
+                try:
+                    self.dispatch(
+                        match["_issue_data"],
+                        match["_workflow"],
+                        match["_handler"],
+                        trigger=match["_trigger"],
+                        trigger_rank=match["_trigger_rank"],
+                    )
+                except Exception:
+                    issue_number = match["_issue_data"].get("number", "?")
+                    handler_name = match.get("handler", "?")
+                    logger.exception(
+                        "dispatch failed: issue #%s handler=%s — skipping",
+                        issue_number,
+                        handler_name,
+                    )
             count += 1
             if max_iterations is None or count < max_iterations:
                 time.sleep(polling_interval)
@@ -262,3 +282,47 @@ class WorkflowDispatcher:
         for label in issue_label_names:
             if label.startswith("pipeline:"):
                 self._github.remove_label(issue_number, label)
+
+    def _run_context_hook(
+        self, hook_cmd: str, issue_number: int, *, timeout: int = 30
+    ) -> dict[str, str]:
+        """context_hook コマンドを実行し、stdout の JSON を dict として返す。
+
+        Args:
+            hook_cmd: シェルコマンド文字列（shlex.split で分割）
+            issue_number: Issue 番号（引数として渡す）
+            timeout: タイムアウト秒数
+        Returns:
+            hook の stdout を JSON パースした dict（全値を str に変換）
+        Raises:
+            subprocess.TimeoutExpired: hook がタイムアウト
+            ValueError: stdout が有効な JSON でない
+        """
+        cmd_parts = [*shlex.split(hook_cmd), str(issue_number)]
+        logger.info("Running context_hook: %s", cmd_parts)
+        result = subprocess.run(
+            cmd_parts,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "context_hook failed (rc=%d): %s",
+                result.returncode,
+                result.stderr.strip(),
+            )
+            return {}
+
+        stdout = result.stdout.strip()
+        if not stdout:
+            return {}
+
+        try:
+            data = json.loads(stdout)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"context_hook の stdout が有効な JSON ではありません: {e}"
+            ) from e
+
+        return {str(k): str(v) for k, v in data.items()}
