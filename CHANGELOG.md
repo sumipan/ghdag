@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.5.0] - 2026-04-13
+
+### Added
+
+- `ghdag shr` subcommand for self-hosted runner management (`init`, `status`, `remove`)
+- Daemon management via overmind integration (migrated from launchd)
+- `ghdag watch --once` flag for single-shot event-driven execution via GitHub Actions webhooks
+
 ## [0.4.0] - 2026-04-12
 
 ### Added
