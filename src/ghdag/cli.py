@@ -74,7 +74,47 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Output path for exec.md (default: exec.md)",
     )
+    watch_parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Poll once and exit (one-shot mode for event-driven triggers)",
+    )
     watch_parser.set_defaults(func=_cmd_watch)
+
+    # ghdag ui
+    ui_parser = subparsers.add_parser("ui", help="Launch Web UI dashboard")
+    ui_parser.add_argument(
+        "--repo-root",
+        default=".",
+        metavar="PATH",
+        help="Repository root containing queue/exec.md (default: .)",
+    )
+    ui_parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Bind address (default: 127.0.0.1)",
+    )
+    ui_parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        help="Bind port (default: 8080)",
+    )
+    ui_parser.add_argument(
+        "--interval",
+        type=float,
+        default=3.0,
+        metavar="SEC",
+        help="SSE poll interval in seconds (default: 3.0)",
+    )
+    ui_parser.add_argument(
+        "--max-visible",
+        type=int,
+        default=30,
+        metavar="N",
+        help="Maximum number of tasks to display (default: 30)",
+    )
+    ui_parser.set_defaults(func=_cmd_ui)
 
     # ghdag version
     version_parser = subparsers.add_parser("version", help="Show version and exit")
@@ -200,7 +240,28 @@ def _cmd_watch(args: argparse.Namespace) -> None:
         pipeline_state=pipeline_state,
         order_builder=order_builder,
     )
-    dispatcher.run()
+    dispatcher.run(max_iterations=1 if args.once else None)
+
+
+def _cmd_ui(args: argparse.Namespace) -> None:
+    """ghdag ui: Web UI ダッシュボードを起動する。"""
+    from pathlib import Path
+
+    from ghdag.ui.server import run_server
+
+    repo_root = Path(args.repo_root).resolve()
+    exec_md = repo_root / "queue" / "exec.md"
+    if not exec_md.exists():
+        print(f"error: queue/exec.md not found in {repo_root}", file=sys.stderr)
+        sys.exit(1)
+
+    run_server(
+        repo_root=repo_root,
+        host=args.host,
+        port=args.port,
+        poll_interval=args.interval,
+        max_visible=args.max_visible,
+    )
 
 
 def _cmd_version(args: argparse.Namespace) -> None:

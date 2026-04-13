@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ghdag Dashboard</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --ok: #3fb950;
+  --fail: #f85149;
+  --running: #d29922;
+  --pending: #8b949e;
+  --rejected: #bc8cff;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  padding: 16px;
+}
+h1 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+h1 .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  display: inline-block;
+}
+h1 .dot.disconnected { background: var(--fail); }
+.meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+thead th {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+}
+tbody td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+tbody tr:hover { background: var(--surface); }
+.col-tree { white-space: pre; font-family: "SF Mono", "Fira Code", monospace; font-size: 0.75rem; }
+.col-state { white-space: nowrap; }
+.col-engine { white-space: nowrap; color: var(--text-muted); }
+.col-uuid { font-family: "SF Mono", monospace; font-size: 0.6875rem; color: var(--text-muted); }
+.col-label { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+.badge-ok        { background: rgba(63,185,80,0.15); color: var(--ok); }
+.badge-fail      { background: rgba(248,81,73,0.15); color: var(--fail); }
+.badge-running   { background: rgba(210,153,34,0.15); color: var(--running); }
+.badge-pending   { background: rgba(139,148,158,0.1); color: var(--pending); }
+.badge-rejected  { background: rgba(188,140,255,0.15); color: var(--rejected); }
+.badge-empty     { background: rgba(139,148,158,0.1); color: var(--pending); }
+.badge-unknown   { background: rgba(139,148,158,0.1); color: var(--pending); }
+
+.empty-msg {
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--text-muted);
+}
+
+/* Responsive: hide UUID and label columns on small screens */
+@media (max-width: 768px) {
+  .col-uuid, .hide-mobile { display: none; }
+  table { font-size: 0.75rem; }
+  .col-tree { font-size: 0.6875rem; }
+  body { padding: 8px; }
+  h1 { font-size: 1rem; }
+}
+@media (max-width: 480px) {
+  .col-engine { display: none; }
+}
+</style>
+</head>
+<body>
+
+<h1>
+  <span class="dot" id="status-dot"></span>
+  ghdag Dashboard
+</h1>
+<div class="meta" id="meta">Connecting...</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>時刻/ツリー</th>
+      <th>状態</th>
+      <th class="hide-mobile">エンジン/モデル</th>
+      <th class="hide-mobile">UUID</th>
+      <th>ラベル</th>
+    </tr>
+  </thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<div class="empty-msg" id="empty-msg" style="display:none">
+  タスクがありません
+</div>
+
+<script>
+(function() {
+  const tbody = document.getElementById('tbody');
+  const meta = document.getElementById('meta');
+  const dot = document.getElementById('status-dot');
+  const emptyMsg = document.getElementById('empty-msg');
+  let rowCount = 0;
+
+  function badgeClass(state) {
+    if (state.includes('成功')) return 'badge-ok';
+    if (state.includes('失敗')) return 'badge-fail';
+    if (state.includes('REJECTED')) return 'badge-rejected';
+    if (state.includes('EMPTY')) return 'badge-empty';
+    if (state === '実行中') return 'badge-running';
+    if (state.includes('待機')) return 'badge-pending';
+    return 'badge-unknown';
+  }
+
+  function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function renderRows(rows) {
+    rowCount = rows.length;
+    if (rowCount === 0) {
+      tbody.innerHTML = '';
+      emptyMsg.style.display = 'block';
+      return;
+    }
+    emptyMsg.style.display = 'none';
+    const html = rows.map(function(r) {
+      return '<tr>'
+        + '<td class="col-tree">' + escapeHtml(r.tree_ts) + '</td>'
+        + '<td class="col-state"><span class="badge ' + badgeClass(r.state) + '">' + escapeHtml(r.state) + '</span></td>'
+        + '<td class="col-engine hide-mobile">' + escapeHtml(r.engine_model) + '</td>'
+        + '<td class="col-uuid hide-mobile">' + escapeHtml(r.uuid) + '</td>'
+        + '<td class="col-label">' + escapeHtml(r.cmd_preview) + '</td>'
+        + '</tr>';
+    }).join('');
+    tbody.innerHTML = html;
+  }
+
+  function connect() {
+    const es = new EventSource('/api/stream');
+    es.onopen = function() {
+      dot.classList.remove('disconnected');
+      meta.textContent = 'Connected — streaming updates';
+    };
+    es.onmessage = function(e) {
+      try {
+        const rows = JSON.parse(e.data);
+        renderRows(rows);
+        const now = new Date().toLocaleTimeString('ja-JP');
+        meta.textContent = 'Updated ' + now + ' — ' + rowCount + ' tasks';
+      } catch (err) {
+        console.error('Parse error:', err);
+      }
+    };
+    es.onerror = function() {
+      dot.classList.add('disconnected');
+      meta.textContent = 'Disconnected — retrying...';
+      es.close();
+      setTimeout(connect, 3000);
+    };
+  }
+
+  // Initial fetch then switch to SSE
+  fetch('/api/rows')
+    .then(function(r) { return r.json(); })
+    .then(renderRows)
+    .catch(function() {});
+  connect();
+})();
+</script>
+</body>
+</html>
