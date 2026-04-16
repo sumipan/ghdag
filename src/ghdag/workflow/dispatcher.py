@@ -299,10 +299,11 @@ class WorkflowDispatcher:
             subprocess.TimeoutExpired: hook がタイムアウト
             ValueError: stdout が有効な JSON でない
         """
-        cmd_parts = [*shlex.split(hook_cmd), str(issue_number)]
-        logger.info("Running context_hook: %s", cmd_parts)
+        full_cmd = f"{hook_cmd} {shlex.quote(str(issue_number))}"
+        logger.info("Running context_hook: %s", full_cmd)
         result = subprocess.run(
-            cmd_parts,
+            full_cmd,
+            shell=True,
             capture_output=True,
             text=True,
             timeout=timeout,
