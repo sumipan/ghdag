@@ -7,6 +7,7 @@ import logging
 import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from pathlib import Path
 from typing import Optional
 
@@ -46,6 +47,12 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         logger.debug(format, *args)
 
+    def finish(self):
+        try:
+            super().finish()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def do_GET(self):
         if self.path == "/" or self.path == "/index.html":
             self._serve_html()
@@ -55,6 +62,56 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_sse()
         else:
             self.send_error(404)
+
+    def do_POST(self):
+        if self.path == "/api/retry":
+            self._handle_retry()
+        else:
+            self.send_error(404)
+
+    def _send_json_response(self, status: int, data: dict) -> None:
+        """Send a JSON response, ignoring BrokenPipeError."""
+        try:
+            resp = json.dumps(data).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(resp)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(resp)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _handle_retry(self):
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+        except (BrokenPipeError, ConnectionResetError):
+            return
+        try:
+            data = json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            self._send_json_response(400, {"ok": False, "error": "Invalid JSON"})
+            return
+
+        uuid = data.get("uuid", "").strip()
+        if not uuid or not all(c in "0123456789abcdefABCDEF-" for c in uuid):
+            self._send_json_response(400, {"ok": False, "error": "Invalid UUID"})
+            return
+
+        done_file = self.repo_root / "exec-done" / uuid
+        if not done_file.is_file():
+            self._send_json_response(404, {"ok": False, "error": "No exec-done marker found"})
+            return
+
+        try:
+            done_file.unlink()
+            logger.info("Retry: removed exec-done/%s", uuid)
+        except OSError as e:
+            self._send_json_response(500, {"ok": False, "error": str(e)})
+            return
+
+        self._send_json_response(200, {"ok": True})
 
     def _serve_html(self):
         body = _read_static("index.html")
@@ -108,7 +165,19 @@ def run_server(
     _Handler.poll_interval = poll_interval
     _Handler.max_visible = max_visible
 
-    server = HTTPServer((host, port), _Handler)
+    class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
+        daemon_threads = True
+
+        def handle_error(self, request, client_address):
+            """Suppress BrokenPipeError/ConnectionResetError from logs."""
+            import sys
+            exc = sys.exc_info()[1]
+            if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+                logger.debug("Connection closed by client %s", client_address)
+                return
+            super().handle_error(request, client_address)
+
+    server = _ThreadingHTTPServer((host, port), _Handler)
     logger.info("ghdag ui: http://%s:%d (repo: %s)", host, port, repo_root)
     print(f"ghdag ui: http://{host}:{port}  (repo: {repo_root})")
     try:

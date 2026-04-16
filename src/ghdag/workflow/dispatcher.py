@@ -8,8 +8,9 @@ import shlex
 import subprocess
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import PipelineState
@@ -130,7 +131,7 @@ class WorkflowDispatcher:
             )
 
         # 5. 多段 DAG 構築
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        ts = datetime.now(tz=ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d%H%M%S")
         exec_lines: list[str] = [f"# idempotency: {idempotency_key}"]
         step_uuid_map: dict[str, str] = {}  # step_id → order_uuid
         step_result_uuid_map: dict[str, str] = {}  # step_id → result_uuid

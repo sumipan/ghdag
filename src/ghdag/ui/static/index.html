@@ -89,6 +89,28 @@ tbody tr:hover { background: var(--surface); }
 .badge-empty     { background: rgba(139,148,158,0.1); color: var(--pending); }
 .badge-unknown   { background: rgba(139,148,158,0.1); color: var(--pending); }
 
+.btn-retry {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-retry:hover {
+  background: rgba(248,81,73,0.15);
+  color: var(--fail);
+  border-color: var(--fail);
+}
+.btn-retry:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .empty-msg {
   text-align: center;
   padding: 48px 16px;
@@ -124,6 +146,7 @@ tbody tr:hover { background: var(--surface); }
       <th class="hide-mobile">エンジン/モデル</th>
       <th class="hide-mobile">UUID</th>
       <th>ラベル</th>
+      <th></th>
     </tr>
   </thead>
   <tbody id="tbody"></tbody>
@@ -140,6 +163,7 @@ tbody tr:hover { background: var(--surface); }
   const dot = document.getElementById('status-dot');
   const emptyMsg = document.getElementById('empty-msg');
   let rowCount = 0;
+  const retryingUuids = {};  // uuid -> 'pending' | 'done' | 'error'
 
   function badgeClass(state) {
     if (state.includes('成功')) return 'badge-ok';
@@ -157,7 +181,40 @@ tbody tr:hover { background: var(--surface); }
     return d.innerHTML;
   }
 
+  function isRetryable(state) {
+    return state.includes('失敗') || state.includes('REJECTED') || state.includes('EMPTY') || state.includes('その他');
+  }
+
+  function retryTask(uuid, btn) {
+    btn.disabled = true;
+    btn.textContent = '...';
+    retryingUuids[uuid] = 'pending';
+    fetch('/api/retry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uuid: uuid })
+    }).then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.ok) {
+          retryingUuids[uuid] = 'done';
+          setTimeout(function() { delete retryingUuids[uuid]; }, 5000);
+        } else {
+          retryingUuids[uuid] = 'error';
+          setTimeout(function() { delete retryingUuids[uuid]; }, 5000);
+        }
+        renderCurrentRows();
+      })
+      .catch(function() {
+        retryingUuids[uuid] = 'error';
+        setTimeout(function() { delete retryingUuids[uuid]; }, 5000);
+        renderCurrentRows();
+      });
+  }
+
+  var lastRows = [];
+
   function renderRows(rows) {
+    lastRows = rows;
     rowCount = rows.length;
     if (rowCount === 0) {
       tbody.innerHTML = '';
@@ -166,16 +223,34 @@ tbody tr:hover { background: var(--surface); }
     }
     emptyMsg.style.display = 'none';
     const html = rows.map(function(r) {
+      var retryBtn = '';
+      var rs = retryingUuids[r.uuid];
+      if (rs === 'pending') {
+        retryBtn = '<button class="btn-retry" disabled>...</button>';
+      } else if (rs === 'done') {
+        retryBtn = '<span class="btn-retry" style="color:var(--ok)">done</span>';
+      } else if (rs === 'error') {
+        retryBtn = '<button class="btn-retry" onclick="window._retry(\'' + escapeHtml(r.uuid) + '\', this)">retry</button>';
+      } else if (isRetryable(r.state)) {
+        retryBtn = '<button class="btn-retry" onclick="window._retry(\'' + escapeHtml(r.uuid) + '\', this)">retry</button>';
+      }
       return '<tr>'
         + '<td class="col-tree">' + escapeHtml(r.tree_ts) + '</td>'
         + '<td class="col-state"><span class="badge ' + badgeClass(r.state) + '">' + escapeHtml(r.state) + '</span></td>'
         + '<td class="col-engine hide-mobile">' + escapeHtml(r.engine_model) + '</td>'
         + '<td class="col-uuid hide-mobile">' + escapeHtml(r.uuid) + '</td>'
         + '<td class="col-label">' + escapeHtml(r.cmd_preview) + '</td>'
+        + '<td>' + retryBtn + '</td>'
         + '</tr>';
     }).join('');
     tbody.innerHTML = html;
   }
+
+  function renderCurrentRows() {
+    if (lastRows.length > 0) renderRows(lastRows);
+  }
+
+  window._retry = retryTask;
 
   function connect() {
     const es = new EventSource('/api/stream');

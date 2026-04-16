@@ -9,6 +9,51 @@ import subprocess
 class GitHubIssueClient:
     """gh CLI ラッパー。gh CLI が認証済みであることを前提とする。"""
 
+    def get_issue(self, number: int) -> dict:
+        """gh issue view {number} --json ... を実行し Issue dict を返す。
+
+        Args:
+            number: Issue 番号
+        Returns:
+            Issue dict (number, title, body, labels, url)
+        Raises:
+            subprocess.CalledProcessError: gh CLI 失敗時
+        """
+        result = subprocess.run(
+            [
+                "gh", "issue", "view", str(number),
+                "--json", "number,title,body,labels,url",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return json.loads(result.stdout)
+
+    def dispatch_event(self, event_type: str, payload: dict | None = None) -> None:
+        """repository_dispatch イベントを発火する。
+
+        Args:
+            event_type: イベントタイプ文字列
+            payload: client_payload として送信する dict
+        Raises:
+            subprocess.CalledProcessError: gh CLI 失敗時
+        """
+        body: dict = {"event_type": event_type}
+        if payload:
+            body["client_payload"] = payload
+        subprocess.run(
+            [
+                "gh", "api", "repos/:owner/:repo/dispatches",
+                "--method", "POST",
+                "--input", "-",
+            ],
+            input=json.dumps(body),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
     def list_issues(self, label: str, state: str = "open") -> list[dict]:
         """gh issue list --label <label> --json number,title,body,labels,url を実行。
 

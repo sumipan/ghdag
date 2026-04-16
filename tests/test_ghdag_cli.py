@@ -1,4 +1,4 @@
-"""Tests for ghdag.cli — AC1 〜 AC8.
+"""Tests for ghdag.cli — AC1 〜 AC11.
 
 テスト方針:
 - main(argv=[...]) のパース検証
@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -63,7 +64,7 @@ class TestVersion:
 
         main(["version"])
         captured = capsys.readouterr()
-        assert captured.out.strip() == "0.3.0"
+        assert captured.out.strip() == "0.7.0"
 
 
 # ---------------------------------------------------------------------------
@@ -342,3 +343,252 @@ class TestLogLevel:
     def test_default_sets_info(self, tmp_path):
         self._run_with_dummy_exec([], tmp_path)
         assert logging.getLogger().level == logging.INFO
+
+
+# ---------------------------------------------------------------------------
+# AC9: ghdag trigger 正常系
+# ---------------------------------------------------------------------------
+
+
+class TestTriggerNormal:
+    def _write_workflow_yaml(self, workflows_dir: Path) -> None:
+        yaml_content = """\
+name: test-pipeline
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+  - label: "pipeline:develop-ready"
+    handler: impl
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+  impl:
+    steps:
+      - id: p1
+        template: p1-implement
+        model: claude-sonnet-4-6
+"""
+        (workflows_dir / "test.yml").write_text(yaml_content, encoding="utf-8")
+
+    def test_trigger_calls_dispatch(self, tmp_path):
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        self._write_workflow_yaml(workflows_dir)
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+
+        mock_dispatch_result = MagicMock()
+        mock_dispatch_result.status = "dispatched"
+        mock_dispatch_result.reason = ""
+        mock_dispatch_result.exec_lines = ["# idempotency: ...", "uuid: cat ..."]
+        mock_dispatcher_cls = MagicMock()
+        mock_dispatcher_cls.return_value.dispatch.return_value = mock_dispatch_result
+        mock_github_cls = MagicMock()
+        mock_github_cls.return_value.get_issue.return_value = {
+            "number": 42,
+            "title": "Test",
+            "body": "body",
+            "labels": [],
+            "url": "https://example.com",
+        }
+
+        with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
+             patch("ghdag.workflow.github.GitHubIssueClient", mock_github_cls), \
+             patch("ghdag.pipeline.state.PipelineState"), \
+             patch("ghdag.pipeline.order.TemplateOrderBuilder"):
+            from ghdag.cli import main
+            main([
+                "trigger", "42",
+                "--handler", "brushup",
+                "--workflows-dir", str(workflows_dir),
+                "--exec-md", str(exec_md),
+            ])
+
+        mock_dispatcher_cls.return_value.dispatch.assert_called_once()
+        call_args = mock_dispatcher_cls.return_value.dispatch.call_args
+        assert call_args[0][0]["number"] == 42
+
+    def test_trigger_with_workflow_option(self, tmp_path):
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        self._write_workflow_yaml(workflows_dir)
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+
+        mock_dispatch_result = MagicMock()
+        mock_dispatch_result.status = "dispatched"
+        mock_dispatch_result.reason = ""
+        mock_dispatch_result.exec_lines = ["# idempotency: ..."]
+        mock_dispatcher_cls = MagicMock()
+        mock_dispatcher_cls.return_value.dispatch.return_value = mock_dispatch_result
+        mock_github_cls = MagicMock()
+        mock_github_cls.return_value.get_issue.return_value = {
+            "number": 10, "title": "T", "body": "", "labels": [], "url": "",
+        }
+
+        with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
+             patch("ghdag.workflow.github.GitHubIssueClient", mock_github_cls), \
+             patch("ghdag.pipeline.state.PipelineState"), \
+             patch("ghdag.pipeline.order.TemplateOrderBuilder"):
+            from ghdag.cli import main
+            main([
+                "trigger", "10",
+                "--handler", "impl",
+                "--workflow", "test-pipeline",
+                "--workflows-dir", str(workflows_dir),
+                "--exec-md", str(exec_md),
+            ])
+
+        mock_dispatcher_cls.return_value.dispatch.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# AC10: ghdag trigger 異常系
+# ---------------------------------------------------------------------------
+
+
+class TestTriggerError:
+    def _write_workflow_yaml(self, workflows_dir: Path) -> None:
+        yaml_content = """\
+name: test-pipeline
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+"""
+        (workflows_dir / "test.yml").write_text(yaml_content, encoding="utf-8")
+
+    def test_trigger_no_args_exits_2(self):
+        from ghdag.cli import main
+        with pytest.raises(SystemExit) as exc:
+            main(["trigger"])
+        assert exc.value.code == 2
+
+    def test_trigger_missing_handler_exits_2(self):
+        from ghdag.cli import main
+        with pytest.raises(SystemExit) as exc:
+            main(["trigger", "42"])
+        assert exc.value.code == 2
+
+    def test_trigger_nonexistent_dir_exits_1(self, capsys):
+        from ghdag.cli import main
+        with pytest.raises(SystemExit) as exc:
+            main([
+                "trigger", "42",
+                "--handler", "brushup",
+                "--workflows-dir", "nonexistent/",
+            ])
+        assert exc.value.code == 1
+        assert "not found" in capsys.readouterr().err
+
+    def test_trigger_unknown_handler_exits_1(self, tmp_path, capsys):
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        self._write_workflow_yaml(workflows_dir)
+
+        from ghdag.cli import main
+        with pytest.raises(SystemExit) as exc:
+            main([
+                "trigger", "42",
+                "--handler", "nonexistent",
+                "--workflows-dir", str(workflows_dir),
+            ])
+        assert exc.value.code == 1
+        assert "not found" in capsys.readouterr().err
+
+    def test_trigger_unknown_workflow_exits_1(self, tmp_path, capsys):
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        self._write_workflow_yaml(workflows_dir)
+
+        from ghdag.cli import main
+        with pytest.raises(SystemExit) as exc:
+            main([
+                "trigger", "42",
+                "--handler", "brushup",
+                "--workflow", "wrong-name",
+                "--workflows-dir", str(workflows_dir),
+            ])
+        assert exc.value.code == 1
+        assert "not found" in capsys.readouterr().err
+
+    def test_trigger_skipped_exits_1(self, tmp_path, capsys):
+        """dispatch が skipped を返した場合は exit 1"""
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        self._write_workflow_yaml(workflows_dir)
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+
+        mock_dispatch_result = MagicMock()
+        mock_dispatch_result.status = "skipped"
+        mock_dispatch_result.reason = "already dispatched"
+        mock_dispatch_result.exec_lines = []
+        mock_dispatcher_cls = MagicMock()
+        mock_dispatcher_cls.return_value.dispatch.return_value = mock_dispatch_result
+        mock_github_cls = MagicMock()
+        mock_github_cls.return_value.get_issue.return_value = {
+            "number": 42, "title": "T", "body": "", "labels": [], "url": "",
+        }
+
+        with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
+             patch("ghdag.workflow.github.GitHubIssueClient", mock_github_cls), \
+             patch("ghdag.pipeline.state.PipelineState"), \
+             patch("ghdag.pipeline.order.TemplateOrderBuilder"):
+            from ghdag.cli import main
+            with pytest.raises(SystemExit) as exc:
+                main([
+                    "trigger", "42",
+                    "--handler", "brushup",
+                    "--workflows-dir", str(workflows_dir),
+                    "--exec-md", str(exec_md),
+                ])
+            assert exc.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# AC11: GitHubIssueClient.get_issue / dispatch_event
+# ---------------------------------------------------------------------------
+
+
+class TestGitHubIssueClientExtended:
+    def test_get_issue_calls_subprocess(self):
+        from ghdag.workflow.github import GitHubIssueClient
+        client = GitHubIssueClient()
+        mock_result = MagicMock()
+        mock_result.stdout = json.dumps({
+            "number": 42, "title": "Test", "body": "body",
+            "labels": [{"name": "bug"}], "url": "https://example.com",
+        })
+        with patch("subprocess.run", return_value=mock_result) as mock_run:
+            result = client.get_issue(42)
+        mock_run.assert_called_once_with(
+            ["gh", "issue", "view", "42", "--json", "number,title,body,labels,url"],
+            capture_output=True, text=True, check=True,
+        )
+        assert result["number"] == 42
+
+    def test_dispatch_event_calls_subprocess(self):
+        from ghdag.workflow.github import GitHubIssueClient
+        client = GitHubIssueClient()
+        with patch("subprocess.run") as mock_run:
+            client.dispatch_event("pipeline-trigger", {"issue": 42})
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args
+        assert "repos/:owner/:repo/dispatches" in call_args[0][0]
+        assert call_args[1]["input"] is not None
+
+    def test_dispatch_event_without_payload(self):
+        from ghdag.workflow.github import GitHubIssueClient
+        client = GitHubIssueClient()
+        with patch("subprocess.run") as mock_run:
+            client.dispatch_event("simple-event")
+        input_data = json.loads(mock_run.call_args[1]["input"])
+        assert input_data["event_type"] == "simple-event"
+        assert "client_payload" not in input_data
