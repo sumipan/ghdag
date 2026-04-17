@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
@@ -154,8 +153,6 @@ class TestCallWithConfig:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
         """YAML に定義されていないエンジン/モデルで call() → EngineModelError"""
-        from ghdag.llm import EngineModelError, call
-
         config = tmp_path / "llm-models.yml"
         config.write_text(
             "engines:\n  claude:\n    - claude-opus-4-6\n",
