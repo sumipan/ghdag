@@ -133,26 +133,26 @@ class WorkflowDispatcher:
         # 5. 多段 DAG 構築
         ts = datetime.now(tz=ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d%H%M%S")
         exec_lines: list[str] = [f"# idempotency: {idempotency_key}"]
-        step_uuid_map: dict[str, str] = {}  # step_id → order_uuid
-        step_result_uuid_map: dict[str, str] = {}  # step_id → result_uuid
+        step_uuid_map: dict[str, str] = {}  # step_id → task uuid（order / result 共通）
+        step_result_uuid_map: dict[str, str] = {}  # step_id → task uuid（依存解決用）
 
         for step in handler.steps:
-            order_uuid = str(uuid.uuid4())
-            result_uuid = str(uuid.uuid4())
+            # order / result / exec 行プレフィックスは同一 UUID に揃える（queue 慣習・DagEngine の追跡と整合）
+            step_uuid = str(uuid.uuid4())
 
-            step_id = step.id if step.id else order_uuid
-            step_uuid_map[step_id] = order_uuid
-            step_result_uuid_map[step_id] = result_uuid
+            step_id = step.id if step.id else step_uuid
+            step_uuid_map[step_id] = step_uuid
+            step_result_uuid_map[step_id] = step_uuid
 
-            result_filename = f"{ts}-claude-result-{result_uuid}.md"
+            result_filename = f"{ts}-claude-result-{step_uuid}.md"
 
             context: dict[str, str] = {
                 "issue_number": str(issue_number),
                 "workflow_name": workflow.name,
                 "handler_name": handler_name,
                 "ts": ts,
-                "order_uuid": order_uuid,
-                "result_uuid": result_uuid,
+                "order_uuid": step_uuid,
+                "result_uuid": step_uuid,
                 "result_filename": result_filename,
             }
             context.update(hook_context)
@@ -167,7 +167,7 @@ class WorkflowDispatcher:
 
             order_content = self._order_builder.build_order(step.template, context)
             order_filename = self._state.write_order_file(
-                ts, order_uuid, order_content, self._queue_dir
+                ts, step_uuid, order_content, self._queue_dir
             )
 
             # depends 解決
@@ -179,11 +179,11 @@ class WorkflowDispatcher:
             dep_str = f"[depends:{','.join(dep_uuids)}]" if dep_uuids else ""
 
             cmd = (
-                f"{order_uuid}{dep_str}: cat {self._queue_dir}/{order_filename}"
+                f"{step_uuid}{dep_str}: cat {self._queue_dir}/{order_filename}"
                 f" | claude -p '受け取った内容を実行して'"
                 f" --dangerously-skip-permissions"
                 f" --model '{step.model}'"
-                f" | tee -a {self._queue_dir}/{ts}-claude-result-{result_uuid}.md"
+                f" | tee -a {self._queue_dir}/{ts}-claude-result-{step_uuid}.md"
             )
             exec_lines.append(cmd)
 

@@ -357,9 +357,11 @@ def _cmd_trigger(args: argparse.Namespace) -> None:
             break
 
     github_client = GitHubIssueClient()
+    exec_md_resolved = Path(args.exec_md).resolve()
+    queue_dir = str(exec_md_resolved.parent)
     pipeline_state = PipelineState(
         state_dir=".pipeline-state",
-        exec_md_path=args.exec_md,
+        exec_md_path=str(exec_md_resolved),
     )
     order_builder = TemplateOrderBuilder("templates")
 
@@ -368,6 +370,7 @@ def _cmd_trigger(args: argparse.Namespace) -> None:
         github_client=github_client,
         pipeline_state=pipeline_state,
         order_builder=order_builder,
+        queue_dir=queue_dir,
     )
 
     # Fetch issue data from GitHub
@@ -405,9 +408,11 @@ def _cmd_watch(args: argparse.Namespace) -> None:
         wf.polling_interval = args.interval
 
     github_client = GitHubIssueClient()
+    exec_md_resolved = Path(args.exec_md).resolve()
+    queue_dir = str(exec_md_resolved.parent)
     pipeline_state = PipelineState(
         state_dir=".pipeline-state",
-        exec_md_path=args.exec_md,
+        exec_md_path=str(exec_md_resolved),
     )
     order_builder = TemplateOrderBuilder("templates")
 
@@ -416,6 +421,7 @@ def _cmd_watch(args: argparse.Namespace) -> None:
         github_client=github_client,
         pipeline_state=pipeline_state,
         order_builder=order_builder,
+        queue_dir=queue_dir,
     )
     dispatcher.run(max_iterations=1 if args.once else None)
 
