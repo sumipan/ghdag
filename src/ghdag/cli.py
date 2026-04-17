@@ -6,6 +6,7 @@ import argparse
 import logging
 import os
 import sys
+from pathlib import Path
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -249,7 +250,8 @@ def _cmd_run(args: argparse.Namespace) -> None:
     from ghdag.dag.engine import DagEngine
     from ghdag.dag.models import DagConfig
 
-    config = DagConfig(exec_md_path=args.exec_md, poll_interval=args.interval)
+    cwd = getattr(args, "cwd", None) or str(Path(args.exec_md).resolve().parent.parent)
+    config = DagConfig(exec_md_path=args.exec_md, poll_interval=args.interval, cwd=cwd)
     hooks = _load_hooks(args.hooks) if args.hooks else None
     engine = DagEngine(config, hooks)
     if hooks is not None and hasattr(hooks, "set_engine"):

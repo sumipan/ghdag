@@ -64,7 +64,7 @@ class TestVersion:
 
         main(["version"])
         captured = capsys.readouterr()
-        assert captured.out.strip() == "0.7.1"
+        assert captured.out.strip() == "0.7.2"
 
 
 # ---------------------------------------------------------------------------
@@ -85,9 +85,10 @@ class TestRunNormal:
             from ghdag.cli import main
             main(["run", str(exec_md)])
 
-        mock_config_cls.assert_called_once_with(
-            exec_md_path=str(exec_md), poll_interval=1.0
-        )
+        call_kwargs = mock_config_cls.call_args[1]
+        assert call_kwargs["exec_md_path"] == str(exec_md)
+        assert call_kwargs["poll_interval"] == 1.0
+        assert "cwd" in call_kwargs
         mock_engine_cls.assert_called_once_with(mock_config_cls.return_value, None)
         mock_engine_cls.return_value.run.assert_called_once()
 
@@ -103,9 +104,10 @@ class TestRunNormal:
             from ghdag.cli import main
             main(["run", str(exec_md), "--interval", "10"])
 
-        mock_config_cls.assert_called_once_with(
-            exec_md_path=str(exec_md), poll_interval=10.0
-        )
+        call_kwargs = mock_config_cls.call_args[1]
+        assert call_kwargs["exec_md_path"] == str(exec_md)
+        assert call_kwargs["poll_interval"] == 10.0
+        assert "cwd" in call_kwargs
 
 
 # ---------------------------------------------------------------------------

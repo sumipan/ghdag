@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.7.2] - 2026-04-17
+
+### Fixed
+
+- `DagEngine._launch_task()` now passes `cwd` to `subprocess.Popen`, preventing task failures when the parent process's working directory differs from the repository root
+
+### Added
+
+- `DagConfig.cwd` field — explicit working directory for task subprocesses (defaults to `None`, inheriting parent cwd for backward compatibility)
+- CLI `ghdag run` auto-derives `cwd` from `exec_md` path (parent of `queue/`)
+
 ## [0.5.0] - 2026-04-13
 
 ### Added

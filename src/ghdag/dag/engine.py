@@ -146,9 +146,11 @@ class DagEngine:
 
     def _launch_task(self, uuid: str, task: Task) -> None:
         logger.info("Launching [%s]: %s", uuid, task.command)
+        cwd = str(self._config.cwd) if self._config.cwd else None
         proc = subprocess.Popen(
             ["bash", "-o", "pipefail", "-c", task.command],
             stderr=subprocess.PIPE,
+            cwd=cwd,
         )
         buf = io.BytesIO()
         t = threading.Thread(target=_stderr_reader, args=(proc, buf), daemon=True)

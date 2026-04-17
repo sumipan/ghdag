@@ -36,3 +36,4 @@ class DagConfig:
     max_retry: int = 1
     lock_file: str | Path = "/tmp/ghdag.lock"
     timezone: str = "UTC"
+    cwd: str | Path | None = None
