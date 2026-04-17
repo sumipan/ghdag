@@ -12,26 +12,18 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 
+from ghdag.llm._config import load_engine_models
+
 
 class EngineModelError(Exception):
     """未知のエンジンまたは許可外モデルが指定された場合に送出。"""
 
 
 # ---------------------------------------------------------------------------
-# エンジン・モデル ホワイトリスト（ghdag 管理の正）
+# エンジン・モデル ホワイトリスト（YAML 設定または DEFAULT_ENGINE_MODELS にフォールバック）
 # ---------------------------------------------------------------------------
 
-ENGINE_MODELS: dict[str, set[str]] = {
-    "claude": {
-        "claude-opus-4-6",
-        "claude-sonnet-4-6",
-        "claude-haiku-4-5-20251001",
-    },
-    "gemini": {
-        "gemini-2.5-pro",
-        "gemini-2.5-flash",
-    },
-}
+ENGINE_MODELS: dict[str, list[str]] = load_engine_models()
 
 # エンジンごとの CLI コマンド名
 ENGINE_CLI: dict[str, str] = {
