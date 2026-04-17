@@ -125,14 +125,31 @@ class PipelineState:
                 fcntl.flock(f, fcntl.LOCK_UN)
 
     def write_order_file(
-        self, ts: str, order_uuid: str, content: str, queue_dir: str
+        self,
+        ts: str,
+        order_uuid: str,
+        content: str,
+        queue_dir: str,
+        engine: str = "claude",
     ) -> str:
-        """queue_dir/{ts}-claude-order-{order_uuid}.md に content を書き出し。
+        """queue_dir/{ts}-{engine}-order-{order_uuid}.md に content を書き出し。
+
+        Args:
+            ts: タイムスタンプ "YYYYMMDDHHmmSS"
+            order_uuid: UUID 文字列
+            content: order ファイル本文
+            queue_dir: 書き込み先ディレクトリパス
+            engine: engine prefix（"claude", "cursor", "gemini" 等）。デフォルト "claude"。
 
         Returns:
             書き出したファイル名（ディレクトリ含まず）
+
+        Raises:
+            ValueError: engine が空文字の場合
         """
-        filename = f"{ts}-claude-order-{order_uuid}.md"
+        if not engine:
+            raise ValueError("engine must not be empty")
+        filename = f"{ts}-{engine}-order-{order_uuid}.md"
         path = os.path.join(queue_dir, filename)
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
