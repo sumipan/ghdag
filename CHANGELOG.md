@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.8.0] - 2026-04-18
+
+### Added
+
+- `template_dir` setting in workflow YAML to configure the template directory per workflow (#14)
+- Relative `template_dir` paths are resolved relative to the workflow definition file's directory
+- Falls back to `"templates"` when `template_dir` is not specified (backward compatible)
+
 ## [0.7.2] - 2026-04-17
 
 ### Fixed

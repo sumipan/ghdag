@@ -47,7 +47,7 @@ def load_workflows(directory: str | Path) -> list[WorkflowConfig]:
             raise ValueError(f"YAML ルートはマッピングである必要があります: {path.name}")
 
         _validate(data, path.name)
-        configs.append(_parse(data))
+        configs.append(_parse(data, workflow_dir=directory.resolve()))
 
     return configs
 
@@ -99,7 +99,7 @@ def _validate(data: dict, filename: str) -> None:
                 raise ValidationError(f"ハンドラー '{handler_name}' の step[{i}] に 'model' が必須です: {filename}")
 
 
-def _parse(data: dict) -> WorkflowConfig:
+def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
     """バリデーション済み dict を WorkflowConfig に変換。"""
     triggers = [
         TriggerConfig(label=t["label"], handler=t["handler"])
@@ -146,9 +146,19 @@ def _parse(data: dict) -> WorkflowConfig:
             context_hook=context_hook,
         )
 
+    # template_dir の解決: 相対パスはワークフローファイルのディレクトリ基準
+    raw_template_dir = data.get("template_dir")
+    resolved_template_dir: str | None = None
+    if raw_template_dir is not None:
+        td = Path(raw_template_dir)
+        if not td.is_absolute() and workflow_dir is not None:
+            td = workflow_dir / td
+        resolved_template_dir = str(td)
+
     return WorkflowConfig(
         name=data["name"],
         triggers=triggers,
         handlers=handlers,
         polling_interval=data.get("polling_interval", 30),
+        template_dir=resolved_template_dir,
     )

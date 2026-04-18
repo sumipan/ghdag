@@ -45,3 +45,4 @@ class WorkflowConfig:
     triggers: list[TriggerConfig]          # トリガー条件リスト（定義順が序列）
     handlers: dict[str, HandlerConfig]     # ハンドラー名 → HandlerConfig
     polling_interval: int = 30             # ポーリング間隔（秒）
+    template_dir: str | None = None        # テンプレートディレクトリ（相対パスは workflow ファイル基準）

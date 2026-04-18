@@ -924,3 +924,95 @@ class TestRemoveIdempotencyMatching:
         )
         removed = state.remove_idempotency_matching("stash-pipeline", 42)
         assert removed == 0
+
+
+# ---------------------------------------------------------------------------
+# TC-10: template_dir 設定（Issue #14）
+# ---------------------------------------------------------------------------
+
+
+class TestTC10TemplateDir:
+    def test_template_dir_parsed_from_yaml(self, tmp_path):
+        """template_dir が YAML から WorkflowConfig にパースされる"""
+        yaml_content = """\
+name: test-pipeline
+template_dir: my-templates
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        configs = load_workflows(tmp_path)
+        assert configs[0].template_dir is not None
+        # Relative path resolved against workflow directory
+        assert configs[0].template_dir == str(tmp_path.resolve() / "my-templates")
+
+    def test_template_dir_none_when_not_specified(self, tmp_path):
+        """template_dir 未指定時は None"""
+        yaml_content = """\
+name: test-pipeline
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        configs = load_workflows(tmp_path)
+        assert configs[0].template_dir is None
+
+    def test_template_dir_absolute_path_preserved(self, tmp_path):
+        """template_dir が絶対パスの場合はそのまま保持される"""
+        yaml_content = f"""\
+name: test-pipeline
+template_dir: /absolute/path/to/templates
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        configs = load_workflows(tmp_path)
+        assert configs[0].template_dir == "/absolute/path/to/templates"
+
+    def test_template_dir_relative_resolved_against_workflow_dir(self, tmp_path):
+        """template_dir の相対パスがワークフローディレクトリ基準で解決される"""
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        yaml_content = """\
+name: test-pipeline
+template_dir: ../shared-templates
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+"""
+        (workflows_dir / "test.yml").write_text(yaml_content, encoding="utf-8")
+        configs = load_workflows(workflows_dir)
+        expected = str(workflows_dir.resolve() / ".." / "shared-templates")
+        assert configs[0].template_dir == expected
+
+    def test_workflow_config_template_dir_default(self):
+        """WorkflowConfig の template_dir デフォルト値は None"""
+        config = WorkflowConfig(
+            name="test",
+            triggers=[TriggerConfig(label="x", handler="y")],
+            handlers={},
+        )
+        assert config.template_dir is None

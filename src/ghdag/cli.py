@@ -363,7 +363,8 @@ def _cmd_trigger(args: argparse.Namespace) -> None:
         state_dir=".pipeline-state",
         exec_md_path=str(exec_md_resolved),
     )
-    order_builder = TemplateOrderBuilder("templates")
+    template_dir = workflow.template_dir or "templates"
+    order_builder = TemplateOrderBuilder(template_dir)
 
     dispatcher = WorkflowDispatcher(
         workflows=[workflow],
@@ -414,7 +415,11 @@ def _cmd_watch(args: argparse.Namespace) -> None:
         state_dir=".pipeline-state",
         exec_md_path=str(exec_md_resolved),
     )
-    order_builder = TemplateOrderBuilder("templates")
+    # template_dir: ワークフローの設定を優先、未設定なら "templates" にフォールバック
+    template_dir = next(
+        (wf.template_dir for wf in workflows if wf.template_dir), "templates"
+    )
+    order_builder = TemplateOrderBuilder(template_dir)
 
     dispatcher = WorkflowDispatcher(
         workflows=workflows,
