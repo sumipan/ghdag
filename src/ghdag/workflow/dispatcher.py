@@ -110,7 +110,7 @@ class WorkflowDispatcher:
 
         # 2. reset ハンドラー
         if handler.type == "reset":
-            self._handle_reset(issue, workflow)
+            self._handle_reset(issue, workflow, trigger)
             return DispatchResult(status="reset", reason="reset handler")
 
         # 3. 冪等性チェック
@@ -271,18 +271,24 @@ class WorkflowDispatcher:
         design_path = Path(self._queue_dir) / f"issue-{issue_number}-design.md"
         design_path.write_text("\n".join(lines), encoding="utf-8")
 
-    def _handle_reset(self, issue: dict, workflow: WorkflowConfig) -> None:
-        """冪等キー削除 + 全 pipeline:* ラベルクリア。"""
+    def _handle_reset(
+        self, issue: dict, workflow: WorkflowConfig, trigger: TriggerConfig
+    ) -> None:
+        """冪等キー削除 + トリガーラベルと同プレフィックスのラベルをすべてクリア。"""
         issue_number = issue["number"]
 
         # 冪等キー削除
         self._state.remove_idempotency_matching(workflow.name, issue_number)
 
-        # pipeline:* ラベルをすべて除去
-        issue_label_names = [lb["name"] for lb in issue.get("labels", [])]
-        for label in issue_label_names:
-            if label.startswith("pipeline:"):
-                self._github.remove_label(issue_number, label)
+        # トリガーラベルからプレフィックスを抽出（例: "issuesmith:reset" → "issuesmith:"）
+        prefix = trigger.label.rsplit(":", 1)[0] + ":" if ":" in trigger.label else ""
+
+        # 同プレフィックスのラベルをすべて除去
+        if prefix:
+            issue_label_names = [lb["name"] for lb in issue.get("labels", [])]
+            for label in issue_label_names:
+                if label.startswith(prefix):
+                    self._github.remove_label(issue_number, label)
 
     def _run_context_hook(
         self, hook_cmd: str, issue_number: int, *, timeout: int = 30
