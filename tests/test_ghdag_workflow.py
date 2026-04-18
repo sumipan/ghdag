@@ -549,6 +549,30 @@ class TestTC6ResetHandler:
 
         pipeline_state.append_exec.assert_not_called()
 
+    def test_reset_removes_labels_with_custom_prefix(self):
+        """Issue #12: reset should use trigger label prefix, not hardcoded 'pipeline:'."""
+        workflow = WorkflowConfig(
+            name="issuesmith",
+            triggers=[
+                TriggerConfig(label="issuesmith:draft-ready", handler="brushup"),
+                TriggerConfig(label="issuesmith:reset", handler="reset"),
+            ],
+            handlers={
+                "brushup": HandlerConfig(
+                    steps=[StepConfig(template="brushup", model="claude-opus-4-6")],
+                ),
+                "reset": HandlerConfig(steps=[], type="reset"),
+            },
+        )
+        dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow)
+        pipeline_state.remove_idempotency_matching.return_value = 1
+        issue = _make_issue(99, ["issuesmith:draft-running", "enhancement"])
+        handler = workflow.handlers["reset"]
+        trigger = workflow.triggers[1]  # issuesmith:reset
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
+
+        github_client.remove_label.assert_called_once_with(99, "issuesmith:draft-running")
+
 
 # ---------------------------------------------------------------------------
 # TC-7: 既存テスト互換（import / poll_once）

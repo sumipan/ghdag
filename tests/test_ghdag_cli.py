@@ -64,7 +64,7 @@ class TestVersion:
 
         main(["version"])
         captured = capsys.readouterr()
-        assert captured.out.strip() == "0.7.2"
+        assert captured.out.strip() == "0.7.3"
 
 
 # ---------------------------------------------------------------------------
