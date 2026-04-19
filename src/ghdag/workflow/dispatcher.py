@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import PipelineState
 from ghdag.workflow.github import GitHubIssueClient
+from ghdag.workflow.engine import get_adapter
 from ghdag.workflow.schema import (
     DispatchResult,
     HandlerConfig,
@@ -135,6 +136,7 @@ class WorkflowDispatcher:
         exec_lines: list[str] = [f"# idempotency: {idempotency_key}"]
         step_uuid_map: dict[str, str] = {}  # step_id → task uuid（order / result 共通）
         step_result_uuid_map: dict[str, str] = {}  # step_id → task uuid（依存解決用）
+        step_agent_map: dict[str, str] = {}  # step_id → agent 名
 
         for step in handler.steps:
             # order / result / exec 行プレフィックスは同一 UUID に揃える（queue 慣習・DagEngine の追跡と整合）
@@ -143,8 +145,9 @@ class WorkflowDispatcher:
             step_id = step.id if step.id else step_uuid
             step_uuid_map[step_id] = step_uuid
             step_result_uuid_map[step_id] = step_uuid
+            step_agent_map[step_id] = step.agent
 
-            result_filename = f"{ts}-claude-result-{step_uuid}.md"
+            result_filename = f"{ts}-{step.agent}-result-{step_uuid}.md"
 
             context: dict[str, str] = {
                 "issue_number": str(issue_number),
@@ -161,13 +164,15 @@ class WorkflowDispatcher:
             for dep_id in step.depends:
                 if dep_id in step_result_uuid_map:
                     dep_result_uuid = step_result_uuid_map[dep_id]
+                    dep_agent = step_agent_map.get(dep_id, "claude")
                     context[f"{dep_id}_result_filename"] = (
-                        f"{ts}-claude-result-{dep_result_uuid}.md"
+                        f"{ts}-{dep_agent}-result-{dep_result_uuid}.md"
                     )
 
             order_content = self._order_builder.build_order(step.template, context)
             order_filename = self._state.write_order_file(
-                ts, step_uuid, order_content, self._queue_dir
+                ts, step_uuid, order_content, self._queue_dir,
+                engine=step.agent,
             )
 
             # depends 解決
@@ -176,14 +181,15 @@ class WorkflowDispatcher:
                 for dep_id in step.depends
                 if dep_id in step_uuid_map
             ]
-            dep_str = f"[depends:{','.join(dep_uuids)}]" if dep_uuids else ""
 
-            cmd = (
-                f"{step_uuid}{dep_str}: cat {self._queue_dir}/{order_filename}"
-                f" | claude -p '受け取った内容を実行して'"
-                f" --dangerously-skip-permissions"
-                f" --model '{step.model}'"
-                f" | tee -a {self._queue_dir}/{ts}-claude-result-{step_uuid}.md"
+            adapter = get_adapter(step.agent)
+            cmd = adapter.build_exec_line(
+                uuid=step_uuid,
+                order_path=f"{self._queue_dir}/{order_filename}",
+                result_path=f"{self._queue_dir}/{result_filename}",
+                prompt="受け取った内容を実行して",
+                model=step.model,
+                depends=dep_uuids,
             )
             exec_lines.append(cmd)
 
