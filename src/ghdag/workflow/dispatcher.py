@@ -7,15 +7,10 @@ import logging
 import shlex
 import subprocess
 import time
-import uuid
-from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
-from ghdag.pipeline.order import OrderBuilder
-from ghdag.pipeline.state import PipelineState
+from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.github import GitHubIssueClient
-from ghdag.workflow.engine import get_adapter
 from ghdag.workflow.schema import (
     DispatchResult,
     HandlerConfig,
@@ -35,14 +30,12 @@ class WorkflowDispatcher:
         self,
         workflows: list[WorkflowConfig],
         github_client: GitHubIssueClient,
-        pipeline_state: PipelineState,
-        order_builder: OrderBuilder,
+        pipeline: LLMPipelineAPI,
         queue_dir: str = "queue",
     ):
         self._workflows = workflows
         self._github = github_client
-        self._state = pipeline_state
-        self._order_builder = order_builder
+        self._pipeline = pipeline
         self._queue_dir = queue_dir
 
     def poll_once(self) -> list[dict]:
@@ -117,7 +110,7 @@ class WorkflowDispatcher:
         # 3. 冪等性チェック
         handler_name = trigger.handler if trigger else ""
         idempotency_key = f"{workflow.name}:{handler_name}:{issue_number}"
-        if not self._state.check_idempotency(idempotency_key):
+        if not self._pipeline.check_idempotency(idempotency_key):
             return DispatchResult(status="skipped", reason="already dispatched")
 
         # 4. Issue コンテキスト取得
@@ -125,75 +118,20 @@ class WorkflowDispatcher:
             self._write_design_md(issue)
 
         # 4b. context_hook 実行
-        hook_context: dict[str, str] = {}
+        base_context: dict[str, str] = {
+            "issue_number": str(issue_number),
+            "workflow_name": workflow.name,
+            "handler_name": handler_name,
+        }
         if handler.context_hook:
-            hook_context = self._run_context_hook(
-                handler.context_hook, issue_number
-            )
+            base_context.update(self._run_context_hook(handler.context_hook, issue_number))
 
-        # 5. 多段 DAG 構築
-        ts = datetime.now(tz=ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d%H%M%S")
-        exec_lines: list[str] = [f"# idempotency: {idempotency_key}"]
-        step_uuid_map: dict[str, str] = {}  # step_id → task uuid（order / result 共通）
-        step_result_uuid_map: dict[str, str] = {}  # step_id → task uuid（依存解決用）
-        step_agent_map: dict[str, str] = {}  # step_id → agent 名
-
-        for step in handler.steps:
-            # order / result / exec 行プレフィックスは同一 UUID に揃える（queue 慣習・DagEngine の追跡と整合）
-            step_uuid = str(uuid.uuid4())
-
-            step_id = step.id if step.id else step_uuid
-            step_uuid_map[step_id] = step_uuid
-            step_result_uuid_map[step_id] = step_uuid
-            step_agent_map[step_id] = step.agent
-
-            result_filename = f"{ts}-{step.agent}-result-{step_uuid}.md"
-
-            context: dict[str, str] = {
-                "issue_number": str(issue_number),
-                "workflow_name": workflow.name,
-                "handler_name": handler_name,
-                "ts": ts,
-                "order_uuid": step_uuid,
-                "result_uuid": step_uuid,
-                "result_filename": result_filename,
-            }
-            context.update(hook_context)
-
-            # 依存先の result_filename を context に追加
-            for dep_id in step.depends:
-                if dep_id in step_result_uuid_map:
-                    dep_result_uuid = step_result_uuid_map[dep_id]
-                    dep_agent = step_agent_map.get(dep_id, "claude")
-                    context[f"{dep_id}_result_filename"] = (
-                        f"{ts}-{dep_agent}-result-{dep_result_uuid}.md"
-                    )
-
-            order_content = self._order_builder.build_order(step.template, context)
-            order_filename = self._state.write_order_file(
-                ts, step_uuid, order_content, self._queue_dir,
-                engine=step.agent,
-            )
-
-            # depends 解決
-            dep_uuids = [
-                step_uuid_map[dep_id]
-                for dep_id in step.depends
-                if dep_id in step_uuid_map
-            ]
-
-            adapter = get_adapter(step.agent)
-            cmd = adapter.build_exec_line(
-                uuid=step_uuid,
-                order_path=f"{self._queue_dir}/{order_filename}",
-                result_path=f"{self._queue_dir}/{result_filename}",
-                prompt="受け取った内容を実行して",
-                model=step.model,
-                depends=dep_uuids,
-            )
-            exec_lines.append(cmd)
-
-        self._state.append_exec(exec_lines)
+        # 5. パイプライン投入
+        exec_lines = self._pipeline.submit(
+            steps=handler.steps,
+            base_context=base_context,
+            idempotency_key=idempotency_key,
+        )
 
         # 6. ラベル遷移（*-ready → *-running）
         if trigger and trigger.label.endswith("-ready"):
@@ -284,7 +222,7 @@ class WorkflowDispatcher:
         issue_number = issue["number"]
 
         # 冪等キー削除
-        self._state.remove_idempotency_matching(workflow.name, issue_number)
+        self._pipeline.remove_idempotency_matching(workflow.name, issue_number)
 
         # トリガーラベルからプレフィックスを抽出（例: "issuesmith:reset" → "issuesmith:"）
         prefix = trigger.label.rsplit(":", 1)[0] + ":" if ":" in trigger.label else ""
