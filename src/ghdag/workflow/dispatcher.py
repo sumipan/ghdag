@@ -15,6 +15,7 @@ from zoneinfo import ZoneInfo
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import PipelineState
 from ghdag.workflow.github import GitHubIssueClient
+from ghdag.workflow.engine import get_adapter
 from ghdag.workflow.schema import (
     DispatchResult,
     HandlerConfig,
@@ -144,7 +145,7 @@ class WorkflowDispatcher:
             step_uuid_map[step_id] = step_uuid
             step_result_uuid_map[step_id] = step_uuid
 
-            result_filename = f"{ts}-claude-result-{step_uuid}.md"
+            result_filename = f"{ts}-{step.agent}-result-{step_uuid}.md"
 
             context: dict[str, str] = {
                 "issue_number": str(issue_number),
@@ -176,14 +177,15 @@ class WorkflowDispatcher:
                 for dep_id in step.depends
                 if dep_id in step_uuid_map
             ]
-            dep_str = f"[depends:{','.join(dep_uuids)}]" if dep_uuids else ""
 
-            cmd = (
-                f"{step_uuid}{dep_str}: cat {self._queue_dir}/{order_filename}"
-                f" | claude -p '受け取った内容を実行して'"
-                f" --dangerously-skip-permissions"
-                f" --model '{step.model}'"
-                f" | tee -a {self._queue_dir}/{ts}-claude-result-{step_uuid}.md"
+            adapter = get_adapter(step.agent)
+            cmd = adapter.build_exec_line(
+                uuid=step_uuid,
+                order_path=f"{self._queue_dir}/{order_filename}",
+                result_path=f"{self._queue_dir}/{result_filename}",
+                prompt="受け取った内容を実行して",
+                model=step.model,
+                depends=dep_uuids,
             )
             exec_lines.append(cmd)
 
