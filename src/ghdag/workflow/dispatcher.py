@@ -110,7 +110,7 @@ class WorkflowDispatcher:
         # 3. 冪等性チェック
         handler_name = trigger.handler if trigger else ""
         idempotency_key = f"{workflow.name}:{handler_name}:{issue_number}"
-        if not self._pipeline._state.check_idempotency(idempotency_key):
+        if not self._pipeline.check_idempotency(idempotency_key):
             return DispatchResult(status="skipped", reason="already dispatched")
 
         # 4. Issue コンテキスト取得
@@ -222,7 +222,7 @@ class WorkflowDispatcher:
         issue_number = issue["number"]
 
         # 冪等キー削除
-        self._pipeline._state.remove_idempotency_matching(workflow.name, issue_number)
+        self._pipeline.remove_idempotency_matching(workflow.name, issue_number)
 
         # トリガーラベルからプレフィックスを抽出（例: "issuesmith:reset" → "issuesmith:"）
         prefix = trigger.label.rsplit(":", 1)[0] + ":" if ":" in trigger.label else ""

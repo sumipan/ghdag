@@ -49,6 +49,14 @@ class LLMPipelineAPI:
         self._order_builder = order_builder
         self._queue_dir = queue_dir
 
+    def check_idempotency(self, key: str) -> bool:
+        """冪等性チェックを PipelineState に委譲する。"""
+        return self._state.check_idempotency(key)
+
+    def remove_idempotency_matching(self, workflow_name: str, issue_number: int) -> None:
+        """冪等キー削除を PipelineState に委譲する。"""
+        self._state.remove_idempotency_matching(workflow_name, issue_number)
+
     def submit(
         self,
         steps: list[StepConfig],
