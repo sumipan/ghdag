@@ -522,7 +522,7 @@ def _cmd_llm(args: argparse.Namespace) -> None:
 
 
 def _cmd_cleanup(args: argparse.Namespace) -> None:
-    """ghdag cleanup: queue/ no cleanup."""
+    """ghdag cleanup: queue/ のクリーンアップ。"""
     from pathlib import Path
 
     from ghdag.cleanup import cleanup_queue

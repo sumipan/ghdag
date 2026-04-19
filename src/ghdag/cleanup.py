@@ -29,7 +29,10 @@ def file_timestamp(path: Path) -> float:
     macOS では st_birthtime（作成日時）を優先し、
     取得できない環境では st_mtime（更新日時）にフォールバックする。
     """
-    st = path.stat()
+    try:
+        st = path.stat()
+    except OSError:
+        return 0.0
     return getattr(st, "st_birthtime", st.st_mtime)
 
 
