@@ -976,7 +976,7 @@ handlers:
 
     def test_template_dir_absolute_path_preserved(self, tmp_path):
         """template_dir が絶対パスの場合はそのまま保持される"""
-        yaml_content = f"""\
+        yaml_content = """\
 name: test-pipeline
 template_dir: /absolute/path/to/templates
 triggers:

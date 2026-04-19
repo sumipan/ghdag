@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -182,7 +181,6 @@ class TestServer:
 
         repo = self._make_repo(tmp_path)
 
-        from ghdag.ui.server import run_server
         from http.server import HTTPServer
         from ghdag.ui.server import _Handler
 

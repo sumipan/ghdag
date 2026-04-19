@@ -4,17 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from pathlib import Path
-from typing import Optional
 
 from .monitor import (
-    Row,
     build_rows,
-    filter_rows,
     apply_default_monitor_filters,
     relayout_tree_for_visible_rows,
 )

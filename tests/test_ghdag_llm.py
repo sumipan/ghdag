@@ -8,7 +8,6 @@ import pytest
 
 from ghdag.llm import (
     ENGINE_DEFAULTS,
-    ENGINE_MODELS,
     EngineModelError,
     LLMResult,
     build_llm_cmd,
