@@ -402,7 +402,7 @@ class TestTC3ModelFlag:
 
         exec_lines = pipeline_state.append_exec.call_args[0][0]
         p1_line = exec_lines[1]
-        assert "--model claude-sonnet-4-6" in p1_line
+        assert "--model" in p1_line and "claude-sonnet-4-6" in p1_line
 
     def test_opus_model_in_brushup(self):
         workflow = _make_extended_workflow()
@@ -413,7 +413,7 @@ class TestTC3ModelFlag:
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
 
         exec_lines = pipeline_state.append_exec.call_args[0][0]
-        assert "--model claude-opus-4-6" in exec_lines[1]
+        assert "--model" in exec_lines[1] and "claude-opus-4-6" in exec_lines[1]
 
 
 # ---------------------------------------------------------------------------

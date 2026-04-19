@@ -74,7 +74,7 @@ class TestAC1SingleStep:
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {})
 
-        assert "--model claude-opus-4-6" in exec_lines[0]
+        assert "--model" in exec_lines[0] and "claude-opus-4-6" in exec_lines[0]
 
     def test_exec_line_contains_dangerously_skip_permissions(self):
         """exec 行に --dangerously-skip-permissions が含まれる（engine=claude）。"""

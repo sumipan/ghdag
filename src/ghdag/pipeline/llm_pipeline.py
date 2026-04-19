@@ -7,14 +7,12 @@ exec 行フォーマットを知る必要がない。
 
 from __future__ import annotations
 
-import shlex
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
-from ghdag.llm.engines import build_llm_cmd
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import PipelineState
 
@@ -138,17 +136,18 @@ class LLMPipelineAPI:
         engine: str,
         model: str,
     ) -> str:
-        """exec.md の 1 行を構築する（内部メソッド）。"""
-        dep_str = f"[depends:{','.join(depends)}]" if depends else ""
-        cmd_parts = build_llm_cmd(
-            engine=engine,
-            model=model,
+        """exec.md の 1 行を構築する（内部メソッド）。
+
+        EngineAdapter に委譲して exec 行を組み立てる。
+        """
+        from ghdag.workflow.engine import get_adapter
+
+        adapter = get_adapter(engine)
+        return adapter.build_exec_line(
+            uuid=step_uuid,
+            order_path=f"{self._queue_dir}/{order_filename}",
+            result_path=f"{self._queue_dir}/{result_filename}",
             prompt="受け取った内容を実行して",
-            dangerously_skip_permissions=True,
-        )
-        cmd_str = " ".join(shlex.quote(p) for p in cmd_parts)
-        return (
-            f"{step_uuid}{dep_str}: cat {self._queue_dir}/{order_filename}"
-            f" | {cmd_str}"
-            f" | tee -a {self._queue_dir}/{result_filename}"
+            model=model,
+            depends=depends,
         )
