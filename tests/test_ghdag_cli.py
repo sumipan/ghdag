@@ -594,3 +594,82 @@ class TestGitHubIssueClientExtended:
         input_data = json.loads(mock_run.call_args[1]["input"])
         assert input_data["event_type"] == "simple-event"
         assert "client_payload" not in input_data
+
+
+# ---------------------------------------------------------------------------
+# AC_cleanup: ghdag cleanup subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestCleanupNormal:
+    def test_cleanup_calls_cleanup_queue(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        mock_result = MagicMock()
+        mock_result.archived_done = 1
+        mock_result.archived_orphan = 0
+        mock_result.pruned_exec = 1
+
+        with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
+            from ghdag.cli import main
+            main(["cleanup", str(tmp_path)])
+
+        mock_fn.assert_called_once()
+        call_kwargs = mock_fn.call_args[1]
+        assert call_kwargs["cutoff_days"] == 1
+        assert call_kwargs["orphan_days"] == 7
+        assert call_kwargs["dry_run"] is False
+
+    def test_cleanup_dry_run_flag(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        mock_result = MagicMock()
+        mock_result.archived_done = 0
+        mock_result.archived_orphan = 0
+        mock_result.pruned_exec = 0
+
+        with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
+            from ghdag.cli import main
+            main(["cleanup", str(tmp_path), "--dry-run"])
+
+        call_kwargs = mock_fn.call_args[1]
+        assert call_kwargs["dry_run"] is True
+
+    def test_cleanup_custom_days(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        mock_result = MagicMock()
+        mock_result.archived_done = 0
+        mock_result.archived_orphan = 0
+        mock_result.pruned_exec = 0
+
+        with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
+            from ghdag.cli import main
+            main(["cleanup", str(tmp_path), "--cutoff-days", "3", "--orphan-days", "14"])
+
+        call_kwargs = mock_fn.call_args[1]
+        assert call_kwargs["cutoff_days"] == 3
+        assert call_kwargs["orphan_days"] == 14
+
+    def test_cleanup_help_exits_0(self, capsys):
+        import pytest
+        from ghdag.cli import main
+
+        with pytest.raises(SystemExit) as exc:
+            main(["cleanup", "--help"])
+        assert exc.value.code == 0
+        captured = capsys.readouterr()
+        assert "repo_root" in captured.out
+        assert "--dry-run" in captured.out
+        assert "--cutoff-days" in captured.out
+        assert "--orphan-days" in captured.out
+
+
+class TestCleanupError:
+    def test_cleanup_no_args_exits_2(self):
+        import pytest
+        from ghdag.cli import main
+
+        with pytest.raises(SystemExit) as exc:
+            main(["cleanup"])
+        assert exc.value.code == 2

@@ -175,6 +175,14 @@ def _build_parser() -> argparse.ArgumentParser:
     version_parser = subparsers.add_parser("version", help="Show version and exit")
     version_parser.set_defaults(func=_cmd_version)
 
+    # ghdag cleanup
+    cleanup_parser = subparsers.add_parser("cleanup", help="Archive completed/orphaned queue tasks")
+    cleanup_parser.add_argument("repo_root", help="Path to repository root")
+    cleanup_parser.add_argument("--dry-run", action="store_true", help="Show targets without making changes")
+    cleanup_parser.add_argument("--cutoff-days", type=int, default=1, help="Days before archiving completed tasks (default: 1)")
+    cleanup_parser.add_argument("--orphan-days", type=int, default=7, help="Days before archiving orphaned tasks (default: 7)")
+    cleanup_parser.set_defaults(func=_cmd_cleanup)
+
     # ghdag shr
     shr_parser = subparsers.add_parser("shr", help="Self-hosted runner management")
     shr_sub = shr_parser.add_subparsers(title="shr commands")
@@ -511,6 +519,30 @@ def _cmd_llm(args: argparse.Namespace) -> None:
     if result.stderr:
         print(result.stderr, end="", file=sys.stderr)
     sys.exit(result.returncode)
+
+
+def _cmd_cleanup(args: argparse.Namespace) -> None:
+    """ghdag cleanup: queue/ no cleanup."""
+    from pathlib import Path
+
+    from ghdag.cleanup import cleanup_queue
+
+    repo_root = Path(args.repo_root).resolve()
+    result = cleanup_queue(
+        queue_dir=repo_root / "queue",
+        queue_done_dir=repo_root / "queue-done",
+        exec_done_dir=repo_root / "exec-done",
+        exec_md=repo_root / "queue" / "exec.md",
+        cutoff_days=args.cutoff_days,
+        orphan_days=args.orphan_days,
+        dry_run=args.dry_run,
+    )
+    print(
+        f"cleanup: archived done={result.archived_done}, "
+        f"orphan={result.archived_orphan}, "
+        f"exec.md pruned={result.pruned_exec}"
+        + (" [dry-run]" if args.dry_run else "")
+    )
 
 
 def _cmd_version(args: argparse.Namespace) -> None:
