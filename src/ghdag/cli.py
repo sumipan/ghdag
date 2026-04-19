@@ -301,6 +301,7 @@ def _cmd_trigger(args: argparse.Namespace) -> None:
     """ghdag trigger: Issue に対してワンショットでハンドラーを実行する。"""
     from pathlib import Path
 
+    from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
     from ghdag.pipeline.order import TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
@@ -366,11 +367,15 @@ def _cmd_trigger(args: argparse.Namespace) -> None:
     template_dir = workflow.template_dir or "templates"
     order_builder = TemplateOrderBuilder(template_dir)
 
+    pipeline = LLMPipelineAPI(
+        pipeline_state=pipeline_state,
+        order_builder=order_builder,
+        queue_dir=queue_dir,
+    )
     dispatcher = WorkflowDispatcher(
         workflows=[workflow],
         github_client=github_client,
-        pipeline_state=pipeline_state,
-        order_builder=order_builder,
+        pipeline=pipeline,
         queue_dir=queue_dir,
     )
 
@@ -393,6 +398,7 @@ def _cmd_watch(args: argparse.Namespace) -> None:
     """WorkflowDispatcher を構築し run() を呼ぶ薄いラッパー。"""
     from pathlib import Path
 
+    from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
     from ghdag.pipeline.order import TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
@@ -421,11 +427,15 @@ def _cmd_watch(args: argparse.Namespace) -> None:
     )
     order_builder = TemplateOrderBuilder(template_dir)
 
+    pipeline = LLMPipelineAPI(
+        pipeline_state=pipeline_state,
+        order_builder=order_builder,
+        queue_dir=queue_dir,
+    )
     dispatcher = WorkflowDispatcher(
         workflows=workflows,
         github_client=github_client,
-        pipeline_state=pipeline_state,
-        order_builder=order_builder,
+        pipeline=pipeline,
         queue_dir=queue_dir,
     )
     dispatcher.run(max_iterations=1 if args.once else None)

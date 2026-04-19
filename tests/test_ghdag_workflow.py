@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.github import GitHubIssueClient
 from ghdag.workflow.loader import load_workflows
@@ -247,11 +248,15 @@ def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tupl
     pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
+    pipeline = LLMPipelineAPI(
+        pipeline_state=pipeline_state,
+        order_builder=order_builder,
+        queue_dir=queue_dir,
+    )
     dispatcher = WorkflowDispatcher(
         workflows=[workflow],
         github_client=github_client,
-        pipeline_state=pipeline_state,
-        order_builder=order_builder,
+        pipeline=pipeline,
         queue_dir=queue_dir,
     )
     # Patch _write_design_md to avoid filesystem writes in unit tests
@@ -397,7 +402,7 @@ class TestTC3ModelFlag:
 
         exec_lines = pipeline_state.append_exec.call_args[0][0]
         p1_line = exec_lines[1]
-        assert "--model 'claude-sonnet-4-6'" in p1_line
+        assert "--model claude-sonnet-4-6" in p1_line
 
     def test_opus_model_in_brushup(self):
         workflow = _make_extended_workflow()
@@ -408,7 +413,7 @@ class TestTC3ModelFlag:
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
 
         exec_lines = pipeline_state.append_exec.call_args[0][0]
-        assert "--model 'claude-opus-4-6'" in exec_lines[1]
+        assert "--model claude-opus-4-6" in exec_lines[1]
 
 
 # ---------------------------------------------------------------------------

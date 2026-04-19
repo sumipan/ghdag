@@ -11,6 +11,7 @@ class StepConfig:
     model: str              # 実行モデル（必須）
     id: str | None = None   # ステップ ID（depends 参照用）
     depends: list[str] = field(default_factory=list)  # 依存ステップ ID リスト
+    agent: str = "claude"   # LLM エンジン名（"claude", "gemini" 等）
 
 
 @dataclass
