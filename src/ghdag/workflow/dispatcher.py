@@ -136,6 +136,7 @@ class WorkflowDispatcher:
         exec_lines: list[str] = [f"# idempotency: {idempotency_key}"]
         step_uuid_map: dict[str, str] = {}  # step_id → task uuid（order / result 共通）
         step_result_uuid_map: dict[str, str] = {}  # step_id → task uuid（依存解決用）
+        step_agent_map: dict[str, str] = {}  # step_id → agent 名
 
         for step in handler.steps:
             # order / result / exec 行プレフィックスは同一 UUID に揃える（queue 慣習・DagEngine の追跡と整合）
@@ -144,6 +145,7 @@ class WorkflowDispatcher:
             step_id = step.id if step.id else step_uuid
             step_uuid_map[step_id] = step_uuid
             step_result_uuid_map[step_id] = step_uuid
+            step_agent_map[step_id] = step.agent
 
             result_filename = f"{ts}-{step.agent}-result-{step_uuid}.md"
 
@@ -162,13 +164,15 @@ class WorkflowDispatcher:
             for dep_id in step.depends:
                 if dep_id in step_result_uuid_map:
                     dep_result_uuid = step_result_uuid_map[dep_id]
+                    dep_agent = step_agent_map.get(dep_id, "claude")
                     context[f"{dep_id}_result_filename"] = (
-                        f"{ts}-claude-result-{dep_result_uuid}.md"
+                        f"{ts}-{dep_agent}-result-{dep_result_uuid}.md"
                     )
 
             order_content = self._order_builder.build_order(step.template, context)
             order_filename = self._state.write_order_file(
-                ts, step_uuid, order_content, self._queue_dir
+                ts, step_uuid, order_content, self._queue_dir,
+                engine=step.agent,
             )
 
             # depends 解決
