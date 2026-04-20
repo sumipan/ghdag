@@ -14,6 +14,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 from pathlib import Path
 
 import yaml
@@ -154,6 +155,83 @@ class PipelineState:
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
         return filename
+
+
+    @classmethod
+    def from_repo_root(cls, repo_root: str | Path) -> "PipelineState":
+        """リポジトリルートから標準パスで PipelineState を生成する。
+
+        Args:
+            repo_root: リポジトリルートのパス
+
+        Returns:
+            PipelineState(state_dir=repo_root/.pipeline-state, exec_md_path=repo_root/queue/exec.md)
+        """
+        root = Path(repo_root)
+        return cls(
+            state_dir=root / ".pipeline-state",
+            exec_md_path=root / "queue" / "exec.md",
+        )
+
+    def parse_exec_tasks(self) -> dict[str, str]:
+        """exec.md をパースし {uuid: command} の辞書を返す。
+
+        コメント行（# で始まる行）と空行はスキップする。
+        exec.md が存在しない場合は空辞書を返す。
+
+        Returns:
+            {uuid: command} の辞書。依存指定 [depends:...] は除去済み。
+        """
+        if not self._exec_md_path.exists():
+            return {}
+
+        pattern = re.compile(r"^([a-fA-F0-9\-]+)(?:\[[^\]]+\])*\s*:\s*(.+)$")
+        result: dict[str, str] = {}
+        with open(self._exec_md_path, encoding="utf-8") as f:
+            for line in f:
+                stripped = line.rstrip("\n")
+                if not stripped or stripped.startswith("#"):
+                    continue
+                m = pattern.match(stripped)
+                if m:
+                    result[m.group(1)] = m.group(2)
+        return result
+
+    def remove_exec_entries(self, uuids: set[str]) -> int:
+        """exec.md から指定 UUID のエントリ行を削除する。fcntl ロック付き。
+
+        Args:
+            uuids: 削除対象の UUID 集合
+
+        Returns:
+            削除した行数
+        """
+        if not self._exec_md_path.exists():
+            return 0
+
+        pattern = re.compile(r"^([a-fA-F0-9\-]+)(?:\[[^\]]+\])*\s*:")
+
+        with open(self._exec_md_path, encoding="utf-8") as f:
+            lines = f.readlines()
+
+        new_lines = []
+        removed = 0
+        for line in lines:
+            m = pattern.match(line)
+            if m and m.group(1) in uuids:
+                removed += 1
+            else:
+                new_lines.append(line)
+
+        if removed > 0:
+            with open(self._exec_md_path, "w", encoding="utf-8") as f:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                try:
+                    f.writelines(new_lines)
+                finally:
+                    fcntl.flock(f, fcntl.LOCK_UN)
+
+        return removed
 
 
 def status_rank(status: str, status_order: tuple[str, ...]) -> int:

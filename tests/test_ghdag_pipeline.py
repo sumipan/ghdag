@@ -280,3 +280,105 @@ class TestParseFrontmatter:
         """S12: 空ファイル → {}"""
         path = self._write("")
         assert parse_frontmatter(path) == {}
+
+
+class TestFromRepoRoot:
+    def test_ac4_from_repo_root_paths(self, tmp_path):
+        """AC-4: from_repo_root → state_dir と exec_md_path が標準パスで生成される"""
+        state = PipelineState.from_repo_root(tmp_path)
+        assert state._state_dir == tmp_path / ".pipeline-state"
+        assert state._exec_md_path == tmp_path / "queue" / "exec.md"
+
+    def test_ac4_from_repo_root_str(self, tmp_path):
+        """AC-4: from_repo_root に str を渡しても Path になる"""
+        state = PipelineState.from_repo_root(str(tmp_path))
+        assert state._state_dir == tmp_path / ".pipeline-state"
+        assert state._exec_md_path == tmp_path / "queue" / "exec.md"
+
+
+class TestParseExecTasks:
+    def make_state(self, tmp_path) -> PipelineState:
+        return PipelineState(
+            state_dir=tmp_path / ".pipeline-state",
+            exec_md_path=tmp_path / "queue" / "exec.md",
+        )
+
+    def test_ac2_normal_parse(self, tmp_path):
+        """AC-2: 正常系 — UUID:コマンドと depends 指定をパース"""
+        exec_md = tmp_path / "queue" / "exec.md"
+        exec_md.parent.mkdir(parents=True)
+        exec_md.write_text(
+            "abc-123: cat order.md | claude -p 'test'\n"
+            "def-456[depends:abc-123]: cat order2.md\n"
+            "# idempotency: key\n"
+            "\n",
+            encoding="utf-8",
+        )
+        state = self.make_state(tmp_path)
+        result = state.parse_exec_tasks()
+        assert result == {
+            "abc-123": "cat order.md | claude -p 'test'",
+            "def-456": "cat order2.md",
+        }
+
+    def test_ac2_no_exec_md(self, tmp_path):
+        """AC-2: exec.md が存在しない場合 → 空辞書"""
+        state = self.make_state(tmp_path)
+        assert state.parse_exec_tasks() == {}
+
+    def test_ac6_invalid_lines_skipped(self, tmp_path):
+        """AC-6: 不正な行（UUID なし、: なし）はスキップし他の行は正常パース"""
+        exec_md = tmp_path / "queue" / "exec.md"
+        exec_md.parent.mkdir(parents=True)
+        exec_md.write_text(
+            "abc-123: cat order.md\n"
+            "not-a-uuid-line\n"
+            "# comment\n"
+            "def-456: another cmd\n",
+            encoding="utf-8",
+        )
+        state = self.make_state(tmp_path)
+        result = state.parse_exec_tasks()
+        assert "abc-123" in result
+        assert "def-456" in result
+        assert len(result) == 2
+
+
+class TestRemoveExecEntries:
+    def make_state(self, tmp_path) -> PipelineState:
+        return PipelineState(
+            state_dir=tmp_path / ".pipeline-state",
+            exec_md_path=tmp_path / "queue" / "exec.md",
+        )
+
+    def test_ac3_remove_entry(self, tmp_path):
+        """AC-3: 指定 UUID のエントリ行を削除し、他の行は残る"""
+        exec_md = tmp_path / "queue" / "exec.md"
+        exec_md.parent.mkdir(parents=True)
+        exec_md.write_text(
+            "abc-123: cat order.md\n"
+            "def-456: another cmd\n",
+            encoding="utf-8",
+        )
+        state = self.make_state(tmp_path)
+        removed = state.remove_exec_entries({"abc-123"})
+        assert removed == 1
+        content = exec_md.read_text(encoding="utf-8")
+        assert "abc-123" not in content
+        assert "def-456" in content
+
+    def test_ac3_empty_uuids_no_change(self, tmp_path):
+        """AC-3: 空の UUID 集合を渡した場合 exec.md が変更されない"""
+        exec_md = tmp_path / "queue" / "exec.md"
+        exec_md.parent.mkdir(parents=True)
+        original = "abc-123: cat order.md\n"
+        exec_md.write_text(original, encoding="utf-8")
+        state = self.make_state(tmp_path)
+        removed = state.remove_exec_entries(set())
+        assert removed == 0
+        assert exec_md.read_text(encoding="utf-8") == original
+
+    def test_ac3_no_exec_md(self, tmp_path):
+        """AC-3: exec.md が存在しない場合 0 を返しエラーにならない"""
+        state = self.make_state(tmp_path)
+        assert state.remove_exec_entries({"abc-123"}) == 0
