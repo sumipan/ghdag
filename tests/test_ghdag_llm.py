@@ -28,6 +28,7 @@ class TestEngineModels:
         engines = list_engines()
         assert "claude" in engines
         assert "gemini" in engines
+        assert "cursor" in engines
         assert engines == sorted(engines)
 
     def test_list_models_claude(self):
@@ -42,6 +43,12 @@ class TestEngineModels:
         models = list_models("gemini")
         assert "gemini-2.5-flash" in models
         assert "gemini-2.5-pro" in models
+
+    def test_list_models_cursor(self):
+        """cursor エンジンの許可モデル一覧"""
+        models = list_models("cursor")
+        assert "auto" in models
+        assert "composer-2" in models
 
     def test_list_models_unknown_engine(self):
         """未知エンジン → EngineModelError"""
@@ -69,6 +76,17 @@ class TestValidateEngineModel:
         """model=None → エンジンデフォルト"""
         result = validate_engine_model("gemini", None)
         assert result == ENGINE_DEFAULTS["gemini"]
+
+    def test_valid_cursor_model(self):
+        """cursor + 許可モデル → そのまま返る"""
+        result = validate_engine_model("cursor", "composer-2")
+        assert result == "composer-2"
+
+    def test_default_model_cursor(self):
+        """cursor + model=None → "auto" がデフォルト"""
+        result = validate_engine_model("cursor", None)
+        assert result == ENGINE_DEFAULTS["cursor"]
+        assert result == "auto"
 
     def test_unknown_engine(self):
         """未知エンジン → EngineModelError"""
@@ -103,6 +121,11 @@ class TestBuildLLMCmd:
         """基本的な gemini コマンド構築"""
         cmd = build_llm_cmd("gemini", "gemini-2.5-flash", "hello")
         assert cmd == ["gemini", "--model", "gemini-2.5-flash", "-p", "hello"]
+
+    def test_basic_cursor(self):
+        """基本的な cursor コマンド構築（CLI は agent）"""
+        cmd = build_llm_cmd("cursor", "composer-2", "hello")
+        assert cmd == ["agent", "--model", "composer-2", "-p", "hello"]
 
     def test_dangerously_skip_permissions_claude(self):
         """claude で --dangerously-skip-permissions 付与"""
