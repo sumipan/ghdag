@@ -13,8 +13,8 @@ DEFAULT_ENGINE_MODELS: dict[str, list[str]] = {
         "gemini-2.5-pro",
         "gemini-2.5-flash",
     ],
-    # cursor-agent CLI (https://cursor.com)。`cursor-agent --model <id> -p <prompt>` で呼び出す。
-    # 利用可能モデルは `cursor-agent --list-models` で確認可能。代表的なものだけホワイトリスト化。
+    # cursor agent CLI (https://cursor.com)。`agent --model <id> -p <prompt>` で呼び出す。
+    # 利用可能モデルは `agent --list-models` で確認可能。代表的なものだけホワイトリスト化。
     "cursor": [
         "auto",
         "composer-2",

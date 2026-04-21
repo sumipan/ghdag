@@ -123,9 +123,9 @@ class TestBuildLLMCmd:
         assert cmd == ["gemini", "--model", "gemini-2.5-flash", "-p", "hello"]
 
     def test_basic_cursor(self):
-        """基本的な cursor コマンド構築（CLI は cursor-agent）"""
+        """基本的な cursor コマンド構築（CLI は agent）"""
         cmd = build_llm_cmd("cursor", "composer-2", "hello")
-        assert cmd == ["cursor-agent", "--model", "composer-2", "-p", "hello"]
+        assert cmd == ["agent", "--model", "composer-2", "-p", "hello"]
 
     def test_dangerously_skip_permissions_claude(self):
         """claude で --dangerously-skip-permissions 付与"""

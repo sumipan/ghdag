@@ -27,7 +27,7 @@ ENGINE_MODELS: dict[str, list[str]] = load_engine_models()
 ENGINE_CLI: dict[str, str] = {
     "claude": "claude",
     "gemini": "gemini",
-    "cursor": "cursor-agent",
+    "cursor": "agent",
 }
 
 # エンジンごとのデフォルトモデル
