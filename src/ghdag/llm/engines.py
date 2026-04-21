@@ -27,12 +27,14 @@ ENGINE_MODELS: dict[str, list[str]] = load_engine_models()
 ENGINE_CLI: dict[str, str] = {
     "claude": "claude",
     "gemini": "gemini",
+    "cursor": "cursor-agent",
 }
 
 # エンジンごとのデフォルトモデル
 ENGINE_DEFAULTS: dict[str, str] = {
     "claude": "claude-sonnet-4-6",
     "gemini": "gemini-2.5-flash",
+    "cursor": "auto",
 }
 
 
