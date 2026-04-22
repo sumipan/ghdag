@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghdag"
-version = "0.10.0"
+version = "0.10.1"
 description = "Generic DAG execution engine extracted from graph-watcher"
 readme = "README.md"
 license = "MIT"
@@ -28,6 +28,9 @@ Repository = "https://github.com/sumipan/ghdag"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"ghdag.ui" = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
