@@ -60,11 +60,12 @@ class TestHelp:
 
 class TestVersion:
     def test_version_outputs_version_string(self, capsys):
+        from ghdag import __version__
         from ghdag.cli import main
 
         main(["version"])
         captured = capsys.readouterr()
-        assert captured.out.strip() == "0.8.0"
+        assert captured.out.strip() == __version__
 
 
 # ---------------------------------------------------------------------------
