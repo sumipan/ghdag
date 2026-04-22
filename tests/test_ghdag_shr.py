@@ -461,6 +461,45 @@ class TestShrDaemon:
         assert "shr_runner:" in content
         assert "run.sh" in content
 
+    def test_install_procfile_entry_uses_home_relative_path(self, tmp_path, monkeypatch):
+        """`runner_dir` が $HOME 配下なら Procfile には $HOME/... を書き込む。"""
+        from ghdag.shr.daemon import install_procfile_entry
+
+        fake_home = tmp_path / "home"
+        runner_dir = fake_home / ".ghdag" / "runner"
+        runner_dir.mkdir(parents=True)
+        procfile = tmp_path / "Procfile"
+        procfile.write_text("")
+
+        monkeypatch.setenv("HOME", str(fake_home))
+        with patch("ghdag.shr.daemon.PROCFILE_PATH", procfile), \
+                patch("ghdag.shr.daemon.Path.home", return_value=fake_home):
+            install_procfile_entry(runner_dir, "shr_runner")
+
+        content = procfile.read_text()
+        assert "$HOME/.ghdag/runner/run.sh" in content
+        assert str(runner_dir) not in content
+
+    def test_install_procfile_entry_outside_home_keeps_absolute(self, tmp_path, monkeypatch):
+        """$HOME 配下でない `runner_dir` は絶対パスのまま書く。"""
+        from ghdag.shr.daemon import install_procfile_entry
+
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        runner_dir = tmp_path / "elsewhere" / "runner"
+        runner_dir.mkdir(parents=True)
+        procfile = tmp_path / "Procfile"
+        procfile.write_text("")
+
+        monkeypatch.setenv("HOME", str(fake_home))
+        with patch("ghdag.shr.daemon.PROCFILE_PATH", procfile), \
+                patch("ghdag.shr.daemon.Path.home", return_value=fake_home):
+            install_procfile_entry(runner_dir, "shr_runner")
+
+        content = procfile.read_text()
+        assert str(runner_dir) in content
+        assert "$HOME" not in content
+
     def test_install_procfile_entry_duplicate(self, tmp_path):
         from ghdag.shr.daemon import install_procfile_entry
         runner_dir = tmp_path / "runner"
