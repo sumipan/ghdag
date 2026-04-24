@@ -130,6 +130,7 @@ def call(
     timeout: int | None = None,
     stdin_text: str | None = None,
     dangerously_skip_permissions: bool = False,
+    action: str | None = None,
 ) -> LLMResult:
     """ワンショットで LLM を呼び出し、結果を返す。
 
@@ -140,12 +141,15 @@ def call(
         timeout: タイムアウト秒数（None で無制限）
         stdin_text: 標準入力として渡すテキスト（None で stdin なし）
         dangerously_skip_permissions: claude に --dangerously-skip-permissions を付与
+        action: アクション種別（"skill" のとき dangerously_skip_permissions を自動で True にする）
     Returns:
         LLMResult
     Raises:
         EngineModelError: エンジン・モデルの検証失敗
         subprocess.TimeoutExpired: タイムアウト
     """
+    if action == "skill":
+        dangerously_skip_permissions = True
     resolved_model = validate_engine_model(engine, model)
     cmd = build_llm_cmd(
         engine,
