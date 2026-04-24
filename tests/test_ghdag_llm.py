@@ -189,6 +189,55 @@ class TestCall:
         _, kwargs = mock_run.call_args
         assert kwargs["timeout"] == 30
 
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_action_skill_enables_dangerously_skip_permissions(self, mock_run: MagicMock):
+        """action="skill" のとき --dangerously-skip-permissions が付与される"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("test prompt", engine="claude", action="skill")
+        cmd = mock_run.call_args[0][0]
+        assert "--dangerously-skip-permissions" in cmd
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_action_skill_overrides_explicit_false(self, mock_run: MagicMock):
+        """action="skill" のとき dangerously_skip_permissions=False を上書きする"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("test prompt", engine="claude", action="skill", dangerously_skip_permissions=False)
+        cmd = mock_run.call_args[0][0]
+        assert "--dangerously-skip-permissions" in cmd
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_action_none_default_no_permissions(self, mock_run: MagicMock):
+        """action 未指定のとき --dangerously-skip-permissions は付与されない"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("test prompt", engine="claude")
+        cmd = mock_run.call_args[0][0]
+        assert "--dangerously-skip-permissions" not in cmd
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_action_subprocess_script_no_permissions(self, mock_run: MagicMock):
+        """action="subprocess_script" では --dangerously-skip-permissions は付与されない"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("test prompt", engine="claude", action="subprocess_script")
+        cmd = mock_run.call_args[0][0]
+        assert "--dangerously-skip-permissions" not in cmd
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_explicit_true_no_action(self, mock_run: MagicMock):
+        """dangerously_skip_permissions=True かつ action 未指定でも付与される（既存動作）"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("test prompt", engine="claude", dangerously_skip_permissions=True)
+        cmd = mock_run.call_args[0][0]
+        assert "--dangerously-skip-permissions" in cmd
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_action_skill_gemini_no_permissions(self, mock_run: MagicMock):
+        """action="skill" でも gemini には --dangerously-skip-permissions が付与されない"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("test prompt", engine="gemini", action="skill")
+        cmd = mock_run.call_args[0][0]
+        assert "--dangerously-skip-permissions" not in cmd
+
+
 
 # ---------------------------------------------------------------------------
 # CLI テスト
