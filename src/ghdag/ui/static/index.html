@@ -73,6 +73,7 @@ tbody tr:hover { background: var(--surface); }
 .col-engine { white-space: nowrap; color: var(--text-muted); }
 .col-uuid { font-family: "SF Mono", monospace; font-size: 0.6875rem; color: var(--text-muted); }
 .col-label { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.col-actions { white-space: nowrap; }
 
 .badge {
   display: inline-block;
@@ -89,7 +90,7 @@ tbody tr:hover { background: var(--surface); }
 .badge-empty     { background: rgba(139,148,158,0.1); color: var(--pending); }
 .badge-unknown   { background: rgba(139,148,158,0.1); color: var(--pending); }
 
-.btn-retry {
+.btn-retry, .btn-stop {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 6px;
@@ -106,9 +107,33 @@ tbody tr:hover { background: var(--surface); }
   color: var(--fail);
   border-color: var(--fail);
 }
-.btn-retry:disabled {
+.btn-stop:hover {
+  background: rgba(210,153,34,0.15);
+  color: var(--running);
+  border-color: var(--running);
+}
+.btn-retry:disabled, .btn-stop:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.link-order {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: all 0.15s;
+  cursor: pointer;
+}
+.link-order:hover {
+  background: rgba(88,166,255,0.15);
+  color: var(--accent);
+  border-color: var(--accent);
 }
 
 .empty-msg {
@@ -164,6 +189,14 @@ tbody tr:hover { background: var(--surface); }
   const emptyMsg = document.getElementById('empty-msg');
   let rowCount = 0;
   const retryingUuids = {};  // uuid -> 'pending' | 'done' | 'error'
+  const stoppingUuids = {};  // uuid -> 'pending' | 'done' | 'error'
+  let vaultName = '';
+
+  // Load vault name from config once
+  fetch('/api/config')
+    .then(function(r) { return r.json(); })
+    .then(function(cfg) { vaultName = cfg.vault || ''; })
+    .catch(function() {});
 
   function badgeClass(state) {
     if (state.includes('成功')) return 'badge-ok';
@@ -183,6 +216,10 @@ tbody tr:hover { background: var(--surface); }
 
   function isRetryable(state) {
     return state.includes('失敗') || state.includes('REJECTED') || state.includes('EMPTY') || state.includes('その他');
+  }
+
+  function isStoppable(state) {
+    return state === '実行中';
   }
 
   function retryTask(uuid, btn) {
@@ -211,6 +248,39 @@ tbody tr:hover { background: var(--surface); }
       });
   }
 
+  function stopTask(uuid, btn) {
+    if (!confirm('エージェントプロセスを強制停止しますか？')) return;
+    btn.disabled = true;
+    btn.textContent = '...';
+    stoppingUuids[uuid] = 'pending';
+    fetch('/api/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uuid: uuid })
+    }).then(function(r) { return r.json(); })
+      .then(function(data) {
+        if (data.ok) {
+          stoppingUuids[uuid] = 'done';
+          setTimeout(function() { delete stoppingUuids[uuid]; }, 5000);
+        } else {
+          stoppingUuids[uuid] = 'error';
+          setTimeout(function() { delete stoppingUuids[uuid]; }, 5000);
+        }
+        renderCurrentRows();
+      })
+      .catch(function() {
+        stoppingUuids[uuid] = 'error';
+        setTimeout(function() { delete stoppingUuids[uuid]; }, 5000);
+        renderCurrentRows();
+      });
+  }
+
+  function buildOrderLink(orderPath) {
+    if (!orderPath) return '';
+    var uri = 'obsidian://open?vault=' + encodeURIComponent(vaultName) + '&file=' + encodeURIComponent(orderPath);
+    return '<a class="link-order" href="' + escapeHtml(uri) + '" title="' + escapeHtml(orderPath) + '">order</a>';
+  }
+
   var lastRows = [];
 
   function renderRows(rows) {
@@ -223,24 +293,44 @@ tbody tr:hover { background: var(--surface); }
     }
     emptyMsg.style.display = 'none';
     const html = rows.map(function(r) {
-      var retryBtn = '';
+      var actions = '';
+
+      // order link
+      if (r.order_path) {
+        actions += buildOrderLink(r.order_path) + ' ';
+      }
+
+      // stop button (running only)
+      var ss = stoppingUuids[r.uuid];
+      if (ss === 'pending') {
+        actions += '<button class="btn-stop" disabled>...</button> ';
+      } else if (ss === 'done') {
+        actions += '<span class="btn-stop" style="color:var(--ok)">stopped</span> ';
+      } else if (ss === 'error') {
+        actions += '<button class="btn-stop" onclick="window._stop(\'' + escapeHtml(r.uuid) + '\', this)">stop</button> ';
+      } else if (isStoppable(r.state)) {
+        actions += '<button class="btn-stop" onclick="window._stop(\'' + escapeHtml(r.uuid) + '\', this)">stop</button> ';
+      }
+
+      // retry button
       var rs = retryingUuids[r.uuid];
       if (rs === 'pending') {
-        retryBtn = '<button class="btn-retry" disabled>...</button>';
+        actions += '<button class="btn-retry" disabled>...</button>';
       } else if (rs === 'done') {
-        retryBtn = '<span class="btn-retry" style="color:var(--ok)">done</span>';
+        actions += '<span class="btn-retry" style="color:var(--ok)">done</span>';
       } else if (rs === 'error') {
-        retryBtn = '<button class="btn-retry" onclick="window._retry(\'' + escapeHtml(r.uuid) + '\', this)">retry</button>';
+        actions += '<button class="btn-retry" onclick="window._retry(\'' + escapeHtml(r.uuid) + '\', this)">retry</button>';
       } else if (isRetryable(r.state)) {
-        retryBtn = '<button class="btn-retry" onclick="window._retry(\'' + escapeHtml(r.uuid) + '\', this)">retry</button>';
+        actions += '<button class="btn-retry" onclick="window._retry(\'' + escapeHtml(r.uuid) + '\', this)">retry</button>';
       }
+
       return '<tr>'
         + '<td class="col-tree">' + escapeHtml(r.tree_ts) + '</td>'
         + '<td class="col-state"><span class="badge ' + badgeClass(r.state) + '">' + escapeHtml(r.state) + '</span></td>'
         + '<td class="col-engine hide-mobile">' + escapeHtml(r.engine_model) + '</td>'
         + '<td class="col-uuid hide-mobile">' + escapeHtml(r.uuid) + '</td>'
         + '<td class="col-label">' + escapeHtml(r.cmd_preview) + '</td>'
-        + '<td>' + retryBtn + '</td>'
+        + '<td class="col-actions">' + actions + '</td>'
         + '</tr>';
     }).join('');
     tbody.innerHTML = html;
@@ -251,6 +341,7 @@ tbody tr:hover { background: var(--surface); }
   }
 
   window._retry = retryTask;
+  window._stop = stopTask;
 
   function connect() {
     const es = new EventSource('/api/stream');
