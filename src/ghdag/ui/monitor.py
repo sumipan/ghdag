@@ -55,6 +55,7 @@ class Row:
     cmd_preview: str
     tree_ts: str = ""
     engine_model: str = ""
+    order_path: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -257,6 +258,11 @@ _ORDER_PATH_RE = re.compile(r"queue/\S+-order-\S+\.md")
 _TASK_NAME_MAX = 30
 
 
+def extract_order_path(cmd: str) -> str:
+    m = _ORDER_PATH_RE.search(cmd)
+    return m.group(0) if m else ""
+
+
 def order_task_name(cmd: str, repo_root: Path) -> Optional[str]:
     m = _ORDER_PATH_RE.search(cmd)
     if not m:
@@ -342,6 +348,7 @@ def _rows_with_tree_layout(
                 cmd_preview=r.cmd_preview,
                 tree_ts=left,
                 engine_model=r.engine_model,
+                order_path=r.order_path,
             )
         )
         ch = children.get(u, [])
@@ -385,6 +392,7 @@ def build_rows(
             cmd_preview=cmd_preview(task.command, n=cmd_preview_len, repo_root=repo_root),
             tree_ts="",
             engine_model=extract_engine_model(task.command),
+            order_path=extract_order_path(task.command),
         )
 
     rows = _rows_with_tree_layout(tasks, file_order, pending)

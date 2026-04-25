@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import signal
+import subprocess
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
@@ -35,6 +38,40 @@ def _build_snapshot(repo_root: Path, max_visible: int = 30) -> list[dict]:
     return [r.to_dict() for r in rows]
 
 
+def _kill_by_uuid(uuid: str) -> tuple[bool, str]:
+    """Find and SIGTERM all processes whose command line contains the UUID."""
+    try:
+        result = subprocess.run(
+            ["ps", "auxww"], capture_output=True, text=True, timeout=15, check=False
+        )
+        if result.returncode != 0:
+            return False, "ps command failed"
+        pids = []
+        for line in result.stdout.splitlines():
+            if uuid.lower() in line.lower():
+                parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        pids.append(int(parts[1]))
+                    except ValueError:
+                        pass
+        if not pids:
+            return False, "No running process found for that UUID"
+        killed = []
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                killed.append(pid)
+                logger.info("Stop: sent SIGTERM to pid %d (uuid=%s)", pid, uuid)
+            except (ProcessLookupError, PermissionError) as e:
+                logger.warning("Stop: could not kill pid %d: %s", pid, e)
+        if killed:
+            return True, ""
+        return False, "Could not send SIGTERM to any process"
+    except Exception as e:
+        return False, str(e)
+
+
 class _Handler(BaseHTTPRequestHandler):
     repo_root: Path
     poll_interval: float
@@ -56,12 +93,16 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_json()
         elif self.path == "/api/stream":
             self._serve_sse()
+        elif self.path == "/api/config":
+            self._serve_config()
         else:
             self.send_error(404)
 
     def do_POST(self):
         if self.path == "/api/retry":
             self._handle_retry()
+        elif self.path == "/api/stop":
+            self._handle_stop()
         else:
             self.send_error(404)
 
@@ -78,21 +119,31 @@ class _Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
-    def _handle_retry(self):
+    def _read_body(self) -> bytes | None:
         try:
             content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length)
+            return self.rfile.read(content_length)
         except (BrokenPipeError, ConnectionResetError):
-            return
+            return None
+
+    def _parse_uuid_body(self) -> str | None:
+        body = self._read_body()
+        if body is None:
+            return None
         try:
             data = json.loads(body)
         except (json.JSONDecodeError, ValueError):
             self._send_json_response(400, {"ok": False, "error": "Invalid JSON"})
-            return
-
+            return None
         uuid = data.get("uuid", "").strip()
         if not uuid or not all(c in "0123456789abcdefABCDEF-" for c in uuid):
             self._send_json_response(400, {"ok": False, "error": "Invalid UUID"})
+            return None
+        return uuid
+
+    def _handle_retry(self):
+        uuid = self._parse_uuid_body()
+        if uuid is None:
             return
 
         done_file = self.repo_root / "exec-done" / uuid
@@ -108,6 +159,21 @@ class _Handler(BaseHTTPRequestHandler):
             return
 
         self._send_json_response(200, {"ok": True})
+
+    def _handle_stop(self):
+        uuid = self._parse_uuid_body()
+        if uuid is None:
+            return
+
+        ok, err = _kill_by_uuid(uuid)
+        if ok:
+            self._send_json_response(200, {"ok": True})
+        else:
+            self._send_json_response(404, {"ok": False, "error": err})
+
+    def _serve_config(self):
+        data = {"vault": self.repo_root.name}
+        self._send_json_response(200, data)
 
     def _serve_html(self):
         body = _read_static("index.html")
