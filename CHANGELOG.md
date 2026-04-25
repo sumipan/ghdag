@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.10.3] - 2026-04-25
+
+### Added
+
+- `claude-opus-4-7` を `DEFAULT_ENGINE_MODELS` の claude エンジン許可リストに追加。
+
 ## [0.10.2] - 2026-04-22
 
 ### Fixed

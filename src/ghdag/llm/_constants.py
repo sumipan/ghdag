@@ -5,6 +5,7 @@ from __future__ import annotations
 # フォールバック用デフォルト値（YAML 設定ファイルが存在しない場合に使用）
 DEFAULT_ENGINE_MODELS: dict[str, list[str]] = {
     "claude": [
+        "claude-opus-4-7",
         "claude-opus-4-6",
         "claude-sonnet-4-6",
         "claude-haiku-4-5-20251001",
