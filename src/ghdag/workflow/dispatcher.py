@@ -165,6 +165,22 @@ class WorkflowDispatcher:
                         issue_number,
                         handler_name,
                     )
+                    # Issue にエラーコメントを投稿
+                    if isinstance(issue_number, int):
+                        import traceback
+                        tb = traceback.format_exc()
+                        comment_body = (
+                            "## ⚠️ Dispatch エラー\n\n"
+                            f"**handler**: `{handler_name}`\n\n"
+                            f"```\n{tb}\n```"
+                        )
+                        try:
+                            self._github.post_comment(issue_number, comment_body)
+                        except Exception:
+                            logger.warning(
+                                "Failed to post error comment to issue #%s",
+                                issue_number,
+                            )
             count += 1
             if max_iterations is None or count < max_iterations:
                 time.sleep(polling_interval)
