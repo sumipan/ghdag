@@ -45,4 +45,9 @@ class TemplateOrderBuilder:
                 f"テンプレートファイルが見つかりません: {template_path}"
             )
         tmpl = string.Template(template_path.read_text(encoding="utf-8"))
-        return tmpl.substitute(context)
+        try:
+            return tmpl.substitute(context)
+        except (KeyError, ValueError) as e:
+            raise type(e)(
+                f"テンプレート展開エラー ({template_path}): {e}"
+            ) from e

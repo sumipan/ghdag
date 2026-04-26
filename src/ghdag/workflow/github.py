@@ -133,6 +133,7 @@ class GitHubIssueClient:
             check=True,
         )
 
+
     def remove_label(self, number: int, label: str) -> None:
         """gh issue edit {number} --remove-label {label}。
 
