@@ -136,6 +136,25 @@ tbody tr:hover { background: var(--surface); }
   border-color: var(--accent);
 }
 
+.link-result {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: all 0.15s;
+  cursor: pointer;
+}
+.link-result:hover {
+  background: rgba(63,185,80,0.15);
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
 .empty-msg {
   text-align: center;
   padding: 48px 16px;
@@ -281,6 +300,12 @@ tbody tr:hover { background: var(--surface); }
     return '<a class="link-order" href="' + escapeHtml(uri) + '" title="' + escapeHtml(orderPath) + '">order</a>';
   }
 
+  function buildResultLink(resultPath) {
+    if (!resultPath) return '';
+    var uri = 'obsidian://open?vault=' + encodeURIComponent(vaultName) + '&file=' + encodeURIComponent(resultPath);
+    return '<a class="link-result" href="' + escapeHtml(uri) + '" title="' + escapeHtml(resultPath) + '">result</a>';
+  }
+
   var lastRows = [];
 
   function renderRows(rows) {
@@ -300,7 +325,7 @@ tbody tr:hover { background: var(--surface); }
         actions += buildOrderLink(r.order_path) + ' ';
       }
 
-      // stop button (running only)
+      // stop button (running) or result link (completed)
       var ss = stoppingUuids[r.uuid];
       if (ss === 'pending') {
         actions += '<button class="btn-stop" disabled>...</button> ';
@@ -308,6 +333,8 @@ tbody tr:hover { background: var(--surface); }
         actions += '<span class="btn-stop" style="color:var(--ok)">stopped</span> ';
       } else if (ss === 'error') {
         actions += '<button class="btn-stop" onclick="window._stop(\'' + escapeHtml(r.uuid) + '\', this)">stop</button> ';
+      } else if (r.state.includes('完了') && r.result_path) {
+        actions += buildResultLink(r.result_path) + ' ';
       } else if (isStoppable(r.state)) {
         actions += '<button class="btn-stop" onclick="window._stop(\'' + escapeHtml(r.uuid) + '\', this)">stop</button> ';
       }
