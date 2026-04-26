@@ -65,8 +65,8 @@ class TestTC7DispatchErrorPostsComment:
 
         dispatcher.run(max_iterations=1)
 
-        github_client.post_comment.assert_called_once()
-        args = github_client.post_comment.call_args
+        github_client.add_comment.assert_called_once()
+        args = github_client.add_comment.call_args
         assert args[0][0] == 42  # issue_number
         body = args[0][1]
         assert "brushup" in body  # handler name
@@ -81,7 +81,7 @@ class TestTC7DispatchErrorPostsComment:
 
         dispatcher.run(max_iterations=1)
 
-        body = github_client.post_comment.call_args[0][1]
+        body = github_client.add_comment.call_args[0][1]
         assert "KeyError" in body or "missing_key" in body
 
     def test_error_log_includes_traceback(self, caplog):
@@ -100,26 +100,26 @@ class TestTC7DispatchErrorPostsComment:
 
 
 class TestTC8CommentPostFailureDoesNotCrash:
-    def test_run_continues_if_post_comment_fails(self):
+    def test_run_continues_if_add_comment_fails(self):
         """TC-8: コメント投稿が失敗しても run() はクラッシュしない"""
         workflow = _make_workflow()
         dispatcher, github_client = _make_dispatcher(workflow)
         issue = _make_issue(42)
         github_client.list_issues.return_value = [issue]
         dispatcher.dispatch = MagicMock(side_effect=RuntimeError("dispatch error"))
-        github_client.post_comment.side_effect = RuntimeError("comment error")
+        github_client.add_comment.side_effect = RuntimeError("comment error")
 
         # クラッシュしないこと
         dispatcher.run(max_iterations=1)
 
-    def test_warning_logged_if_post_comment_fails(self, caplog):
+    def test_warning_logged_if_add_comment_fails(self, caplog):
         """TC-8: コメント投稿失敗時に warning ログが出る"""
         workflow = _make_workflow()
         dispatcher, github_client = _make_dispatcher(workflow)
         issue = _make_issue(42)
         github_client.list_issues.return_value = [issue]
         dispatcher.dispatch = MagicMock(side_effect=RuntimeError("dispatch error"))
-        github_client.post_comment.side_effect = RuntimeError("comment error")
+        github_client.add_comment.side_effect = RuntimeError("comment error")
 
         with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
             dispatcher.run(max_iterations=1)
@@ -155,5 +155,5 @@ class TestTC9NonIntIssueNumberSkipsComment:
         # クラッシュしない
         dispatcher.run(max_iterations=1)
 
-        # post_comment は呼ばれない
-        github_client.post_comment.assert_not_called()
+        # add_comment は呼ばれない
+        github_client.add_comment.assert_not_called()

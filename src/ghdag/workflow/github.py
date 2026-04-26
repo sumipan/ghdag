@@ -134,22 +134,6 @@ class GitHubIssueClient:
         )
 
 
-    def post_comment(self, issue_number: int, body: str) -> None:
-        """Issue にコメントを投稿する。
-
-        Args:
-            issue_number: 対象 Issue 番号
-            body: コメント本文（Markdown）
-        Raises:
-            subprocess.CalledProcessError: gh コマンド失敗時
-        """
-        subprocess.run(
-            ["gh", "issue", "comment", str(issue_number), "--body", body],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
     def remove_label(self, number: int, label: str) -> None:
         """gh issue edit {number} --remove-label {label}。
 

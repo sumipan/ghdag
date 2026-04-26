@@ -175,7 +175,7 @@ class WorkflowDispatcher:
                             f"```\n{tb}\n```"
                         )
                         try:
-                            self._github.post_comment(issue_number, comment_body)
+                            self._github.add_comment(issue_number, comment_body)
                         except Exception:
                             logger.warning(
                                 "Failed to post error comment to issue #%s",
