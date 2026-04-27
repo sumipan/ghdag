@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.0] - 2026-04-27
+
+### Changed (BREAKING)
+
+- `ghdag.llm.call()` の API を能力ベースに作り直し。`dangerously_skip_permissions` / `action` 引数を廃止し、`capabilities: LLMCapabilities` 引数に置換 (#432)
+- プリセット定数 `TEXT_ONLY` / `JSON_ONLY` / `WEB_RESEARCH` / `DANGEROUS_FULL_ACCESS` を追加
+- `output_format="json"` 指定時、JSON parse 失敗で `LLMParseError` を送出
+- gemini/cursor engine で非対応の capabilities を要求した場合 `NotImplementedError` を送出（サイレント無視を禁止）
+
+### Fixed
+
+- `_config.py`: `GHDAG_LLM_MODELS` 環境変数のファイルが存在しない場合にデフォルトへフォールバックするよう修正
+- `dispatcher`: サイレント失敗をエラーコメントと詳細な例外メッセージで可視化
+- 重複メソッド `post_comment` を削除し既存の `add_comment` を使用
+
 ## [0.10.3] - 2026-04-25
 
 ### Added
