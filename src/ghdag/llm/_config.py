@@ -39,7 +39,9 @@ def load_engine_models(
     # 環境変数
     env_path = os.environ.get("GHDAG_LLM_MODELS")
     if env_path:
-        return _load_and_validate(Path(env_path))
+        env_file = Path(env_path)
+        if env_file.exists():
+            return _load_and_validate(env_file)
 
     # カレントディレクトリ
     cwd_path = Path.cwd() / "llm-models.yml"

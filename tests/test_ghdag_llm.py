@@ -9,7 +9,13 @@ import pytest
 from ghdag.llm import (
     ENGINE_DEFAULTS,
     EngineModelError,
+    LLMCapabilities,
+    LLMParseError,
     LLMResult,
+    TEXT_ONLY,
+    JSON_ONLY,
+    WEB_RESEARCH,
+    DANGEROUS_FULL_ACCESS,
     build_llm_cmd,
     call,
     list_engines,
@@ -113,35 +119,74 @@ class TestValidateEngineModel:
 
 class TestBuildLLMCmd:
     def test_basic_claude(self):
-        """基本的な claude コマンド構築"""
+        """基本的な claude コマンド構築（capabilities フラグ含む）"""
         cmd = build_llm_cmd("claude", "claude-opus-4-6", "hello")
-        assert cmd == ["claude", "--model", "claude-opus-4-6", "-p", "hello"]
+        # 基本要素の確認
+        assert cmd[0] == "claude"
+        assert "--model" in cmd
+        assert "claude-opus-4-6" in cmd
+        assert "-p" in cmd
+        assert "hello" in cmd
+        # TEXT_ONLY デフォルト: permission-mode と disallowed-tools が付く
+        assert "--permission-mode" in cmd
+        assert "--disallowed-tools" in cmd
 
     def test_basic_gemini(self):
-        """基本的な gemini コマンド構築"""
+        """基本的な gemini コマンド構築（capabilities フラグなし）"""
         cmd = build_llm_cmd("gemini", "gemini-2.5-flash", "hello")
         assert cmd == ["gemini", "--model", "gemini-2.5-flash", "-p", "hello"]
 
     def test_basic_cursor(self):
-        """基本的な cursor コマンド構築（CLI は agent）"""
+        """基本的な cursor コマンド構築（CLI は agent、capabilities フラグなし）"""
         cmd = build_llm_cmd("cursor", "composer-2", "hello")
         assert cmd == ["agent", "--model", "composer-2", "-p", "hello"]
 
-    def test_dangerously_skip_permissions_claude(self):
-        """claude で --dangerously-skip-permissions 付与"""
-        cmd = build_llm_cmd(
-            "claude", "claude-opus-4-6", "hello",
-            dangerously_skip_permissions=True,
-        )
-        assert "--dangerously-skip-permissions" in cmd
 
-    def test_dangerously_skip_permissions_gemini_ignored(self):
-        """gemini では --dangerously-skip-permissions は付与されない"""
-        cmd = build_llm_cmd(
-            "gemini", "gemini-2.5-flash", "hello",
-            dangerously_skip_permissions=True,
-        )
-        assert "--dangerously-skip-permissions" not in cmd
+# ---------------------------------------------------------------------------
+# LLMCapabilities
+# ---------------------------------------------------------------------------
+
+class TestCapabilities:
+    def test_text_only_preset(self):
+        assert TEXT_ONLY.permission_mode == "default"
+        assert TEXT_ONLY.output_format == "text"
+        assert "Bash" in TEXT_ONLY.disallowed_tools
+        assert "Edit" in TEXT_ONLY.disallowed_tools
+        assert "Write" in TEXT_ONLY.disallowed_tools
+        assert "NotebookEdit" in TEXT_ONLY.disallowed_tools
+        assert "WebFetch" in TEXT_ONLY.disallowed_tools
+        assert "WebSearch" in TEXT_ONLY.disallowed_tools
+
+    def test_json_only_preset(self):
+        assert JSON_ONLY.permission_mode == "default"
+        assert JSON_ONLY.output_format == "json"
+        assert "Bash" in JSON_ONLY.disallowed_tools
+
+    def test_web_research_preset(self):
+        assert WEB_RESEARCH.permission_mode == "default"
+        assert WEB_RESEARCH.output_format == "text"
+        assert "WebFetch" in WEB_RESEARCH.allowed_tools
+        assert "WebSearch" in WEB_RESEARCH.allowed_tools
+        assert "Read" in WEB_RESEARCH.allowed_tools
+        assert "Grep" in WEB_RESEARCH.allowed_tools
+        assert "Glob" in WEB_RESEARCH.allowed_tools
+        assert "Bash" in WEB_RESEARCH.disallowed_tools
+        assert "Edit" in WEB_RESEARCH.disallowed_tools
+
+    def test_dangerous_full_access_preset(self):
+        assert DANGEROUS_FULL_ACCESS.permission_mode == "bypassPermissions"
+        assert len(DANGEROUS_FULL_ACCESS.disallowed_tools) == 0
+        assert len(DANGEROUS_FULL_ACCESS.allowed_tools) == 0
+
+    def test_frozen(self):
+        import dataclasses
+        with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
+            TEXT_ONLY.permission_mode = "bypassPermissions"  # type: ignore
+
+    def test_custom_capabilities(self):
+        caps = LLMCapabilities(permission_mode="plan", output_format="json")
+        assert caps.permission_mode == "plan"
+        assert caps.output_format == "json"
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +201,121 @@ class TestLLMResult:
     def test_ok_failure(self):
         r = LLMResult(stdout="", stderr="err", returncode=1)
         assert r.ok is False
+
+
+class TestLLMResultValidate:
+    def test_json_ok_valid_json(self):
+        """JSON_ONLY + 有効な JSON → LLMParseError なし"""
+        r = LLMResult(stdout='{"k": "v"}', stderr="", returncode=0)
+        result = r.validate(JSON_ONLY)
+        assert result is r  # 自身を返す
+
+    def test_json_ok_invalid_json(self):
+        """JSON_ONLY + non-JSON → LLMParseError"""
+        r = LLMResult(stdout="not json", stderr="", returncode=0)
+        with pytest.raises(LLMParseError) as exc_info:
+            r.validate(JSON_ONLY)
+        assert exc_info.value.raw == "not json"
+
+    def test_json_fail_skips_validation(self):
+        """returncode != 0 → 検証スキップ"""
+        r = LLMResult(stdout="err", stderr="", returncode=1)
+        result = r.validate(JSON_ONLY)  # should not raise
+        assert result is r
+
+    def test_text_ok_no_validation(self):
+        """TEXT_ONLY → JSON 検証なし"""
+        r = LLMResult(stdout="not json", stderr="", returncode=0)
+        result = r.validate(TEXT_ONLY)  # should not raise
+        assert result is r
+
+
+# ---------------------------------------------------------------------------
+# build_llm_cmd with capabilities (new API)
+# ---------------------------------------------------------------------------
+
+class TestBuildLLMCmdCapabilities:
+    def test_text_only_default(self):
+        """TEXT_ONLY: --permission-mode default --disallowed-tools Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch"""
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=TEXT_ONLY)
+        assert "--permission-mode" in cmd
+        assert "default" in cmd
+        assert "--disallowed-tools" in cmd
+        disallowed_idx = cmd.index("--disallowed-tools")
+        disallowed_val = cmd[disallowed_idx + 1]
+        for tool in ("Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch"):
+            assert tool in disallowed_val
+        assert "--allowed-tools" not in cmd
+        assert "--output-format" not in cmd  # text is default, not passed
+
+    def test_json_only(self):
+        """JSON_ONLY: --output-format json and disallowed-tools"""
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=JSON_ONLY)
+        assert "--output-format" in cmd
+        assert "json" in cmd
+        assert "--disallowed-tools" in cmd
+        assert "--permission-mode" in cmd
+
+    def test_web_research(self):
+        """WEB_RESEARCH: --allowed-tools and --disallowed-tools both present"""
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=WEB_RESEARCH)
+        assert "--allowed-tools" in cmd
+        allowed_idx = cmd.index("--allowed-tools")
+        allowed_val = cmd[allowed_idx + 1]
+        for tool in ("WebFetch", "WebSearch", "Read", "Grep", "Glob"):
+            assert tool in allowed_val
+        assert "--disallowed-tools" in cmd
+
+    def test_dangerous_full_access(self):
+        """DANGEROUS_FULL_ACCESS: --permission-mode bypassPermissions, no allowed/disallowed"""
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=DANGEROUS_FULL_ACCESS)
+        assert "--permission-mode" in cmd
+        perm_idx = cmd.index("--permission-mode")
+        assert cmd[perm_idx + 1] == "bypassPermissions"
+        assert "--allowed-tools" not in cmd
+        assert "--disallowed-tools" not in cmd
+
+    def test_custom_permission_mode(self):
+        """カスタム permission_mode"""
+        caps = LLMCapabilities(permission_mode="plan")
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=caps)
+        assert "--permission-mode" in cmd
+        perm_idx = cmd.index("--permission-mode")
+        assert cmd[perm_idx + 1] == "plan"
+
+    def test_gemini_ignores_capabilities_flags(self):
+        """gemini では capabilities フラグは付与されない"""
+        caps = LLMCapabilities(permission_mode="default", output_format="text")
+        cmd = build_llm_cmd("gemini", "gemini-2.5-flash", "hello", capabilities=caps)
+        assert "--permission-mode" not in cmd
+        assert "--disallowed-tools" not in cmd
+
+
+# ---------------------------------------------------------------------------
+# _validate_capabilities_for_engine
+# ---------------------------------------------------------------------------
+
+class TestValidateCapabilitiesForEngine:
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_gemini_with_disallowed_tools_raises(self, mock_run):
+        with pytest.raises(NotImplementedError, match="disallowed_tools"):
+            call("hello", engine="gemini", capabilities=TEXT_ONLY)
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_gemini_with_permission_mode_raises(self, mock_run):
+        with pytest.raises(NotImplementedError, match="permission_mode"):
+            call("hello", engine="gemini", capabilities=DANGEROUS_FULL_ACCESS)
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_cursor_with_allowed_tools_raises(self, mock_run):
+        with pytest.raises(NotImplementedError):
+            call("hello", engine="cursor", capabilities=WEB_RESEARCH)
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_claude_with_text_only_ok(self, mock_run):
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        result = call("hello", engine="claude", capabilities=TEXT_ONLY)
+        assert result.ok
 
 
 # ---------------------------------------------------------------------------
@@ -213,53 +373,63 @@ class TestCall:
         assert kwargs["timeout"] == 30
 
     @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_action_skill_enables_dangerously_skip_permissions(self, mock_run: MagicMock):
-        """action="skill" のとき --dangerously-skip-permissions が付与される"""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("test prompt", engine="claude", action="skill")
-        cmd = mock_run.call_args[0][0]
-        assert "--dangerously-skip-permissions" in cmd
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_action_skill_overrides_explicit_false(self, mock_run: MagicMock):
-        """action="skill" のとき dangerously_skip_permissions=False を上書きする"""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("test prompt", engine="claude", action="skill", dangerously_skip_permissions=False)
-        cmd = mock_run.call_args[0][0]
-        assert "--dangerously-skip-permissions" in cmd
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_action_none_default_no_permissions(self, mock_run: MagicMock):
-        """action 未指定のとき --dangerously-skip-permissions は付与されない"""
+    def test_call_action_none_default_no_dangerously(self, mock_run: MagicMock):
+        """デフォルト capabilities では --dangerously-skip-permissions は付与されない"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("test prompt", engine="claude")
         cmd = mock_run.call_args[0][0]
         assert "--dangerously-skip-permissions" not in cmd
 
     @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_action_subprocess_script_no_permissions(self, mock_run: MagicMock):
-        """action="subprocess_script" では --dangerously-skip-permissions は付与されない"""
+    def test_call_dangerous_full_access_bypasspermissions(self, mock_run: MagicMock):
+        """DANGEROUS_FULL_ACCESS では --permission-mode bypassPermissions が付与される"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("test prompt", engine="claude", action="subprocess_script")
+        call("test prompt", engine="claude", capabilities=DANGEROUS_FULL_ACCESS)
         cmd = mock_run.call_args[0][0]
-        assert "--dangerously-skip-permissions" not in cmd
+        assert "--permission-mode" in cmd
+        perm_idx = cmd.index("--permission-mode")
+        assert cmd[perm_idx + 1] == "bypassPermissions"
+
+
+class TestCallCapabilities:
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_default_uses_text_only(self, mock_run):
+        """call() のデフォルトは TEXT_ONLY"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("hello")
+        cmd = mock_run.call_args[0][0]
+        assert "--permission-mode" in cmd
+        assert "--disallowed-tools" in cmd
+
+    def test_call_dangerously_skip_permissions_raises_type_error(self):
+        """旧引数 dangerously_skip_permissions → TypeError"""
+        with pytest.raises(TypeError):
+            call("hello", dangerously_skip_permissions=True)  # type: ignore
+
+    def test_call_action_raises_type_error(self):
+        """旧引数 action → TypeError"""
+        with pytest.raises(TypeError):
+            call("hello", action="skill")  # type: ignore
 
     @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_explicit_true_no_action(self, mock_run: MagicMock):
-        """dangerously_skip_permissions=True かつ action 未指定でも付与される（既存動作）"""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("test prompt", engine="claude", dangerously_skip_permissions=True)
+    def test_call_with_json_only(self, mock_run):
+        """JSON_ONLY capabilities が正しく渡される"""
+        mock_run.return_value = MagicMock(stdout='{"k":"v"}', stderr="", returncode=0)
+        result = call("hello", capabilities=JSON_ONLY)
+        assert result.ok
         cmd = mock_run.call_args[0][0]
-        assert "--dangerously-skip-permissions" in cmd
+        assert "--output-format" in cmd
 
     @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_action_skill_gemini_no_permissions(self, mock_run: MagicMock):
-        """action="skill" でも gemini には --dangerously-skip-permissions が付与されない"""
+    def test_call_with_custom_capabilities(self, mock_run):
+        """カスタム capabilities"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("test prompt", engine="gemini", action="skill")
+        caps = LLMCapabilities(permission_mode="plan")
+        call("hello", capabilities=caps)
         cmd = mock_run.call_args[0][0]
-        assert "--dangerously-skip-permissions" not in cmd
-
+        assert "--permission-mode" in cmd
+        perm_idx = cmd.index("--permission-mode")
+        assert cmd[perm_idx + 1] == "plan"
 
 
 # ---------------------------------------------------------------------------

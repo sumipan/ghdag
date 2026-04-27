@@ -2,6 +2,14 @@
 
 from ghdag.llm import _config
 from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
+from ghdag.llm.capabilities import (
+    LLMCapabilities,
+    LLMParseError,
+    TEXT_ONLY,
+    JSON_ONLY,
+    WEB_RESEARCH,
+    DANGEROUS_FULL_ACCESS,
+)
 from ghdag.llm.engines import (
     ENGINE_DEFAULTS,
     ENGINE_MODELS,
@@ -20,7 +28,13 @@ __all__ = [
     "ENGINE_DEFAULTS",
     "ENGINE_MODELS",
     "EngineModelError",
+    "LLMCapabilities",
+    "LLMParseError",
     "LLMResult",
+    "TEXT_ONLY",
+    "JSON_ONLY",
+    "WEB_RESEARCH",
+    "DANGEROUS_FULL_ACCESS",
     "build_llm_cmd",
     "call",
     "list_engines",
