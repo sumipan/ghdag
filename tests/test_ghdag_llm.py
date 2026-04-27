@@ -312,6 +312,13 @@ class TestValidateCapabilitiesForEngine:
             call("hello", engine="cursor", capabilities=WEB_RESEARCH)
 
     @patch("ghdag.llm.engines.subprocess.run")
+    def test_cursor_with_text_only_ok(self, mock_run):
+        """cursor engine で TEXT_ONLY (disallowed_tools あり) が通ること"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        result = call("hello", engine="cursor", capabilities=TEXT_ONLY)
+        assert result.ok
+
+    @patch("ghdag.llm.engines.subprocess.run")
     def test_claude_with_text_only_ok(self, mock_run):
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         result = call("hello", engine="claude", capabilities=TEXT_ONLY)
