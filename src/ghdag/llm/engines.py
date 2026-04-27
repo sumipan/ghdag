@@ -112,10 +112,6 @@ def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities
             raise NotImplementedError(
                 f"cursor engine does not support allowed_tools (got {capabilities.allowed_tools!r})"
             )
-        if capabilities.disallowed_tools:
-            raise NotImplementedError(
-                f"cursor engine does not support disallowed_tools (got {capabilities.disallowed_tools!r})"
-            )
         if capabilities.permission_mode != "default":
             raise NotImplementedError(
                 f"cursor engine does not support permission_mode != default (got {capabilities.permission_mode!r})"
