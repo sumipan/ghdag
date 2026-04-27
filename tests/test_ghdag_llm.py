@@ -143,6 +143,19 @@ class TestBuildLLMCmd:
         )
         assert "--dangerously-skip-permissions" not in cmd
 
+    def test_force_cursor(self):
+        """cursor で dangerously_skip_permissions=True のとき --force が付与される"""
+        cmd = build_llm_cmd(
+            "cursor", "auto", "hello",
+            dangerously_skip_permissions=True,
+        )
+        assert "--force" in cmd
+
+    def test_force_cursor_not_added_by_default(self):
+        """cursor で dangerously_skip_permissions=False のとき --force は付与されない"""
+        cmd = build_llm_cmd("cursor", "auto", "hello")
+        assert "--force" not in cmd
+
 
 # ---------------------------------------------------------------------------
 # LLMResult
@@ -259,6 +272,14 @@ class TestCall:
         call("test prompt", engine="gemini", action="skill")
         cmd = mock_run.call_args[0][0]
         assert "--dangerously-skip-permissions" not in cmd
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_action_skill_cursor_force(self, mock_run: MagicMock):
+        """action="skill" のとき cursor には --force が付与される"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("test prompt", engine="cursor", action="skill")
+        cmd = mock_run.call_args[0][0]
+        assert "--force" in cmd
 
 
 

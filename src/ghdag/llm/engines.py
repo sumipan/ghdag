@@ -117,8 +117,11 @@ def build_llm_cmd(
     """
     cli = ENGINE_CLI.get(engine, engine)
     cmd = [cli, "--model", model, "-p", prompt]
-    if dangerously_skip_permissions and engine == "claude":
-        cmd.append("--dangerously-skip-permissions")
+    if dangerously_skip_permissions:
+        if engine == "claude":
+            cmd.append("--dangerously-skip-permissions")
+        elif engine == "cursor":
+            cmd.append("--force")
     return cmd
 
 
