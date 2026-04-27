@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.1] - 2026-04-27
+
+### Fixed
+
+- `engines.py`: cursor engine の `_validate_capabilities_for_engine` から `disallowed_tools` 過剰検証を削除 (#438)
+
 ## [0.11.0] - 2026-04-27
 
 ### Changed (BREAKING)
