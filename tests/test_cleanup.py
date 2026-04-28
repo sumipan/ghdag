@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import re
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 

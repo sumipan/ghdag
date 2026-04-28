@@ -5,6 +5,24 @@ from __future__ import annotations
 import io
 import re
 import subprocess
+from pathlib import Path
+
+
+_PIPELINE_STATUS_RE = re.compile(r"^PIPELINE_STATUS:\s*(\S+)\s*$", re.MULTILINE)
+
+
+def check_pipeline_status(result_path: str) -> "str | None":
+    """result ファイルから PIPELINE_STATUS 行を探し、最後にマッチした値を返す。
+
+    Returns:
+        マッチしたステータス文字列（例: "IMPL_FAILED"）。なければ None。
+    """
+    try:
+        content = Path(result_path).read_text(encoding="utf-8", errors="replace")
+    except (OSError, FileNotFoundError):
+        return None
+    matches = _PIPELINE_STATUS_RE.findall(content)
+    return matches[-1] if matches else None
 
 
 def _stderr_reader(proc: subprocess.Popen, buf: io.BytesIO) -> None:

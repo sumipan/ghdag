@@ -18,6 +18,7 @@ class DagHooks(Protocol):
     def on_task_empty_result(self, uuid: str, task: Task, stderr_text: str) -> None: ...
     def on_shutdown(self, signum: int) -> None: ...
     def check_rejected(self, result_path: str) -> bool: ...
+    def check_pipeline_status(self, result_path: str) -> "str | None": ...
 
 
 class DefaultHooks:
@@ -44,3 +45,7 @@ class DefaultHooks:
     def check_rejected(self, result_path: str) -> bool:
         from ._util import default_check_rejected
         return default_check_rejected(result_path)
+
+    def check_pipeline_status(self, result_path: str) -> "str | None":
+        from ._util import check_pipeline_status
+        return check_pipeline_status(result_path)

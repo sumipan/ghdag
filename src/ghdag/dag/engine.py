@@ -189,6 +189,11 @@ class DagEngine:
                         state_mark_done(self._config.exec_done_dir, uuid, "REJECTED")
                     self._hooks.on_task_rejected(uuid, task, retry_depth, is_final)
 
+                # Check PIPELINE_STATUS: *_FAILED
+                elif tee_target and (pipeline_status := self._hooks.check_pipeline_status(tee_target)) and pipeline_status.endswith("_FAILED"):
+                    state_mark_done(self._config.exec_done_dir, uuid, f"PIPELINE_FAILED:{pipeline_status}")
+                    self._hooks.on_task_failure(uuid, task, 0, f"PIPELINE_FAILED:{pipeline_status}")
+
                 # Check empty result
                 elif tee_target and os.path.exists(tee_target) and os.path.getsize(tee_target) == 0:
                     state_mark_done(self._config.exec_done_dir, uuid, "EMPTY_RESULT")
