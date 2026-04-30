@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.3] - 2026-04-30
+
+### Added
+
+- `workflow/engine.py`: `CursorAdapter` を追加。`engine: cursor, model: gemini-3-flash` の exec line を生成できるように。`agent -p '<prompt>' --model '<model>' --force` 形式で呼び出す (#35)
+
+## [0.11.2] - 2026-04-29
+
+### Added
+
+- `dag.py`: `PIPELINE_STATUS` パーサを追加。exit code に依存しない failure detection を実装 (#33)
+
 ## [0.11.1] - 2026-04-27
 
 ### Fixed
