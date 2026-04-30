@@ -98,6 +98,30 @@ def get_adapter(name: str) -> EngineAdapter:
     return _ADAPTERS[name]
 
 
+class CursorAdapter:
+    name = "cursor"
+
+    def build_exec_line(
+        self,
+        *,
+        uuid: str,
+        order_path: str,
+        result_path: str,
+        prompt: str,
+        model: str | None,
+        depends: list[str],
+    ) -> str:
+        deps = f"[depends:{','.join(depends)}]" if depends else ""
+        model_flag = f" --model '{model}'" if model else ""
+        return (
+            f"{uuid}{deps}: cat {order_path}"
+            f" | agent -p '{prompt}'{model_flag}"
+            f" --force"
+            f" | tee -a {result_path}"
+        )
+
+
 # 起動時に登録
 register_adapter(ClaudeAdapter())
 register_adapter(GeminiAdapter())
+register_adapter(CursorAdapter())
