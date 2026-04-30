@@ -7,6 +7,7 @@ import pytest
 from ghdag.workflow.engine import (
     ClaudeAdapter,
     GeminiAdapter,
+    CursorAdapter,
     get_adapter,
     register_adapter,
     _ADAPTERS,
@@ -168,6 +169,100 @@ class TestGeminiAdapter:
         assert "--approval-mode yolo" in line
 
 
+class TestCursorAdapter:
+    def setup_method(self):
+        self.adapter = CursorAdapter()
+        self.base_kwargs = dict(
+            order_path="queue/ts-cursor-order-abc123.md",
+            result_path="queue/ts-cursor-result-abc123.md",
+            prompt="受け取った内容を実行して",
+        )
+
+    def test_name(self):
+        assert self.adapter.name == "cursor"
+
+    def test_with_model_no_depends(self):
+        line = self.adapter.build_exec_line(
+            uuid="abc123",
+            model="gemini-3-flash",
+            depends=[],
+            **self.base_kwargs,
+        )
+        expected = (
+            "abc123: cat queue/ts-cursor-order-abc123.md"
+            " | agent -p '受け取った内容を実行して' --model 'gemini-3-flash'"
+            " --force"
+            " | tee -a queue/ts-cursor-result-abc123.md"
+        )
+        assert line == expected
+
+    def test_no_model_flag_when_model_is_none(self):
+        line = self.adapter.build_exec_line(
+            uuid="def456",
+            model=None,
+            depends=[],
+            **self.base_kwargs,
+        )
+        assert "--model" not in line
+        assert "--force" in line
+
+    def test_single_depends(self):
+        line = self.adapter.build_exec_line(
+            uuid="def456",
+            model=None,
+            depends=["abc123"],
+            **self.base_kwargs,
+        )
+        assert line.startswith("def456[depends:abc123]:")
+
+    def test_multiple_depends(self):
+        line = self.adapter.build_exec_line(
+            uuid="ghi789",
+            model="gemini-3-flash",
+            depends=["abc123", "def456"],
+            **self.base_kwargs,
+        )
+        assert line.startswith("ghi789[depends:abc123,def456]:")
+
+    def test_no_depends_no_bracket(self):
+        line = self.adapter.build_exec_line(
+            uuid="abc123",
+            model="gemini-3-flash",
+            depends=[],
+            **self.base_kwargs,
+        )
+        assert "[depends:" not in line
+
+    def test_tee_result_path(self):
+        line = self.adapter.build_exec_line(
+            uuid="abc123",
+            model=None,
+            depends=[],
+            **self.base_kwargs,
+        )
+        assert "| tee -a queue/ts-cursor-result-abc123.md" in line
+
+    def test_force_flag_always_present(self):
+        line = self.adapter.build_exec_line(
+            uuid="x",
+            model=None,
+            depends=[],
+            **self.base_kwargs,
+        )
+        assert "--force" in line
+
+    def test_uses_agent_cli_not_cursor(self):
+        line = self.adapter.build_exec_line(
+            uuid="x",
+            model="gemini-3-flash",
+            depends=[],
+            **self.base_kwargs,
+        )
+        # cursor CLI のエントリポイントは `agent` バイナリ
+        assert " | agent -p " in line
+        assert " | cursor " not in line
+
+
 # ---------------------------------------------------------------------------
 # get_adapter / register_adapter
 # ---------------------------------------------------------------------------
@@ -180,6 +275,10 @@ class TestGetAdapter:
     def test_get_gemini_returns_gemini_adapter(self):
         adapter = get_adapter("gemini")
         assert isinstance(adapter, GeminiAdapter)
+
+    def test_get_cursor_returns_cursor_adapter(self):
+        adapter = get_adapter("cursor")
+        assert isinstance(adapter, CursorAdapter)
 
     def test_unknown_engine_raises_value_error(self):
         with pytest.raises(ValueError, match="Unknown engine"):
