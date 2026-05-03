@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.4] - 2026-05-03
+
+### Fixed
+
+- `pipeline/llm_pipeline.py`: `LLMPipelineAPI` に per-workflow `order_builders` 辞書を追加。`cli.py:_cmd_watch` が複数ワークフローを持つとき、先頭ワークフローの `template_dir` だけが全ワークフローに使われていた設計バグを修正 (#37)
+
 ## [0.11.3] - 2026-04-30
 
 ### Added
