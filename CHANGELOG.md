@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.11.5] - 2026-05-03
+
+### Fixed
+
+- `workflow/dispatcher.py`: `WorkflowDispatcher.poll_once()` に per-trigger 例外隔離を追加。ある trigger の `list_issues` 失敗（過渡的な GitHub API エラー等）が他 trigger / 他 workflow の評価を巻き添えで停止させる SPOF を解消。失敗した trigger は warning ログを出してスキップし、後続 trigger の評価を続行する
+
 ## [0.11.4] - 2026-05-03
 
 ### Fixed
