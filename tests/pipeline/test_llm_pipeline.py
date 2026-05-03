@@ -289,3 +289,125 @@ class TestBaseContextPropagation:
         api.submit(steps, base)
 
         assert set(base.keys()) == original_keys
+
+
+# ---------------------------------------------------------------------------
+# Regression: per-workflow OrderBuilder 切り替え
+# テンプレート解決がワークフロー横断で混線する不具合（issue #610 で観測された
+# `FileNotFoundError: workflows/inkwell/brushup.md` の経路）の再発防止。
+# ---------------------------------------------------------------------------
+
+
+class TestPerWorkflowOrderBuilder:
+    def test_order_builder_resolved_by_workflow_name(self):
+        """base_context['workflow_name'] に対応する OrderBuilder が使われる。"""
+        from unittest.mock import MagicMock
+
+        from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+
+        pipeline_state = MagicMock()
+        pipeline_state.check_idempotency.return_value = True
+        pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+
+        default_builder = MagicMock()
+        default_builder.build_order.return_value = "default order content"
+        inkwell_builder = MagicMock()
+        inkwell_builder.build_order.return_value = "inkwell order content"
+        issuesmith_builder = MagicMock()
+        issuesmith_builder.build_order.return_value = "issuesmith order content"
+
+        api = LLMPipelineAPI(
+            pipeline_state=pipeline_state,
+            order_builder=default_builder,
+            queue_dir="queue",
+            order_builders={
+                "inkwell": inkwell_builder,
+                "issuesmith": issuesmith_builder,
+            },
+        )
+
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+
+        # issuesmith の workflow_name で submit → issuesmith_builder が呼ばれる
+        api.submit(steps, {"workflow_name": "issuesmith", "issue_number": "610"})
+        issuesmith_builder.build_order.assert_called_once()
+        inkwell_builder.build_order.assert_not_called()
+        default_builder.build_order.assert_not_called()
+
+        # 別ワークフロー名で再 submit → 該当 builder が呼ばれる
+        api.submit(steps, {"workflow_name": "inkwell"})
+        inkwell_builder.build_order.assert_called_once()
+
+    def test_falls_back_to_default_builder_when_workflow_unknown(self):
+        """order_builders に該当エントリがない場合はデフォルトに落ちる。"""
+        from unittest.mock import MagicMock
+
+        from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+
+        pipeline_state = MagicMock()
+        pipeline_state.check_idempotency.return_value = True
+        pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+
+        default_builder = MagicMock()
+        default_builder.build_order.return_value = "default order"
+        inkwell_builder = MagicMock()
+        inkwell_builder.build_order.return_value = "inkwell order"
+
+        api = LLMPipelineAPI(
+            pipeline_state=pipeline_state,
+            order_builder=default_builder,
+            queue_dir="queue",
+            order_builders={"inkwell": inkwell_builder},
+        )
+
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        api.submit(steps, {"workflow_name": "research"})  # 未登録
+        default_builder.build_order.assert_called_once()
+        inkwell_builder.build_order.assert_not_called()
+
+    def test_falls_back_to_default_when_workflow_name_missing(self):
+        """base_context に workflow_name が無くてもデフォルトで動く（後方互換）。"""
+        from unittest.mock import MagicMock
+
+        from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+
+        pipeline_state = MagicMock()
+        pipeline_state.check_idempotency.return_value = True
+        pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+
+        default_builder = MagicMock()
+        default_builder.build_order.return_value = "default order"
+
+        api = LLMPipelineAPI(
+            pipeline_state=pipeline_state,
+            order_builder=default_builder,
+            queue_dir="queue",
+            order_builders={"inkwell": MagicMock()},
+        )
+
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        api.submit(steps, {})  # workflow_name キーなし
+        default_builder.build_order.assert_called_once()
+
+    def test_backward_compat_no_order_builders_kwarg(self):
+        """order_builders を渡さない既存の呼び出し方式は引き続き動作する。"""
+        from unittest.mock import MagicMock
+
+        from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+
+        pipeline_state = MagicMock()
+        pipeline_state.check_idempotency.return_value = True
+        pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+
+        order_builder = MagicMock()
+        order_builder.build_order.return_value = "order content"
+
+        api = LLMPipelineAPI(
+            pipeline_state=pipeline_state,
+            order_builder=order_builder,
+            queue_dir="queue",
+        )
+
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        api.submit(steps, {"workflow_name": "issuesmith"})  # 何が来ても default に落ちる
+        order_builder.build_order.assert_called_once()

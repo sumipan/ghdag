@@ -42,10 +42,28 @@ class LLMPipelineAPI:
         pipeline_state: PipelineState,
         order_builder: OrderBuilder,
         queue_dir: str = "queue",
+        *,
+        order_builders: dict[str, OrderBuilder] | None = None,
     ):
+        """
+        Args:
+            pipeline_state: PipelineState インスタンス
+            order_builder: デフォルト OrderBuilder。
+                base_context["workflow_name"] が ``order_builders`` に含まれない、
+                もしくは ``order_builders`` が None のときに使われるフォールバック。
+            queue_dir: order/result ファイルを書き出すディレクトリ
+            order_builders: workflow_name → OrderBuilder のマップ。
+                複数ワークフローを横断する dispatcher（``ghdag watch``）は
+                ワークフローごとに異なる ``template_dir`` を持つことがあるため、
+                ここに per-workflow な OrderBuilder を渡してテンプレート解決を
+                ワークフロー単位に切り替えられるようにする。
+                単一ワークフロー前提の呼び出し（``ghdag trigger``）では
+                ``None`` のままで問題ない。
+        """
         self._state = pipeline_state
         self._order_builder = order_builder
         self._queue_dir = queue_dir
+        self._order_builders: dict[str, OrderBuilder] = dict(order_builders or {})
 
     def check_idempotency(self, key: str) -> bool:
         """冪等性チェックを PipelineState に委譲する。"""
@@ -67,7 +85,10 @@ class LLMPipelineAPI:
         Args:
             steps: 実行する StepConfig のリスト
             base_context: 全ステップ共通のコンテキスト変数
-                          （issue_number, workflow_name 等）
+                          （issue_number, workflow_name 等）。
+                          ``workflow_name`` が ``__init__`` に渡された
+                          ``order_builders`` に含まれていれば、その
+                          OrderBuilder を使って template を解決する。
             idempotency_key: exec.md に記録する冪等性キー（省略時は記録しない）
 
         Returns:
@@ -78,6 +99,9 @@ class LLMPipelineAPI:
 
         if idempotency_key:
             exec_lines.append(f"# idempotency: {idempotency_key}")
+
+        # workflow_name に対応する OrderBuilder を解決（無ければデフォルト）
+        order_builder = self._resolve_order_builder(base_context.get("workflow_name"))
 
         step_uuid_map: dict[str, str] = {}    # step_id -> uuid
         step_engine_map: dict[str, str] = {}  # step_id -> engine
@@ -108,7 +132,7 @@ class LLMPipelineAPI:
                         f"{ts}-{dep_engine}-result-{dep_uuid}.md"
                     )
 
-            order_content = self._order_builder.build_order(step.template, context)
+            order_content = order_builder.build_order(step.template, context)
             order_filename = self._state.write_order_file(
                 ts, step_uuid, order_content, self._queue_dir, engine=engine
             )
@@ -125,6 +149,16 @@ class LLMPipelineAPI:
 
         self._state.append_exec(exec_lines)
         return exec_lines
+
+    def _resolve_order_builder(self, workflow_name: str | None) -> OrderBuilder:
+        """workflow_name から OrderBuilder を解決する。
+
+        ``order_builders`` に該当エントリがあればそれを返し、なければ
+        ``order_builder`` (デフォルト) を返す。
+        """
+        if workflow_name and workflow_name in self._order_builders:
+            return self._order_builders[workflow_name]
+        return self._order_builder
 
     def _build_exec_line(
         self,

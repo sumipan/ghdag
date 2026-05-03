@@ -429,16 +429,26 @@ def _cmd_watch(args: argparse.Namespace) -> None:
         state_dir=".pipeline-state",
         exec_md_path=str(exec_md_resolved),
     )
-    # template_dir: ワークフローの設定を優先、未設定なら "templates" にフォールバック
-    template_dir = next(
+    # template_dir: ワークフローごとに OrderBuilder を用意し、submit() 時に
+    # base_context["workflow_name"] で切り替える。`watch` はワークフローを
+    # 横断するため、単一の OrderBuilder で固定するとワークフロー間の
+    # template_dir が混線する（FileNotFoundError の原因）。
+    order_builders: dict[str, TemplateOrderBuilder] = {
+        wf.name: TemplateOrderBuilder(wf.template_dir or "templates")
+        for wf in workflows
+    }
+    # フォールバック: workflow_name が解決できない場合に備えて、先頭ワークフローの
+    # template_dir（無ければ "templates"）を default として保持する。
+    default_template_dir = next(
         (wf.template_dir for wf in workflows if wf.template_dir), "templates"
     )
-    order_builder = TemplateOrderBuilder(template_dir)
+    default_order_builder = TemplateOrderBuilder(default_template_dir)
 
     pipeline = LLMPipelineAPI(
         pipeline_state=pipeline_state,
-        order_builder=order_builder,
+        order_builder=default_order_builder,
         queue_dir=queue_dir,
+        order_builders=order_builders,
     )
     dispatcher = WorkflowDispatcher(
         workflows=workflows,
