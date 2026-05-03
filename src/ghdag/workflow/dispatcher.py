@@ -41,15 +41,32 @@ class WorkflowDispatcher:
     def poll_once(self) -> list[dict]:
         """1回のポーリングを実行。マッチした Issue とアクションのリストを返す。
 
+        各 trigger の評価は独立しており、ある trigger で list_issues が失敗しても
+        他の trigger の評価は続行する（per-trigger exception isolation）。失敗した
+        trigger は warning ログを出した上でスキップする。これにより、ある workflow
+        の過渡的な GitHub API 失敗が、別 workflow のディスパッチを巻き添えで停止させる
+        事象を防ぐ。
+
         Returns:
             [{"issue": <number>, "workflow": <name>, "handler": <name>, ...}, ...]
         """
         results: list[dict] = []
         for workflow in self._workflows:
             for trigger_rank, trigger in enumerate(workflow.triggers):
-                issues = self._github.list_issues(trigger.label)
                 handler_name = trigger.handler
                 if handler_name not in workflow.handlers:
+                    continue
+                try:
+                    issues = self._github.list_issues(trigger.label)
+                except Exception as exc:
+                    logger.warning(
+                        "poll_once: trigger label=%r in workflow=%r failed "
+                        "(%s: %s) — skipping this trigger and continuing with others",
+                        trigger.label,
+                        workflow.name,
+                        type(exc).__name__,
+                        exc,
+                    )
                     continue
                 handler = workflow.handlers[handler_name]
                 for issue in issues:
