@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from ghdag.pipeline.status import (
     STATE_EMPTY,
     STATE_FAIL,
