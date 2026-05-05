@@ -189,9 +189,8 @@ class TestCursorAdapter:
             **self.base_kwargs,
         )
         expected = (
-            "abc123: cat queue/ts-cursor-order-abc123.md"
-            " | agent -p '受け取った内容を実行して' --model 'gemini-3-flash'"
-            " --force"
+            "abc123: agent --model 'gemini-3-flash' -p --force"
+            " < queue/ts-cursor-order-abc123.md"
             " | tee -a queue/ts-cursor-result-abc123.md"
         )
         assert line == expected
@@ -259,8 +258,20 @@ class TestCursorAdapter:
             **self.base_kwargs,
         )
         # cursor CLI のエントリポイントは `agent` バイナリ
-        assert " | agent -p " in line
+        assert "agent " in line
         assert " | cursor " not in line
+
+    def test_uses_stdin_redirect_not_pipe_with_prompt(self):
+        line = self.adapter.build_exec_line(
+            uuid="x",
+            model=None,
+            depends=[],
+            **self.base_kwargs,
+        )
+        # -p に文字列を渡すと stdin が無視されるため、リダイレクト形式を使う
+        assert "< queue/ts-cursor-order-abc123.md" in line
+        assert "agent -p --force" in line
+        assert "cat " not in line
 
 
 # ---------------------------------------------------------------------------

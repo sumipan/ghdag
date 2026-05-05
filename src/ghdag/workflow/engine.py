@@ -114,9 +114,8 @@ class CursorAdapter:
         deps = f"[depends:{','.join(depends)}]" if depends else ""
         model_flag = f" --model '{model}'" if model else ""
         return (
-            f"{uuid}{deps}: cat {order_path}"
-            f" | agent -p '{prompt}'{model_flag}"
-            f" --force"
+            f"{uuid}{deps}: agent{model_flag} -p --force"
+            f" < {order_path}"
             f" | tee -a {result_path}"
         )
 
