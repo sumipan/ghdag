@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.13.1] - 2026-05-05
+
+### Fixed
+
+- `workflow/engine.py`: `CursorAdapter.build_exec_line()` の exec line を `cat ... | agent -p 'string'` 形式から `agent -p --force < order_path` 形式（stdin リダイレクト）に変更。`agent` CLI は `-p 'string'` に文字列を渡すと stdin を無視する仕様のため、order ファイルの内容がプロンプトとして読まれなかったバグを修正 (#43)
+
 ## [0.11.5] - 2026-05-03
 
 ### Fixed
