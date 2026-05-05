@@ -17,6 +17,30 @@ class OrderBuilder(Protocol):
         ...
 
 
+class InlineOrderBuilder:
+    """テンプレート文字列を直接受け取り string.Template で展開する OrderBuilder。
+
+    ファイル I/O を行わないため、scheduler 等の動的プロンプト生成に使う。
+    """
+
+    def build_order(self, step_id: str, context: dict[str, str]) -> str:
+        """step_id をテンプレート本文として string.Template で展開する。
+
+        Args:
+            step_id: テンプレート本文（TemplateOrderBuilder ではファイル名だが、
+                     InlineOrderBuilder ではテンプレート文字列そのもの）。
+                     LLMPipelineAPI.submit が StepConfig.template をそのまま渡す。
+            context: テンプレート変数の展開に使う dict
+        Returns:
+            展開後の order 本文
+        Raises:
+            KeyError: テンプレートに含まれる変数が context に不足
+            ValueError: 不正な $ 構文
+        """
+        tmpl = string.Template(step_id)
+        return tmpl.substitute(context)
+
+
 class TemplateOrderBuilder:
     """ファイルベースの string.Template 展開 OrderBuilder 実装。"""
 

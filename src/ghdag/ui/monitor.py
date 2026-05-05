@@ -13,17 +13,32 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
+from ghdag.pipeline.status import (
+    STATE_PENDING_DEPS,
+    STATE_PENDING_RUN,
+    STATE_RUNNING,
+    STATE_OK,
+    STATE_FAIL,
+    STATE_REJECTED,
+    STATE_EMPTY,
+    STATE_UNKNOWN_DONE,
+    read_done_content,
+    interpret_done,
+    dep_succeeded,
+    label_for_done,
+    task_status,
+)
+
 QUEUE_TS = re.compile(r"queue/(\d{14})")
 
-# State labels
-STATE_PENDING_DEPS = "待機（依存未充足）"
-STATE_PENDING_RUN = "待機（実行可能）"
-STATE_RUNNING = "実行中"
-STATE_OK = "完了（成功）"
-STATE_FAIL = "完了（失敗）"
-STATE_REJECTED = "完了（REJECTED）"
-STATE_EMPTY = "完了（EMPTY_RESULT）"
-STATE_UNKNOWN_DONE = "完了（その他）"
+__all__ = [
+    "STATE_PENDING_DEPS", "STATE_PENDING_RUN", "STATE_RUNNING",
+    "STATE_OK", "STATE_FAIL", "STATE_REJECTED", "STATE_EMPTY", "STATE_UNKNOWN_DONE",
+    "read_done_content", "interpret_done", "dep_succeeded", "label_for_done",
+    "task_status", "task_state",
+    "Row", "MonitorTask", "build_rows", "filter_rows",
+    "relayout_tree_for_visible_rows", "apply_default_monitor_filters",
+]
 
 STATE_ALIASES = {
     "pending_deps": STATE_PENDING_DEPS,
@@ -147,70 +162,18 @@ def ts_display(cmd: str) -> str:
     return t.strftime("%Y-%m-%d %H:%M")
 
 
-def read_done_content(exec_done_dir: Path, uuid: str) -> Optional[str]:
-    p = exec_done_dir / uuid
-    if not p.is_file():
-        return None
-    try:
-        return p.read_text(encoding="utf-8")
-    except OSError:
-        return None
-
-
-def interpret_done(raw: Optional[str]) -> Optional[str]:
-    if raw is None:
-        return None
-    first = raw.strip().splitlines()
-    c = first[0].strip() if first else ""
-    if c == "" or c == "0":
-        return "success"
-    if c in ("REJECTED", "REJECTED_FINAL"):
-        return "rejected"
-    if c == "EMPTY_RESULT":
-        return "empty_result"
-    try:
-        n = int(c)
-        return "success" if n == 0 else "failed_exit"
-    except ValueError:
-        return "other"
-
-
-def dep_succeeded(exec_done_dir: Path, dep_uuid: str) -> bool:
-    return interpret_done(read_done_content(exec_done_dir, dep_uuid)) == "success"
-
-
-def label_for_done(raw: Optional[str]) -> Optional[str]:
-    if raw is None:
-        return None
-    kind = interpret_done(raw)
-    if kind == "success":
-        return STATE_OK
-    if kind == "failed_exit":
-        return STATE_FAIL
-    if kind == "rejected":
-        return STATE_REJECTED
-    if kind == "empty_result":
-        return STATE_EMPTY
-    return STATE_UNKNOWN_DONE
-
-
 def task_state(
     uuid: str,
     task_depends: set[str],
     exec_done_dir: Path,
     running_uuids: Optional[set[str]] = None,
 ) -> str:
-    raw = read_done_content(exec_done_dir, uuid)
-    if raw is not None:
-        lbl = label_for_done(raw)
-        return lbl if lbl else STATE_UNKNOWN_DONE
-
-    for d in task_depends:
-        if not dep_succeeded(exec_done_dir, d):
-            return STATE_PENDING_DEPS
-    if running_uuids and uuid in running_uuids:
-        return STATE_RUNNING
-    return STATE_PENDING_RUN
+    return task_status(
+        uuid,
+        exec_done_dir,
+        task_depends=task_depends or set(),
+        running_uuids=running_uuids,
+    )
 
 
 def _ps_command_blob() -> str:
