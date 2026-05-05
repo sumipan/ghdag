@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import time
@@ -21,6 +22,27 @@ from .monitor import (
 logger = logging.getLogger(__name__)
 
 _STATIC_DIR = Path(__file__).parent / "static"
+
+
+def _get_github_base_url(repo_root: Path) -> str | None:
+    """Read GitHub repo base URL from git remote origin. Returns None if unavailable."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+        if result.returncode != 0:
+            return None
+        url = result.stdout.strip()
+        m = re.match(r"git@github\.com:([^/]+/[^/]+?)(?:\.git)?$", url)
+        if m:
+            return "https://github.com/" + m.group(1)
+        m = re.match(r"https://github\.com/([^/]+/[^/]+?)(?:\.git)?$", url)
+        if m:
+            return "https://github.com/" + m.group(1)
+        return None
+    except Exception:
+        return None
 
 
 def _read_static(filename: str) -> bytes:
@@ -76,6 +98,7 @@ class _Handler(BaseHTTPRequestHandler):
     repo_root: Path
     poll_interval: float
     max_visible: int
+    github_base_url: str | None
 
     def log_message(self, format, *args):
         logger.debug(format, *args)
@@ -172,7 +195,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json_response(404, {"ok": False, "error": err})
 
     def _serve_config(self):
-        data = {"vault": self.repo_root.name}
+        data = {"github_base_url": self.github_base_url}
         self._send_json_response(200, data)
 
     def _serve_html(self):
@@ -226,6 +249,7 @@ def run_server(
     _Handler.repo_root = repo_root
     _Handler.poll_interval = poll_interval
     _Handler.max_visible = max_visible
+    _Handler.github_base_url = _get_github_base_url(repo_root)
 
     class _ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         daemon_threads = True

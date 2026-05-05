@@ -39,6 +39,7 @@ h1 .dot {
   border-radius: 50%;
   background: var(--ok);
   display: inline-block;
+  flex-shrink: 0;
 }
 h1 .dot.disconnected { background: var(--fail); }
 .meta {
@@ -46,8 +47,14 @@ h1 .dot.disconnected { background: var(--fail); }
   color: var(--text-muted);
   margin-bottom: 12px;
 }
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 table {
   width: 100%;
+  min-width: 480px;
   border-collapse: collapse;
   font-size: 0.8125rem;
 }
@@ -161,16 +168,17 @@ tbody tr:hover { background: var(--surface); }
   color: var(--text-muted);
 }
 
-/* Responsive: hide UUID and label columns on small screens */
 @media (max-width: 768px) {
-  .col-uuid, .hide-mobile { display: none; }
-  table { font-size: 0.75rem; }
+  .hide-mobile { display: none; }
+  table { font-size: 0.75rem; min-width: 320px; }
   .col-tree { font-size: 0.6875rem; }
+  .col-label { max-width: 160px; }
   body { padding: 8px; }
   h1 { font-size: 1rem; }
 }
 @media (max-width: 480px) {
-  .col-engine { display: none; }
+  .col-label { max-width: 100px; }
+  body { padding: 6px; }
 }
 </style>
 </head>
@@ -182,19 +190,21 @@ tbody tr:hover { background: var(--surface); }
 </h1>
 <div class="meta" id="meta">Connecting...</div>
 
-<table>
-  <thead>
-    <tr>
-      <th>時刻/ツリー</th>
-      <th>状態</th>
-      <th class="hide-mobile">エンジン/モデル</th>
-      <th class="hide-mobile">UUID</th>
-      <th>ラベル</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody id="tbody"></tbody>
-</table>
+<div class="table-wrapper">
+  <table>
+    <thead>
+      <tr>
+        <th>時刻/ツリー</th>
+        <th>状態</th>
+        <th class="hide-mobile">エンジン/モデル</th>
+        <th class="hide-mobile">UUID</th>
+        <th>ラベル</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
 
 <div class="empty-msg" id="empty-msg" style="display:none">
   タスクがありません
@@ -209,12 +219,12 @@ tbody tr:hover { background: var(--surface); }
   let rowCount = 0;
   const retryingUuids = {};  // uuid -> 'pending' | 'done' | 'error'
   const stoppingUuids = {};  // uuid -> 'pending' | 'done' | 'error'
-  let vaultName = '';
+  let githubBaseUrl = null;
 
-  // Load vault name from config once
+  // Load GitHub base URL from config once
   fetch('/api/config')
     .then(function(r) { return r.json(); })
-    .then(function(cfg) { vaultName = cfg.vault || ''; })
+    .then(function(cfg) { githubBaseUrl = cfg.github_base_url || null; })
     .catch(function() {});
 
   function badgeClass(state) {
@@ -294,16 +304,20 @@ tbody tr:hover { background: var(--surface); }
       });
   }
 
+  function buildFileUrl(filePath) {
+    return githubBaseUrl + '/blob/main/' + filePath;
+  }
+
   function buildOrderLink(orderPath) {
-    if (!orderPath) return '';
-    var uri = 'obsidian://open?vault=' + encodeURIComponent(vaultName) + '&file=' + encodeURIComponent(orderPath);
-    return '<a class="link-order" href="' + escapeHtml(uri) + '" title="' + escapeHtml(orderPath) + '">order</a>';
+    if (!orderPath || !githubBaseUrl) return '';
+    var uri = buildFileUrl(orderPath);
+    return '<a class="link-order" href="' + escapeHtml(uri) + '" target="_blank" rel="noopener" title="' + escapeHtml(orderPath) + '">order</a>';
   }
 
   function buildResultLink(resultPath) {
-    if (!resultPath) return '';
-    var uri = 'obsidian://open?vault=' + encodeURIComponent(vaultName) + '&file=' + encodeURIComponent(resultPath);
-    return '<a class="link-result" href="' + escapeHtml(uri) + '" title="' + escapeHtml(resultPath) + '">result</a>';
+    if (!resultPath || !githubBaseUrl) return '';
+    var uri = buildFileUrl(resultPath);
+    return '<a class="link-result" href="' + escapeHtml(uri) + '" target="_blank" rel="noopener" title="' + escapeHtml(resultPath) + '">result</a>';
   }
 
   var lastRows = [];
