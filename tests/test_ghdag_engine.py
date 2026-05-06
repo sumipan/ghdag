@@ -1,5 +1,6 @@
 """Tests for ghdag.dag.engine — §5.4 acceptance criteria."""
 
+import json
 import signal
 import threading
 import time
@@ -238,3 +239,115 @@ class TestSignalShutdown:
             assert new_handler is not old_handler
         finally:
             signal.signal(signal.SIGINT, old_handler)
+
+
+# ---------------------------------------------------------------------------
+# JSONL task with result_path — stdout 直書き (AC3, AC5-AC8)
+# ---------------------------------------------------------------------------
+
+def _make_jsonl_config(tmp_path, tasks: list[dict], **overrides) -> DagConfig:
+    exec_jsonl = tmp_path / "exec.jsonl"
+    exec_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    lines = [json.dumps(t) for t in tasks]
+    exec_jsonl.write_text("\n".join(lines), encoding="utf-8")
+    defaults = dict(
+        exec_md_path=str(exec_jsonl),
+        exec_done_dir=str(tmp_path / "exec-done"),
+        poll_interval=0.1,
+        launch_stagger=0.0,
+        lock_file=str(tmp_path / "lock"),
+    )
+    defaults.update(overrides)
+    return DagConfig(**defaults)
+
+
+def _jsonl_task(uuid: str, command: str, result_path: str) -> dict:
+    return {"uuid": uuid, "command": command, "depends": [], "result_path": result_path, "retry": 0, "annotations": {}}
+
+
+class TestStdoutDirectWrite:
+    """AC3, AC5-AC8: JSONL task with result_path — stdout capture and write"""
+
+    def test_stdout_written_to_result_path_ac3(self, tmp_path):
+        """result_path 設定時に stdout が直接書き込まれる (AC3)"""
+        result_path = str(tmp_path / "result.md")
+        config = _make_jsonl_config(tmp_path, [
+            _jsonl_task("uuid-a", "echo 'hello world'", result_path)
+        ])
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        hooks.check_pipeline_status.return_value = None
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=5.0)
+
+        assert Path(result_path).exists()
+        content = Path(result_path).read_text()
+        assert "hello world" in content
+        hooks.on_task_success.assert_called_once()
+
+    def test_pipeline_status_merge_done_calls_success_ac5(self, tmp_path):
+        """stdout に PIPELINE_STATUS: MERGE_DONE → on_task_success が呼ばれる (AC5)"""
+        result_path = str(tmp_path / "result.md")
+        config = _make_jsonl_config(tmp_path, [
+            _jsonl_task("uuid-a", "echo 'PIPELINE_STATUS: MERGE_DONE'", result_path)
+        ])
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        hooks.check_pipeline_status.return_value = "MERGE_DONE"
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=5.0)
+
+        hooks.on_task_success.assert_called_once()
+        hooks.on_task_failure.assert_not_called()
+
+    def test_pipeline_status_impl_failed_calls_failure_ac6(self, tmp_path):
+        """stdout に PIPELINE_STATUS: IMPL_FAILED → on_task_failure が呼ばれる (AC6)"""
+        result_path = str(tmp_path / "result.md")
+        config = _make_jsonl_config(tmp_path, [
+            _jsonl_task("uuid-a", "echo 'PIPELINE_STATUS: IMPL_FAILED'", result_path)
+        ])
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        hooks.check_pipeline_status.return_value = "IMPL_FAILED"
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=5.0)
+
+        hooks.on_task_failure.assert_called_once()
+        call_args = hooks.on_task_failure.call_args
+        assert "PIPELINE_FAILED:IMPL_FAILED" in call_args[0][3]
+
+    def test_rejected_calls_on_task_rejected_ac7(self, tmp_path):
+        """stdout が REJECTED: で始まる → on_task_rejected が呼ばれる (AC7)"""
+        result_path = str(tmp_path / "result.md")
+        config = _make_jsonl_config(tmp_path, [
+            _jsonl_task("uuid-a", "echo 'REJECTED: 理由'", result_path)
+        ])
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = True
+        hooks.check_pipeline_status.return_value = None
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=5.0)
+
+        hooks.on_task_rejected.assert_called_once()
+        hooks.on_task_success.assert_not_called()
+
+    def test_empty_stdout_calls_on_task_empty_result_ac8(self, tmp_path):
+        """stdout が空 → on_task_empty_result が呼ばれる (AC8)"""
+        result_path = str(tmp_path / "result.md")
+        config = _make_jsonl_config(tmp_path, [
+            _jsonl_task("uuid-a", "true", result_path)
+        ])
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        hooks.check_pipeline_status.return_value = None
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=5.0)
+
+        assert Path(result_path).exists()
+        assert Path(result_path).stat().st_size == 0
+        hooks.on_task_empty_result.assert_called_once()
