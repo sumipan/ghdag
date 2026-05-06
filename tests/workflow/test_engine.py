@@ -316,3 +316,84 @@ class TestGetAdapter:
             # cleanup
             _ADAPTERS.clear()
             _ADAPTERS.update(original_adapters)
+
+
+# ---------------------------------------------------------------------------
+# build_exec_record — AC1, AC2, AC10
+# ---------------------------------------------------------------------------
+
+class TestBuildExecRecord:
+    BASE_KWARGS = dict(
+        uuid="abc-123",
+        order_path="queue/order.md",
+        result_path="queue/result.md",
+        prompt="受け取った内容を実行して",
+        depends=["dep-456"],
+    )
+
+    def test_claude_full_record_ac1(self):
+        result = ClaudeAdapter().build_exec_record(
+            **self.BASE_KWARGS, model="claude-sonnet-4-6"
+        )
+        assert result == {
+            "uuid": "abc-123",
+            "command": (
+                "cat queue/order.md"
+                " | claude -p '受け取った内容を実行して'"
+                " --model 'claude-sonnet-4-6'"
+                " --dangerously-skip-permissions"
+            ),
+            "depends": ["dep-456"],
+            "result_path": "queue/result.md",
+            "retry": 0,
+            "annotations": {},
+        }
+
+    def test_no_tee_in_command_all_adapters_ac2(self):
+        kwargs = {**self.BASE_KWARGS, "model": "some-model"}
+        for adapter in [ClaudeAdapter(), GeminiAdapter(), CursorAdapter()]:
+            result = adapter.build_exec_record(**kwargs)
+            assert "tee" not in result["command"], f"{adapter.name}: command contains tee"
+
+    def test_claude_no_model_flag_when_none_ac10(self):
+        result = ClaudeAdapter().build_exec_record(**self.BASE_KWARGS, model=None)
+        assert "--model" not in result["command"]
+        assert "--dangerously-skip-permissions" in result["command"]
+
+    def test_gemini_record(self):
+        result = GeminiAdapter().build_exec_record(
+            **self.BASE_KWARGS, model="flash"
+        )
+        assert result["uuid"] == "abc-123"
+        assert "gemini -p" in result["command"]
+        assert "-m flash" in result["command"]
+        assert "--approval-mode yolo" in result["command"]
+        assert "tee" not in result["command"]
+        assert result["result_path"] == "queue/result.md"
+        assert result["retry"] == 0
+        assert result["annotations"] == {}
+
+    def test_gemini_no_model_flag_when_none(self):
+        result = GeminiAdapter().build_exec_record(**self.BASE_KWARGS, model=None)
+        assert "-m " not in result["command"]
+
+    def test_cursor_record(self):
+        result = CursorAdapter().build_exec_record(
+            **self.BASE_KWARGS, model="gemini-3-flash"
+        )
+        assert "agent" in result["command"]
+        assert "--model 'gemini-3-flash'" in result["command"]
+        assert "-p --force" in result["command"]
+        assert "tee" not in result["command"]
+        assert result["result_path"] == "queue/result.md"
+
+    def test_cursor_no_model_flag_when_none(self):
+        result = CursorAdapter().build_exec_record(**self.BASE_KWARGS, model=None)
+        assert "--model" not in result["command"]
+        assert "--force" in result["command"]
+
+    def test_result_path_is_separate_field_not_in_command(self):
+        for adapter in [ClaudeAdapter(), GeminiAdapter(), CursorAdapter()]:
+            result = adapter.build_exec_record(**self.BASE_KWARGS, model=None)
+            assert result["result_path"] == "queue/result.md"
+            assert "queue/result.md" not in result["command"]

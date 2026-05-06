@@ -35,6 +35,13 @@ def _stderr_reader(proc: subprocess.Popen, buf: io.BytesIO) -> None:
     proc.stderr.close()
 
 
+def _stdout_reader(proc: subprocess.Popen, buf: io.BytesIO) -> None:
+    """Read stdout from proc into buf in a daemon thread."""
+    for chunk in iter(lambda: proc.stdout.read(4096), b""):
+        buf.write(chunk)
+    proc.stdout.close()
+
+
 def _extract_tee_target(command: str, result_path: str | None = None) -> str | None:
     """Extract the tee output path from a command string.
 

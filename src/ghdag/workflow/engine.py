@@ -38,6 +38,21 @@ class EngineAdapter(Protocol):
         """
         ...
 
+    def build_exec_record(
+        self,
+        *,
+        uuid: str,
+        order_path: str,
+        result_path: str,
+        prompt: str,
+        model: str | None,
+        depends: list[str],
+    ) -> dict:
+        """exec.jsonl に書き込む 1 レコード（dict）を組み立てる。
+        command フィールドに tee パイプを含めない。
+        """
+        ...
+
 
 class ClaudeAdapter:
     name = "claude"
@@ -61,6 +76,30 @@ class ClaudeAdapter:
             f" | tee -a {result_path}"
         )
 
+    def build_exec_record(
+        self,
+        *,
+        uuid: str,
+        order_path: str,
+        result_path: str,
+        prompt: str,
+        model: str | None,
+        depends: list[str],
+    ) -> dict:
+        model_flag = f" --model '{model}'" if model else ""
+        return {
+            "uuid": uuid,
+            "command": (
+                f"cat {order_path}"
+                f" | claude -p '{prompt}'{model_flag}"
+                f" --dangerously-skip-permissions"
+            ),
+            "depends": depends,
+            "result_path": result_path,
+            "retry": 0,
+            "annotations": {},
+        }
+
 
 class GeminiAdapter:
     name = "gemini"
@@ -83,6 +122,30 @@ class GeminiAdapter:
             f" --approval-mode yolo"
             f" | tee -a {result_path}"
         )
+
+    def build_exec_record(
+        self,
+        *,
+        uuid: str,
+        order_path: str,
+        result_path: str,
+        prompt: str,
+        model: str | None,
+        depends: list[str],
+    ) -> dict:
+        model_flag = f" -m {model}" if model else ""
+        return {
+            "uuid": uuid,
+            "command": (
+                f"cat {order_path}"
+                f" | gemini -p '{prompt}'{model_flag}"
+                f" --approval-mode yolo"
+            ),
+            "depends": depends,
+            "result_path": result_path,
+            "retry": 0,
+            "annotations": {},
+        }
 
 
 _ADAPTERS: dict[str, EngineAdapter] = {}
@@ -118,6 +181,26 @@ class CursorAdapter:
             f" < {order_path}"
             f" | tee -a {result_path}"
         )
+
+    def build_exec_record(
+        self,
+        *,
+        uuid: str,
+        order_path: str,
+        result_path: str,
+        prompt: str,
+        model: str | None,
+        depends: list[str],
+    ) -> dict:
+        model_flag = f" --model '{model}'" if model else ""
+        return {
+            "uuid": uuid,
+            "command": f"agent{model_flag} -p --force < {order_path}",
+            "depends": depends,
+            "result_path": result_path,
+            "retry": 0,
+            "annotations": {},
+        }
 
 
 # 起動時に登録

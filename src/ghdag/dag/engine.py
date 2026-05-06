@@ -10,8 +10,9 @@ import signal
 import subprocess
 import threading
 import time
+from pathlib import Path
 
-from ._util import _extract_tee_target, _stderr_reader
+from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .hooks import DefaultHooks, DagHooks
 from .models import DagConfig, RunningTask, Task
 from .parser import parse_exec_md, parse_jsonl, validate_dependencies
@@ -166,22 +167,35 @@ class DagEngine:
     def _launch_task(self, uuid: str, task: Task) -> None:
         logger.info("Launching [%s]: %s", uuid, task.command)
         cwd = str(self._config.cwd) if self._config.cwd else None
-        proc = subprocess.Popen(
-            ["bash", "-o", "pipefail", "-c", task.command],
-            stderr=subprocess.PIPE,
-            cwd=cwd,
-        )
-        buf = io.BytesIO()
-        t = threading.Thread(target=_stderr_reader, args=(proc, buf), daemon=True)
-        t.start()
+
+        stdout_buf: io.BytesIO | None = None
+        if task.result_path is not None:
+            proc = subprocess.Popen(
+                ["bash", "-o", "pipefail", "-c", task.command],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=cwd,
+            )
+            stdout_buf = io.BytesIO()
+            threading.Thread(target=_stdout_reader, args=(proc, stdout_buf), daemon=True).start()
+        else:
+            proc = subprocess.Popen(
+                ["bash", "-o", "pipefail", "-c", task.command],
+                stderr=subprocess.PIPE,
+                cwd=cwd,
+            )
+
+        stderr_buf = io.BytesIO()
+        threading.Thread(target=_stderr_reader, args=(proc, stderr_buf), daemon=True).start()
         self._running[uuid] = RunningTask(
             uuid=uuid,
             task=task,
             proc=proc,
             started_at=time.time(),
             started_at_mono=time.monotonic(),
-            stderr_buf=buf,
+            stderr_buf=stderr_buf,
             retry_depth=task.retry,
+            stdout_buf=stdout_buf,
         )
 
     def _check_completions(self) -> None:
@@ -226,10 +240,15 @@ class DagEngine:
                 continue
 
             if returncode == 0:
-                tee_target = _extract_tee_target(task.command, task.result_path)
+                if task.result_path is not None:
+                    stdout_data = rt.stdout_buf.getvalue() if rt.stdout_buf else b""
+                    Path(task.result_path).write_bytes(stdout_data)
+                    effective_result_path: str | None = task.result_path
+                else:
+                    effective_result_path = _extract_tee_target(task.command)
 
                 # Check rejected
-                if tee_target and self._hooks.check_rejected(tee_target):
+                if effective_result_path and self._hooks.check_rejected(effective_result_path):
                     retry_depth = task.retry
                     is_final = retry_depth >= self._config.max_retry
                     if is_final:
@@ -245,7 +264,7 @@ class DagEngine:
                     self._hooks.on_task_rejected(uuid, task, retry_depth, is_final, metrics)
 
                 # Check PIPELINE_STATUS: *_FAILED
-                elif tee_target and (pipeline_status := self._hooks.check_pipeline_status(tee_target)) and pipeline_status.endswith("_FAILED"):
+                elif effective_result_path and (pipeline_status := self._hooks.check_pipeline_status(effective_result_path)) and pipeline_status.endswith("_FAILED"):
                     state_mark_done(self._config.exec_done_dir, uuid, f"PIPELINE_FAILED:{pipeline_status}")
                     metrics = TaskMetrics(
                         uuid=uuid, engine=engine, model=model,
@@ -256,7 +275,7 @@ class DagEngine:
                     self._hooks.on_task_failure(uuid, task, 0, f"PIPELINE_FAILED:{pipeline_status}", metrics)
 
                 # Check empty result
-                elif tee_target and os.path.exists(tee_target) and os.path.getsize(tee_target) == 0:
+                elif effective_result_path and os.path.exists(effective_result_path) and os.path.getsize(effective_result_path) == 0:
                     state_mark_done(self._config.exec_done_dir, uuid, "EMPTY_RESULT")
                     metrics = TaskMetrics(
                         uuid=uuid, engine=engine, model=model,
