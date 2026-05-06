@@ -20,6 +20,8 @@ from .state import (
     load_succeeded_from_dir,
     mark_done as state_mark_done,
 )
+from ghdag.metrics.models import TaskMetrics
+from ghdag.metrics.parsers import parse_engine_model, parse_token_count
 
 logger = logging.getLogger(__name__)
 
@@ -170,11 +172,14 @@ class DagEngine:
             if rt.proc.poll() is None:
                 continue
 
+            finished_at = time.time()
             stderr_text = rt.stderr_buf.getvalue().decode("utf-8", errors="replace").strip()
             returncode = rt.proc.returncode
             del self._running[uuid]
 
             task = rt.task
+            engine, model = parse_engine_model(task.command)
+            token_count = parse_token_count(engine, stderr_text)
 
             if returncode == 0:
                 tee_target = _extract_tee_target(task.command)
@@ -187,25 +192,55 @@ class DagEngine:
                         state_mark_done(self._config.exec_done_dir, uuid, "REJECTED_FINAL")
                     else:
                         state_mark_done(self._config.exec_done_dir, uuid, "REJECTED")
-                    self._hooks.on_task_rejected(uuid, task, retry_depth, is_final)
+                    metrics = TaskMetrics(
+                        uuid=uuid, engine=engine, model=model,
+                        wall_time_sec=round(finished_at - rt.started_at, 3),
+                        token_count=token_count, status="rejected",
+                        started_at=rt.started_at, finished_at=finished_at,
+                    )
+                    self._hooks.on_task_rejected(uuid, task, retry_depth, is_final, metrics)
 
                 # Check PIPELINE_STATUS: *_FAILED
                 elif tee_target and (pipeline_status := self._hooks.check_pipeline_status(tee_target)) and pipeline_status.endswith("_FAILED"):
                     state_mark_done(self._config.exec_done_dir, uuid, f"PIPELINE_FAILED:{pipeline_status}")
-                    self._hooks.on_task_failure(uuid, task, 0, f"PIPELINE_FAILED:{pipeline_status}")
+                    metrics = TaskMetrics(
+                        uuid=uuid, engine=engine, model=model,
+                        wall_time_sec=round(finished_at - rt.started_at, 3),
+                        token_count=token_count, status="failure",
+                        started_at=rt.started_at, finished_at=finished_at,
+                    )
+                    self._hooks.on_task_failure(uuid, task, 0, f"PIPELINE_FAILED:{pipeline_status}", metrics)
 
                 # Check empty result
                 elif tee_target and os.path.exists(tee_target) and os.path.getsize(tee_target) == 0:
                     state_mark_done(self._config.exec_done_dir, uuid, "EMPTY_RESULT")
-                    self._hooks.on_task_empty_result(uuid, task, stderr_text)
+                    metrics = TaskMetrics(
+                        uuid=uuid, engine=engine, model=model,
+                        wall_time_sec=round(finished_at - rt.started_at, 3),
+                        token_count=token_count, status="empty_result",
+                        started_at=rt.started_at, finished_at=finished_at,
+                    )
+                    self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
 
                 else:
                     state_mark_done(self._config.exec_done_dir, uuid, 0)
-                    self._hooks.on_task_success(uuid, task)
+                    metrics = TaskMetrics(
+                        uuid=uuid, engine=engine, model=model,
+                        wall_time_sec=round(finished_at - rt.started_at, 3),
+                        token_count=token_count, status="success",
+                        started_at=rt.started_at, finished_at=finished_at,
+                    )
+                    self._hooks.on_task_success(uuid, task, metrics)
 
             else:
                 state_mark_done(self._config.exec_done_dir, uuid, returncode)
-                self._hooks.on_task_failure(uuid, task, returncode, stderr_text)
+                metrics = TaskMetrics(
+                    uuid=uuid, engine=engine, model=model,
+                    wall_time_sec=round(finished_at - rt.started_at, 3),
+                    token_count=token_count, status="failure",
+                    started_at=rt.started_at, finished_at=finished_at,
+                )
+                self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
 
     def _propagate_dep_failed(self, known_done: set[str], known_succeeded: set[str]) -> None:
         """Mark tasks whose dependencies have failed as DEP_FAILED."""
