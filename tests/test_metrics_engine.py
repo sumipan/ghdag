@@ -30,6 +30,7 @@ def make_running_task(uuid="test-uuid", command="echo hello", returncode=0, stde
         task=task,
         proc=proc,
         started_at=time.time() - 0.1,
+        started_at_mono=time.monotonic() - 0.1,
         stderr_buf=io.BytesIO(stderr),
         retry_depth=retry,
     )

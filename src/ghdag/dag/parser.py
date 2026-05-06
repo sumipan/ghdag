@@ -139,7 +139,6 @@ def validate_dependencies(
         {uuid: reason} の辞書。reason は "orphan_dep:<missing_uuid>" または "cycle"
     """
     task_uuids = {t.uuid for t in tasks}
-    task_map = {t.uuid: t for t in tasks}
     all_known = task_uuids | done
 
     failed: dict[str, str] = {}
