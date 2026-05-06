@@ -169,6 +169,18 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="list_models",
         help="List available models for the specified engine and exit",
     )
+    llm_parser.add_argument(
+        "--audit-path",
+        default=None,
+        dest="audit_path",
+        help="Path to audit.jsonl (env: GHDAG_AUDIT_PATH)",
+    )
+    llm_parser.add_argument(
+        "--correlation-id",
+        default=None,
+        dest="correlation_id",
+        help="Correlation ID for audit log",
+    )
     llm_parser.set_defaults(func=_cmd_llm)
 
     # ghdag version
@@ -538,6 +550,21 @@ def _cmd_llm(args: argparse.Namespace) -> None:
         print(result.stdout, end="")
     if result.stderr:
         print(result.stderr, end="", file=sys.stderr)
+
+    # 監査ログ（正常終了時のみ記録）
+    audit_path = args.audit_path or os.environ.get("GHDAG_AUDIT_PATH")
+    if audit_path and result.ok:
+        from ghdag.pipeline.audit import write_llm_audit_log
+        from ghdag.llm.engines import validate_engine_model
+        write_llm_audit_log(
+            Path(audit_path),
+            engine=args.engine,
+            model=validate_engine_model(args.engine, args.model),
+            exit_code=result.returncode,
+            correlation_id=args.correlation_id,
+            timeout_sec=args.timeout,
+        )
+
     sys.exit(result.returncode)
 
 
