@@ -10,9 +10,8 @@ class StepConfig:
     template: str           # order テンプレートファイル名（拡張子なし）
     model: str              # 実行モデル（必須）
     id: str | None = None   # ステップ ID（depends 参照用）
-    agent: str = "claude"   # LLM エンジン名（"claude", "gemini"）
+    engine: str = "claude"  # LLM エンジン名（"claude", "gemini", "cursor" 等）
     depends: list[str] = field(default_factory=list)  # 依存ステップ ID リスト
-    agent: str = "claude"   # LLM エンジン名（"claude", "gemini" 等）
 
 
 @dataclass
