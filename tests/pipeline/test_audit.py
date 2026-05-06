@@ -3,10 +3,6 @@
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
-
-import pytest
 
 from ghdag.pipeline.audit import AuditContext, write_audit_log
 
@@ -37,7 +33,7 @@ class TestWriteAuditLog:
         write_audit_log(audit_path, lines, ctx)
 
         assert audit_path.exists()
-        records = [json.loads(l) for l in audit_path.read_text().splitlines()]
+        records = [json.loads(line) for line in audit_path.read_text().splitlines()]
         assert len(records) == 1
         r = records[0]
         assert r["source"] == "issuesmith"
