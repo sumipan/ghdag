@@ -27,6 +27,7 @@ class RunningTask:
     started_at: float
     stderr_buf: io.BytesIO
     retry_depth: int = 0
+    stdout_buf: io.BytesIO | None = None
 
 
 @dataclass
