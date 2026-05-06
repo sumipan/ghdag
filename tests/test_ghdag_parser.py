@@ -1,10 +1,14 @@
 """Tests for ghdag.dag.parser — §5.2 acceptance criteria."""
 
+import fcntl
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
-from ghdag.dag.parser import parse_exec_md, parse_jsonl
+from ghdag.dag.parser import parse_exec_md, parse_jsonl, validate_dependencies
+from ghdag.dag.models import Task
 
 
 @pytest.fixture
@@ -164,3 +168,106 @@ class TestParseJsonl:
         assert len(tasks) == 1
         assert tasks[0].retry == 2
         assert tasks[0].annotations == {"model": "sonnet"}
+
+
+class TestParseExecMdLocking:
+    """AC 2-1, 2-2: parse_exec_md の共有ロック"""
+
+    def test_exclusive_lock_blocks_read(self, tmp_exec_md):
+        """2-1: LOCK_EX を持つスレッドが完了するまで parse_exec_md がブロックされる"""
+        path = tmp_exec_md("uuid-a: echo hello\n")
+
+        lock_acquired = threading.Event()
+        lock_released_at = [None]
+        reader_done_at = [None]
+
+        def exclusive_holder():
+            with open(str(path)) as f:
+                fcntl.flock(f, fcntl.LOCK_EX)
+                lock_acquired.set()
+                time.sleep(0.4)
+                lock_released_at[0] = time.monotonic()
+                fcntl.flock(f, fcntl.LOCK_UN)
+
+        def shared_reader():
+            lock_acquired.wait(timeout=2.0)
+            parse_exec_md(path)
+            reader_done_at[0] = time.monotonic()
+
+        t1 = threading.Thread(target=exclusive_holder)
+        t2 = threading.Thread(target=shared_reader)
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert lock_released_at[0] is not None
+        assert reader_done_at[0] is not None
+        assert reader_done_at[0] >= lock_released_at[0] - 0.05  # reader completed after lock released
+
+    def test_concurrent_reads_do_not_block(self, tmp_exec_md):
+        """2-2: 複数 parse_exec_md は並行して実行できる（LOCK_SH は競合しない）"""
+        path = tmp_exec_md("uuid-a: echo hello\n")
+        errors = []
+        results = []
+
+        def reader():
+            try:
+                tasks = parse_exec_md(path)
+                results.append(len(tasks))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=reader) for _ in range(5)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors
+        assert len(results) == 5
+        assert all(r == 1 for r in results)
+
+
+class TestValidateDependencies:
+    """AC 3-1 ~ 3-5: validate_dependencies"""
+
+    def _make_task(self, uuid: str, depends: list[str]) -> Task:
+        return Task(uuid=uuid, command=f"echo {uuid}", depends=depends)
+
+    def test_orphan_dep_detected(self):
+        """3-1: 孤立依存（exec.md にも done にも存在しない）を検出する"""
+        tasks = [self._make_task("uuid-b", ["uuid-x"])]
+        result = validate_dependencies(tasks, done=set())
+        assert result == {"uuid-b": "orphan_dep:uuid-x"}
+
+    def test_mutual_cycle_detected(self):
+        """3-2: 相互依存の閉路を検出する"""
+        tasks = [
+            self._make_task("uuid-a", ["uuid-b"]),
+            self._make_task("uuid-b", ["uuid-a"]),
+        ]
+        result = validate_dependencies(tasks, done=set())
+        assert result.get("uuid-a") == "cycle"
+        assert result.get("uuid-b") == "cycle"
+
+    def test_done_dep_is_not_orphan(self):
+        """3-3: exec-done に存在する依存は孤立でない"""
+        tasks = [self._make_task("uuid-b", ["uuid-a"])]
+        result = validate_dependencies(tasks, done={"uuid-a"})
+        assert result == {}
+
+    def test_normal_linear_graph(self):
+        """3-4: 正常な線形依存グラフは空辞書を返す"""
+        tasks = [
+            self._make_task("uuid-a", []),
+            self._make_task("uuid-b", ["uuid-a"]),
+        ]
+        result = validate_dependencies(tasks, done=set())
+        assert result == {}
+
+    def test_self_reference_detected(self):
+        """3-5: 自己参照（自己ループ）を閉路として検出する"""
+        tasks = [self._make_task("uuid-a", ["uuid-a"])]
+        result = validate_dependencies(tasks, done=set())
+        assert result.get("uuid-a") == "cycle"
