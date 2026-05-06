@@ -4,6 +4,7 @@ import inspect
 import json
 import re
 import sys
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -43,6 +44,35 @@ def write_audit_log(
         "caller_stack": _capture_caller_stack(),
         "exec_lines_count": len(exec_lines),
         "idempotency_key": idempotency_key,
+    }
+
+    try:
+        with open(audit_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError as e:
+        print(f"[audit] warning: failed to write audit log: {e}", file=sys.stderr)
+
+
+def write_llm_audit_log(
+    audit_path: Path,
+    *,
+    engine: str,
+    model: str,
+    exit_code: int,
+    correlation_id: str | None = None,
+    timeout_sec: int | None = None,
+) -> None:
+    """llm サブコマンド用の監査ログを 1 行追記する。"""
+    record = {
+        "event": "llm_call",
+        "timestamp": datetime.now(JST).isoformat(),
+        "request_id": str(uuid.uuid4()),
+        "source": "llm_cli",
+        "correlation_id": correlation_id,
+        "engine": engine,
+        "model": model,
+        "exit_code": exit_code,
+        "timeout_sec": timeout_sec,
     }
 
     try:

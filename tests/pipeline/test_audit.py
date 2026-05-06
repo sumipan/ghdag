@@ -1,8 +1,9 @@
-"""Tests for pipeline/audit.py — AC 1-7 (Issue #756)."""
+"""Tests for pipeline/audit.py — AC 1-7 (Issue #756), AC 1-11 (Issue #762)."""
 
 from __future__ import annotations
 
 import json
+import re
 
 from ghdag.pipeline.audit import AuditContext, write_audit_log
 
@@ -137,3 +138,130 @@ class TestWriteAuditLog:
 
         lines = audit_path.read_text().strip().splitlines()
         assert len(lines) == 2
+
+
+_UUID4_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+
+
+class TestWriteLlmAuditLog:
+    """Tests for write_llm_audit_log() — Issue #762."""
+
+    def test_ac1_all_fields(self, tmp_path):
+        """AC1: 全フィールド指定 — 正しく記録される。"""
+        from ghdag.pipeline.audit import write_llm_audit_log
+
+        audit_path = tmp_path / "audit.jsonl"
+        write_llm_audit_log(
+            audit_path,
+            engine="claude",
+            model="claude-sonnet-4-6",
+            exit_code=0,
+            correlation_id="slack:1234",
+            timeout_sec=120,
+        )
+
+        assert audit_path.exists()
+        records = [json.loads(line) for line in audit_path.read_text().splitlines()]
+        assert len(records) == 1
+        r = records[0]
+        assert r["event"] == "llm_call"
+        assert r["source"] == "llm_cli"
+        assert r["engine"] == "claude"
+        assert r["model"] == "claude-sonnet-4-6"
+        assert r["exit_code"] == 0
+        assert r["correlation_id"] == "slack:1234"
+        assert r["timeout_sec"] == 120
+        assert "+09:00" in r["timestamp"]
+        assert _UUID4_RE.match(r["request_id"])
+
+    def test_ac2_correlation_id_none(self, tmp_path):
+        """AC2: correlation_id 未指定 → null。"""
+        from ghdag.pipeline.audit import write_llm_audit_log
+
+        audit_path = tmp_path / "audit.jsonl"
+        write_llm_audit_log(
+            audit_path,
+            engine="claude",
+            model="claude-sonnet-4-6",
+            exit_code=0,
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["correlation_id"] is None
+
+    def test_ac6_timeout_sec_none(self, tmp_path):
+        """AC6: timeout_sec 未指定 → null。"""
+        from ghdag.pipeline.audit import write_llm_audit_log
+
+        audit_path = tmp_path / "audit.jsonl"
+        write_llm_audit_log(
+            audit_path,
+            engine="claude",
+            model="claude-sonnet-4-6",
+            exit_code=0,
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["timeout_sec"] is None
+
+    def test_ac8_write_failure_logs_stderr_no_exception(self, tmp_path, capsys):
+        """AC8: I/O 失敗 → stderr 警告のみ、例外を上位に伝搬しない。"""
+        from ghdag.pipeline.audit import write_llm_audit_log
+
+        audit_path = tmp_path / "audit.jsonl"
+        audit_path.mkdir()  # directory → open() fails
+
+        write_llm_audit_log(
+            audit_path,
+            engine="claude",
+            model="claude-sonnet-4-6",
+            exit_code=0,
+        )
+
+        captured = capsys.readouterr()
+        assert "[audit] warning:" in captured.err
+
+    def test_request_id_unique_per_call(self, tmp_path):
+        """request_id は呼び出しごとに異なる UUID4。"""
+        from ghdag.pipeline.audit import write_llm_audit_log
+
+        audit_path = tmp_path / "audit.jsonl"
+        for _ in range(3):
+            write_llm_audit_log(
+                audit_path,
+                engine="claude",
+                model="claude-sonnet-4-6",
+                exit_code=0,
+            )
+
+        records = [json.loads(line) for line in audit_path.read_text().splitlines()]
+        request_ids = [r["request_id"] for r in records]
+        assert len(set(request_ids)) == 3
+
+    def test_appends_multiple_calls(self, tmp_path):
+        """複数回呼ぶと JSONL に複数行が追記される。"""
+        from ghdag.pipeline.audit import write_llm_audit_log
+
+        audit_path = tmp_path / "audit.jsonl"
+        write_llm_audit_log(audit_path, engine="claude", model="claude-sonnet-4-6", exit_code=0)
+        write_llm_audit_log(audit_path, engine="cursor", model="auto", exit_code=0)
+
+        lines = audit_path.read_text().strip().splitlines()
+        assert len(lines) == 2
+
+    def test_ac11_coexists_with_enqueue_records(self, tmp_path):
+        """AC11: enqueue レコードと llm_call レコードが同一ファイルに共存できる。"""
+        from ghdag.pipeline.audit import write_llm_audit_log
+
+        audit_path = tmp_path / "audit.jsonl"
+        write_audit_log(audit_path, [f"{UUID1}: cmd"], AuditContext(source="issuesmith"))
+        write_llm_audit_log(audit_path, engine="claude", model="claude-sonnet-4-6", exit_code=0)
+
+        lines = audit_path.read_text().strip().splitlines()
+        assert len(lines) == 2
+        enqueue_r = json.loads(lines[0])
+        llm_r = json.loads(lines[1])
+        assert "event" not in enqueue_r
+        assert llm_r["event"] == "llm_call"

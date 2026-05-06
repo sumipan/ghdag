@@ -674,3 +674,144 @@ class TestCleanupError:
         with pytest.raises(SystemExit) as exc:
             main(["cleanup"])
         assert exc.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# Issue #762: ghdag llm --audit-path / --correlation-id
+# ---------------------------------------------------------------------------
+
+
+class TestLlmAuditPath:
+    """Tests for --audit-path and --correlation-id in ghdag llm."""
+
+    def _make_result(self, returncode: int = 0):
+        from ghdag.llm.engines import LLMResult
+        return LLMResult(stdout="ok\n", stderr="", returncode=returncode)
+
+    def test_ac1_audit_path_and_correlation_id(self, tmp_path):
+        """AC1: --audit-path + --correlation-id + 正常終了 → レコード追記。"""
+        audit_path = tmp_path / "audit.jsonl"
+        mock_result = self._make_result(returncode=0)
+
+        with patch("ghdag.llm.engines.call", return_value=mock_result), \
+             patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
+            from ghdag.cli import main
+            with pytest.raises(SystemExit) as exc:
+                main([
+                    "llm", "hello",
+                    "--engine", "claude",
+                    "--model", "claude-sonnet-4-6",
+                    "--audit-path", str(audit_path),
+                    "--correlation-id", "slack:1234",
+                ])
+        assert exc.value.code == 0
+        assert audit_path.exists()
+        r = json.loads(audit_path.read_text().strip())
+        assert r["event"] == "llm_call"
+        assert r["source"] == "llm_cli"
+        assert r["engine"] == "claude"
+        assert r["model"] == "claude-sonnet-4-6"
+        assert r["exit_code"] == 0
+        assert r["correlation_id"] == "slack:1234"
+        assert "+09:00" in r["timestamp"]
+
+    def test_ac2_correlation_id_unspecified_is_null(self, tmp_path):
+        """AC2: correlation_id 未指定 → null。"""
+        audit_path = tmp_path / "audit.jsonl"
+        mock_result = self._make_result(returncode=0)
+
+        with patch("ghdag.llm.engines.call", return_value=mock_result), \
+             patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
+            from ghdag.cli import main
+            with pytest.raises(SystemExit):
+                main(["llm", "hello", "--audit-path", str(audit_path)])
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["correlation_id"] is None
+
+    def test_ac3_env_var_audit_path(self, tmp_path, monkeypatch):
+        """AC3: 環境変数 GHDAG_AUDIT_PATH でのパス指定。"""
+        audit_path = tmp_path / "audit.jsonl"
+        monkeypatch.setenv("GHDAG_AUDIT_PATH", str(audit_path))
+        mock_result = self._make_result(returncode=0)
+
+        with patch("ghdag.llm.engines.call", return_value=mock_result), \
+             patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
+            from ghdag.cli import main
+            with pytest.raises(SystemExit):
+                main(["llm", "hello"])
+
+        assert audit_path.exists()
+        r = json.loads(audit_path.read_text().strip())
+        assert r["event"] == "llm_call"
+
+    def test_ac4_flag_takes_precedence_over_env(self, tmp_path, monkeypatch):
+        """AC4: --audit-path が環境変数 GHDAG_AUDIT_PATH より優先。"""
+        env_path = tmp_path / "env.jsonl"
+        flag_path = tmp_path / "flag.jsonl"
+        monkeypatch.setenv("GHDAG_AUDIT_PATH", str(env_path))
+        mock_result = self._make_result(returncode=0)
+
+        with patch("ghdag.llm.engines.call", return_value=mock_result), \
+             patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
+            from ghdag.cli import main
+            with pytest.raises(SystemExit):
+                main(["llm", "hello", "--audit-path", str(flag_path)])
+
+        assert flag_path.exists()
+        assert not env_path.exists()
+
+    def test_ac5_timeout_recorded(self, tmp_path):
+        """AC5: --timeout 指定時 → timeout_sec が記録される。"""
+        audit_path = tmp_path / "audit.jsonl"
+        mock_result = self._make_result(returncode=0)
+
+        with patch("ghdag.llm.engines.call", return_value=mock_result), \
+             patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
+            from ghdag.cli import main
+            with pytest.raises(SystemExit):
+                main(["llm", "hello", "--audit-path", str(audit_path), "--timeout", "120"])
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["timeout_sec"] == 120
+
+    def test_ac6_timeout_unspecified_is_null(self, tmp_path):
+        """AC6: --timeout 未指定 → timeout_sec = null。"""
+        audit_path = tmp_path / "audit.jsonl"
+        mock_result = self._make_result(returncode=0)
+
+        with patch("ghdag.llm.engines.call", return_value=mock_result), \
+             patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
+            from ghdag.cli import main
+            with pytest.raises(SystemExit):
+                main(["llm", "hello", "--audit-path", str(audit_path)])
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["timeout_sec"] is None
+
+    def test_ac7_no_audit_on_llm_failure(self, tmp_path):
+        """AC7: LLM 異常終了 → 監査ログは記録されない。"""
+        audit_path = tmp_path / "audit.jsonl"
+        mock_result = self._make_result(returncode=1)
+
+        with patch("ghdag.llm.engines.call", return_value=mock_result), \
+             patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
+            from ghdag.cli import main
+            with pytest.raises(SystemExit) as exc:
+                main(["llm", "hello", "--audit-path", str(audit_path)])
+
+        assert exc.value.code == 1
+        assert not audit_path.exists()
+
+    def test_ac9_no_audit_path_no_env_no_log(self, tmp_path, monkeypatch):
+        """AC9: audit-path 未指定 + 環境変数未設定 → 監査ログなし（後方互換）。"""
+        monkeypatch.delenv("GHDAG_AUDIT_PATH", raising=False)
+        mock_result = self._make_result(returncode=0)
+
+        with patch("ghdag.llm.engines.call", return_value=mock_result), \
+             patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
+            from ghdag.cli import main
+            with pytest.raises(SystemExit) as exc:
+                main(["llm", "hello"])
+
+        assert exc.value.code == 0
