@@ -14,7 +14,7 @@ import time
 from ._util import _extract_tee_target, _stderr_reader
 from .hooks import DefaultHooks, DagHooks
 from .models import DagConfig, RunningTask, Task
-from .parser import parse_exec_md, parse_jsonl
+from .parser import parse_exec_md, parse_jsonl, validate_dependencies
 from .state import (
     load_done_from_dir,
     load_succeeded_from_dir,
@@ -57,19 +57,31 @@ class DagEngine:
                 last_mtime = mtime
                 if exec_md_path.endswith(".jsonl"):
                     with open(exec_md_path, encoding="utf-8") as f:
-                        text = f.read()
+                        fcntl.flock(f, fcntl.LOCK_SH)
+                        try:
+                            text = f.read()
+                        finally:
+                            fcntl.flock(f, fcntl.LOCK_UN)
                     task_list = parse_jsonl(text)
                 else:
                     task_list = parse_exec_md(exec_md_path)
                 self._tasks = {t.uuid: t for t in task_list}
                 logger.info("Loaded exec.md (%d tasks)", len(self._tasks))
 
-            # Check running processes for completion
+            # Check running processes for completion (includes timeout enforcement)
             self._check_completions()
 
             # Sync done state from disk
             known_done = load_done_from_dir(self._config.exec_done_dir)
             known_succeeded = load_succeeded_from_dir(self._config.exec_done_dir)
+
+            # Validate dependency graph and mark invalid tasks immediately
+            invalid_tasks = validate_dependencies(list(self._tasks.values()), known_done)
+            for inv_uuid, reason in invalid_tasks.items():
+                if inv_uuid not in known_done and inv_uuid not in self._running:
+                    state_mark_done(self._config.exec_done_dir, inv_uuid, "DEP_FAILED")
+                    self._hooks.on_task_dep_failed(inv_uuid, self._tasks[inv_uuid], reason)
+                    known_done.add(inv_uuid)
 
             # Propagate DEP_FAILED
             self._propagate_dep_failed(known_done, known_succeeded)
@@ -167,6 +179,7 @@ class DagEngine:
             task=task,
             proc=proc,
             started_at=time.time(),
+            started_at_mono=time.monotonic(),
             stderr_buf=buf,
             retry_depth=task.retry,
         )
@@ -174,9 +187,23 @@ class DagEngine:
     def _check_completions(self) -> None:
         for uuid in list(self._running):
             rt = self._running[uuid]
+
+            # Wall-clock timeout enforcement
+            task_timeout = self._config.task_timeout
+            if task_timeout is not None and rt.proc.poll() is None:
+                now = time.monotonic()
+                if rt.term_sent_at is None and (now - rt.started_at_mono) > task_timeout:
+                    logger.warning("Task [%s] exceeded timeout %.1fs, sending SIGTERM", uuid, task_timeout)
+                    rt.proc.terminate()
+                    rt.term_sent_at = now
+                elif rt.term_sent_at is not None and (now - rt.term_sent_at) > self._config.kill_grace:
+                    logger.warning("Task [%s] still alive after grace period, sending SIGKILL", uuid)
+                    rt.proc.kill()
+
             if rt.proc.poll() is None:
                 continue
 
+            was_timeout = rt.term_sent_at is not None
             finished_at = time.time()
             stderr_text = rt.stderr_buf.getvalue().decode("utf-8", errors="replace").strip()
             returncode = rt.proc.returncode
@@ -186,8 +213,20 @@ class DagEngine:
             engine, model = parse_engine_model(task.command)
             token_count = parse_token_count(engine, stderr_text)
 
+            if was_timeout:
+                state_mark_done(self._config.exec_done_dir, uuid, "TIMEOUT")
+                metrics = TaskMetrics(
+                    uuid=uuid, engine=engine, model=model,
+                    wall_time_sec=round(finished_at - rt.started_at, 3),
+                    token_count=token_count, status="failure",
+                    started_at=rt.started_at, finished_at=finished_at,
+                )
+                timeout_msg = f"TIMEOUT: task exceeded task_timeout={self._config.task_timeout}s"
+                self._hooks.on_task_failure(uuid, task, returncode, timeout_msg, metrics)
+                continue
+
             if returncode == 0:
-                tee_target = _extract_tee_target(task.command)
+                tee_target = _extract_tee_target(task.command, task.result_path)
 
                 # Check rejected
                 if tee_target and self._hooks.check_rejected(tee_target):

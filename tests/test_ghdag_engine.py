@@ -12,6 +12,10 @@ from ghdag.dag.models import DagConfig
 from ghdag.dag.state import is_done, load_done_from_dir, load_succeeded_from_dir
 
 
+def _read_done_status(exec_done_dir: str, uuid: str) -> str:
+    return (Path(exec_done_dir) / uuid).read_text().strip()
+
+
 def _write_exec_md(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -238,3 +242,119 @@ class TestSignalShutdown:
             assert new_handler is not old_handler
         finally:
             signal.signal(signal.SIGINT, old_handler)
+
+
+class TestDagConfigDefaults:
+    """AC 4-1, 4-2: lock_file のデフォルト"""
+
+    def test_lock_file_defaults_to_exec_md_parent(self, tmp_path):
+        """4-1: lock_file 未指定時は exec_md_path の親ディレクトリに .ghdag.lock が作られる"""
+        exec_md = tmp_path / "queue" / "exec.md"
+        exec_md.parent.mkdir(parents=True, exist_ok=True)
+        exec_md.write_text("")
+        config = DagConfig(exec_md_path=str(exec_md))
+        assert config.lock_file == Path(str(exec_md.parent)) / ".ghdag.lock"
+
+    def test_lock_file_explicit_preserved(self, tmp_path):
+        """4-2: 明示指定した lock_file は維持される（後方互換）"""
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+        custom = str(tmp_path / "custom.lock")
+        config = DagConfig(exec_md_path=str(exec_md), lock_file=custom)
+        assert config.lock_file == Path(custom)
+
+
+class TestTaskTimeout:
+    """AC 1-1 ~ 1-4: 子プロセス wall-clock タイムアウト"""
+
+    def test_timeout_records_timeout_status(self, tmp_path):
+        """1-1: task_timeout=2.0 で sleep 60 を実行すると TIMEOUT が記録される"""
+        config = _make_config(
+            tmp_path,
+            "uuid-a: sleep 60\n",
+            task_timeout=2.0,
+            kill_grace=2.0,
+        )
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=8.0)
+
+        assert is_done(config.exec_done_dir, "uuid-a")
+        status = _read_done_status(config.exec_done_dir, "uuid-a")
+        assert status == "TIMEOUT"
+
+    def test_timeout_sigkill_after_term_ignored(self, tmp_path):
+        """1-2: SIGTERM を無視するプロセスが kill_grace 後に SIGKILL で終了する"""
+        config = _make_config(
+            tmp_path,
+            "uuid-a: trap '' TERM; sleep 60\n",
+            task_timeout=2.0,
+            kill_grace=1.5,
+        )
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=10.0)
+
+        assert is_done(config.exec_done_dir, "uuid-a")
+        status = _read_done_status(config.exec_done_dir, "uuid-a")
+        assert status == "TIMEOUT"
+
+    def test_no_timeout_when_none(self, tmp_path):
+        """1-3: task_timeout=None では無制限（3秒の sleep が正常完了する）"""
+        config = _make_config(
+            tmp_path,
+            "uuid-a: sleep 1\n",
+            task_timeout=None,
+        )
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=5.0)
+
+        assert is_done(config.exec_done_dir, "uuid-a")
+        status = _read_done_status(config.exec_done_dir, "uuid-a")
+        assert status == "0"
+
+    def test_timeout_calls_on_task_failure_with_timeout_msg(self, tmp_path):
+        """1-4: on_task_failure の stderr_text 引数にタイムアウトである旨が含まれる"""
+        config = _make_config(
+            tmp_path,
+            "uuid-a: sleep 60\n",
+            task_timeout=2.0,
+            kill_grace=2.0,
+        )
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=8.0)
+
+        hooks.on_task_failure.assert_called_once()
+        call_args = hooks.on_task_failure.call_args
+        stderr_arg = call_args[0][3]  # 4th positional arg
+        assert "TIMEOUT" in stderr_arg or "timeout" in stderr_arg.lower()
+
+
+class TestValidateDependenciesEngine:
+    """AC 3: validate_dependencies がエンジンに統合されている"""
+
+    def test_orphan_dep_marks_dep_failed(self, tmp_path):
+        """孤立依存のタスクが DEP_FAILED としてマークされる"""
+        config = _make_config(
+            tmp_path,
+            "uuid-b[depends:nonexistent-uuid]: echo should-not-run\n",
+        )
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=3.0)
+
+        assert is_done(config.exec_done_dir, "uuid-b")
+        succeeded = load_succeeded_from_dir(config.exec_done_dir)
+        assert "uuid-b" not in succeeded

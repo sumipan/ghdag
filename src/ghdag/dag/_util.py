@@ -10,6 +10,9 @@ from pathlib import Path
 
 _PIPELINE_STATUS_RE = re.compile(r"^PIPELINE_STATUS:\s*(\S+)\s*$", re.MULTILINE)
 
+# Matches: tee [-a] "quoted path" or tee [-a] unquoted-path (any extension)
+_TEE_RE = re.compile(r'\btee\s+(?:-a\s+)?(?:"([^"]+)"|(\S+))')
+
 
 def check_pipeline_status(result_path: str) -> "str | None":
     """result ファイルから PIPELINE_STATUS 行を探し、最後にマッチした値を返す。
@@ -32,14 +35,23 @@ def _stderr_reader(proc: subprocess.Popen, buf: io.BytesIO) -> None:
     proc.stderr.close()
 
 
-def _extract_tee_target(command: str) -> str | None:
+def _extract_tee_target(command: str, result_path: str | None = None) -> str | None:
     """Extract the tee output path from a command string.
 
-    Example: 'cat foo | claude -p "..." | tee result.md' -> 'result.md'
-    Returns None if tee is not found.
+    Args:
+        command: タスクのコマンド文字列
+        result_path: Task.result_path（JSONL 形式で明示指定された場合）
+
+    Returns:
+        結果ファイルパス。取得できなければ None
     """
-    m = re.search(r"\btee\s+(?:-a\s+)?(\S+\.md)", command)
-    return m.group(1) if m else None
+    if result_path is not None:
+        return result_path
+    m = _TEE_RE.search(command)
+    if not m:
+        return None
+    # group(1) = quoted path content, group(2) = unquoted path
+    return m.group(1) if m.group(1) is not None else m.group(2)
 
 
 def default_check_rejected(result_path: str) -> bool:
