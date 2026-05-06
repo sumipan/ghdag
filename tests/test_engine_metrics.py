@@ -6,7 +6,6 @@ import io
 import time
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DagHooks

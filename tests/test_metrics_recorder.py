@@ -5,7 +5,6 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import time
-import warnings
 
 import pytest
 
