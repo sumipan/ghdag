@@ -1051,7 +1051,7 @@ handlers:
         assert step.engine == "cursor"
 
     def test_agent_only_fallback(self, tmp_path):
-        """TC-engine-2: agent: gemini のみ（engine なし）→ StepConfig.engine == 'gemini'"""
+        """TC-engine-2 (updated): agent: gemini のみ → agent キーは無視され engine は 'claude'"""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -1067,10 +1067,10 @@ handlers:
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
         configs = load_workflows(tmp_path)
         step = configs[0].handlers["brushup"].steps[0]
-        assert step.engine == "gemini"
+        assert step.engine == "claude"
 
     def test_engine_takes_priority_over_agent(self, tmp_path):
-        """TC-engine-3: engine: cursor と agent: claude の両方指定 → engine が優先"""
+        """TC-engine-3: engine: cursor と agent: claude の両方指定 → engine が優先（agent は無視）"""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -1101,6 +1101,47 @@ handlers:
     steps:
       - template: brushup
         model: claude-opus-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        configs = load_workflows(tmp_path)
+        step = configs[0].handlers["brushup"].steps[0]
+        assert step.engine == "claude"
+
+
+# ---------------------------------------------------------------------------
+# AC1: agent フィールド削除 (Issue #766)
+# ---------------------------------------------------------------------------
+
+
+class TestAC1AgentFieldRemoved:
+    def test_step_config_engine_keyword_works(self):
+        """StepConfig(engine='cursor') → engine is 'cursor'"""
+        step = StepConfig(template="t", model="m", engine="cursor")
+        assert step.engine == "cursor"
+
+    def test_step_config_default_engine_is_claude(self):
+        """StepConfig() → engine は 'claude'（デフォルト）"""
+        step = StepConfig(template="t", model="m")
+        assert step.engine == "claude"
+
+    def test_step_config_agent_keyword_raises_type_error(self):
+        """StepConfig(agent='cursor') → TypeError（agent フィールドは削除済み）"""
+        with pytest.raises(TypeError):
+            StepConfig(template="t", model="m", agent="cursor")  # type: ignore
+
+    def test_yaml_agent_key_ignored_defaults_to_claude(self, tmp_path):
+        """YAML に agent: cursor が含まれる場合、agent キーは無視され engine は 'claude'"""
+        yaml_content = """\
+name: test-pipeline
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+        agent: cursor
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
         configs = load_workflows(tmp_path)

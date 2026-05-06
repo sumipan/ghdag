@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.schema import StepConfig
 
@@ -170,7 +172,7 @@ class TestAC4EngineResultFilename:
     def test_claude_engine_result_filename(self):
         """engine=claude のとき result_filename が {ts}-claude-result-{uuid}.md。"""
         api, _, order_builder = _make_api()
-        steps = [StepConfig(id="p1", template="p1", model="claude-sonnet-4-6", agent="claude")]
+        steps = [StepConfig(id="p1", template="p1", model="claude-sonnet-4-6", engine="claude")]
         api.submit(steps, {})
 
         ctx = order_builder.build_order.call_args[0][1]
@@ -179,7 +181,7 @@ class TestAC4EngineResultFilename:
     def test_gemini_engine_result_filename(self):
         """engine=gemini のとき result_filename が {ts}-gemini-result-{uuid}.md。"""
         api, _, order_builder = _make_api()
-        steps = [StepConfig(id="p1", template="p1", model="gemini-2.5-flash", agent="gemini")]
+        steps = [StepConfig(id="p1", template="p1", model="gemini-2.5-flash", engine="gemini")]
         api.submit(steps, {})
 
         ctx = order_builder.build_order.call_args[0][1]
@@ -189,8 +191,8 @@ class TestAC4EngineResultFilename:
         """p1(gemini)→p2: p1_result_filename が {ts}-gemini-result-{uuid}.md。"""
         api, _, order_builder = _make_api()
         steps = [
-            StepConfig(id="p1", template="p1", model="gemini-2.5-flash", agent="gemini"),
-            StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", agent="claude", depends=["p1"]),
+            StepConfig(id="p1", template="p1", model="gemini-2.5-flash", engine="gemini"),
+            StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", engine="claude", depends=["p1"]),
         ]
         api.submit(steps, {})
 
@@ -205,7 +207,7 @@ class TestAC4EngineResultFilename:
     def test_gemini_engine_exec_line_no_skip_permissions(self):
         """engine=gemini のとき exec 行に --dangerously-skip-permissions が含まれない。"""
         api, _, _ = _make_api()
-        steps = [StepConfig(template="p1", model="gemini-2.5-flash", agent="gemini")]
+        steps = [StepConfig(template="p1", model="gemini-2.5-flash", engine="gemini")]
         exec_lines = api.submit(steps, {})
 
         assert "--dangerously-skip-permissions" not in exec_lines[0]
@@ -411,3 +413,64 @@ class TestPerWorkflowOrderBuilder:
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         api.submit(steps, {"workflow_name": "issuesmith"})  # 何が来ても default に落ちる
         order_builder.build_order.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# AC3: depends 事前検証 (Issue #766)
+# ---------------------------------------------------------------------------
+
+
+class TestAC3DependsValidation:
+    def test_unknown_dependency_raises_value_error(self):
+        """未定義の depends id → ValueError('Unknown dependency: ...')"""
+        api, pipeline_state, _ = _make_api()
+        steps = [
+            StepConfig(id="step_a", template="t", model="m", depends=["nonexistent_step"]),
+        ]
+        with pytest.raises(ValueError, match="nonexistent_step"):
+            api.submit(steps, {})
+
+    def test_circular_dependency_a_b_a_raises_value_error(self):
+        """A→B→A の循環参照 → ValueError('circular dependency' を含む)"""
+        api, _, _ = _make_api()
+        steps = [
+            StepConfig(id="a", template="t", model="m", depends=["b"]),
+            StepConfig(id="b", template="t", model="m", depends=["a"]),
+        ]
+        with pytest.raises(ValueError, match="circular dependency"):
+            api.submit(steps, {})
+
+    def test_valid_linear_dependency_passes(self):
+        """A→B→C の正常な直列依存 → 検証通過、3 exec 行生成"""
+        api, pipeline_state, _ = _make_api()
+        steps = [
+            StepConfig(id="a", template="t", model="m"),
+            StepConfig(id="b", template="t", model="m", depends=["a"]),
+            StepConfig(id="c", template="t", model="m", depends=["b"]),
+        ]
+        exec_lines = api.submit(steps, {})
+        assert len(exec_lines) == 3
+        pipeline_state.append_exec.assert_called_once()
+
+    def test_validation_error_no_order_file_written(self):
+        """検証エラー時、order ファイルも exec.md への追記も行われない"""
+        api, pipeline_state, _ = _make_api()
+        steps = [
+            StepConfig(id="a", template="t", model="m", depends=["nonexistent"]),
+        ]
+        with pytest.raises(ValueError):
+            api.submit(steps, {})
+        pipeline_state.write_order_file.assert_not_called()
+        pipeline_state.append_exec.assert_not_called()
+
+    def test_validation_error_circular_no_files_written(self):
+        """循環参照エラー時も order ファイルと exec.md への追記が行われない"""
+        api, pipeline_state, _ = _make_api()
+        steps = [
+            StepConfig(id="x", template="t", model="m", depends=["y"]),
+            StepConfig(id="y", template="t", model="m", depends=["x"]),
+        ]
+        with pytest.raises(ValueError):
+            api.submit(steps, {})
+        pipeline_state.write_order_file.assert_not_called()
+        pipeline_state.append_exec.assert_not_called()

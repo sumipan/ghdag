@@ -137,7 +137,7 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
                     id=s.get("id"),
                     template=s["template"],
                     model=s["model"],
-                    engine=s.get("engine") or s.get("agent", "claude"),
+                    engine=s.get("engine", "claude"),
                     depends=s.get("depends", []),
                 )
             )

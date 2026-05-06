@@ -154,6 +154,7 @@ def build_llm_cmd(
     prompt: str,
     *,
     capabilities: LLMCapabilities = TEXT_ONLY,
+    dangerously_skip_permissions: bool = False,
 ) -> list[str]:
     """LLM CLI コマンドのリストを構築する。
 
@@ -162,6 +163,7 @@ def build_llm_cmd(
         model: 検証済みモデル ID
         prompt: プロンプト文字列
         capabilities: 能力制約値オブジェクト（デフォルト: TEXT_ONLY）
+        dangerously_skip_permissions: claude エンジン時に --dangerously-skip-permissions を付与
     Returns:
         subprocess 用のコマンドリスト
     """
@@ -180,6 +182,9 @@ def build_llm_cmd(
         if capabilities.disallowed_tools:
             cmd += ["--disallowed-tools", ",".join(capabilities.disallowed_tools)]
 
+        if dangerously_skip_permissions:
+            cmd += ["--dangerously-skip-permissions"]
+
     return cmd
 
 
@@ -191,6 +196,7 @@ def call(
     timeout: int | None = None,
     stdin_text: str | None = None,
     capabilities: LLMCapabilities = TEXT_ONLY,
+    dangerously_skip_permissions: bool = False,
 ) -> LLMResult:
     """ワンショットで LLM を呼び出し、結果を返す。
 
@@ -215,6 +221,7 @@ def call(
         resolved_model,
         prompt,
         capabilities=capabilities,
+        dangerously_skip_permissions=dangerously_skip_permissions,
     )
 
     result = subprocess.run(
