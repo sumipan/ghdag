@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from pathlib import Path
@@ -67,6 +68,51 @@ def parse_exec_md(exec_md_path: str | Path) -> list[Task]:
             depends=depends,
             retry=retry,
             annotations=annotations,
+        ))
+
+    return tasks
+
+
+def parse_jsonl(text: str) -> list[Task]:
+    """JSONL テキストをパースし Task リストを返す。
+
+    各行を json.loads でパースし、不正行（空行・不正 JSON・必須フィールド欠落）はスキップする。
+    同一 uuid が複数回出現した場合、後の定義が優先する（parse_exec_md と同じ挙動）。
+    """
+    tasks: list[Task] = []
+    seen: set[str] = set()
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            logger.warning("Skipping invalid JSON line: %s", line)
+            continue
+
+        if "uuid" not in data:
+            logger.warning("Skipping line missing 'uuid': %s", line)
+            continue
+        if "command" not in data:
+            logger.warning("Skipping line missing 'command': %s", line)
+            continue
+
+        uuid = data["uuid"]
+        if uuid in seen:
+            tasks = [t for t in tasks if t.uuid != uuid]
+        seen.add(uuid)
+
+        tasks.append(Task(
+            uuid=uuid,
+            command=data["command"],
+            depends=data.get("depends", []),
+            retry=data.get("retry", 0),
+            annotations=data.get("annotations", {}),
+            result_path=data.get("result_path"),
+            idempotency_key=data.get("idempotency_key"),
         ))
 
     return tasks

@@ -15,6 +15,8 @@ class Task:
     depends: list[str] = field(default_factory=list)
     retry: int = 0
     annotations: dict[str, str] = field(default_factory=dict)
+    result_path: str | None = None
+    idempotency_key: str | None = None
 
 
 @dataclass

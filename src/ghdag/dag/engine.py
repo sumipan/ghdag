@@ -14,7 +14,7 @@ import time
 from ._util import _extract_tee_target, _stderr_reader
 from .hooks import DefaultHooks, DagHooks
 from .models import DagConfig, RunningTask, Task
-from .parser import parse_exec_md
+from .parser import parse_exec_md, parse_jsonl
 from .state import (
     load_done_from_dir,
     load_succeeded_from_dir,
@@ -55,7 +55,12 @@ class DagEngine:
 
             if mtime != last_mtime:
                 last_mtime = mtime
-                task_list = parse_exec_md(exec_md_path)
+                if exec_md_path.endswith(".jsonl"):
+                    with open(exec_md_path, encoding="utf-8") as f:
+                        text = f.read()
+                    task_list = parse_jsonl(text)
+                else:
+                    task_list = parse_exec_md(exec_md_path)
                 self._tasks = {t.uuid: t for t in task_list}
                 logger.info("Loaded exec.md (%d tasks)", len(self._tasks))
 
