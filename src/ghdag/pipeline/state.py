@@ -19,6 +19,8 @@ from pathlib import Path
 
 import yaml
 
+from ghdag.pipeline.audit import AuditContext, write_audit_log
+
 
 class PipelineState:
     def __init__(self, state_dir: str | Path, exec_md_path: str | Path):
@@ -116,7 +118,7 @@ class PipelineState:
 
     # --- exec.md 追記 ---
 
-    def append_exec(self, lines: list[str]) -> None:
+    def append_exec(self, lines: list[str], audit_context: AuditContext | None = None) -> None:
         """exec.md に lines を追記。fcntl 排他ロック付き。"""
         with open(self._exec_md_path, "a", encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
@@ -124,6 +126,10 @@ class PipelineState:
                 f.write("\n".join(lines) + "\n")
             finally:
                 fcntl.flock(f, fcntl.LOCK_UN)
+
+        ctx = audit_context or AuditContext()
+        audit_path = self._exec_md_path.parent / "audit.jsonl"
+        write_audit_log(audit_path, lines, ctx)
 
     def write_order_file(
         self,
