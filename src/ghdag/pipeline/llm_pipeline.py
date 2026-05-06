@@ -34,7 +34,6 @@ def _validate_depends(steps: "list[StepConfig]") -> None:
                 raise ValueError(f"Unknown dependency: {dep_id!r}")
 
     # トポロジカルソートで循環参照を検出
-    id_to_step = {s.id: s for s in steps if s.id is not None}
     in_degree: dict[str, int] = {s.id: 0 for s in steps if s.id is not None}
     adjacency: dict[str, list[str]] = {s.id: [] for s in steps if s.id is not None}
 
