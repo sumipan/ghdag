@@ -108,7 +108,7 @@ class LLMPipelineAPI:
 
         for step in steps:
             step_uuid = str(uuid.uuid4())
-            engine = step.agent
+            engine = step.engine
             step_id = step.id if step.id else step_uuid
             step_uuid_map[step_id] = step_uuid
             step_engine_map[step_id] = engine

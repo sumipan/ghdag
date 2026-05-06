@@ -1021,3 +1021,88 @@ handlers:
             handlers={},
         )
         assert config.template_dir is None
+
+
+# ---------------------------------------------------------------------------
+# TC-engine: engine キー / agent フォールバック（Issue #604）
+# ---------------------------------------------------------------------------
+
+
+class TestTCEngineKey:
+    """TC-engine-1〜4: engine キーの優先度と agent フォールバック"""
+
+    def test_engine_key_only(self, tmp_path):
+        """TC-engine-1: engine: cursor のみ → StepConfig.engine == 'cursor'"""
+        yaml_content = """\
+name: test-pipeline
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+        engine: cursor
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        configs = load_workflows(tmp_path)
+        step = configs[0].handlers["brushup"].steps[0]
+        assert step.engine == "cursor"
+
+    def test_agent_only_fallback(self, tmp_path):
+        """TC-engine-2: agent: gemini のみ（engine なし）→ StepConfig.engine == 'gemini'"""
+        yaml_content = """\
+name: test-pipeline
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+        agent: gemini
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        configs = load_workflows(tmp_path)
+        step = configs[0].handlers["brushup"].steps[0]
+        assert step.engine == "gemini"
+
+    def test_engine_takes_priority_over_agent(self, tmp_path):
+        """TC-engine-3: engine: cursor と agent: claude の両方指定 → engine が優先"""
+        yaml_content = """\
+name: test-pipeline
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+        engine: cursor
+        agent: claude
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        configs = load_workflows(tmp_path)
+        step = configs[0].handlers["brushup"].steps[0]
+        assert step.engine == "cursor"
+
+    def test_neither_engine_nor_agent_defaults_to_claude(self, tmp_path):
+        """TC-engine-4: どちらも未指定 → デフォルト 'claude'"""
+        yaml_content = """\
+name: test-pipeline
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        configs = load_workflows(tmp_path)
+        step = configs[0].handlers["brushup"].steps[0]
+        assert step.engine == "claude"

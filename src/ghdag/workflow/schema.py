@@ -10,9 +10,14 @@ class StepConfig:
     template: str           # order テンプレートファイル名（拡張子なし）
     model: str              # 実行モデル（必須）
     id: str | None = None   # ステップ ID（depends 参照用）
-    agent: str = "claude"   # LLM エンジン名（"claude", "gemini"）
+    engine: str | None = None  # LLM エンジン名（"claude", "gemini", "cursor" 等）
+    agent: str | None = None   # deprecated: engine の後方互換エイリアス
     depends: list[str] = field(default_factory=list)  # 依存ステップ ID リスト
-    agent: str = "claude"   # LLM エンジン名（"claude", "gemini" 等）
+
+    def __post_init__(self) -> None:
+        # engine 優先、未指定なら agent にフォールバック、それも未指定なら "claude"
+        if self.engine is None:
+            self.engine = self.agent or "claude"
 
 
 @dataclass
