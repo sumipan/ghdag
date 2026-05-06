@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.0] - 2026-05-06
+
+### Added
+
+- `ghdag.metrics` パッケージ（`TaskMetrics` データクラス・`MetricsRecorder`・`parse_engine_model` / `parse_token_count` パーサー）を追加 (#599)
+
+### Changed (BREAKING)
+
+- `DagHooks` Protocol の `on_task_success` / `on_task_failure` / `on_task_rejected` / `on_task_empty_result` に `metrics: TaskMetrics` 引数を追加 (#599)
+- `DagEngine._check_completions()` で `TaskMetrics` を構築し、各フックに渡すよう変更 (#599)
+
+#### Migration
+
+既存の `DagHooks` 実装は各メソッドのシグネチャに `metrics: TaskMetrics` 引数を追加する必要があります（`on_task_dep_failed` は変更なし）。
+
+```python
+# Before
+def on_task_success(self, uuid: str, task: Task) -> None: ...
+
+# After
+from ghdag.metrics import TaskMetrics
+def on_task_success(self, uuid: str, task: Task, metrics: TaskMetrics) -> None: ...
+```
+
 ## [0.13.1] - 2026-05-05
 
 ### Fixed
