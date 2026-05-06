@@ -20,6 +20,44 @@ if TYPE_CHECKING:
     from ghdag.workflow.schema import StepConfig
 
 
+def _validate_depends(steps: "list[StepConfig]") -> None:
+    """depends の事前検証: 未定義参照と循環参照を検出する。
+
+    Raises:
+        ValueError: 未定義の dep_id が存在する場合、または循環参照がある場合
+    """
+    step_ids = {s.id for s in steps if s.id is not None}
+
+    for step in steps:
+        for dep_id in step.depends:
+            if dep_id not in step_ids:
+                raise ValueError(f"Unknown dependency: {dep_id!r}")
+
+    # トポロジカルソートで循環参照を検出
+    in_degree: dict[str, int] = {s.id: 0 for s in steps if s.id is not None}
+    adjacency: dict[str, list[str]] = {s.id: [] for s in steps if s.id is not None}
+
+    for step in steps:
+        if step.id is None:
+            continue
+        for dep_id in step.depends:
+            adjacency[dep_id].append(step.id)
+            in_degree[step.id] += 1
+
+    queue = [sid for sid, deg in in_degree.items() if deg == 0]
+    visited = 0
+    while queue:
+        node = queue.pop(0)
+        visited += 1
+        for neighbor in adjacency[node]:
+            in_degree[neighbor] -= 1
+            if in_degree[neighbor] == 0:
+                queue.append(neighbor)
+
+    if visited < len(in_degree):
+        raise ValueError("circular dependency detected among steps")
+
+
 @dataclass
 class SubmittedStep:
     """submit() の戻り値に含まれる、投入済みステップの情報。"""
@@ -94,6 +132,8 @@ class LLMPipelineAPI:
         Returns:
             exec.md に追記された行のリスト（DispatchResult 用）
         """
+        _validate_depends(steps)
+
         ts = datetime.now(tz=ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d%H%M%S")
         exec_lines: list[str] = []
 

@@ -408,10 +408,29 @@ class TestCallCapabilities:
         assert "--permission-mode" in cmd
         assert "--disallowed-tools" in cmd
 
-    def test_call_dangerously_skip_permissions_raises_type_error(self):
-        """旧引数 dangerously_skip_permissions → TypeError"""
-        with pytest.raises(TypeError):
-            call("hello", dangerously_skip_permissions=True)  # type: ignore
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_dangerously_skip_permissions_true_claude(self, mock_run: MagicMock):
+        """dangerously_skip_permissions=True + engine=claude → コマンドにフラグが付く"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("hello", engine="claude", dangerously_skip_permissions=True)
+        cmd = mock_run.call_args[0][0]
+        assert "--dangerously-skip-permissions" in cmd
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_dangerously_skip_permissions_false_no_flag(self, mock_run: MagicMock):
+        """dangerously_skip_permissions=False（デフォルト）→ フラグが付かない"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("hello", engine="claude", dangerously_skip_permissions=False)
+        cmd = mock_run.call_args[0][0]
+        assert "--dangerously-skip-permissions" not in cmd
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_dangerously_skip_permissions_true_gemini_ignored(self, mock_run: MagicMock):
+        """dangerously_skip_permissions=True + engine=gemini → Claude固有フラグは無視"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("hello", engine="gemini", capabilities=LLMCapabilities(), dangerously_skip_permissions=True)
+        cmd = mock_run.call_args[0][0]
+        assert "--dangerously-skip-permissions" not in cmd
 
     def test_call_action_raises_type_error(self):
         """旧引数 action → TypeError"""
