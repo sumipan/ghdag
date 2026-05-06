@@ -4,6 +4,7 @@ from ._util import _extract_tee_target as extract_tee_target
 from .engine import DagEngine
 from .hooks import DagHooks, DefaultHooks
 from .models import DagConfig, RunningTask, Task
+from .parser import parse_exec_md, parse_jsonl
 
 __all__ = [
     "DagConfig",
@@ -13,4 +14,6 @@ __all__ = [
     "RunningTask",
     "Task",
     "extract_tee_target",
+    "parse_exec_md",
+    "parse_jsonl",
 ]
