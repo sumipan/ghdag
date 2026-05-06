@@ -14,5 +14,6 @@ __all__ = [
     "RunningTask",
     "Task",
     "extract_tee_target",
+    "parse_exec_md",
     "parse_jsonl",
 ]
