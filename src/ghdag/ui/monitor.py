@@ -378,6 +378,14 @@ def _detect_exec_path(repo_root: Path) -> tuple[Path, bool]:
     return legacy, False
 
 
+def _detect_exec_done_dir(repo_root: Path) -> Path:
+    """完了マーカーディレクトリを自動検出する。jobs/done/ を優先し、なければ exec-done/ にフォールバック。"""
+    jobs_done = repo_root / "jobs" / "done"
+    if jobs_done.exists():
+        return jobs_done
+    return repo_root / "exec-done"
+
+
 def build_rows(
     repo_root: Path,
     *,
@@ -386,7 +394,7 @@ def build_rows(
     detect_running: bool = True,
 ) -> tuple[list[Row], dict[str, MonitorTask], list[str]]:
     exec_path, is_jsonl = _detect_exec_path(repo_root)
-    exec_done_dir = repo_root / "exec-done"
+    exec_done_dir = _detect_exec_done_dir(repo_root)
     if is_jsonl:
         tasks, file_order = _parse_exec_jsonl(str(exec_path))
     else:
