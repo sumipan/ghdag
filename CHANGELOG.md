@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.5] - 2026-05-07
+
+### Fixed
+
+- `ui/monitor.py`: `build_rows` の `exec_done_dir` を `repo_root / "exec-done"` ハードコードから `_detect_exec_done_dir()` による自動検出に変更。`jobs/done/` が存在する場合はそちらを優先し、存在しない場合は `exec-done/` にフォールバック。`jobs/` ディレクトリ統合移行後に UI のタスクステータスが全て pending になっていた問題を修正
+
 ## [0.14.4] - 2026-05-07
 
 ### Fixed
