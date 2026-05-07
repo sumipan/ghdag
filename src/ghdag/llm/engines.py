@@ -185,6 +185,9 @@ def build_llm_cmd(
         if dangerously_skip_permissions:
             cmd += ["--dangerously-skip-permissions"]
 
+    elif engine == "cursor" and dangerously_skip_permissions:
+        cmd.append("--force")
+
     return cmd
 
 
