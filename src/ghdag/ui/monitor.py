@@ -62,6 +62,7 @@ class MonitorTask:
     command: str
     depends: set
     retry: int = 0
+    result_path: str = ""
 
 
 @dataclass
@@ -362,9 +363,16 @@ def _parse_exec_jsonl(path: str) -> tuple[dict[str, MonitorTask], list[str]]:
         depends_raw = data.get("depends", [])
         depends = set(depends_raw) if isinstance(depends_raw, list) else set()
         retry = int(data.get("retry", 0))
+        result_path = data.get("result_path") or ""
         if uuid not in tasks:
             file_order.append(uuid)
-        tasks[uuid] = MonitorTask(uuid=uuid, command=command, depends=depends, retry=retry)
+        tasks[uuid] = MonitorTask(
+            uuid=uuid,
+            command=command,
+            depends=depends,
+            retry=retry,
+            result_path=result_path,
+        )
 
     return tasks, file_order
 
@@ -416,7 +424,7 @@ def build_rows(
             tree_ts="",
             engine_model=extract_engine_model(task.command),
             order_path=extract_order_path(task.command),
-            result_path=extract_result_path(task.command),
+            result_path=task.result_path or extract_result_path(task.command),
         )
 
     rows = _rows_with_tree_layout(tasks, file_order, pending)
