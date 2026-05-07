@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.2] - 2026-05-07
+
+### Added
+
+- `ui`: Web UI が `jobs/exec.jsonl`（JSONL 形式）を自動検出して表示できるよう対応。`queue/exec.md` はフォールバック (#55)
+- `ui`: `/api/rows` と `/api/stream` に `?max_visible=N` クエリパラメータを追加し、表示件数をリクエスト単位で変更可能に (#55)
+- `ui`: ダッシュボードに表示件数プルダウン（20/40/60/80/100件）を追加 (#55)
+
+### Fixed
+
+- `ui/monitor.py`: `_ORDER_PATH_RE` / `_RESULT_PATH_RE` を `jobs/` パスにも対応 (#55)
+- `ui/cli.py`: `queue/exec.md` が存在しない場合に `exit(1)` していた動作を撤廃 (#55)
+
 ## [0.14.1] - 2026-05-07
 
 ### Added
