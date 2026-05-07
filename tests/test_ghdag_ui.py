@@ -165,6 +165,24 @@ class TestUiCli:
 # ---------------------------------------------------------------------------
 
 
+class TestStaticAssets:
+    def test_static_dir_exists(self):
+        """Static assets must be resolvable via importlib.resources (editable and wheel)."""
+        from ghdag.ui.server import _STATIC_DIR
+
+        assert _STATIC_DIR.exists(), (
+            f"Static directory not found: {_STATIC_DIR}. "
+            "Run 'pip install -r requirements.txt' to restore a non-editable install."
+        )
+
+    def test_index_html_exists(self):
+        """index.html must be present in the installed package."""
+        from ghdag.ui.server import _read_static
+
+        html = _read_static("index.html")
+        assert b"ghdag Dashboard" in html
+
+
 class TestServer:
     def _make_repo(self, tmp_path: Path):
         queue = tmp_path / "queue"
