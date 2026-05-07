@@ -111,6 +111,10 @@ class LLMPipelineAPI:
         """冪等キー削除を PipelineState に委譲する。"""
         self._state.remove_idempotency_matching(workflow_name, issue_number)
 
+    @property
+    def _jsonl_mode(self) -> bool:
+        return self._state._is_jsonl_mode
+
     def submit(
         self,
         steps: list[StepConfig],
@@ -118,33 +122,50 @@ class LLMPipelineAPI:
         *,
         idempotency_key: str | None = None,
     ) -> list[str]:
-        """ステップ群を order/exec.md に投入する。
+        """ステップ群を order/exec ファイルに投入する。
+
+        exec ファイルの拡張子が .jsonl の場合は JSON レコード形式で書き込む。
+        それ以外はテキスト形式（uuid: command）で書き込む。
 
         Args:
             steps: 実行する StepConfig のリスト
             base_context: 全ステップ共通のコンテキスト変数
-                          （issue_number, workflow_name 等）。
-                          ``workflow_name`` が ``__init__`` に渡された
-                          ``order_builders`` に含まれていれば、その
-                          OrderBuilder を使って template を解決する。
-            idempotency_key: exec.md に記録する冪等性キー（省略時は記録しない）
+            idempotency_key: 冪等性キー（省略時は記録しない）
 
         Returns:
-            exec.md に追記された行のリスト（DispatchResult 用）
+            書き込んだエントリを文字列化したリスト（DispatchResult 用）
         """
         _validate_depends(steps)
 
         ts = datetime.now(tz=ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d%H%M%S")
-        exec_lines: list[str] = []
+        order_builder = self._resolve_order_builder(base_context.get("workflow_name"))
+        step_uuid_map: dict[str, str] = {}
+        step_engine_map: dict[str, str] = {}
 
+        if self._jsonl_mode:
+            return self._submit_jsonl(
+                steps, base_context, idempotency_key, ts, order_builder,
+                step_uuid_map, step_engine_map,
+            )
+        return self._submit_text(
+            steps, base_context, idempotency_key, ts, order_builder,
+            step_uuid_map, step_engine_map,
+        )
+
+    def _submit_text(
+        self,
+        steps: "list[StepConfig]",
+        base_context: dict[str, str],
+        idempotency_key: str | None,
+        ts: str,
+        order_builder: OrderBuilder,
+        step_uuid_map: dict[str, str],
+        step_engine_map: dict[str, str],
+    ) -> list[str]:
+        """テキスト形式（exec.md）への書き込み。"""
+        exec_lines: list[str] = []
         if idempotency_key:
             exec_lines.append(f"# idempotency: {idempotency_key}")
-
-        # workflow_name に対応する OrderBuilder を解決（無ければデフォルト）
-        order_builder = self._resolve_order_builder(base_context.get("workflow_name"))
-
-        step_uuid_map: dict[str, str] = {}    # step_id -> uuid
-        step_engine_map: dict[str, str] = {}  # step_id -> engine
 
         for step in steps:
             step_uuid = str(uuid.uuid4())
@@ -154,8 +175,6 @@ class LLMPipelineAPI:
             step_engine_map[step_id] = engine
 
             result_filename = f"{ts}-{engine}-result-{step_uuid}.md"
-
-            # context: base_context + step-specific + dep result filenames
             context = dict(base_context)
             context.update({
                 "ts": ts,
@@ -163,7 +182,6 @@ class LLMPipelineAPI:
                 "result_uuid": step_uuid,
                 "result_filename": result_filename,
             })
-
             for dep_id in step.depends:
                 if dep_id in step_uuid_map:
                     dep_uuid = step_uuid_map[dep_id]
@@ -176,7 +194,6 @@ class LLMPipelineAPI:
             order_filename = self._state.write_order_file(
                 ts, step_uuid, order_content, self._queue_dir, engine=engine
             )
-
             exec_line = self._build_exec_line(
                 step_uuid=step_uuid,
                 depends=[step_uuid_map[d] for d in step.depends if d in step_uuid_map],
@@ -189,6 +206,63 @@ class LLMPipelineAPI:
 
         self._state.append_exec(exec_lines)
         return exec_lines
+
+    def _submit_jsonl(
+        self,
+        steps: "list[StepConfig]",
+        base_context: dict[str, str],
+        idempotency_key: str | None,
+        ts: str,
+        order_builder: OrderBuilder,
+        step_uuid_map: dict[str, str],
+        step_engine_map: dict[str, str],
+    ) -> list[str]:
+        """JSONL 形式（exec.jsonl）への書き込み。"""
+        import json as _json
+
+        records: list[dict] = []
+
+        for step in steps:
+            step_uuid = str(uuid.uuid4())
+            engine = step.engine
+            step_id = step.id if step.id else step_uuid
+            step_uuid_map[step_id] = step_uuid
+            step_engine_map[step_id] = engine
+
+            result_filename = f"{ts}-{engine}-result-{step_uuid}.md"
+            context = dict(base_context)
+            context.update({
+                "ts": ts,
+                "order_uuid": step_uuid,
+                "result_uuid": step_uuid,
+                "result_filename": result_filename,
+            })
+            for dep_id in step.depends:
+                if dep_id in step_uuid_map:
+                    dep_uuid = step_uuid_map[dep_id]
+                    dep_engine = step_engine_map[dep_id]
+                    context[f"{dep_id}_result_filename"] = (
+                        f"{ts}-{dep_engine}-result-{dep_uuid}.md"
+                    )
+
+            order_content = order_builder.build_order(step.template, context)
+            order_filename = self._state.write_order_file(
+                ts, step_uuid, order_content, self._queue_dir, engine=engine
+            )
+            record = self._build_exec_record(
+                step_uuid=step_uuid,
+                depends=[step_uuid_map[d] for d in step.depends if d in step_uuid_map],
+                order_filename=order_filename,
+                result_filename=result_filename,
+                engine=engine,
+                model=step.model,
+            )
+            if idempotency_key:
+                record["idempotency_key"] = idempotency_key
+            records.append(record)
+
+        self._state.append_exec_records(records)
+        return [_json.dumps(r, ensure_ascii=False) for r in records]
 
     def _resolve_order_builder(self, workflow_name: str | None) -> OrderBuilder:
         """workflow_name から OrderBuilder を解決する。
@@ -210,14 +284,34 @@ class LLMPipelineAPI:
         engine: str,
         model: str,
     ) -> str:
-        """exec.md の 1 行を構築する（内部メソッド）。
-
-        EngineAdapter に委譲して exec 行を組み立てる。
-        """
+        """exec.md の 1 行を構築する（内部メソッド）。"""
         from ghdag.workflow.engine import get_adapter
 
         adapter = get_adapter(engine)
         return adapter.build_exec_line(
+            uuid=step_uuid,
+            order_path=f"{self._queue_dir}/{order_filename}",
+            result_path=f"{self._queue_dir}/{result_filename}",
+            prompt="受け取った内容を実行して",
+            model=model,
+            depends=depends,
+        )
+
+    def _build_exec_record(
+        self,
+        *,
+        step_uuid: str,
+        depends: list[str],
+        order_filename: str,
+        result_filename: str,
+        engine: str,
+        model: str,
+    ) -> dict:
+        """exec.jsonl の 1 レコードを構築する（内部メソッド）。"""
+        from ghdag.workflow.engine import get_adapter
+
+        adapter = get_adapter(engine)
+        return adapter.build_exec_record(
             uuid=step_uuid,
             order_path=f"{self._queue_dir}/{order_filename}",
             result_path=f"{self._queue_dir}/{result_filename}",

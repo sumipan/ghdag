@@ -34,12 +34,25 @@ class PipelineState:
 
     # --- 冪等性（exec.md コメント行） ---
 
-    def check_idempotency(self, key: str) -> bool:
-        """exec.md 内に "# idempotency: {key}" が存在しなければ True（未処理）。
+    @property
+    def _is_jsonl_mode(self) -> bool:
+        return str(self._exec_md_path).endswith(".jsonl")
 
-        exec.md が存在しない場合も True を返す。
+    def check_idempotency(self, key: str) -> bool:
+        """exec ファイル内に指定キーの idempotency 記録がなければ True（未処理）。
+
+        テキスト形式（exec.md）: "# idempotency: {key}" 行を探す。
+        JSONL 形式（exec.jsonl）: {"idempotency_key": "{key}"} レコードを探す。
+        ファイルが存在しない場合も True を返す。
         """
         if not self._exec_md_path.exists():
+            return True
+        if self._is_jsonl_mode:
+            needle_json = f'"idempotency_key": "{key}"'
+            with open(self._exec_md_path, encoding="utf-8") as f:
+                for line in f:
+                    if needle_json in line:
+                        return False
             return True
         needle = f"# idempotency: {key}"
         with open(self._exec_md_path, encoding="utf-8") as f:
@@ -116,7 +129,25 @@ class PipelineState:
         json_path.unlink()
         return True
 
-    # --- exec.md 追記 ---
+    # --- exec 追記 ---
+
+    def append_exec_records(
+        self,
+        records: list[dict],
+        audit_context: AuditContext | None = None,
+    ) -> None:
+        """exec.jsonl に records を JSONL 形式で追記。fcntl 排他ロック付き。"""
+        lines = [json.dumps(r, ensure_ascii=False) for r in records]
+        with open(self._exec_md_path, "a", encoding="utf-8") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                f.write("\n".join(lines) + "\n")
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+
+        ctx = audit_context or AuditContext()
+        audit_path = self._exec_md_path.parent / "audit.jsonl"
+        write_audit_log(audit_path, lines, ctx)
 
     def append_exec(self, lines: list[str], audit_context: AuditContext | None = None) -> None:
         """exec.md に lines を追記。fcntl 排他ロック付き。"""

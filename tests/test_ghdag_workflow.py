@@ -246,6 +246,7 @@ def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tupl
     pipeline_state = MagicMock()
     pipeline_state.check_idempotency.return_value = True
     pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+    pipeline_state._is_jsonl_mode = False
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
     pipeline = LLMPipelineAPI(
