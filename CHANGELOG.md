@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.3] - 2026-05-07
+
+### Fixed
+
+- `ui/monitor.py`: `QUEUE_TS` 正規表現を `(?:queue|jobs)/` に変更し、`jobs/` パスのタスクで日時列が空になっていたバグを修正 (#57)
+
 ## [0.14.2] - 2026-05-07
 
 ### Added
