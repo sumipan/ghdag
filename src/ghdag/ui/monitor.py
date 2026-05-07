@@ -30,7 +30,7 @@ from ghdag.pipeline.status import (
     task_status,
 )
 
-QUEUE_TS = re.compile(r"queue/(\d{14})")
+QUEUE_TS = re.compile(r"(?:queue|jobs)/(\d{14})")
 
 __all__ = [
     "STATE_PENDING_DEPS", "STATE_PENDING_RUN", "STATE_RUNNING",
