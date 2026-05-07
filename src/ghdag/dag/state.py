@@ -1,4 +1,4 @@
-"""Manage task completion state via the exec-done directory."""
+"""Manage task completion state via the done directory (jobs/done/)."""
 
 from __future__ import annotations
 

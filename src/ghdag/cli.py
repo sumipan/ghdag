@@ -572,10 +572,10 @@ def _cmd_cleanup(args: argparse.Namespace) -> None:
 
     repo_root = Path(args.repo_root).resolve()
     result = cleanup_queue(
-        queue_dir=repo_root / "queue",
-        queue_done_dir=repo_root / "queue-done",
-        exec_done_dir=repo_root / "exec-done",
-        exec_md=repo_root / "queue" / "exec.md",
+        queue_dir=repo_root / "jobs",
+        archive_dir=repo_root / "jobs" / "archive",
+        done_dir=repo_root / "jobs" / "done",
+        exec_md=repo_root / "jobs" / "exec.jsonl",
         cutoff_days=args.cutoff_days,
         orphan_days=args.orphan_days,
         dry_run=args.dry_run,
@@ -583,7 +583,7 @@ def _cmd_cleanup(args: argparse.Namespace) -> None:
     print(
         f"cleanup: archived done={result.archived_done}, "
         f"orphan={result.archived_orphan}, "
-        f"exec.md pruned={result.pruned_exec}"
+        f"exec pruned={result.pruned_exec}"
         + (" [dry-run]" if args.dry_run else "")
     )
 

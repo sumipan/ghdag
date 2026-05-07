@@ -44,32 +44,32 @@ class TestInterpretDone:
 
 class TestTaskStatus:
     def test_completed_success(self, tmp_path):
-        exec_done = tmp_path / "exec-done"
-        exec_done.mkdir()
+        exec_done = tmp_path / "jobs" / "done"
+        exec_done.mkdir(parents=True)
         (exec_done / "uuid-1").write_text("0\n", encoding="utf-8")
         assert task_status("uuid-1", exec_done) == STATE_OK
 
     def test_completed_failed(self, tmp_path):
-        exec_done = tmp_path / "exec-done"
-        exec_done.mkdir()
+        exec_done = tmp_path / "jobs" / "done"
+        exec_done.mkdir(parents=True)
         (exec_done / "uuid-1").write_text("1\n", encoding="utf-8")
         assert task_status("uuid-1", exec_done) == STATE_FAIL
 
     def test_completed_rejected(self, tmp_path):
-        exec_done = tmp_path / "exec-done"
-        exec_done.mkdir()
+        exec_done = tmp_path / "jobs" / "done"
+        exec_done.mkdir(parents=True)
         (exec_done / "uuid-1").write_text("REJECTED\n", encoding="utf-8")
         assert task_status("uuid-1", exec_done) == STATE_REJECTED
 
     def test_completed_empty_result(self, tmp_path):
-        exec_done = tmp_path / "exec-done"
-        exec_done.mkdir()
+        exec_done = tmp_path / "jobs" / "done"
+        exec_done.mkdir(parents=True)
         (exec_done / "uuid-1").write_text("EMPTY_RESULT\n", encoding="utf-8")
         assert task_status("uuid-1", exec_done) == STATE_EMPTY
 
     def test_pending_deps_when_dep_not_done(self, tmp_path):
-        exec_done = tmp_path / "exec-done"
-        exec_done.mkdir()
+        exec_done = tmp_path / "jobs" / "done"
+        exec_done.mkdir(parents=True)
         assert task_status(
             "uuid-1",
             exec_done,
@@ -77,8 +77,8 @@ class TestTaskStatus:
         ) == STATE_PENDING_DEPS
 
     def test_running(self, tmp_path):
-        exec_done = tmp_path / "exec-done"
-        exec_done.mkdir()
+        exec_done = tmp_path / "jobs" / "done"
+        exec_done.mkdir(parents=True)
         assert task_status(
             "uuid-1",
             exec_done,
@@ -86,13 +86,13 @@ class TestTaskStatus:
         ) == STATE_RUNNING
 
     def test_pending_run_when_no_deps_and_not_running(self, tmp_path):
-        exec_done = tmp_path / "exec-done"
-        exec_done.mkdir()
+        exec_done = tmp_path / "jobs" / "done"
+        exec_done.mkdir(parents=True)
         assert task_status("uuid-1", exec_done) == STATE_PENDING_RUN
 
     def test_deps_succeeded_not_pending(self, tmp_path):
-        exec_done = tmp_path / "exec-done"
-        exec_done.mkdir()
+        exec_done = tmp_path / "jobs" / "done"
+        exec_done.mkdir(parents=True)
         (exec_done / "dep-uuid").write_text("0\n", encoding="utf-8")
         assert task_status(
             "uuid-1",

@@ -20,8 +20,8 @@ class TestMonitor:
         queue = tmp_path / "queue"
         queue.mkdir()
         (queue / "exec.md").write_text(exec_md_content, encoding="utf-8")
-        done_dir = tmp_path / "exec-done"
-        done_dir.mkdir()
+        done_dir = tmp_path / "jobs" / "done"
+        done_dir.mkdir(parents=True)
         if done:
             for uuid, content in done.items():
                 (done_dir / uuid).write_text(content, encoding="utf-8")
@@ -191,7 +191,7 @@ class TestServer:
             "aaaa-bbbb-cccc-0001: echo hello\n",
             encoding="utf-8",
         )
-        (tmp_path / "exec-done").mkdir()
+        (tmp_path / "jobs" / "done").mkdir(parents=True)
         return tmp_path
 
     def test_serve_json_endpoint(self, tmp_path):

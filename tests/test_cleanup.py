@@ -50,20 +50,20 @@ def _make_exec_md(exec_md: Path, entries: list[str]) -> None:
     exec_md.write_text("".join(lines), encoding="utf-8")
 
 
-def _make_exec_done_flag(exec_done_dir: Path, uuid: str) -> None:
-    exec_done_dir.mkdir(parents=True, exist_ok=True)
-    (exec_done_dir / uuid).touch()
+def _make_done_flag(done_dir: Path, uuid: str) -> None:
+    done_dir.mkdir(parents=True, exist_ok=True)
+    (done_dir / uuid).touch()
 
 
 def _setup_dirs(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
-    queue_dir = tmp_path / "queue"
-    queue_done_dir = tmp_path / "queue-done"
-    exec_done_dir = tmp_path / "exec-done"
-    exec_md = queue_dir / "exec.md"
+    queue_dir = tmp_path / "jobs"
+    archive_dir = tmp_path / "jobs" / "archive"
+    done_dir = tmp_path / "jobs" / "done"
+    exec_md = queue_dir / "exec.jsonl"
     queue_dir.mkdir()
-    queue_done_dir.mkdir()
-    exec_done_dir.mkdir()
-    return queue_dir, queue_done_dir, exec_done_dir, exec_md
+    archive_dir.mkdir(parents=True)
+    done_dir.mkdir(parents=True)
+    return queue_dir, archive_dir, done_dir, exec_md
 
 
 # ---------------------------------------------------------------------------
@@ -102,16 +102,16 @@ class TestFileTimestamp:
 
 class TestArchivedDone:
     def test_done_task_older_than_cutoff_is_archived(self, tmp_path):
-        queue_dir, queue_done_dir, exec_done_dir, exec_md = _setup_dirs(tmp_path)
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, result = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=2)
-        _make_exec_done_flag(exec_done_dir, UUID_A)
+        _make_done_flag(done_dir, UUID_A)
         _make_exec_md(exec_md, [UUID_A])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
-            queue_done_dir=queue_done_dir,
-            exec_done_dir=exec_done_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
             exec_md=exec_md,
             cutoff_days=1,
         )
@@ -121,21 +121,21 @@ class TestArchivedDone:
         assert res.pruned_exec == 1
         assert not order.exists()
         assert not result.exists()
-        assert not (exec_done_dir / UUID_A).exists()
+        assert not (done_dir / UUID_A).exists()
         content = exec_md.read_text()
         assert UUID_A not in content
 
     def test_done_task_newer_than_cutoff_is_not_archived(self, tmp_path):
-        queue_dir, queue_done_dir, exec_done_dir, exec_md = _setup_dirs(tmp_path)
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, result = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=0.5)
-        _make_exec_done_flag(exec_done_dir, UUID_A)
+        _make_done_flag(done_dir, UUID_A)
         _make_exec_md(exec_md, [UUID_A])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
-            queue_done_dir=queue_done_dir,
-            exec_done_dir=exec_done_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
             exec_md=exec_md,
             cutoff_days=1,
         )
@@ -145,22 +145,22 @@ class TestArchivedDone:
         assert result.exists()
 
     def test_archived_done_files_go_to_correct_subdir(self, tmp_path):
-        queue_dir, queue_done_dir, exec_done_dir, exec_md = _setup_dirs(tmp_path)
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         ts = "20260115100000"
         order, result = _make_queue_files(queue_dir, UUID_A, ts=ts)
         _set_mtime(order, days_ago=2)
-        _make_exec_done_flag(exec_done_dir, UUID_A)
+        _make_done_flag(done_dir, UUID_A)
         _make_exec_md(exec_md, [UUID_A])
 
         cleanup_queue(
             queue_dir=queue_dir,
-            queue_done_dir=queue_done_dir,
-            exec_done_dir=exec_done_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
             exec_md=exec_md,
             cutoff_days=1,
         )
 
-        dest_dir = queue_done_dir / "2026-01"
+        dest_dir = archive_dir / "2026-01"
         assert (dest_dir / order.name).exists()
         assert (dest_dir / result.name).exists()
 
@@ -172,15 +172,15 @@ class TestArchivedDone:
 
 class TestArchivedOrphan:
     def test_orphan_task_older_than_orphan_days_is_archived(self, tmp_path):
-        queue_dir, queue_done_dir, exec_done_dir, exec_md = _setup_dirs(tmp_path)
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, result = _make_queue_files(queue_dir, UUID_B)
         _set_mtime(order, days_ago=10)
         _make_exec_md(exec_md, [UUID_B])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
-            queue_done_dir=queue_done_dir,
-            exec_done_dir=exec_done_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
             exec_md=exec_md,
             orphan_days=7,
         )
@@ -192,7 +192,7 @@ class TestArchivedOrphan:
         assert not result.exists()
 
     def test_orphan_files_go_to_orphan_subdir(self, tmp_path):
-        queue_dir, queue_done_dir, exec_done_dir, exec_md = _setup_dirs(tmp_path)
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         ts = "20260115100000"
         order, result = _make_queue_files(queue_dir, UUID_B, ts=ts)
         _set_mtime(order, days_ago=10)
@@ -200,26 +200,26 @@ class TestArchivedOrphan:
 
         cleanup_queue(
             queue_dir=queue_dir,
-            queue_done_dir=queue_done_dir,
-            exec_done_dir=exec_done_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
             exec_md=exec_md,
             orphan_days=7,
         )
 
-        dest_dir = queue_done_dir / "2026-01" / "orphan"
+        dest_dir = archive_dir / "2026-01" / "orphan"
         assert (dest_dir / order.name).exists()
         assert (dest_dir / result.name).exists()
 
     def test_orphan_task_newer_than_orphan_days_is_not_archived(self, tmp_path):
-        queue_dir, queue_done_dir, exec_done_dir, exec_md = _setup_dirs(tmp_path)
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, result = _make_queue_files(queue_dir, UUID_B)
         _set_mtime(order, days_ago=3)
         _make_exec_md(exec_md, [UUID_B])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
-            queue_done_dir=queue_done_dir,
-            exec_done_dir=exec_done_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
             exec_md=exec_md,
             orphan_days=7,
         )
@@ -235,17 +235,17 @@ class TestArchivedOrphan:
 
 class TestDryRun:
     def test_dry_run_makes_no_changes(self, tmp_path, capsys):
-        queue_dir, queue_done_dir, exec_done_dir, exec_md = _setup_dirs(tmp_path)
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, result = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=2)
-        _make_exec_done_flag(exec_done_dir, UUID_A)
+        _make_done_flag(done_dir, UUID_A)
         _make_exec_md(exec_md, [UUID_A])
         exec_md_content_before = exec_md.read_text()
 
         res = cleanup_queue(
             queue_dir=queue_dir,
-            queue_done_dir=queue_done_dir,
-            exec_done_dir=exec_done_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
             exec_md=exec_md,
             cutoff_days=1,
             dry_run=True,
@@ -253,21 +253,21 @@ class TestDryRun:
 
         assert order.exists()
         assert result.exists()
-        assert (exec_done_dir / UUID_A).exists()
+        assert (done_dir / UUID_A).exists()
         assert exec_md.read_text() == exec_md_content_before
         assert res.archived_done == 1
 
     def test_dry_run_outputs_to_stdout(self, tmp_path, capsys):
-        queue_dir, queue_done_dir, exec_done_dir, exec_md = _setup_dirs(tmp_path)
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=2)
-        _make_exec_done_flag(exec_done_dir, UUID_A)
+        _make_done_flag(done_dir, UUID_A)
         _make_exec_md(exec_md, [UUID_A])
 
         cleanup_queue(
             queue_dir=queue_dir,
-            queue_done_dir=queue_done_dir,
-            exec_done_dir=exec_done_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
             exec_md=exec_md,
             cutoff_days=1,
             dry_run=True,
@@ -284,16 +284,16 @@ class TestDryRun:
 
 class TestResultOnlyDone:
     def test_result_only_done_task_archived_without_error(self, tmp_path):
-        queue_dir, queue_done_dir, exec_done_dir, exec_md = _setup_dirs(tmp_path)
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         _, result = _make_queue_files(queue_dir, UUID_C, make_order=False)
         _set_mtime(result, days_ago=2)
-        _make_exec_done_flag(exec_done_dir, UUID_C)
+        _make_done_flag(done_dir, UUID_C)
         _make_exec_md(exec_md, [UUID_C])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
-            queue_done_dir=queue_done_dir,
-            exec_done_dir=exec_done_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
             exec_md=exec_md,
             cutoff_days=1,
         )
@@ -309,15 +309,15 @@ class TestResultOnlyDone:
 
 class TestOrderOnlyOrphan:
     def test_order_only_orphan_task_archived_without_error(self, tmp_path):
-        queue_dir, queue_done_dir, exec_done_dir, exec_md = _setup_dirs(tmp_path)
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_C, make_result=False)
         _set_mtime(order, days_ago=10)
         _make_exec_md(exec_md, [UUID_C])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
-            queue_done_dir=queue_done_dir,
-            exec_done_dir=exec_done_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
             exec_md=exec_md,
             orphan_days=7,
         )
@@ -334,17 +334,17 @@ class TestOrderOnlyOrphan:
 class TestQueueDirMissing:
     def test_missing_queue_dir_exits_1(self, tmp_path, capsys):
         queue_dir = tmp_path / "nonexistent_queue"
-        queue_done_dir = tmp_path / "queue-done"
-        exec_done_dir = tmp_path / "exec-done"
+        archive_dir = tmp_path / "jobs" / "archive"
+        done_dir = tmp_path / "jobs" / "done"
         exec_md = tmp_path / "exec.md"
-        queue_done_dir.mkdir()
-        exec_done_dir.mkdir()
+        archive_dir.mkdir(parents=True)
+        done_dir.mkdir(parents=True)
 
         with pytest.raises(SystemExit) as exc:
             cleanup_queue(
                 queue_dir=queue_dir,
-                queue_done_dir=queue_done_dir,
-                exec_done_dir=exec_done_dir,
+                archive_dir=archive_dir,
+                done_dir=done_dir,
                 exec_md=exec_md,
             )
         assert exc.value.code == 1
@@ -358,13 +358,13 @@ class TestQueueDirMissing:
 
 class TestNoMatchingFiles:
     def test_empty_queue_dir_returns_zero_counts(self, tmp_path):
-        queue_dir, queue_done_dir, exec_done_dir, exec_md = _setup_dirs(tmp_path)
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         _make_exec_md(exec_md, [])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
-            queue_done_dir=queue_done_dir,
-            exec_done_dir=exec_done_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
             exec_md=exec_md,
         )
 
@@ -381,9 +381,9 @@ class TestNoMatchingFiles:
 class TestBoundaryValues:
     def test_exactly_cutoff_days_is_archived(self, tmp_path):
         """cutoff_days ちょうどのタスクはアーカイブされる（<=）"""
-        queue_dir, queue_done_dir, exec_done_dir, exec_md = _setup_dirs(tmp_path)
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_A)
-        _make_exec_done_flag(exec_done_dir, UUID_A)
+        _make_done_flag(done_dir, UUID_A)
         _make_exec_md(exec_md, [UUID_A])
 
         # file_timestamp を固定値で mock し、cutoff_ts == file_ts の境界をテスト
@@ -397,8 +397,8 @@ class TestBoundaryValues:
 
             res = cleanup_queue(
                 queue_dir=queue_dir,
-                queue_done_dir=queue_done_dir,
-                exec_done_dir=exec_done_dir,
+                archive_dir=archive_dir,
+                done_dir=done_dir,
                 exec_md=exec_md,
                 cutoff_days=1,
             )
@@ -413,16 +413,16 @@ class TestBoundaryValues:
 
 class TestExecMdMissing:
     def test_missing_exec_md_skips_pruning_but_archives(self, tmp_path):
-        queue_dir, queue_done_dir, exec_done_dir, _ = _setup_dirs(tmp_path)
+        queue_dir, archive_dir, done_dir, _ = _setup_dirs(tmp_path)
         exec_md = queue_dir / "exec.md"  # does not exist
         order, _ = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=2)
-        _make_exec_done_flag(exec_done_dir, UUID_A)
+        _make_done_flag(done_dir, UUID_A)
 
         res = cleanup_queue(
             queue_dir=queue_dir,
-            queue_done_dir=queue_done_dir,
-            exec_done_dir=exec_done_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
             exec_md=exec_md,
             cutoff_days=1,
         )
@@ -438,18 +438,18 @@ class TestExecMdMissing:
 
 
 class TestUUIDCaseInsensitive:
-    def test_uppercase_uuid_in_filename_matches_lowercase_exec_done_flag(self, tmp_path):
-        queue_dir, queue_done_dir, exec_done_dir, exec_md = _setup_dirs(tmp_path)
+    def test_uppercase_uuid_in_filename_matches_lowercase_done_flag(self, tmp_path):
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         uuid_upper = UUID_A.upper()
         order, _ = _make_queue_files(queue_dir, uuid_upper)
         _set_mtime(order, days_ago=2)
-        _make_exec_done_flag(exec_done_dir, UUID_A.lower())
+        _make_done_flag(done_dir, UUID_A.lower())
         _make_exec_md(exec_md, [UUID_A.lower()])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
-            queue_done_dir=queue_done_dir,
-            exec_done_dir=exec_done_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
             exec_md=exec_md,
             cutoff_days=1,
         )

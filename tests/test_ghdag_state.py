@@ -35,7 +35,7 @@ class TestState:
         assert "uuid-empty" in succeeded
 
     def test_load_done_nonexistent_dir(self, tmp_path):
-        """exec-done ディレクトリ不存在: 空集合を返すこと（例外なし）"""
+        """done ディレクトリ不存在: 空集合を返すこと（例外なし）"""
         result = load_done_from_dir(tmp_path / "nonexistent")
         assert result == set()
 

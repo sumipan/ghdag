@@ -252,7 +252,7 @@ class TestValidateDependencies:
         assert result.get("uuid-b") == "cycle"
 
     def test_done_dep_is_not_orphan(self):
-        """3-3: exec-done に存在する依存は孤立でない"""
+        """3-3: jobs/done/ に存在する依存は孤立でない"""
         tasks = [self._make_task("uuid-b", ["uuid-a"])]
         result = validate_dependencies(tasks, done={"uuid-a"})
         assert result == {}

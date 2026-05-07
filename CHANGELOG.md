@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.6] - 2026-05-07
+
+### Changed (BREAKING)
+
+- `DagConfig.exec_done_dir` のデフォルト値を `"exec-done"` から `"jobs/done"` に変更
+- `cleanup_queue()` の引数 `queue_done_dir` → `archive_dir`、`exec_done_dir` → `done_dir` に改名
+- `ghdag cleanup` CLI のデフォルトパスを `queue-done/` → `jobs/archive/`、`exec-done/` → `jobs/done/` に変更
+- `ui/monitor.py`: `_detect_exec_done_dir()` の `exec-done/` フォールバックを削除。常に `jobs/done/` を返す
+- `ui/server.py`: retry ハンドラの done ファイルパスを `exec-done/` → `jobs/done/` に変更
+- コメント・docstring 内の `exec-done` / `queue-done` 表記を `jobs/done/` / `jobs/archive/` に統一
+
 ## [0.14.5] - 2026-05-07
 
 ### Fixed

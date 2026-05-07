@@ -27,7 +27,7 @@ def _make_config(tmp_path, exec_md_content: str, **overrides) -> DagConfig:
     _write_exec_md(exec_md, exec_md_content)
     defaults = dict(
         exec_md_path=str(exec_md),
-        exec_done_dir=str(tmp_path / "exec-done"),
+        exec_done_dir=str(tmp_path / "jobs" / "done"),
         poll_interval=0.1,
         launch_stagger=0.0,
         lock_file=str(tmp_path / "lock"),
@@ -49,7 +49,7 @@ class TestSingleTaskExecution:
     """§5.4 単一タスク実行"""
 
     def test_single_task_success(self, tmp_path):
-        """exec.md に 1 行、依存なし → exit 0 で exec-done にステータス書き込み"""
+        """exec.md に 1 行、依存なし → exit 0 で jobs/done にステータス書き込み"""
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
@@ -372,7 +372,7 @@ def _make_jsonl_config(tmp_path, tasks: list[dict], **overrides) -> DagConfig:
     exec_jsonl.write_text("\n".join(lines), encoding="utf-8")
     defaults = dict(
         exec_md_path=str(exec_jsonl),
-        exec_done_dir=str(tmp_path / "exec-done"),
+        exec_done_dir=str(tmp_path / "jobs" / "done"),
         poll_interval=0.1,
         launch_stagger=0.0,
         lock_file=str(tmp_path / "lock"),
