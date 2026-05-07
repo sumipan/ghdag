@@ -71,7 +71,7 @@ def _make_config(tmp_path, exec_md_content: str, **overrides) -> DagConfig:
     _write_exec_md(exec_md, exec_md_content)
     defaults = dict(
         exec_md_path=str(exec_md),
-        exec_done_dir=str(tmp_path / "exec-done"),
+        exec_done_dir=str(tmp_path / "jobs" / "done"),
         poll_interval=0.1,
         launch_stagger=0.0,
         lock_file=str(tmp_path / "lock"),

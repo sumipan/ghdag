@@ -1,4 +1,4 @@
-"""DAG monitoring logic — parse exec.md / exec-done and build display rows.
+"""DAG monitoring logic — parse exec files and build display rows.
 
 Ported from tools/dag_system/core.py for use in the ghdag Web UI.
 """
@@ -379,11 +379,8 @@ def _detect_exec_path(repo_root: Path) -> tuple[Path, bool]:
 
 
 def _detect_exec_done_dir(repo_root: Path) -> Path:
-    """完了マーカーディレクトリを自動検出する。jobs/done/ を優先し、なければ exec-done/ にフォールバック。"""
-    jobs_done = repo_root / "jobs" / "done"
-    if jobs_done.exists():
-        return jobs_done
-    return repo_root / "exec-done"
+    """完了マーカーディレクトリのパスを返す（jobs/done/）。"""
+    return repo_root / "jobs" / "done"
 
 
 def build_rows(

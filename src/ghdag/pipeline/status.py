@@ -17,7 +17,7 @@ STATE_UNKNOWN_DONE = "完了（その他）"
 
 
 def read_done_content(exec_done_dir: Path, uuid: str) -> Optional[str]:
-    """exec-done/<uuid> の内容を読み取る。存在しなければ None。"""
+    """jobs/done/<uuid> の内容を読み取る。存在しなければ None。"""
     p = exec_done_dir / uuid
     if not p.is_file():
         return None
@@ -28,7 +28,7 @@ def read_done_content(exec_done_dir: Path, uuid: str) -> Optional[str]:
 
 
 def interpret_done(raw: Optional[str]) -> Optional[str]:
-    """exec-done ファイルの内容を解釈しステータス文字列を返す。
+    """done ファイルの内容を解釈しステータス文字列を返す。
 
     None 入力 → None。
     "0" or "" → "success"、"REJECTED"/"REJECTED_FINAL" → "rejected"、
@@ -79,7 +79,7 @@ def task_status(
 ) -> str:
     """タスクの現在状態を判定して状態定数を返す。
 
-    1. exec-done/<uuid> が存在 → label_for_done で完了状態を判定
+    1. jobs/done/<uuid> が存在 → label_for_done で完了状態を判定
     2. 依存タスクが未完了 → STATE_PENDING_DEPS
     3. running_uuids に含まれる → STATE_RUNNING
     4. それ以外 → STATE_PENDING_RUN

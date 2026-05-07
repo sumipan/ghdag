@@ -133,7 +133,7 @@ def validate_dependencies(
 
     Args:
         tasks: パース済みタスクリスト
-        done: 完了済み UUID の集合（exec-done から取得）
+        done: 完了済み UUID の集合（jobs/done/ から取得）
 
     Returns:
         {uuid: reason} の辞書。reason は "orphan_dep:<missing_uuid>" または "cycle"

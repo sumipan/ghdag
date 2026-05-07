@@ -194,14 +194,14 @@ class _Handler(BaseHTTPRequestHandler):
         if uuid is None:
             return
 
-        done_file = self.repo_root / "exec-done" / uuid
+        done_file = self.repo_root / "jobs" / "done" / uuid
         if not done_file.is_file():
-            self._send_json_response(404, {"ok": False, "error": "No exec-done marker found"})
+            self._send_json_response(404, {"ok": False, "error": "No done marker found"})
             return
 
         try:
             done_file.unlink()
-            logger.info("Retry: removed exec-done/%s", uuid)
+            logger.info("Retry: removed jobs/done/%s", uuid)
         except OSError as e:
             self._send_json_response(500, {"ok": False, "error": str(e)})
             return

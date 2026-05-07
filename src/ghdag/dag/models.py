@@ -35,7 +35,7 @@ class RunningTask:
 @dataclass
 class DagConfig:
     exec_md_path: str | Path
-    exec_done_dir: str | Path = "exec-done"
+    exec_done_dir: str | Path = "jobs/done"
     poll_interval: float = 1.0
     launch_stagger: float = 0.5
     max_retry: int = 1

@@ -1,4 +1,4 @@
-"""pipeline/wait.py — exec-done polling ユーティリティ"""
+"""pipeline/wait.py — jobs/done/ polling ユーティリティ"""
 
 from __future__ import annotations
 
@@ -15,10 +15,10 @@ def wait_for_result(
     timeout: float,
     poll_interval: float = 0.5,
 ) -> tuple[str, str]:
-    """exec-done/<uuid> ファイルの出現を polling し、完了ステータスを返す。
+    """jobs/done/<uuid> ファイルの出現を polling し、完了ステータスを返す。
 
     Args:
-        exec_done_dir: exec-done ディレクトリのパス
+        exec_done_dir: jobs/done/ ディレクトリのパス
         uuid: 待機対象のタスク UUID
         timeout: 最大待機秒数
         poll_interval: polling 間隔（秒）
@@ -31,7 +31,7 @@ def wait_for_result(
           "failed_exit" — 非ゼロ exit code
           "other"       — 上記以外
     Raises:
-        TimeoutError: timeout 秒以内に exec-done/<uuid> が出現しなかった場合
+        TimeoutError: timeout 秒以内に jobs/done/<uuid> が出現しなかった場合
     """
     deadline = time.monotonic() + timeout
     while True:

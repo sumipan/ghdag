@@ -38,20 +38,20 @@ def file_timestamp(path: Path) -> float:
 
 def cleanup_queue(
     queue_dir: Path,
-    queue_done_dir: Path,
-    exec_done_dir: Path,
+    archive_dir: Path,
+    done_dir: Path,
     exec_md: Path,
     cutoff_days: int = 1,
     orphan_days: int = 7,
     dry_run: bool = False,
 ) -> CleanupResult:
-    """queue ディレクトリのクリーンアップを実行する。
+    """jobs/ ディレクトリのクリーンアップを実行する。
 
     Args:
-        queue_dir: queue/ ディレクトリのパス
-        queue_done_dir: queue-done/ ディレクトリのパス
-        exec_done_dir: exec-done/ ディレクトリのパス
-        exec_md: exec.md ファイルのパス
+        queue_dir: jobs/ ディレクトリのパス
+        archive_dir: jobs/archive/ ディレクトリのパス
+        done_dir: jobs/done/ ディレクトリのパス
+        exec_md: exec ファイルのパス（exec.jsonl または exec.md）
         cutoff_days: 完了タスクをアーカイブするまでの日数
         orphan_days: 未完了タスクを孤立扱いにする日数
         dry_run: True の場合、対象を表示するのみで変更しない
@@ -60,19 +60,19 @@ def cleanup_queue(
         CleanupResult: アーカイブ件数と除去エントリ数
     """
     if not queue_dir.is_dir():
-        print(f"error: queue/ が存在しません: {queue_dir}", file=sys.stderr)
+        print(f"error: jobs/ が存在しません: {queue_dir}", file=sys.stderr)
         sys.exit(1)
 
     now = datetime.now(timezone.utc)
     cutoff_ts = (now - timedelta(days=cutoff_days)).timestamp()
     orphan_ts = (now - timedelta(days=orphan_days)).timestamp()
 
-    # exec-done フラグ収集
+    # jobs/done/ フラグ収集
     done_uuids: set[str] = set()
-    if exec_done_dir.is_dir():
-        done_uuids = {p.name.lower() for p in exec_done_dir.iterdir()}
+    if done_dir.is_dir():
+        done_uuids = {p.name.lower() for p in done_dir.iterdir()}
 
-    # queue/ のファイルを UUID ごとに収集
+    # jobs/ のファイルを UUID ごとに収集
     by_uuid: dict[str, dict] = {}
     for path in queue_dir.iterdir():
         if not path.is_file() or path.suffix != ".md":
@@ -99,7 +99,7 @@ def cleanup_queue(
         if uuid in done_uuids:
             # 完了済み: cutoff を過ぎていたらアーカイブ
             if mtime <= cutoff_ts:
-                dest_dir = _archive_month_dir(queue_done_dir, ts, orphan=False)
+                dest_dir = _archive_month_dir(archive_dir, ts, orphan=False)
                 for p in (order_path, result_path):
                     if p and p.exists():
                         dest = dest_dir / p.name
@@ -108,11 +108,11 @@ def cleanup_queue(
                         else:
                             p.rename(dest)
                             print(f"archive done: {p.name} → {dest}")
-                # exec-done フラグ削除
-                flag = exec_done_dir / uuid
+                # jobs/done/ フラグ削除
+                flag = done_dir / uuid
                 if flag.exists():
                     if dry_run:
-                        print(f"[dry] remove exec-done: {uuid}")
+                        print(f"[dry] remove jobs/done: {uuid}")
                     else:
                         flag.unlink()
                 pruned_uuids.add(uuid)
@@ -120,7 +120,7 @@ def cleanup_queue(
         else:
             # 未完了: orphan_days を過ぎていたら孤立アーカイブ
             if mtime <= orphan_ts:
-                dest_dir = _archive_month_dir(queue_done_dir, ts, orphan=True)
+                dest_dir = _archive_month_dir(archive_dir, ts, orphan=True)
                 for p in (order_path, result_path):
                     if p and p.exists():
                         dest = dest_dir / p.name
@@ -156,7 +156,7 @@ def cleanup_queue(
 
 
 def _archive_month_dir(base: Path, ts_str: str, orphan: bool = False) -> Path:
-    """queue-done/YYYY-MM/ または queue-done/YYYY-MM/orphan/ を返す（作成含む）。"""
+    """archive/YYYY-MM/ または archive/YYYY-MM/orphan/ を返す（作成含む）。"""
     year, month = ts_str[:4], ts_str[4:6]
     d = base / f"{year}-{month}"
     if orphan:
