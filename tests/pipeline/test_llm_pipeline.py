@@ -10,11 +10,16 @@ from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.schema import StepConfig
 
 
-def _make_api(queue_dir: str = "queue") -> tuple[LLMPipelineAPI, MagicMock, MagicMock]:
+def _make_api(
+    queue_dir: str = "queue",
+    *,
+    jsonl_mode: bool = False,
+) -> tuple[LLMPipelineAPI, MagicMock, MagicMock]:
     """LLMPipelineAPI with mocked PipelineState and OrderBuilder."""
     pipeline_state = MagicMock()
     pipeline_state.check_idempotency.return_value = True
     pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+    pipeline_state._is_jsonl_mode = jsonl_mode
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
     api = LLMPipelineAPI(
@@ -310,6 +315,7 @@ class TestPerWorkflowOrderBuilder:
         pipeline_state = MagicMock()
         pipeline_state.check_idempotency.return_value = True
         pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+        pipeline_state._is_jsonl_mode = False
 
         default_builder = MagicMock()
         default_builder.build_order.return_value = "default order content"
@@ -349,6 +355,7 @@ class TestPerWorkflowOrderBuilder:
         pipeline_state = MagicMock()
         pipeline_state.check_idempotency.return_value = True
         pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+        pipeline_state._is_jsonl_mode = False
 
         default_builder = MagicMock()
         default_builder.build_order.return_value = "default order"
@@ -376,6 +383,7 @@ class TestPerWorkflowOrderBuilder:
         pipeline_state = MagicMock()
         pipeline_state.check_idempotency.return_value = True
         pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+        pipeline_state._is_jsonl_mode = False
 
         default_builder = MagicMock()
         default_builder.build_order.return_value = "default order"
@@ -400,6 +408,7 @@ class TestPerWorkflowOrderBuilder:
         pipeline_state = MagicMock()
         pipeline_state.check_idempotency.return_value = True
         pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+        pipeline_state._is_jsonl_mode = False
 
         order_builder = MagicMock()
         order_builder.build_order.return_value = "order content"
@@ -474,3 +483,56 @@ class TestAC3DependsValidation:
             api.submit(steps, {})
         pipeline_state.write_order_file.assert_not_called()
         pipeline_state.append_exec.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# JSONL mode: exec.jsonl への JSON レコード書き込み
+# ---------------------------------------------------------------------------
+
+
+class TestJsonlMode:
+    def test_jsonl_mode_calls_append_exec_records(self):
+        """JSONL モードでは append_exec_records が呼ばれ append_exec は呼ばれない。"""
+        api, pipeline_state, _ = _make_api(jsonl_mode=True)
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        exec_lines = api.submit(steps, {})
+
+        pipeline_state.append_exec_records.assert_called_once()
+        pipeline_state.append_exec.assert_not_called()
+        assert len(exec_lines) == 1
+
+    def test_jsonl_mode_returns_json_strings(self):
+        """JSONL モードの exec_lines は JSON 文字列（uuid フィールドを含む）。"""
+        import json as _json
+
+        api, _, _ = _make_api(jsonl_mode=True)
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        exec_lines = api.submit(steps, {})
+
+        record = _json.loads(exec_lines[0])
+        assert "uuid" in record
+        assert "command" in record
+        assert "result_path" in record
+
+    def test_jsonl_mode_idempotency_in_record(self):
+        """JSONL モードでは idempotency_key がレコードに埋め込まれ、コメント行は生成されない。"""
+        import json as _json
+
+        api, pipeline_state, _ = _make_api(jsonl_mode=True)
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        exec_lines = api.submit(steps, {}, idempotency_key="workflow:handler:42")
+
+        assert len(exec_lines) == 1
+        record = _json.loads(exec_lines[0])
+        assert record.get("idempotency_key") == "workflow:handler:42"
+
+    def test_jsonl_mode_result_path_in_record(self):
+        """JSONL モードの result_path フィールドが queue_dir/filename 形式。"""
+        import json as _json
+
+        api, _, _ = _make_api(queue_dir="jobs", jsonl_mode=True)
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        exec_lines = api.submit(steps, {})
+
+        record = _json.loads(exec_lines[0])
+        assert record["result_path"].startswith("jobs/")
