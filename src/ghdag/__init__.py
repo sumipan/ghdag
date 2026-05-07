@@ -1,3 +1,8 @@
 """ghdag — Generic DAG execution engine."""
 
-__version__ = "0.10.2"
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("ghdag")
+except PackageNotFoundError:
+    __version__ = "unknown"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.resources
 import json
 import logging
 import os
@@ -22,7 +23,11 @@ from .monitor import (
 
 logger = logging.getLogger(__name__)
 
-_STATIC_DIR = Path(__file__).parent / "static"
+# Resolve static dir via importlib.resources so it works for both editable and
+# wheel installs regardless of __file__ location.
+_STATIC_DIR: Path = Path(
+    importlib.resources.files("ghdag.ui").joinpath("static")  # type: ignore[arg-type]
+)
 
 
 def _get_github_base_url(repo_root: Path) -> str | None:
@@ -47,7 +52,13 @@ def _get_github_base_url(repo_root: Path) -> str | None:
 
 
 def _read_static(filename: str) -> bytes:
-    return (_STATIC_DIR / filename).read_bytes()
+    path = _STATIC_DIR / filename
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Static asset missing: {path}. "
+            "Reinstall ghdag from PyPI/git URL (not editable) to get bundled assets."
+        )
+    return path.read_bytes()
 
 
 def _build_snapshot(repo_root: Path, max_visible: int = 30) -> list[dict]:

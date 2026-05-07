@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.4] - 2026-05-07
+
+### Fixed
+
+- `ui/server.py`: `_STATIC_DIR` を `Path(__file__).parent` から `importlib.resources.files()` に変更。editable インストール時でも `static/index.html` が正しく解決されるように修正（再発防止）
+- `ghdag/__init__.py`: `__version__` をハードコード値から `importlib.metadata.version("ghdag")` に変更。`pyproject.toml` と自動同期
+
+### Added
+
+- `tests/test_version.py`: `__version__` と `pyproject.toml` のバージョン一致を確認するテストを追加
+- `tests/test_ghdag_ui.py`: static アセット（`_STATIC_DIR` / `index.html`）の存在確認テスト `TestStaticAssets` を追加
+
 ## [0.14.3] - 2026-05-07
 
 ### Fixed
