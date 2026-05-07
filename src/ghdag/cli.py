@@ -88,7 +88,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--repo-root",
         default=".",
         metavar="PATH",
-        help="Repository root containing queue/exec.md (default: .)",
+        help="Repository root containing jobs/exec.jsonl or queue/exec.md (default: .)",
     )
     ui_parser.add_argument(
         "--host",
@@ -478,10 +478,6 @@ def _cmd_ui(args: argparse.Namespace) -> None:
     from ghdag.ui.server import run_server
 
     repo_root = Path(args.repo_root).resolve()
-    exec_md = repo_root / "queue" / "exec.md"
-    if not exec_md.exists():
-        print(f"error: queue/exec.md not found in {repo_root}", file=sys.stderr)
-        sys.exit(1)
 
     run_server(
         repo_root=repo_root,
