@@ -536,3 +536,63 @@ class TestJsonlMode:
 
         record = _json.loads(exec_lines[0])
         assert record["result_path"].startswith("jobs/")
+
+    def test_jsonl_mode_no_comment_idempotency_line(self):
+        """JSONL モードでは exec_lines に # idempotency: コメント行が含まれない。"""
+        api, _, _ = _make_api(jsonl_mode=True)
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        exec_lines = api.submit(steps, {}, idempotency_key="scheduler:diary_review:ts")
+
+        for line in exec_lines:
+            assert not line.startswith("#"), f"comment line found: {line!r}"
+
+    def test_jsonl_mode_cursor_engine_valid_json(self):
+        """cursor engine の JSONL レコードが valid JSON で command に agent が含まれる。"""
+        import json as _json
+
+        api, _, _ = _make_api(jsonl_mode=True)
+        steps = [StepConfig(template="skill", model="auto", engine="cursor")]
+        exec_lines = api.submit(steps, {})
+
+        record = _json.loads(exec_lines[0])
+        assert "uuid" in record
+        assert "agent" in record["command"]
+
+    def test_text_mode_does_not_call_append_exec_records(self):
+        """テキストモードでは append_exec_records が呼ばれない（append_exec のみ）。"""
+        api, pipeline_state, _ = _make_api(jsonl_mode=False)
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        api.submit(steps, {})
+
+        pipeline_state.append_exec_records.assert_not_called()
+        pipeline_state.append_exec.assert_called_once()
+
+    def test_jsonl_mode_all_exec_lines_are_parseable_json(self):
+        """JSONL モードで複数ステップを submit したとき、全 exec_lines が JSON パース可能。"""
+        import json as _json
+
+        api, _, _ = _make_api(jsonl_mode=True)
+        steps = [
+            StepConfig(id="s1", template="t1", model="m1"),
+            StepConfig(id="s2", template="t2", model="m2", depends=["s1"]),
+        ]
+        exec_lines = api.submit(steps, {})
+
+        assert len(exec_lines) == 2
+        for line in exec_lines:
+            record = _json.loads(line)  # must not raise
+            assert "uuid" in record
+            assert "command" in record
+
+    def test_jsonl_mode_scheduler_idempotency_key_format(self):
+        """スケジューラー形式 (scheduler:job_id:ISO8601) の idempotency_key が正常に埋め込まれる。"""
+        import json as _json
+
+        api, _, _ = _make_api(jsonl_mode=True)
+        key = "scheduler:diary_review:2026-05-08T23:00:00.123456+09:00"
+        steps = [StepConfig(template="diary-review", model="auto", engine="cursor")]
+        exec_lines = api.submit(steps, {"workflow_name": "scheduler"}, idempotency_key=key)
+
+        record = _json.loads(exec_lines[0])
+        assert record["idempotency_key"] == key
+        assert "# idempotency:" not in exec_lines[0]
