@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.1] - 2026-05-07
+
+### Added
+
+- `ghdag.dag`: JSONL 形式の exec ファイル向けパーサー `parse_jsonl` を追加し、公開 API へエクスポート (#762, #763)
+- `ghdag.pipeline.audit`: LLM 呼び出しの監査ログを書き出す `write_llm_audit_log()` と `ghdag llm --audit-path` を追加 (#756)
+
+### Changed
+
+- `workflow/schema.py` / `workflow/loader.py` / `llm/engines.py`: `agent` エンジンの後方互換分岐を整理し、`depends` 検証と権限フラグの扱いを明確化 (#766)
+- `workflow/engine.py`: JSONL タスク向けに `build_exec_record()` と stdout 直接書き込み経路を追加 (#764)
+
+### Fixed
+
+- `dag`: Layer 0 実行のロバストネスを改善し、依存解決・状態遷移時の異常系を安定化 (#760)
+- `dag/parser.py`: `parse_exec_md` を `__all__` に公開し、import 時の F401 lint エラーを解消 (#763)
+
 ## [0.14.0] - 2026-05-06
 
 ### Added
