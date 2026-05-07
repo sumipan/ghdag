@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.7] - 2026-05-07
+
+### Fixed
+
+- `ui/monitor.py`: `result_path` を JSONL フィールドから直接取得するよう変更。claude 実行ジョブのようにコマンド文字列に result パスが含まれないケースで UI にリンクが表示されない問題を修正
+
 ## [0.14.6] - 2026-05-07
 
 ### Changed (BREAKING)
