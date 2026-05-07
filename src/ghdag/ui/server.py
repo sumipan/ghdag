@@ -12,6 +12,7 @@ import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 from .monitor import (
     build_rows,
@@ -109,14 +110,27 @@ class _Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
+    def _parse_max_visible(self) -> int:
+        qs = parse_qs(urlparse(self.path).query)
+        vals = qs.get("max_visible", [])
+        if vals:
+            try:
+                v = int(vals[0])
+                if v > 0:
+                    return v
+            except ValueError:
+                pass
+        return self.max_visible
+
     def do_GET(self):
-        if self.path == "/" or self.path == "/index.html":
+        parsed_path = urlparse(self.path).path
+        if parsed_path == "/" or parsed_path == "/index.html":
             self._serve_html()
-        elif self.path == "/api/rows":
+        elif parsed_path == "/api/rows":
             self._serve_json()
-        elif self.path == "/api/stream":
+        elif parsed_path == "/api/stream":
             self._serve_sse()
-        elif self.path == "/api/config":
+        elif parsed_path == "/api/config":
             self._serve_config()
         else:
             self.send_error(404)
@@ -207,7 +221,7 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _serve_json(self):
-        data = _build_snapshot(self.repo_root, self.max_visible)
+        data = _build_snapshot(self.repo_root, self._parse_max_visible())
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -224,10 +238,11 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
 
+        max_visible = self._parse_max_visible()
         prev_json = ""
         try:
             while True:
-                data = _build_snapshot(self.repo_root, self.max_visible)
+                data = _build_snapshot(self.repo_root, max_visible)
                 cur_json = json.dumps(data, ensure_ascii=False)
                 if cur_json != prev_json:
                     msg = f"data: {cur_json}\n\n"

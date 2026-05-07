@@ -167,6 +167,25 @@ tbody tr:hover { background: var(--surface); }
   padding: 48px 16px;
   color: var(--text-muted);
 }
+.header-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.header-row h1 { margin-bottom: 0; }
+.limit-select {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  cursor: pointer;
+  margin-left: auto;
+}
+.limit-select:focus { outline: none; border-color: var(--accent); }
 
 @media (max-width: 768px) {
   .hide-mobile { display: none; }
@@ -184,10 +203,19 @@ tbody tr:hover { background: var(--surface); }
 </head>
 <body>
 
-<h1>
-  <span class="dot" id="status-dot"></span>
-  ghdag Dashboard
-</h1>
+<div class="header-row">
+  <h1>
+    <span class="dot" id="status-dot"></span>
+    ghdag Dashboard
+  </h1>
+  <select class="limit-select" id="limit-select">
+    <option value="20" selected>20件</option>
+    <option value="40">40件</option>
+    <option value="60">60件</option>
+    <option value="80">80件</option>
+    <option value="100">100件</option>
+  </select>
+</div>
 <div class="meta" id="meta">Connecting...</div>
 
 <div class="table-wrapper">
@@ -216,10 +244,12 @@ tbody tr:hover { background: var(--surface); }
   const meta = document.getElementById('meta');
   const dot = document.getElementById('status-dot');
   const emptyMsg = document.getElementById('empty-msg');
+  const limitSelect = document.getElementById('limit-select');
   let rowCount = 0;
   const retryingUuids = {};  // uuid -> 'pending' | 'done' | 'error'
   const stoppingUuids = {};  // uuid -> 'pending' | 'done' | 'error'
   let githubBaseUrl = null;
+  let currentEs = null;
 
   // Load GitHub base URL from config once
   fetch('/api/config')
@@ -384,8 +414,15 @@ tbody tr:hover { background: var(--surface); }
   window._retry = retryTask;
   window._stop = stopTask;
 
+  function getLimit() {
+    return limitSelect.value;
+  }
+
   function connect() {
-    const es = new EventSource('/api/stream');
+    if (currentEs) { currentEs.close(); currentEs = null; }
+    const limit = getLimit();
+    const es = new EventSource('/api/stream?max_visible=' + limit);
+    currentEs = es;
     es.onopen = function() {
       dot.classList.remove('disconnected');
       meta.textContent = 'Connected — streaming updates';
@@ -404,12 +441,21 @@ tbody tr:hover { background: var(--surface); }
       dot.classList.add('disconnected');
       meta.textContent = 'Disconnected — retrying...';
       es.close();
+      currentEs = null;
       setTimeout(connect, 3000);
     };
   }
 
+  limitSelect.addEventListener('change', function() {
+    fetch('/api/rows?max_visible=' + getLimit())
+      .then(function(r) { return r.json(); })
+      .then(renderRows)
+      .catch(function() {});
+    connect();
+  });
+
   // Initial fetch then switch to SSE
-  fetch('/api/rows')
+  fetch('/api/rows?max_visible=' + getLimit())
     .then(function(r) { return r.json(); })
     .then(renderRows)
     .catch(function() {});

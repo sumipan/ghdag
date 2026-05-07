@@ -138,13 +138,13 @@ class TestUiCli:
         assert "--port" in captured.out
         assert "--repo-root" in captured.out
 
-    def test_ui_missing_exec_md_exits_1(self, tmp_path, capsys):
+    def test_ui_missing_exec_starts_anyway(self, tmp_path):
         from ghdag.cli import main
 
-        with pytest.raises(SystemExit) as exc:
-            main(["ui", "--repo-root", str(tmp_path)])
-        assert exc.value.code == 1
-        assert "exec.md not found" in capsys.readouterr().err
+        # exec ファイルがなくても UI は起動する（build_rows が空を返すだけ）
+        with patch("ghdag.ui.server.run_server") as mock_run:
+            main(["ui", "--repo-root", str(tmp_path), "--port", "9999"])
+            mock_run.assert_called_once()
 
     def test_ui_calls_run_server(self, tmp_path):
         from ghdag.cli import main
