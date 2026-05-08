@@ -6,11 +6,14 @@ import fcntl
 import io
 import logging
 import os
+import re
 import signal
 import subprocess
 import threading
 import time
 from pathlib import Path
+
+_STDIN_REDIR_RE = re.compile(r"<\s+(\S+)")
 
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .hooks import DefaultHooks, DagHooks
@@ -167,6 +170,19 @@ class DagEngine:
     def _launch_task(self, uuid: str, task: Task) -> None:
         logger.info("Launching [%s]: %s", uuid, task.command)
         cwd = str(self._config.cwd) if self._config.cwd else None
+
+        m = _STDIN_REDIR_RE.search(task.command)
+        if m:
+            input_file = m.group(1)
+            base = Path(cwd) if cwd else Path()
+            check_path = Path(input_file) if Path(input_file).is_absolute() else base / input_file
+            if not check_path.exists():
+                logger.warning(
+                    "Task [%s] skipped — stdin input file missing: %s (command: %s)",
+                    uuid, input_file, task.command,
+                )
+                state_mark_done(self._config.exec_done_dir, uuid, "SKIPPED_MISSING_INPUT")
+                return
 
         stdout_buf: io.BytesIO | None = None
         if task.result_path is not None:
