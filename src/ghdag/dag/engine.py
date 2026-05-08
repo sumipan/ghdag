@@ -13,8 +13,6 @@ import threading
 import time
 from pathlib import Path
 
-_STDIN_REDIR_RE = re.compile(r"(?<!<)<\s+(\S+)")
-
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .hooks import DefaultHooks, DagHooks
 from .models import DagConfig, RunningTask, Task
@@ -28,6 +26,8 @@ from ghdag.metrics.models import TaskMetrics
 from ghdag.metrics.parsers import parse_engine_model, parse_token_count
 
 logger = logging.getLogger(__name__)
+
+_STDIN_REDIR_RE = re.compile(r"(?<!<)<\s+(\S+)")
 
 
 class DagEngine:
