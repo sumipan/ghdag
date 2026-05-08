@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.9] - 2026-05-08
+
+### Added
+
+- `dag/engine.py`: stdin リダイレクト先ファイルが不在の場合に `WARNING` ログを出して `SKIPPED_MISSING_INPUT` でタスクをスキップする。bash プロセスを起動しないため終了コード 1 の誤検知を防止
+
+## [0.14.8] - 2026-05-08
+
+### Added
+
+- `pipeline/`: exec.jsonl に JSON レコードを書き込む JSONL モード対応
+- `llm/cursor.py`: `dangerously_skip_permissions=True` 時に `--force` フラグを付与
+
 ## [0.14.7] - 2026-05-07
 
 ### Fixed
