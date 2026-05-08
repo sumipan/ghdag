@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as _json
 import os
 import tempfile
 from pathlib import Path
@@ -387,8 +388,6 @@ class TestRemoveExecEntries:
 # ---------------------------------------------------------------------------
 # JSONL モード: parse_exec_tasks / remove_exec_entries (AC1, AC2)
 # ---------------------------------------------------------------------------
-
-import json as _json
 
 
 class TestParseExecTasksJsonl:
