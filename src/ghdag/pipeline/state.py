@@ -211,19 +211,37 @@ class PipelineState:
         )
 
     def parse_exec_tasks(self) -> dict[str, str]:
-        """exec.md をパースし {uuid: command} の辞書を返す。
+        """exec ファイルをパースし {uuid: command} の辞書を返す。
 
-        コメント行（# で始まる行）と空行はスキップする。
-        exec.md が存在しない場合は空辞書を返す。
+        JSONL 形式（exec.jsonl）: 各行を json.loads でパースし uuid/command を取得。
+        テキスト形式（exec.md）: コメント行と空行をスキップし正規表現でパース。
+        ファイルが存在しない場合は空辞書を返す。
 
         Returns:
-            {uuid: command} の辞書。依存指定 [depends:...] は除去済み。
+            {uuid: command} の辞書。
         """
         if not self._exec_md_path.exists():
             return {}
 
+        if self._is_jsonl_mode:
+            result: dict[str, str] = {}
+            with open(self._exec_md_path, encoding="utf-8") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    try:
+                        data = json.loads(stripped)
+                    except json.JSONDecodeError:
+                        continue
+                    uuid = data.get("uuid")
+                    command = data.get("command")
+                    if uuid and command:
+                        result[uuid] = command
+            return result
+
         pattern = re.compile(r"^([a-fA-F0-9\-]+)(?:\[[^\]]+\])*\s*:\s*(.+)$")
-        result: dict[str, str] = {}
+        result = {}
         with open(self._exec_md_path, encoding="utf-8") as f:
             for line in f:
                 stripped = line.rstrip("\n")
@@ -235,7 +253,7 @@ class PipelineState:
         return result
 
     def remove_exec_entries(self, uuids: set[str]) -> int:
-        """exec.md から指定 UUID のエントリ行を削除する。fcntl ロック付き。
+        """exec ファイルから指定 UUID のエントリ行を削除する。fcntl ロック付き。
 
         Args:
             uuids: 削除対象の UUID 集合
@@ -245,6 +263,40 @@ class PipelineState:
         """
         if not self._exec_md_path.exists():
             return 0
+
+        if self._is_jsonl_mode:
+            with open(self._exec_md_path, encoding="utf-8") as f:
+                fcntl.flock(f, fcntl.LOCK_SH)
+                try:
+                    lines = f.readlines()
+                finally:
+                    fcntl.flock(f, fcntl.LOCK_UN)
+
+            new_lines = []
+            removed = 0
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    new_lines.append(line)
+                    continue
+                try:
+                    data = json.loads(stripped)
+                    if data.get("uuid") in uuids:
+                        removed += 1
+                        continue
+                except json.JSONDecodeError:
+                    pass
+                new_lines.append(line)
+
+            if removed > 0:
+                with open(self._exec_md_path, "w", encoding="utf-8") as f:
+                    fcntl.flock(f, fcntl.LOCK_EX)
+                    try:
+                        f.writelines(new_lines)
+                    finally:
+                        fcntl.flock(f, fcntl.LOCK_UN)
+
+            return removed
 
         pattern = re.compile(r"^([a-fA-F0-9\-]+)(?:\[[^\]]+\])*\s*:")
 
