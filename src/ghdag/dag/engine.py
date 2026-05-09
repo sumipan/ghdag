@@ -29,6 +29,8 @@ from ghdag.metrics.parsers import parse_engine_model, parse_token_count
 
 logger = logging.getLogger(__name__)
 
+_STDIN_REDIR_RE = re.compile(r"(?<!<)<\s+(\S+)")
+
 
 class DagEngine:
     def __init__(self, config: DagConfig, hooks: DagHooks | None = None) -> None:
