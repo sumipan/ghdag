@@ -164,6 +164,7 @@ class LLMPipelineAPI:
     ) -> list[str]:
         """テキスト形式（exec.md）への書き込み。"""
         exec_lines: list[str] = []
+
         if idempotency_key:
             exec_lines.append(f"# idempotency: {idempotency_key}")
 

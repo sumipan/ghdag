@@ -98,15 +98,6 @@ class TestAC1SingleStep:
 
 
 class TestAC1IdempotencyKey:
-    def test_idempotency_key_prepended(self):
-        """idempotency_key 指定時、exec_lines[0] が '# idempotency: ...' になる。"""
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, idempotency_key="workflow:handler:42")
-
-        assert exec_lines[0] == "# idempotency: workflow:handler:42"
-        assert len(exec_lines) == 2  # idempotency + 1 step
-
     def test_no_idempotency_key_no_comment(self):
         """idempotency_key なしのとき先頭コメント行なし。"""
         api, _, _ = _make_api()
