@@ -54,13 +54,13 @@ class PipelineState:
         return True
 
     def remove_idempotency_matching(self, workflow_name: str, issue_number: int) -> int:
-        """exec.jsonl から workflow_name:*:issue_number にマッチする冪等性キーを持つレコードを削除。
+        """exec ファイルから workflow_name:*:issue_number にマッチする冪等性記録を削除。
 
-        各行を JSON パースし、idempotency_key が
-        "{workflow_name}:" で始まり ":{issue_number}" で終わるレコードを除外して書き戻す。
+        JSONL モード: idempotency_key フィールドで判定し、マッチするレコードを除外。
+        テキストモード: "# idempotency: ..." コメント行をパターンマッチで除外。
 
         Returns:
-            削除したレコード数
+            削除したレコード/行数
         """
         if not self._exec_md_path.exists():
             return 0
@@ -77,20 +77,32 @@ class PipelineState:
 
         new_lines = []
         removed = 0
-        for line in lines:
-            stripped = line.strip()
-            if not stripped:
-                new_lines.append(line)
-                continue
-            try:
-                data = json.loads(stripped)
-                key = data.get("idempotency_key", "")
-                if key and key.startswith(prefix) and key.endswith(suffix):
-                    removed += 1
+
+        if self._is_jsonl_mode:
+            for line in lines:
+                stripped = line.strip()
+                if not stripped:
+                    new_lines.append(line)
                     continue
-            except json.JSONDecodeError:
-                pass
-            new_lines.append(line)
+                try:
+                    data = json.loads(stripped)
+                    key = data.get("idempotency_key", "")
+                    if key and key.startswith(prefix) and key.endswith(suffix):
+                        removed += 1
+                        continue
+                except json.JSONDecodeError:
+                    pass
+                new_lines.append(line)
+        else:
+            _idem_re = re.compile(r"^# idempotency: (.+)$")
+            for line in lines:
+                m = _idem_re.match(line.rstrip("\n"))
+                if m:
+                    key = m.group(1)
+                    if key.startswith(prefix) and key.endswith(suffix):
+                        removed += 1
+                        continue
+                new_lines.append(line)
 
         if removed > 0:
             with open(self._exec_md_path, "w", encoding="utf-8") as f:

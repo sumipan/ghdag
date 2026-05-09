@@ -218,7 +218,7 @@ class TestAppendExecRecordsJsonl:
         ]
         pipeline_jsonl.append_exec_records(records)
 
-        lines = [l for l in pipeline_jsonl._exec_md_path.read_text().splitlines() if l.strip()]
+        lines = [ln for ln in pipeline_jsonl._exec_md_path.read_text().splitlines() if ln.strip()]
         assert len(lines) == 1
         parsed = json.loads(lines[0])
         assert parsed["uuid"] == UUID1
@@ -241,7 +241,7 @@ class TestAppendExecRecordsJsonl:
         ]
         pipeline_jsonl.append_exec_records(records)
 
-        lines = [l for l in pipeline_jsonl._exec_md_path.read_text().splitlines() if l.strip()]
+        lines = [ln for ln in pipeline_jsonl._exec_md_path.read_text().splitlines() if ln.strip()]
         assert len(lines) == 2
         assert json.loads(lines[0])["uuid"] == UUID1
         assert json.loads(lines[1])["uuid"] == UUID2
@@ -263,7 +263,7 @@ class TestAppendExecRecordsJsonl:
 
         pipeline_jsonl.append_exec_records([{"uuid": UUID1, "command": "new"}])
 
-        lines = [l for l in pipeline_jsonl._exec_md_path.read_text().splitlines() if l.strip()]
+        lines = [ln for ln in pipeline_jsonl._exec_md_path.read_text().splitlines() if ln.strip()]
         assert len(lines) == 2
         for line in lines:
             json.loads(line)  # must all be valid JSON
