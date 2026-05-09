@@ -63,7 +63,7 @@ class TestRepairExecJsonl:
         write_jsonl(f, ['{"uuid":"a"}', "not json", '{"uuid":"b"}'])
         removed = repair_exec_jsonl(f)
         assert removed == 1
-        lines = [l for l in f.read_text(encoding="utf-8").splitlines() if l]
+        lines = [ln for ln in f.read_text(encoding="utf-8").splitlines() if ln]
         assert lines == ['{"uuid":"a"}', '{"uuid":"b"}']
 
     def test_dry_run_does_not_modify_file(self, tmp_path):
@@ -87,7 +87,7 @@ class TestRepairExecJsonl:
         f.write_text('{"uuid":"a"}\n\n   \n{"uuid":"b"}\n', encoding="utf-8")
         removed = repair_exec_jsonl(f)
         assert removed == 2
-        lines = [l for l in f.read_text(encoding="utf-8").splitlines() if l]
+        lines = [ln for ln in f.read_text(encoding="utf-8").splitlines() if ln]
         assert lines == ['{"uuid":"a"}', '{"uuid":"b"}']
 
 
@@ -111,7 +111,7 @@ class TestRepairJobsDone:
         jobs_dir.mkdir()
         done_dir = jobs_dir / "done"
         done_dir.mkdir()
-        result_file = self._make_result_file(jobs_dir, "result-a.md", "some output")
+        self._make_result_file(jobs_dir, "result-a.md", "some output")
         exec_jsonl = jobs_dir / "exec.jsonl"
         self._make_exec_jsonl(exec_jsonl, [
             {"uuid": "aaa", "result_path": "result-a.md"},
