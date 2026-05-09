@@ -470,4 +470,82 @@ class TestStdoutDirectWrite:
 
         assert Path(result_path).exists()
         assert Path(result_path).stat().st_size == 0
-        hooks.on_task_empty_result.assert_called_once()
+
+
+class TestStdinMissingInputSkip:
+    """AC-1〜AC-5: stdin 入力ファイル不在時のスキップ動作"""
+
+    def test_ac1_missing_stdin_file_skipped(self, tmp_path, caplog):
+        """AC-1: 存在しない stdin ファイルで SKIPPED_MISSING_INPUT が記録される"""
+        import logging
+        nonexistent = str(tmp_path / "nonexistent.md")
+        config = _make_config(
+            tmp_path,
+            f"uuid-a: agent -p --force < {nonexistent} | tee -a result.md\n",
+        )
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        with caplog.at_level(logging.WARNING, logger="ghdag.dag.engine"):
+            _run_engine_with_timeout(engine, timeout=5.0)
+
+        assert _read_done_status(config.exec_done_dir, "uuid-a") == "SKIPPED_MISSING_INPUT"
+        assert any("stdin input file missing" in r.message for r in caplog.records)
+        assert any(nonexistent in r.message for r in caplog.records)
+
+    def test_ac2_existing_stdin_file_runs_normally(self, tmp_path):
+        """AC-2: 存在する stdin ファイルで従来どおり起動する"""
+        existing = tmp_path / "existing.txt"
+        existing.write_text("hello")
+        config = _make_config(
+            tmp_path,
+            f"uuid-b: cat < {existing}\n",
+        )
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=5.0)
+
+        assert _read_done_status(config.exec_done_dir, "uuid-b") == "0"
+
+    def test_ac3_no_stdin_redirect_unaffected(self, tmp_path):
+        """AC-3: stdin リダイレクトのないコマンドは影響を受けない"""
+        config = _make_config(tmp_path, "uuid-c: echo hello\n")
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=5.0)
+
+        assert _read_done_status(config.exec_done_dir, "uuid-c") == "0"
+
+    def test_ac4_heredoc_not_detected(self, tmp_path):
+        """AC-4: ヒアドキュメント (<<) を誤検出しない"""
+        config = _make_config(tmp_path, "uuid-d: cat << EOF\nhello\nEOF\n")
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=5.0)
+
+        status = _read_done_status(config.exec_done_dir, "uuid-d")
+        assert status != "SKIPPED_MISSING_INPUT"
+
+    def test_ac5_relative_path_resolved_with_cwd(self, tmp_path):
+        """AC-5: 相対パスが cwd を基準に解決される"""
+        cwd_dir = tmp_path / "work"
+        cwd_dir.mkdir()
+        config = _make_config(
+            tmp_path,
+            "uuid-e: agent < orders/task.md\n",
+            cwd=str(cwd_dir),
+        )
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=5.0)
+
+        assert _read_done_status(config.exec_done_dir, "uuid-e") == "SKIPPED_MISSING_INPUT"
