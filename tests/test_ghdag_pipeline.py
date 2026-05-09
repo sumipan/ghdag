@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json as _json
 import os
 import tempfile
 from pathlib import Path
@@ -382,3 +383,128 @@ class TestRemoveExecEntries:
         """AC-3: exec.md が存在しない場合 0 を返しエラーにならない"""
         state = self.make_state(tmp_path)
         assert state.remove_exec_entries({"abc-123"}) == 0
+
+
+# ---------------------------------------------------------------------------
+# JSONL モード: parse_exec_tasks / remove_exec_entries (AC1, AC2)
+# ---------------------------------------------------------------------------
+
+
+class TestParseExecTasksJsonl:
+    def make_state(self, tmp_path) -> PipelineState:
+        return PipelineState(
+            state_dir=tmp_path / ".pipeline-state",
+            exec_md_path=tmp_path / "queue" / "exec.jsonl",
+        )
+
+    def test_ac1_1_normal(self, tmp_path):
+        """AC1-1: 正常な2行 JSONL → {uuid: command} 辞書"""
+        jsonl = tmp_path / "queue" / "exec.jsonl"
+        jsonl.parent.mkdir(parents=True)
+        jsonl.write_text(
+            _json.dumps({"uuid": "abc-123", "command": "echo hello", "depends": []}) + "\n"
+            + _json.dumps({"uuid": "def-456", "command": "echo world", "depends": []}) + "\n",
+            encoding="utf-8",
+        )
+        state = self.make_state(tmp_path)
+        assert state.parse_exec_tasks() == {"abc-123": "echo hello", "def-456": "echo world"}
+
+    def test_ac1_2_empty_file(self, tmp_path):
+        """AC1-2: 空ファイル → {}"""
+        jsonl = tmp_path / "queue" / "exec.jsonl"
+        jsonl.parent.mkdir(parents=True)
+        jsonl.write_text("", encoding="utf-8")
+        state = self.make_state(tmp_path)
+        assert state.parse_exec_tasks() == {}
+
+    def test_ac1_3_file_not_found(self, tmp_path):
+        """AC1-3: ファイル不在 → {}"""
+        state = self.make_state(tmp_path)
+        assert state.parse_exec_tasks() == {}
+
+    def test_ac1_4_idempotency_key_skipped(self, tmp_path):
+        """AC1-4: idempotency_key のみの行はスキップ、uuid 行は返す"""
+        jsonl = tmp_path / "queue" / "exec.jsonl"
+        jsonl.parent.mkdir(parents=True)
+        jsonl.write_text(
+            _json.dumps({"idempotency_key": "workflow:phase:123"}) + "\n"
+            + _json.dumps({"uuid": "abc-123", "command": "echo hi"}) + "\n",
+            encoding="utf-8",
+        )
+        state = self.make_state(tmp_path)
+        assert state.parse_exec_tasks() == {"abc-123": "echo hi"}
+
+    def test_ac1_5_broken_line_skipped(self, tmp_path):
+        """AC1-5: 壊れた JSON 行はスキップ、正常行は返す"""
+        jsonl = tmp_path / "queue" / "exec.jsonl"
+        jsonl.parent.mkdir(parents=True)
+        jsonl.write_text(
+            "not-json\n"
+            + _json.dumps({"uuid": "abc-123", "command": "echo ok"}) + "\n",
+            encoding="utf-8",
+        )
+        state = self.make_state(tmp_path)
+        assert state.parse_exec_tasks() == {"abc-123": "echo ok"}
+
+
+class TestRemoveExecEntriesJsonl:
+    def make_state(self, tmp_path) -> PipelineState:
+        return PipelineState(
+            state_dir=tmp_path / ".pipeline-state",
+            exec_md_path=tmp_path / "queue" / "exec.jsonl",
+        )
+
+    def _write_jsonl(self, path: Path, records: list[dict]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            "\n".join(_json.dumps(r) for r in records) + "\n",
+            encoding="utf-8",
+        )
+
+    def test_ac2_1_remove_two_of_three(self, tmp_path):
+        """AC2-1: 3行中2行削除 → 1行残り、返り値 2"""
+        jsonl = tmp_path / "queue" / "exec.jsonl"
+        self._write_jsonl(jsonl, [
+            {"uuid": "a", "command": "cmd-a"},
+            {"uuid": "b", "command": "cmd-b"},
+            {"uuid": "c", "command": "cmd-c"},
+        ])
+        state = self.make_state(tmp_path)
+        removed = state.remove_exec_entries({"a", "c"})
+        assert removed == 2
+        content = jsonl.read_text(encoding="utf-8")
+        assert "cmd-b" in content
+        assert "cmd-a" not in content
+        assert "cmd-c" not in content
+
+    def test_ac2_2_idempotency_line_preserved(self, tmp_path):
+        """AC2-2: idempotency 行は保持、uuid 行のみ削除"""
+        jsonl = tmp_path / "queue" / "exec.jsonl"
+        self._write_jsonl(jsonl, [
+            {"uuid": "a", "command": "cmd-a"},
+            {"idempotency_key": "workflow:phase:1"},
+        ])
+        state = self.make_state(tmp_path)
+        removed = state.remove_exec_entries({"a"})
+        assert removed == 1
+        content = jsonl.read_text(encoding="utf-8")
+        assert "idempotency_key" in content
+        assert "cmd-a" not in content
+
+    def test_ac2_3_no_match(self, tmp_path):
+        """AC2-3: 該当 UUID なし → 変更なし、返り値 0"""
+        jsonl = tmp_path / "queue" / "exec.jsonl"
+        self._write_jsonl(jsonl, [
+            {"uuid": "a", "command": "cmd-a"},
+            {"uuid": "b", "command": "cmd-b"},
+        ])
+        original = jsonl.read_text(encoding="utf-8")
+        state = self.make_state(tmp_path)
+        removed = state.remove_exec_entries({"x"})
+        assert removed == 0
+        assert jsonl.read_text(encoding="utf-8") == original
+
+    def test_ac2_4_file_not_found(self, tmp_path):
+        """AC2-4: ファイル不在 → 0 を返しエラーなし"""
+        state = self.make_state(tmp_path)
+        assert state.remove_exec_entries({"a"}) == 0
