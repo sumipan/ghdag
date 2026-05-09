@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.15.0] - 2026-05-09
+
+### Changed (BREAKING)
+
+- `pipeline/`: exec.md サポートコードを全削除。exec ファイルは JSONL 形式（`jobs/exec.jsonl`）のみ対応。後方互換なし (#825)
+- `pipeline/maintenance.py`: `remove_idempotency_matching` の text-mode idempotency 互換を削除し JSONL 形式に一本化
+
+### Added
+
+- `pipeline/maintenance.py`: キュー検査・修復 API (`validate_exec_jsonl`, `list_queue_tasks`, `inspect_exec_jsonl`, `repair_exec_jsonl`, `check_idempotency_key`) を追加 (#829)
+
+### Fixed
+
+- `pipeline/maintenance.py`: `remove_idempotency_matching` / `_submit_text` の text-mode 冪等性互換を部分復元（JSONL 主体、md フォールバック）
+
 ## [0.14.9] - 2026-05-08
 
 ### Added
