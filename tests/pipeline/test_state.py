@@ -319,3 +319,74 @@ class TestCheckIdempotencyJsonlMode:
         pipeline_jsonl._exec_md_path.write_text(record + "\n", encoding="utf-8")
 
         assert pipeline_jsonl.check_idempotency("scheduler:diary_review:ts") is True
+
+
+# ---------------------------------------------------------------------------
+# JSONL モード: remove_idempotency_matching (AC2)
+# ---------------------------------------------------------------------------
+
+
+class TestRemoveIdempotencyMatchingJsonl:
+    @pytest.fixture
+    def jsonl_state(self, tmp_path):
+        exec_jsonl = tmp_path / "exec.jsonl"
+        exec_jsonl.write_text("", encoding="utf-8")
+        return PipelineState(state_dir=tmp_path / "state", exec_md_path=exec_jsonl)
+
+    def test_removes_two_matching_records(self, jsonl_state):
+        """AC2-1: workflow_name と issue_number にマッチする 2 レコードを削除、返り値 2。"""
+        jsonl_state._exec_md_path.write_text(
+            json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:42"}) + "\n"
+            + json.dumps({"uuid": UUID2, "idempotency_key": "wf:handler_b:42"}) + "\n",
+            encoding="utf-8",
+        )
+        removed = jsonl_state.remove_idempotency_matching("wf", 42)
+        assert removed == 2
+        content = jsonl_state._exec_md_path.read_text()
+        assert "handler_a" not in content
+        assert "handler_b" not in content
+
+    def test_no_match_returns_zero_and_file_unchanged(self, jsonl_state):
+        """AC2-2: マッチなし（issue_number 違い）→ 返り値 0、ファイル変更なし。"""
+        original = json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:99"}) + "\n"
+        jsonl_state._exec_md_path.write_text(original, encoding="utf-8")
+        removed = jsonl_state.remove_idempotency_matching("wf", 42)
+        assert removed == 0
+        assert jsonl_state._exec_md_path.read_text() == original
+
+    def test_keyless_and_non_matching_records_preserved(self, jsonl_state):
+        """AC2-3: idempotency_key なし・非マッチレコードは残る。"""
+        jsonl_state._exec_md_path.write_text(
+            json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:42"}) + "\n"
+            + json.dumps({"uuid": UUID2, "idempotency_key": "wf:handler_b:99"}) + "\n"
+            + json.dumps({"uuid": UUID3, "command": "echo hi"}) + "\n",
+            encoding="utf-8",
+        )
+        removed = jsonl_state.remove_idempotency_matching("wf", 42)
+        assert removed == 1
+        content = jsonl_state._exec_md_path.read_text()
+        assert "handler_a" not in content
+        assert "handler_b" in content
+        assert UUID3 in content
+
+    def test_file_not_exists_returns_zero(self, tmp_path):
+        """AC2-4: ファイル不在 → 返り値 0、エラーなし。"""
+        state = PipelineState(
+            state_dir=tmp_path / "state",
+            exec_md_path=tmp_path / "nonexistent.jsonl",
+        )
+        assert state.remove_idempotency_matching("wf", 42) == 0
+
+    def test_empty_lines_preserved(self, jsonl_state):
+        """AC2-5: 空行は保持される。"""
+        jsonl_state._exec_md_path.write_text(
+            json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:42"}) + "\n"
+            + "\n"
+            + json.dumps({"uuid": UUID2, "command": "cmd"}) + "\n",
+            encoding="utf-8",
+        )
+        jsonl_state.remove_idempotency_matching("wf", 42)
+        remaining = jsonl_state._exec_md_path.read_text()
+        assert "" in remaining.splitlines()
+        assert "handler_a" not in remaining
+        assert UUID2 in remaining

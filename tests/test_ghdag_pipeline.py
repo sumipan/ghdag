@@ -186,9 +186,14 @@ class TestPipelineState:
         assert st.check_idempotency("key-1") is True
 
     def test_s2_idempotency_after_record(self):
-        """S2: record_dispatch 後 → check_idempotency → False"""
-        st = self.make_state()
-        st.record_dispatch("key-1")
+        """S2: JSONL に idempotency_key が存在すると check_idempotency は False"""
+        import json
+        exec_jsonl = os.path.join(self.tmpdir, "exec.jsonl")
+        st = PipelineState(state_dir=self.state_dir, exec_md_path=exec_jsonl)
+        Path(exec_jsonl).write_text(
+            json.dumps({"idempotency_key": "key-1", "uuid": "abc-123"}) + "\n",
+            encoding="utf-8",
+        )
         assert st.check_idempotency("key-1") is False
 
     def test_s3_idempotency_no_exec_md(self):

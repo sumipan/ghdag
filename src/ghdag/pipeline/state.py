@@ -6,7 +6,7 @@ pipeline/state.py — パイプライン状態管理
 
 2つの永続化先を管理:
   (1) {state_dir}/{id}.json — パイプライン実行状態
-  (2) exec.md — 冪等性キー（# idempotency: {key} コメント行）
+  (2) exec.jsonl — 冪等性キー（idempotency_key フィールドを持つ JSONL レコード）
 """
 
 from __future__ import annotations
@@ -32,67 +32,65 @@ class PipelineState:
         self._state_dir = Path(state_dir)
         self._exec_md_path = Path(exec_md_path)
 
-    # --- 冪等性（exec.md コメント行） ---
+    # --- 冪等性（exec.jsonl レコード） ---
 
     @property
     def _is_jsonl_mode(self) -> bool:
         return str(self._exec_md_path).endswith(".jsonl")
 
     def check_idempotency(self, key: str) -> bool:
-        """exec ファイル内に指定キーの idempotency 記録がなければ True（未処理）。
+        """exec.jsonl 内に指定キーの idempotency 記録がなければ True（未処理）。
 
-        テキスト形式（exec.md）: "# idempotency: {key}" 行を探す。
-        JSONL 形式（exec.jsonl）: {"idempotency_key": "{key}"} レコードを探す。
+        JSONL レコードの "idempotency_key" フィールドで判定する。
         ファイルが存在しない場合も True を返す。
         """
         if not self._exec_md_path.exists():
             return True
-        if self._is_jsonl_mode:
-            needle_json = f'"idempotency_key": "{key}"'
-            with open(self._exec_md_path, encoding="utf-8") as f:
-                for line in f:
-                    if needle_json in line:
-                        return False
-            return True
-        needle = f"# idempotency: {key}"
+        needle = f'"idempotency_key": "{key}"'
         with open(self._exec_md_path, encoding="utf-8") as f:
             for line in f:
                 if needle in line:
                     return False
         return True
 
-    def record_dispatch(self, key: str) -> None:
-        """exec.md に "# idempotency: {key}" を追記。fcntl ロック付き。"""
-        self.append_exec([f"# idempotency: {key}"])
-
     def remove_idempotency_matching(self, workflow_name: str, issue_number: int) -> int:
-        """exec.md から workflow_name:*:issue_number にマッチする idempotency 行を削除。
+        """exec.jsonl から workflow_name:*:issue_number にマッチする冪等性キーを持つレコードを削除。
 
-        Args:
-            workflow_name: ワークフロー名
-            issue_number: Issue 番号
+        各行を JSON パースし、idempotency_key が
+        "{workflow_name}:" で始まり ":{issue_number}" で終わるレコードを除外して書き戻す。
+
         Returns:
-            削除した行数
-        Raises:
-            FileNotFoundError: exec.md が存在しない
+            削除したレコード数
         """
         if not self._exec_md_path.exists():
             return 0
 
-        prefix = f"# idempotency: {workflow_name}:"
+        prefix = f"{workflow_name}:"
         suffix = f":{issue_number}"
-        removed = 0
 
         with open(self._exec_md_path, encoding="utf-8") as f:
-            lines = f.readlines()
+            fcntl.flock(f, fcntl.LOCK_SH)
+            try:
+                lines = f.readlines()
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
 
         new_lines = []
+        removed = 0
         for line in lines:
-            stripped = line.rstrip("\n")
-            if stripped.startswith(prefix) and stripped.endswith(suffix):
-                removed += 1
-            else:
+            stripped = line.strip()
+            if not stripped:
                 new_lines.append(line)
+                continue
+            try:
+                data = json.loads(stripped)
+                key = data.get("idempotency_key", "")
+                if key and key.startswith(prefix) and key.endswith(suffix):
+                    removed += 1
+                    continue
+            except json.JSONDecodeError:
+                pass
+            new_lines.append(line)
 
         if removed > 0:
             with open(self._exec_md_path, "w", encoding="utf-8") as f:
