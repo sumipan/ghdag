@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-# queue/[ts]-[tool]-order/result-[UUID].md
+# queue/[ts]-[tool]-order/result/stderr-[UUID].md
 QUEUE_FILE_RE = re.compile(
-    r"^(\d{14})-(\w+)-(order|result)-([a-fA-F0-9\-]{36})\.md$"
+    r"^(\d{14})-([\w-]+)-(order|result|stderr)-([a-fA-F0-9\-]{36})\.md$"
 )
 # exec.md の行: UUID[depends:...]: command
 EXEC_LINE_RE = re.compile(r"^([a-fA-F0-9\-]+)(?:\[depends:[^\]]+\])?\s*:")
@@ -92,15 +92,16 @@ def cleanup_queue(
     for uuid, entry in by_uuid.items():
         order_path: Path | None = entry.get("order")
         result_path: Path | None = entry.get("result")
+        stderr_path: Path | None = entry.get("stderr")
         ts = entry["ts"]
-        ref_path = order_path or result_path
+        ref_path = order_path or result_path or stderr_path
         mtime = file_timestamp(ref_path)
 
         if uuid in done_uuids:
             # 完了済み: cutoff を過ぎていたらアーカイブ
             if mtime <= cutoff_ts:
                 dest_dir = _archive_month_dir(archive_dir, ts, orphan=False)
-                for p in (order_path, result_path):
+                for p in (order_path, result_path, stderr_path):
                     if p and p.exists():
                         dest = dest_dir / p.name
                         if dry_run:
@@ -121,7 +122,7 @@ def cleanup_queue(
             # 未完了: orphan_days を過ぎていたら孤立アーカイブ
             if mtime <= orphan_ts:
                 dest_dir = _archive_month_dir(archive_dir, ts, orphan=True)
-                for p in (order_path, result_path):
+                for p in (order_path, result_path, stderr_path):
                     if p and p.exists():
                         dest = dest_dir / p.name
                         if dry_run:

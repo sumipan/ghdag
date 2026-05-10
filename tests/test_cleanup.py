@@ -458,6 +458,128 @@ class TestUUIDCaseInsensitive:
 
 
 # ---------------------------------------------------------------------------
+# AC1 (追加): 複合ツール名（ハイフン入り）のファイルが cleanup 対象になる
+# ---------------------------------------------------------------------------
+
+
+class TestCompoundToolName:
+    def test_compound_tool_name_done_task_is_archived(self, tmp_path):
+        """claude-investigator のような複合ツール名ファイルが完了済みアーカイブされる"""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        # 複合ツール名でファイルを作成
+        order = queue_dir / f"{TS}-claude-investigator-order-{UUID_A}.md"
+        result = queue_dir / f"{TS}-claude-investigator-result-{UUID_A}.md"
+        order.write_text("order")
+        result.write_text("result")
+        _set_mtime(order, days_ago=2)
+        _make_done_flag(done_dir, UUID_A)
+        _make_exec_md(exec_md, [UUID_A])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            cutoff_days=1,
+        )
+
+        assert res.archived_done == 1
+        assert not order.exists()
+        assert not result.exists()
+
+    def test_gemini_redelegator_done_task_is_archived(self, tmp_path):
+        """gemini-redelegator のような複合ツール名ファイルが完了済みアーカイブされる"""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        order = queue_dir / f"{TS}-gemini-redelegator-order-{UUID_B}.md"
+        order.write_text("order")
+        _set_mtime(order, days_ago=2)
+        _make_done_flag(done_dir, UUID_B)
+        _make_exec_md(exec_md, [UUID_B])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            cutoff_days=1,
+        )
+
+        assert res.archived_done == 1
+        assert not order.exists()
+
+    def test_cursor_investigator_orphan_task_is_archived(self, tmp_path):
+        """cursor-investigator のような複合ツール名の孤立タスクがアーカイブされる"""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        order = queue_dir / f"{TS}-cursor-investigator-order-{UUID_C}.md"
+        order.write_text("order")
+        _set_mtime(order, days_ago=10)
+        _make_exec_md(exec_md, [UUID_C])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+        )
+
+        assert res.archived_orphan == 1
+        assert not order.exists()
+
+
+# ---------------------------------------------------------------------------
+# AC2 (追加): stderr ファイルが cleanup 対象になる
+# ---------------------------------------------------------------------------
+
+
+class TestStderrKind:
+    def test_stderr_file_done_task_is_archived(self, tmp_path):
+        """claude-stderr の stderr ファイルが完了済みとしてアーカイブされる"""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        stderr_file = queue_dir / f"{TS}-claude-stderr-{UUID_A}.md"
+        stderr_file.write_text("stderr content")
+        _set_mtime(stderr_file, days_ago=2)
+        _make_done_flag(done_dir, UUID_A)
+        _make_exec_md(exec_md, [UUID_A])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            cutoff_days=1,
+        )
+
+        assert res.archived_done == 1
+        assert not stderr_file.exists()
+
+    def test_cursor_stderr_orphan_task_is_archived(self, tmp_path):
+        """cursor-stderr の孤立タスクがアーカイブされる"""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        stderr_file = queue_dir / f"{TS}-cursor-stderr-{UUID_B}.md"
+        stderr_file.write_text("stderr content")
+        _set_mtime(stderr_file, days_ago=10)
+        _make_exec_md(exec_md, [UUID_B])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+        )
+
+        assert res.archived_orphan == 1
+        assert not stderr_file.exists()
+
+    def test_gemini_stderr_matches_as_valid_kind(self, tmp_path):
+        """gemini-stderr ファイルが QUEUE_FILE_RE にマッチする"""
+        from ghdag.cleanup import QUEUE_FILE_RE
+        fname = f"{TS}-gemini-stderr-{UUID_C}.md"
+        assert QUEUE_FILE_RE.match(fname) is not None
+
+
+# ---------------------------------------------------------------------------
 # CleanupResult dataclass
 # ---------------------------------------------------------------------------
 
