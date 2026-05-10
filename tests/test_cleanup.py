@@ -734,7 +734,7 @@ class TestOrphanDoneMark:
             return original_rename(self, target)
 
         with patch.object(Path, "rename", tracking_rename):
-            with patch("builtins.open", wraps=open) as mock_open:
+            with patch("builtins.open", wraps=open):
                 cleanup_queue(
                     queue_dir=queue_dir,
                     archive_dir=archive_dir,
