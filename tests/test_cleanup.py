@@ -1,4 +1,4 @@
-"""Tests for ghdag.cleanup — AC1〜AC10 に対応する単体テスト。"""
+"""Tests for ghdag.cleanup — AC1〜AC10 および Issue-856 修正テストを含む。"""
 
 from __future__ import annotations
 
@@ -48,6 +48,12 @@ def _set_mtime(path: Path, days_ago: float) -> None:
 def _make_exec_md(exec_md: Path, entries: list[str]) -> None:
     lines = [f"{uuid}: cat queue/order.md | claude\n" for uuid in entries]
     exec_md.write_text("".join(lines), encoding="utf-8")
+
+
+def _make_exec_jsonl(exec_jsonl: Path, entries: list[str]) -> None:
+    import json
+    lines = [json.dumps({"uuid": uuid, "command": "cat queue/order.md | claude"}) + "\n" for uuid in entries]
+    exec_jsonl.write_text("".join(lines), encoding="utf-8")
 
 
 def _make_done_flag(done_dir: Path, uuid: str) -> None:
@@ -590,3 +596,204 @@ class TestCleanupResult:
         assert r.archived_done == 1
         assert r.archived_orphan == 2
         assert r.pruned_exec == 3
+
+
+# ---------------------------------------------------------------------------
+# Issue-856: JSONL prune（AC1）
+# ---------------------------------------------------------------------------
+
+
+class TestJsonlPrune:
+    def test_jsonl_prune_removes_target_uuid_line(self, tmp_path):
+        """JSONL 形式の exec ファイルからアーカイブ対象 UUID 行を除去する"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        order, _ = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order, days_ago=2)
+        _make_done_flag(done_dir, UUID_A)
+        _make_exec_jsonl(exec_jsonl, [UUID_A, UUID_B])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+
+        assert res.pruned_exec == 1
+        content = exec_jsonl.read_text()
+        assert UUID_A not in content
+        assert UUID_B in content
+
+    def test_jsonl_prune_keeps_non_matching_uuid(self, tmp_path):
+        """別 UUID の JSONL 行は残る"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        order, _ = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order, days_ago=2)
+        _make_done_flag(done_dir, UUID_A)
+        _make_exec_jsonl(exec_jsonl, [UUID_B])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+
+        assert res.pruned_exec == 0
+        assert UUID_B in exec_jsonl.read_text()
+
+    def test_jsonl_prune_keeps_invalid_json_line(self, tmp_path):
+        """パース不能な行は除去しない"""
+        import json
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        order, _ = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order, days_ago=2)
+        _make_done_flag(done_dir, UUID_A)
+
+        invalid_line = "NOT_VALID_JSON\n"
+        valid_line = json.dumps({"uuid": UUID_A, "command": "cmd"}) + "\n"
+        exec_jsonl.write_text(invalid_line + valid_line, encoding="utf-8")
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+
+        assert res.pruned_exec == 1
+        content = exec_jsonl.read_text()
+        assert "NOT_VALID_JSON" in content
+        assert UUID_A not in content
+
+    def test_jsonl_exec_md_backward_compat(self, tmp_path):
+        """exec.md 形式（UUID: command）が JSONL 対応後も動作する（後方互換）"""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        exec_md_path = queue_dir / "exec.md"
+        order, _ = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order, days_ago=2)
+        _make_done_flag(done_dir, UUID_A)
+        _make_exec_md(exec_md_path, [UUID_A, UUID_B])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md_path,
+            cutoff_days=1,
+        )
+
+        assert res.pruned_exec == 1
+        content = exec_md_path.read_text()
+        assert UUID_A not in content
+        assert UUID_B in content
+
+
+# ---------------------------------------------------------------------------
+# Issue-856: orphan done マーカー付与（AC2）
+# ---------------------------------------------------------------------------
+
+
+class TestOrphanDoneMark:
+    def test_orphan_archive_creates_done_marker(self, tmp_path):
+        """orphan アーカイブ前に ORPHAN_ARCHIVED の done マーカーを作成する"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        order, _ = _make_queue_files(queue_dir, UUID_B)
+        _set_mtime(order, days_ago=10)
+        _make_exec_jsonl(exec_jsonl, [UUID_B])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            orphan_days=7,
+        )
+
+        assert res.archived_orphan == 1
+        done_flag = done_dir / UUID_B
+        assert done_flag.exists()
+        assert "ORPHAN_ARCHIVED" in done_flag.read_text()
+
+    def test_orphan_done_marker_created_before_file_move(self, tmp_path):
+        """done マーカーはファイル移動の前に作成される（DagEngine が誤認しないよう）"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        order, _ = _make_queue_files(queue_dir, UUID_B)
+        _set_mtime(order, days_ago=10)
+        _make_exec_jsonl(exec_jsonl, [UUID_B])
+
+        creation_log: list[str] = []
+
+        original_rename = Path.rename
+
+        def tracking_rename(self, target):
+            creation_log.append(f"rename:{self.name}")
+            return original_rename(self, target)
+
+        with patch.object(Path, "rename", tracking_rename):
+            with patch("builtins.open", wraps=open) as mock_open:
+                cleanup_queue(
+                    queue_dir=queue_dir,
+                    archive_dir=archive_dir,
+                    done_dir=done_dir,
+                    exec_md=exec_jsonl,
+                    orphan_days=7,
+                )
+
+        done_flag = done_dir / UUID_B
+        assert done_flag.exists()
+
+
+# ---------------------------------------------------------------------------
+# Issue-856: done マーカー削除順序（AC3）
+# ---------------------------------------------------------------------------
+
+
+class TestDoneDeleteOrder:
+    def test_exec_pruned_before_done_marker_deleted(self, tmp_path):
+        """exec prune が完了した後に done マーカーを削除する"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        order, _ = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order, days_ago=2)
+        _make_done_flag(done_dir, UUID_A)
+        _make_exec_jsonl(exec_jsonl, [UUID_A])
+
+        call_order: list[str] = []
+
+        original_unlink = Path.unlink
+        original_write_text = Path.write_text
+
+        def tracking_unlink(self, missing_ok=False):
+            call_order.append(f"unlink:{self.name}")
+            return original_unlink(self, missing_ok=missing_ok)
+
+        def tracking_write_text(self, data, *args, **kwargs):
+            if self.name == exec_jsonl.name:
+                call_order.append(f"write_exec:{self.name}")
+            return original_write_text(self, data, *args, **kwargs)
+
+        with patch.object(Path, "unlink", tracking_unlink), \
+             patch.object(Path, "write_text", tracking_write_text):
+            cleanup_queue(
+                queue_dir=queue_dir,
+                archive_dir=archive_dir,
+                done_dir=done_dir,
+                exec_md=exec_jsonl,
+                cutoff_days=1,
+            )
+
+        exec_write_idx = next(
+            (i for i, x in enumerate(call_order) if x.startswith("write_exec:")), None
+        )
+        done_unlink_idx = next(
+            (i for i, x in enumerate(call_order) if x == f"unlink:{UUID_A}"), None
+        )
+        assert exec_write_idx is not None, f"exec write not found: {call_order}"
+        assert done_unlink_idx is not None, f"done unlink not found: {call_order}"
+        assert exec_write_idx < done_unlink_idx, (
+            f"exec prune should happen before done marker deletion, "
+            f"but order was: {call_order}"
+        )

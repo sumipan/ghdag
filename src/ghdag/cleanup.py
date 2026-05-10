@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from dataclasses import dataclass
@@ -34,6 +35,24 @@ def file_timestamp(path: Path) -> float:
     except OSError:
         return 0.0
     return getattr(st, "st_birthtime", st.st_mtime)
+
+
+def _extract_uuid_from_line(line: str) -> str | None:
+    """exec.md / exec.jsonl 両形式から UUID を抽出する。"""
+    stripped = line.strip()
+    if not stripped:
+        return None
+    # JSONL 形式
+    if stripped.startswith("{"):
+        try:
+            obj = json.loads(stripped)
+            uuid = obj.get("uuid", "")
+            return uuid.lower() or None
+        except (json.JSONDecodeError, AttributeError):
+            return None
+    # exec.md 形式（後方互換）
+    m = EXEC_LINE_RE.match(stripped)
+    return m.group(1).lower() if m else None
 
 
 def cleanup_queue(
@@ -88,6 +107,8 @@ def cleanup_queue(
     archived_done = 0
     archived_orphan = 0
     pruned_uuids: set[str] = set()
+    # done マーカーの削除は exec prune 後に行う（AC3: 削除順序の保証）
+    deferred_done_deletes: set[str] = set()
 
     for uuid, entry in by_uuid.items():
         order_path: Path | None = entry.get("order")
@@ -109,18 +130,20 @@ def cleanup_queue(
                         else:
                             p.rename(dest)
                             print(f"archive done: {p.name} → {dest}")
-                # jobs/done/ フラグ削除
-                flag = done_dir / uuid
-                if flag.exists():
-                    if dry_run:
-                        print(f"[dry] remove jobs/done: {uuid}")
-                    else:
-                        flag.unlink()
+                # done マーカー削除は exec prune 後に defer する（AC3）
+                deferred_done_deletes.add(uuid)
                 pruned_uuids.add(uuid)
                 archived_done += 1
         else:
             # 未完了: orphan_days を過ぎていたら孤立アーカイブ
             if mtime <= orphan_ts:
+                # ファイル移動前に done マーカーを付与する（AC2）
+                if not dry_run:
+                    done_dir.mkdir(parents=True, exist_ok=True)
+                    flag = done_dir / uuid
+                    flag.write_text("ORPHAN_ARCHIVED", encoding="utf-8")
+                else:
+                    print(f"[dry] create done marker (orphan): {uuid}")
                 dest_dir = _archive_month_dir(archive_dir, ts, orphan=True)
                 for p in (order_path, result_path, stderr_path):
                     if p and p.exists():
@@ -133,14 +156,14 @@ def cleanup_queue(
                 pruned_uuids.add(uuid)
                 archived_orphan += 1
 
-    # exec.md のエントリ除去
+    # exec.md / exec.jsonl のエントリ除去（AC1: JSONL 対応・AC5: exec.md 後方互換）
     pruned_exec = 0
     if exec_md.exists() and pruned_uuids:
         lines = exec_md.read_text(encoding="utf-8").splitlines(keepends=True)
         new_lines = []
         for line in lines:
-            m = EXEC_LINE_RE.match(line.strip())
-            if m and m.group(1).lower() in pruned_uuids:
+            uuid_in_line = _extract_uuid_from_line(line)
+            if uuid_in_line and uuid_in_line in pruned_uuids:
                 pruned_exec += 1
                 if dry_run:
                     print(f"[dry] prune exec.md: {line.rstrip()[:80]}")
@@ -148,6 +171,15 @@ def cleanup_queue(
                 new_lines.append(line)
         if pruned_exec > 0 and not dry_run:
             exec_md.write_text("".join(new_lines), encoding="utf-8")
+
+    # exec prune 完了後に done マーカーを削除する（AC3: 順序保証）
+    for uuid in deferred_done_deletes:
+        flag = done_dir / uuid
+        if flag.exists():
+            if dry_run:
+                print(f"[dry] remove jobs/done: {uuid}")
+            else:
+                flag.unlink()
 
     return CleanupResult(
         archived_done=archived_done,
