@@ -21,6 +21,24 @@ class AuditContext:
     correlation_id: str | None = None
 
 
+def _extract_task_uuids(exec_lines: list[str]) -> list[str]:
+    uuids: list[str] = []
+    for line in exec_lines:
+        stripped = line.strip()
+        if stripped.startswith("{"):
+            try:
+                obj = json.loads(stripped)
+                if "uuid" in obj:
+                    uuids.append(obj["uuid"])
+                    continue
+            except (json.JSONDecodeError, TypeError):
+                pass
+        m = _UUID_RE.match(stripped)
+        if m:
+            uuids.append(m.group(1))
+    return uuids
+
+
 def write_audit_log(
     audit_path: Path,
     exec_lines: list[str],
@@ -30,11 +48,7 @@ def write_audit_log(
     if not exec_lines:
         return
 
-    task_uuids = [
-        m.group(1)
-        for line in exec_lines
-        if (m := _UUID_RE.match(line.strip()))
-    ]
+    task_uuids = _extract_task_uuids(exec_lines)
 
     record = {
         "timestamp": datetime.now(JST).isoformat(),

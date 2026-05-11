@@ -140,6 +140,89 @@ class TestWriteAuditLog:
         assert len(lines) == 2
 
 
+class TestExtractTaskUuidsJsonFormat:
+    """Tests for _extract_task_uuids — Issue #860 (JSON format support)."""
+
+    def test_ac1_json_format_uuid_extracted(self, tmp_path):
+        """AC1: JSON 形式の exec 行から task_uuids に UUID が記録される。"""
+        audit_path = tmp_path / "audit.jsonl"
+        line = json.dumps({"uuid": UUID1, "command": "claude -p --force < order.md"})
+        ctx = AuditContext(source="issuesmith")
+
+        write_audit_log(audit_path, [line], ctx)
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["task_uuids"] == [UUID1]
+
+    def test_ac2_text_format_backward_compat(self, tmp_path):
+        """AC2: 旧テキスト形式からも UUID が正しく抽出される（後方互換）。"""
+        audit_path = tmp_path / "audit.jsonl"
+        line = f"{UUID1}: claude -p --force < order.md"
+        ctx = AuditContext(source="issuesmith")
+
+        write_audit_log(audit_path, [line], ctx)
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["task_uuids"] == [UUID1]
+
+    def test_ac3_mixed_formats(self, tmp_path):
+        """AC3: JSON 形式とテキスト形式の混在リストからすべての UUID を抽出。"""
+        audit_path = tmp_path / "audit.jsonl"
+        lines = [
+            json.dumps({"uuid": UUID1, "command": "cmd1"}),
+            f"{UUID2}: cmd2",
+        ]
+        ctx = AuditContext(source="issuesmith")
+
+        write_audit_log(audit_path, lines, ctx)
+
+        r = json.loads(audit_path.read_text().strip())
+        assert UUID1 in r["task_uuids"]
+        assert UUID2 in r["task_uuids"]
+        assert len(r["task_uuids"]) == 2
+
+    def test_ac4_json_without_uuid_key_skipped(self, tmp_path):
+        """AC4: "uuid" キーを持たない JSON 行は task_uuids に含まれない。"""
+        audit_path = tmp_path / "audit.jsonl"
+        line = json.dumps({"comment": "skip"})
+        ctx = AuditContext(source="issuesmith")
+
+        write_audit_log(audit_path, [line], ctx)
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["task_uuids"] == []
+
+    def test_ac5_broken_json_falls_back_to_regex(self, tmp_path):
+        """AC5: 不正 JSON はフォールバックで _UUID_RE を試行し、マッチしなければスキップ。"""
+        audit_path = tmp_path / "audit.jsonl"
+        broken = "{broken"
+        ctx = AuditContext(source="issuesmith")
+
+        write_audit_log(audit_path, [broken], ctx)
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["task_uuids"] == []
+
+    def test_ac6_empty_string_line_skipped(self, tmp_path):
+        """AC6: 空文字列の行はスキップされる。"""
+        audit_path = tmp_path / "audit.jsonl"
+        ctx = AuditContext(source="issuesmith")
+
+        write_audit_log(audit_path, ["", "   "], ctx)
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["task_uuids"] == []
+
+    def test_ac7_empty_exec_lines_no_write(self, tmp_path):
+        """AC7: exec_lines が空リストの場合、write_audit_log は何も書き込まない。"""
+        audit_path = tmp_path / "audit.jsonl"
+        ctx = AuditContext(source="issuesmith")
+
+        write_audit_log(audit_path, [], ctx)
+
+        assert not audit_path.exists()
+
+
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
