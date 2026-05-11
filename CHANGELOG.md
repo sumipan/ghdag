@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.15.1] - 2026-05-11
+
+### Added
+
+- `pipeline/`: `QueueTaskStore` と `QueueTask` を追加。result ファイルへのアクセス API を提供 (#76)
+- `pipeline/audit.py`: JSON 形式 exec 行からの UUID 抽出に対応 (#78)
+
+### Fixed
+
+- `pipeline/maintenance.py`: JSONL prune 対応・orphan done マーカー付与・done 削除順序修正 (#77)
+- `pipeline/maintenance.py`: `QUEUE_FILE_RE` を複合ツール名・stderr に対応 (#75)
+
 ## [0.15.0] - 2026-05-09
 
 ### Changed (BREAKING)
