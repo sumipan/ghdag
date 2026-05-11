@@ -22,6 +22,7 @@ class CleanupResult:
     archived_done: int    # 完了済みアーカイブ件数
     archived_orphan: int  # 孤立アーカイブ件数
     pruned_exec: int      # exec.md から除去した行数
+    swept_extras: int = 0  # sweep フェーズでアーカイブした件数
 
 
 def file_timestamp(path: Path) -> float:
@@ -181,10 +182,36 @@ def cleanup_queue(
             else:
                 flag.unlink()
 
+    # Phase 2: catch-all sweep — QUEUE_FILE_RE 不一致ファイルの一括アーカイブ
+    _SWEEP_WHITELIST_SUFFIXES = {".jsonl"}
+    _SWEEP_WHITELIST_NAMES = {".gitkeep", ".ghdag.lock"}
+    swept_extras = 0
+    for path in queue_dir.iterdir():
+        if not path.is_file():
+            continue
+        if path.suffix in _SWEEP_WHITELIST_SUFFIXES:
+            continue
+        if path.name in _SWEEP_WHITELIST_NAMES:
+            continue
+        mtime = file_timestamp(path)
+        if mtime > orphan_ts:
+            continue
+        mtime_dt = datetime.fromtimestamp(mtime, tz=timezone.utc)
+        yyyymm = f"{mtime_dt.year}-{mtime_dt.month:02d}"
+        dest_dir = archive_dir / yyyymm / "extras"
+        if dry_run:
+            print(f"[dry] sweep extras: {path.name} → {dest_dir / path.name}")
+        else:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            path.rename(dest_dir / path.name)
+            print(f"sweep extras: {path.name} → {dest_dir / path.name}")
+        swept_extras += 1
+
     return CleanupResult(
         archived_done=archived_done,
         archived_orphan=archived_orphan,
         pruned_exec=pruned_exec,
+        swept_extras=swept_extras,
     )
 
 

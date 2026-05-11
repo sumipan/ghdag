@@ -583,6 +583,7 @@ def _cmd_cleanup(args: argparse.Namespace) -> None:
     print(
         f"cleanup: archived done={result.archived_done}, "
         f"orphan={result.archived_orphan}, "
+        f"extras={result.swept_extras}, "
         f"exec pruned={result.pruned_exec}"
         + (" [dry-run]" if args.dry_run else "")
     )

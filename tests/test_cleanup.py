@@ -797,3 +797,159 @@ class TestDoneDeleteOrder:
             f"exec prune should happen before done marker deletion, "
             f"but order was: {call_order}"
         )
+
+
+# ---------------------------------------------------------------------------
+# AC11〜AC17: Phase 2 sweep フェーズ
+# ---------------------------------------------------------------------------
+
+UUID_D = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+
+
+class TestSweepExtras:
+    def test_ac11_slack_pending_json_is_swept(self, tmp_path):
+        """AC11: slack-pending-*.json が sweep される"""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
+        slack_file.write_text("{}")
+        _set_mtime(slack_file, days_ago=8)
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+        )
+
+        assert res.swept_extras == 1
+        assert not slack_file.exists()
+        # archive/YYYY-MM/extras/ に移動されていること
+        extras_dirs = list(archive_dir.glob("*/extras"))
+        assert len(extras_dirs) == 1
+        assert (extras_dirs[0] / slack_file.name).exists()
+
+    def test_ac12_nonstandard_md_is_swept(self, tmp_path):
+        """AC12: 非標準命名 .md が sweep される"""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        nonstandard = queue_dir / "20260324105832-gemini-deep-kakiuchi-result.md"
+        nonstandard.write_text("result")
+        _set_mtime(nonstandard, days_ago=8)
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+        )
+
+        assert res.swept_extras == 1
+        assert not nonstandard.exists()
+        extras_dirs = list(archive_dir.glob("*/extras"))
+        assert len(extras_dirs) == 1
+
+    def test_ac13_whitelist_files_are_not_swept(self, tmp_path):
+        """AC13: *.jsonl, .gitkeep, .ghdag.lock はホワイトリストで sweep されない"""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        exec_md.write_text("")  # exec.jsonl を実際に作成する
+        gitkeep = queue_dir / ".gitkeep"
+        gitkeep.touch()
+        lock = queue_dir / ".ghdag.lock"
+        lock.touch()
+        audit = queue_dir / "audit.jsonl"
+        audit.write_text("")
+
+        for f in [exec_md, gitkeep, lock, audit]:
+            _set_mtime(f, days_ago=30)
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+        )
+
+        assert res.swept_extras == 0
+        assert exec_md.exists()
+        assert gitkeep.exists()
+        assert lock.exists()
+        assert audit.exists()
+
+    def test_ac14_young_file_is_not_swept(self, tmp_path):
+        """AC14: orphan_days 未満のファイルは sweep されない"""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
+        slack_file.write_text("{}")
+        _set_mtime(slack_file, days_ago=3)
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+        )
+
+        assert res.swept_extras == 0
+        assert slack_file.exists()
+
+    def test_ac15_dry_run_sweep(self, tmp_path, capsys):
+        """AC15: dry_run で sweep 対象を表示するのみ、ファイルは残存"""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
+        slack_file.write_text("{}")
+        _set_mtime(slack_file, days_ago=8)
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+            dry_run=True,
+        )
+
+        assert res.swept_extras == 1
+        assert slack_file.exists()
+        out = capsys.readouterr().out
+        assert "[dry] sweep extras:" in out
+
+    def test_ac16_directories_are_not_swept(self, tmp_path):
+        """AC16: done/, archive/, thread-index/ ディレクトリは sweep されない"""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        thread_index = queue_dir / "thread-index"
+        thread_index.mkdir()
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+        )
+
+        assert res.swept_extras == 0
+        assert done_dir.exists()
+        assert archive_dir.exists()
+        assert thread_index.exists()
+
+    def test_ac17_phase1_archived_files_not_double_processed(self, tmp_path):
+        """AC17: Phase 1 でアーカイブ済みのファイルは Phase 2 で二重処理されない"""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        order, result = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order, days_ago=2)
+        _make_done_flag(done_dir, UUID_A)
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            cutoff_days=1,
+            orphan_days=7,
+        )
+
+        assert res.archived_done == 1
+        assert res.swept_extras == 0
