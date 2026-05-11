@@ -1,4 +1,4 @@
-"""Tests for pipeline/audit.py — AC 1-7 (Issue #756), AC 1-11 (Issue #762)."""
+"""Tests for pipeline/audit.py — AC 1-9 (Issue #863), AC 1-11 (Issue #762)."""
 
 from __future__ import annotations
 
@@ -25,99 +25,99 @@ class TestAuditContext:
 
 
 class TestWriteAuditLog:
-    def test_ac1_with_context(self, tmp_path):
-        """AC1: AuditContext 指定あり — 各フィールドが正しく記録される。"""
+    def test_ac4_keyword_args_recorded(self, tmp_path):
+        """AC4: task_uuids, exec_lines_count をキーワード引数で渡し正しく記録される。"""
         audit_path = tmp_path / "audit.jsonl"
-        lines = [f"{UUID1}: claude -p --force < order.md"]
-        ctx = AuditContext(source="issuesmith", correlation_id="issue:756")
+        ctx = AuditContext(source="issuesmith")
 
-        write_audit_log(audit_path, lines, ctx)
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1],
+            exec_lines_count=1,
+            context=ctx,
+        )
 
         assert audit_path.exists()
         records = [json.loads(line) for line in audit_path.read_text().splitlines()]
         assert len(records) == 1
         r = records[0]
-        assert r["source"] == "issuesmith"
-        assert r["correlation_id"] == "issue:756"
         assert r["task_uuids"] == [UUID1]
-        assert isinstance(r["caller_stack"], list)
-        assert len(r["caller_stack"]) > 0
-        # timestamp must be ISO 8601 with +09:00
-        assert "+09:00" in r["timestamp"]
         assert r["exec_lines_count"] == 1
-
-    def test_ac2_without_context_uses_unknown(self, tmp_path):
-        """AC2: AuditContext 未指定 → source='unknown', correlation_id=null."""
-        audit_path = tmp_path / "audit.jsonl"
-        lines = [f"{UUID1}: claude -p --force < order.md"]
-        ctx = AuditContext()  # defaults
-
-        write_audit_log(audit_path, lines, ctx)
-
-        r = json.loads(audit_path.read_text().strip())
-        assert r["source"] == "unknown"
-        assert r["correlation_id"] is None
+        assert r["source"] == "issuesmith"
+        assert "+09:00" in r["timestamp"]
         assert isinstance(r["caller_stack"], list)
 
-    def test_ac3_multiple_lines(self, tmp_path):
-        """AC3: 複数行 — exec_lines_count と task_uuids が全行を反映。"""
-        audit_path = tmp_path / "audit.jsonl"
-        lines = [
-            f"{UUID1}: cmd1",
-            f"{UUID2}: cmd2",
-            "# idempotency: issuesmith:brushup:756",
-        ]
-        ctx = AuditContext(source="issuesmith")
-
-        write_audit_log(audit_path, lines, ctx)
-
-        r = json.loads(audit_path.read_text().strip())
-        assert r["exec_lines_count"] == 3
-        assert UUID1 in r["task_uuids"]
-        assert UUID2 in r["task_uuids"]
-
-    def test_ac4_write_failure_logs_stderr_no_exception(self, tmp_path, capsys):
-        """AC4: I/O 失敗 → stderr 警告のみ、例外を上位に伝搬しない。"""
-        audit_path = tmp_path / "audit.jsonl"
-        audit_path.mkdir()  # make it a directory so open() fails
-
-        lines = [f"{UUID1}: cmd"]
-        ctx = AuditContext()
-
-        # must not raise
-        write_audit_log(audit_path, lines, ctx)
-
-        captured = capsys.readouterr()
-        assert "[audit] warning:" in captured.err
-
-    def test_ac5_empty_lines_no_log(self, tmp_path):
-        """AC5: 空リスト → 監査ログは記録されない。"""
+    def test_ac5_exec_lines_count_zero_no_write(self, tmp_path):
+        """AC5: exec_lines_count=0 → 何も書き込まれない。"""
         audit_path = tmp_path / "audit.jsonl"
         ctx = AuditContext()
 
-        write_audit_log(audit_path, [], ctx)
+        write_audit_log(
+            audit_path,
+            task_uuids=[],
+            exec_lines_count=0,
+            context=ctx,
+        )
 
         assert not audit_path.exists()
 
-    def test_ac6_no_uuid_lines(self, tmp_path):
-        """AC6: UUID なし行 → task_uuids は空リスト。"""
+    def test_ac5_empty_task_uuids_with_count(self, tmp_path):
+        """AC5補: task_uuids=[] かつ exec_lines_count > 0 → 空リストとして記録される。"""
         audit_path = tmp_path / "audit.jsonl"
-        lines = ["# idempotency: issuesmith:brushup:756"]
         ctx = AuditContext(source="issuesmith")
 
-        write_audit_log(audit_path, lines, ctx)
+        write_audit_log(
+            audit_path,
+            task_uuids=[],
+            exec_lines_count=1,
+            context=ctx,
+        )
 
         r = json.loads(audit_path.read_text().strip())
         assert r["task_uuids"] == []
         assert r["exec_lines_count"] == 1
 
+    def test_ac8_write_failure_logs_stderr_no_exception(self, tmp_path, capsys):
+        """AC8: I/O 失敗 → stderr 警告のみ、例外を上位に伝搬しない。"""
+        audit_path = tmp_path / "audit.jsonl"
+        audit_path.mkdir()
+
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1],
+            exec_lines_count=1,
+            context=AuditContext(),
+        )
+
+        captured = capsys.readouterr()
+        assert "[audit] warning:" in captured.err
+
+    def test_without_context_uses_unknown(self, tmp_path):
+        """AuditContext デフォルト → source='unknown', correlation_id=null。"""
+        audit_path = tmp_path / "audit.jsonl"
+
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1],
+            exec_lines_count=1,
+            context=AuditContext(),
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["source"] == "unknown"
+        assert r["correlation_id"] is None
+
     def test_idempotency_key_recorded(self, tmp_path):
         """idempotency_key が渡された場合、ログに反映される。"""
         audit_path = tmp_path / "audit.jsonl"
-        lines = [f"{UUID1}: cmd"]
-        ctx = AuditContext(source="issuesmith")
 
-        write_audit_log(audit_path, lines, ctx, idempotency_key="issuesmith:brushup:756")
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1],
+            exec_lines_count=1,
+            context=AuditContext(source="issuesmith"),
+            idempotency_key="issuesmith:brushup:756",
+        )
 
         r = json.loads(audit_path.read_text().strip())
         assert r["idempotency_key"] == "issuesmith:brushup:756"
@@ -125,7 +125,13 @@ class TestWriteAuditLog:
     def test_caller_stack_max_5_frames(self, tmp_path):
         """caller_stack は最大 5 フレーム。"""
         audit_path = tmp_path / "audit.jsonl"
-        write_audit_log(audit_path, [f"{UUID1}: cmd"], AuditContext())
+
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1],
+            exec_lines_count=1,
+            context=AuditContext(),
+        )
 
         r = json.loads(audit_path.read_text().strip())
         assert len(r["caller_stack"]) <= 5
@@ -133,94 +139,107 @@ class TestWriteAuditLog:
     def test_appends_multiple_calls(self, tmp_path):
         """複数回呼ぶと JSONL に複数行が追記される。"""
         audit_path = tmp_path / "audit.jsonl"
-        write_audit_log(audit_path, [f"{UUID1}: cmd"], AuditContext())
-        write_audit_log(audit_path, [f"{UUID2}: cmd"], AuditContext())
+
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1],
+            exec_lines_count=1,
+            context=AuditContext(),
+        )
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID2],
+            exec_lines_count=1,
+            context=AuditContext(),
+        )
 
         lines = audit_path.read_text().strip().splitlines()
         assert len(lines) == 2
 
+    def test_ac1_no_extract_task_uuids_in_audit(self):
+        """AC1: audit モジュールに _extract_task_uuids が存在しない。"""
+        import ghdag.pipeline.audit as audit_mod
+        assert not hasattr(audit_mod, "_extract_task_uuids")
 
-class TestExtractTaskUuidsJsonFormat:
-    """Tests for _extract_task_uuids — Issue #860 (JSON format support)."""
+    def test_ac2_no_uuid_re_in_audit(self):
+        """AC2: audit モジュールに _UUID_RE が存在しない。"""
+        import ghdag.pipeline.audit as audit_mod
+        assert not hasattr(audit_mod, "_UUID_RE")
 
-    def test_ac1_json_format_uuid_extracted(self, tmp_path):
-        """AC1: JSON 形式の exec 行から task_uuids に UUID が記録される。"""
-        audit_path = tmp_path / "audit.jsonl"
-        line = json.dumps({"uuid": UUID1, "command": "claude -p --force < order.md"})
+    def test_ac3_no_exec_lines_param(self):
+        """AC3: write_audit_log が exec_lines パラメータを持たない。"""
+        import inspect
+        sig = inspect.signature(write_audit_log)
+        assert "exec_lines" not in sig.parameters
+
+
+class TestAppendExecRecordsAudit:
+    """AC6: append_exec_records 経由で dict から UUID が抽出され audit に記録される。"""
+
+    def test_ac6_uuid_from_dict(self, tmp_path):
+        from ghdag.pipeline.state import PipelineState
+
+        exec_path = tmp_path / "exec.jsonl"
+        state = PipelineState(state_dir=tmp_path / ".state", exec_md_path=exec_path)
         ctx = AuditContext(source="issuesmith")
+        records = [{"uuid": UUID1, "command": "claude -p --force < order.md"}]
 
-        write_audit_log(audit_path, [line], ctx)
+        state.append_exec_records(records, audit_context=ctx)
 
-        r = json.loads(audit_path.read_text().strip())
-        assert r["task_uuids"] == [UUID1]
-
-    def test_ac2_text_format_backward_compat(self, tmp_path):
-        """AC2: 旧テキスト形式からも UUID が正しく抽出される（後方互換）。"""
         audit_path = tmp_path / "audit.jsonl"
-        line = f"{UUID1}: claude -p --force < order.md"
-        ctx = AuditContext(source="issuesmith")
-
-        write_audit_log(audit_path, [line], ctx)
-
-        r = json.loads(audit_path.read_text().strip())
-        assert r["task_uuids"] == [UUID1]
-
-    def test_ac3_mixed_formats(self, tmp_path):
-        """AC3: JSON 形式とテキスト形式の混在リストからすべての UUID を抽出。"""
-        audit_path = tmp_path / "audit.jsonl"
-        lines = [
-            json.dumps({"uuid": UUID1, "command": "cmd1"}),
-            f"{UUID2}: cmd2",
-        ]
-        ctx = AuditContext(source="issuesmith")
-
-        write_audit_log(audit_path, lines, ctx)
-
+        assert audit_path.exists()
         r = json.loads(audit_path.read_text().strip())
         assert UUID1 in r["task_uuids"]
-        assert UUID2 in r["task_uuids"]
-        assert len(r["task_uuids"]) == 2
+        assert r["exec_lines_count"] == 1
 
-    def test_ac4_json_without_uuid_key_skipped(self, tmp_path):
-        """AC4: "uuid" キーを持たない JSON 行は task_uuids に含まれない。"""
+    def test_ac6_record_without_uuid_key(self, tmp_path):
+        """uuid キーを持たない dict はスキップ。"""
+        from ghdag.pipeline.state import PipelineState
+
+        exec_path = tmp_path / "exec.jsonl"
+        state = PipelineState(state_dir=tmp_path / ".state", exec_md_path=exec_path)
+        records = [{"command": "cmd", "idempotency_key": "k"}]
+
+        state.append_exec_records(records, audit_context=AuditContext())
+
         audit_path = tmp_path / "audit.jsonl"
-        line = json.dumps({"comment": "skip"})
-        ctx = AuditContext(source="issuesmith")
-
-        write_audit_log(audit_path, [line], ctx)
-
         r = json.loads(audit_path.read_text().strip())
         assert r["task_uuids"] == []
 
-    def test_ac5_broken_json_falls_back_to_regex(self, tmp_path):
-        """AC5: 不正 JSON はフォールバックで _UUID_RE を試行し、マッチしなければスキップ。"""
-        audit_path = tmp_path / "audit.jsonl"
-        broken = "{broken"
+
+class TestAppendExecAudit:
+    """AC7: append_exec 経由でテキスト行から UUID が正規表現で抽出され audit に記録される。"""
+
+    def test_ac7_uuid_from_text_line(self, tmp_path):
+        from ghdag.pipeline.state import PipelineState
+
+        exec_path = tmp_path / "exec.md"
+        state = PipelineState(state_dir=tmp_path / ".state", exec_md_path=exec_path)
         ctx = AuditContext(source="issuesmith")
+        lines = [f"{UUID1}: claude -p --force < order.md"]
 
-        write_audit_log(audit_path, [broken], ctx)
+        state.append_exec(lines, audit_context=ctx)
 
+        audit_path = tmp_path / "audit.jsonl"
+        assert audit_path.exists()
+        r = json.loads(audit_path.read_text().strip())
+        assert UUID1 in r["task_uuids"]
+        assert r["exec_lines_count"] == 1
+
+    def test_ac7_line_without_uuid_skipped(self, tmp_path):
+        """UUID を持たないテキスト行は task_uuids に含まれない。"""
+        from ghdag.pipeline.state import PipelineState
+
+        exec_path = tmp_path / "exec.md"
+        state = PipelineState(state_dir=tmp_path / ".state", exec_md_path=exec_path)
+        lines = ["# idempotency: issuesmith:brushup:756"]
+
+        state.append_exec(lines, audit_context=AuditContext())
+
+        audit_path = tmp_path / "audit.jsonl"
         r = json.loads(audit_path.read_text().strip())
         assert r["task_uuids"] == []
-
-    def test_ac6_empty_string_line_skipped(self, tmp_path):
-        """AC6: 空文字列の行はスキップされる。"""
-        audit_path = tmp_path / "audit.jsonl"
-        ctx = AuditContext(source="issuesmith")
-
-        write_audit_log(audit_path, ["", "   "], ctx)
-
-        r = json.loads(audit_path.read_text().strip())
-        assert r["task_uuids"] == []
-
-    def test_ac7_empty_exec_lines_no_write(self, tmp_path):
-        """AC7: exec_lines が空リストの場合、write_audit_log は何も書き込まない。"""
-        audit_path = tmp_path / "audit.jsonl"
-        ctx = AuditContext(source="issuesmith")
-
-        write_audit_log(audit_path, [], ctx)
-
-        assert not audit_path.exists()
+        assert r["exec_lines_count"] == 1
 
 
 _UUID4_RE = re.compile(
@@ -294,7 +313,7 @@ class TestWriteLlmAuditLog:
         from ghdag.pipeline.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
-        audit_path.mkdir()  # directory → open() fails
+        audit_path.mkdir()
 
         write_llm_audit_log(
             audit_path,
@@ -339,7 +358,12 @@ class TestWriteLlmAuditLog:
         from ghdag.pipeline.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
-        write_audit_log(audit_path, [f"{UUID1}: cmd"], AuditContext(source="issuesmith"))
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1],
+            exec_lines_count=1,
+            context=AuditContext(source="issuesmith"),
+        )
         write_llm_audit_log(audit_path, engine="claude", model="claude-sonnet-4-6", exit_code=0)
 
         lines = audit_path.read_text().strip().splitlines()

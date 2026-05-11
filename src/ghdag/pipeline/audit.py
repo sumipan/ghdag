@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import inspect
 import json
-import re
 import sys
 import uuid
 from dataclasses import dataclass
@@ -10,7 +9,6 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 JST = timezone(timedelta(hours=9))
-_UUID_RE = re.compile(r"^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
 _MAX_FRAMES = 5
 
 
@@ -21,34 +19,16 @@ class AuditContext:
     correlation_id: str | None = None
 
 
-def _extract_task_uuids(exec_lines: list[str]) -> list[str]:
-    uuids: list[str] = []
-    for line in exec_lines:
-        stripped = line.strip()
-        if stripped.startswith("{"):
-            try:
-                obj = json.loads(stripped)
-                if "uuid" in obj:
-                    uuids.append(obj["uuid"])
-                    continue
-            except (json.JSONDecodeError, TypeError):
-                pass
-        m = _UUID_RE.match(stripped)
-        if m:
-            uuids.append(m.group(1))
-    return uuids
-
-
 def write_audit_log(
     audit_path: Path,
-    exec_lines: list[str],
+    *,
+    task_uuids: list[str],
+    exec_lines_count: int,
     context: AuditContext,
     idempotency_key: str | None = None,
 ) -> None:
-    if not exec_lines:
+    if exec_lines_count == 0:
         return
-
-    task_uuids = _extract_task_uuids(exec_lines)
 
     record = {
         "timestamp": datetime.now(JST).isoformat(),
@@ -56,7 +36,7 @@ def write_audit_log(
         "source": context.source,
         "correlation_id": context.correlation_id,
         "caller_stack": _capture_caller_stack(),
-        "exec_lines_count": len(exec_lines),
+        "exec_lines_count": exec_lines_count,
         "idempotency_key": idempotency_key,
     }
 
