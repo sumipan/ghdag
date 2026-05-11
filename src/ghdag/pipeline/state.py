@@ -21,6 +21,10 @@ import yaml
 
 from ghdag.pipeline.audit import AuditContext, write_audit_log
 
+_UUID_RE = re.compile(
+    r"^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
+)
+
 
 class PipelineState:
     def __init__(self, state_dir: str | Path, exec_md_path: str | Path):
@@ -157,7 +161,13 @@ class PipelineState:
 
         ctx = audit_context or AuditContext()
         audit_path = self._exec_md_path.parent / "audit.jsonl"
-        write_audit_log(audit_path, lines, ctx)
+        uuids = [r["uuid"] for r in records if "uuid" in r]
+        write_audit_log(
+            audit_path,
+            task_uuids=uuids,
+            exec_lines_count=len(records),
+            context=ctx,
+        )
 
     def append_exec(self, lines: list[str], audit_context: AuditContext | None = None) -> None:
         """exec.md に lines を追記。fcntl 排他ロック付き。"""
@@ -170,7 +180,13 @@ class PipelineState:
 
         ctx = audit_context or AuditContext()
         audit_path = self._exec_md_path.parent / "audit.jsonl"
-        write_audit_log(audit_path, lines, ctx)
+        uuids = [m.group(1) for line in lines if (m := _UUID_RE.match(line.strip()))]
+        write_audit_log(
+            audit_path,
+            task_uuids=uuids,
+            exec_lines_count=len(lines),
+            context=ctx,
+        )
 
     def write_order_file(
         self,
