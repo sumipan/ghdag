@@ -1042,10 +1042,9 @@ class TestStuckDoneExecPrune:
         assert res1.pruned_exec == 1
         assert res2.pruned_exec == 0
 
-    def test_dead_entry_pruned(self, tmp_path):
-        """Case F: done なし・ファイルなし → exec.jsonl から除去される"""
+    def test_dead_entry_not_pruned(self, tmp_path):
+        """done なし・ファイルなし → pending ジョブと区別不能なため prune しない"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
-        # done マーカーなし、ファイルなし（dead entry）
         _make_exec_jsonl(exec_jsonl, [UUID_C])
 
         res = cleanup_queue(
@@ -1056,6 +1055,6 @@ class TestStuckDoneExecPrune:
             cutoff_days=1,
         )
 
-        assert res.pruned_exec == 1
+        assert res.pruned_exec == 0
         assert res.archived_done == 0
-        assert UUID_C not in exec_jsonl.read_text()
+        assert UUID_C in exec_jsonl.read_text()
