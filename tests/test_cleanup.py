@@ -607,9 +607,13 @@ class TestJsonlPrune:
     def test_jsonl_prune_removes_target_uuid_line(self, tmp_path):
         """JSONL 形式の exec ファイルからアーカイブ対象 UUID 行を除去する"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
-        order, _ = _make_queue_files(queue_dir, UUID_A)
-        _set_mtime(order, days_ago=2)
+        order_a, _ = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order_a, days_ago=2)
         _make_done_flag(done_dir, UUID_A)
+        # UUID_B は active な pending ジョブ（order ファイルあり・done なし・新しい）= Case E
+        # ghdag は order ファイル先行で投入するため、order が無い = pending ではなく dead
+        order_b, _ = _make_queue_files(queue_dir, UUID_B)
+        _set_mtime(order_b, days_ago=0.1)
         _make_exec_jsonl(exec_jsonl, [UUID_A, UUID_B])
 
         res = cleanup_queue(
@@ -626,11 +630,14 @@ class TestJsonlPrune:
         assert UUID_B in content
 
     def test_jsonl_prune_keeps_non_matching_uuid(self, tmp_path):
-        """別 UUID の JSONL 行は残る"""
+        """別 UUID の JSONL 行は残る（active な pending ジョブは Case E で keep）"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
-        order, _ = _make_queue_files(queue_dir, UUID_A)
-        _set_mtime(order, days_ago=2)
+        order_a, _ = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order_a, days_ago=2)
         _make_done_flag(done_dir, UUID_A)
+        # UUID_B は active pending（Case E: done なし・ファイルあり・新しい）
+        order_b, _ = _make_queue_files(queue_dir, UUID_B)
+        _set_mtime(order_b, days_ago=0.1)
         _make_exec_jsonl(exec_jsonl, [UUID_B])
 
         res = cleanup_queue(
@@ -641,6 +648,8 @@ class TestJsonlPrune:
             cutoff_days=1,
         )
 
+        # UUID_A は exec.jsonl に無いので Case A 対象外、Phase 2 で archive される（pruned_exec=0）
+        # UUID_B は Case E で keep
         assert res.pruned_exec == 0
         assert UUID_B in exec_jsonl.read_text()
 
@@ -673,9 +682,12 @@ class TestJsonlPrune:
         """exec.md 形式（UUID: command）が JSONL 対応後も動作する（後方互換）"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         exec_md_path = queue_dir / "exec.md"
-        order, _ = _make_queue_files(queue_dir, UUID_A)
-        _set_mtime(order, days_ago=2)
+        order_a, _ = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order_a, days_ago=2)
         _make_done_flag(done_dir, UUID_A)
+        # UUID_B は active pending (Case E)
+        order_b, _ = _make_queue_files(queue_dir, UUID_B)
+        _set_mtime(order_b, days_ago=0.1)
         _make_exec_md(exec_md_path, [UUID_A, UUID_B])
 
         res = cleanup_queue(
@@ -953,3 +965,115 @@ class TestSweepExtras:
 
         assert res.archived_done == 1
         assert res.swept_extras == 0
+
+
+# ---------------------------------------------------------------------------
+# Issue-870: stuck エントリ除去（Case C/F）と Case B の保護
+# ---------------------------------------------------------------------------
+
+
+class TestStuckDoneExecPrune:
+    def test_stuck_uuid_pruned_from_exec(self, tmp_path):
+        """Case C: done マーカーあり・ファイルなし → exec.jsonl から除去される"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        # ファイルは作らない（stuck 状態：前回の cleanup で既にアーカイブ済み）
+        _make_done_flag(done_dir, UUID_A)
+        _make_exec_jsonl(exec_jsonl, [UUID_A])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+
+        assert res.pruned_exec == 1
+        assert res.archived_done == 0
+        assert UUID_A not in exec_jsonl.read_text()
+
+    def test_stuck_uuid_done_marker_preserved(self, tmp_path):
+        """Case C: stuck 後も done マーカーは削除されない"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        _make_done_flag(done_dir, UUID_A)
+        _make_exec_jsonl(exec_jsonl, [UUID_A])
+
+        cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+
+        assert (done_dir / UUID_A).exists()
+
+    def test_done_recent_not_pruned(self, tmp_path):
+        """Case B: done あり・ファイルあり・cutoff 未到達 → exec.jsonl は除去されない"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        order, result = _make_queue_files(queue_dir, UUID_B)
+        _set_mtime(order, days_ago=0.5)
+        _make_done_flag(done_dir, UUID_B)
+        _make_exec_jsonl(exec_jsonl, [UUID_B])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+
+        assert res.pruned_exec == 0
+        assert res.archived_done == 0
+        assert UUID_B in exec_jsonl.read_text()
+        assert order.exists()
+        assert result.exists()
+
+    def test_stuck_cleanup_idempotent(self, tmp_path):
+        """Case C を 2 回連続実行 → 2 回目は pruned_exec == 0、エラーなし"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        _make_done_flag(done_dir, UUID_A)
+        _make_exec_jsonl(exec_jsonl, [UUID_A])
+
+        res1 = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+        res2 = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+
+        assert res1.pruned_exec == 1
+        assert res2.pruned_exec == 0
+
+    def test_dead_entry_pruned(self, tmp_path):
+        """Case F: done なし・ファイルなし → exec.jsonl から除去される
+
+        ghdag のジョブ投入は「order ファイル作成 → exec.jsonl 追記」の順序が
+        全投入点（LLMPipelineAPI / submit_order / enqueue 等）で保証されており、
+        append_exec は fcntl.LOCK_EX 下で実行される。したがって「exec.jsonl にあるが
+        files なし」は pending ではなく dead entry である。
+        """
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        # done マーカーなし、ファイルなし、exec.jsonl にエントリのみ
+        _make_exec_jsonl(exec_jsonl, [UUID_C])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+
+        assert res.pruned_exec == 1
+        assert res.archived_done == 0
+        assert UUID_C not in exec_jsonl.read_text()
