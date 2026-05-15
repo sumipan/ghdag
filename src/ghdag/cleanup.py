@@ -93,13 +93,15 @@ def cleanup_queue(
     ループドライバーには使わない。これにより「done 済みだがファイルが
     既にアーカイブ済み」の stuck エントリを確実に除去できる。
 
-    Phase 1: exec.jsonl 起点のクリーンアップ（Case A〜E）
+    Phase 1: exec.jsonl 起点のクリーンアップ（Case A〜F）
       Case A: done ✓, files ✓, old  → archive + defer done delete + prune exec
       Case B: done ✓, files ✓, new  → keep
       Case C: done ✓, files ✗       → prune exec のみ（done marker は保持）
       Case D: done ✗, files ✓, old  → orphan archive + done marker 作成 + prune exec
       Case E: done ✗, files ✓, new  → keep
-      Case F（廃止）: done ✗, files ✗ は keep する。pending 中のジョブと区別不能なため。
+      Case F: done ✗, files ✗       → prune exec（dead entry）
+                                       ※ ghdag は order → exec.jsonl の順序で投入するため、
+                                          exec.jsonl にあるがファイルがない状態は pending ではない
 
     Phase 2: exec.jsonl に存在しないファイルの sweep
     Phase 3: QUEUE_FILE_RE 不一致ファイルの catch-all sweep
@@ -203,8 +205,17 @@ def cleanup_queue(
                     prune_uuids.add(uuid)
                     archived_orphan += 1
                 # else Case E: new → keep（何もしない）
-            # Case F（廃止）: done なし・ファイルなし
-            # pending 中のジョブとファイル未生成の dead entry は区別不能なため prune しない
+            else:
+                # Case F: done なし・ファイルなし（dead entry）
+                # ghdag のジョブ投入は「order ファイル作成 → exec.jsonl 追記」の順序が
+                # 全投入点（LLMPipelineAPI / submit_order / enqueue 等）で保証されている
+                # （append_exec は fcntl.LOCK_EX 下で実行）。
+                # したがって「exec.jsonl にあるが files なし」は pending ではなく、
+                # 手動削除・旧バグ・部分失敗のいずれかで生じた dead entry である。
+                # graph-watcher が存在しないファイルを参照して失敗ループに陥らないよう除去する。
+                if dry_run:
+                    print(f"[dry] prune dead exec entry: {uuid}")
+                prune_uuids.add(uuid)
 
     # exec.md / exec.jsonl のエントリ除去
     pruned_exec = 0
