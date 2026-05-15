@@ -953,3 +953,109 @@ class TestSweepExtras:
 
         assert res.archived_done == 1
         assert res.swept_extras == 0
+
+
+# ---------------------------------------------------------------------------
+# Issue-870: stuck エントリ除去（Case C/F）と Case B の保護
+# ---------------------------------------------------------------------------
+
+
+class TestStuckDoneExecPrune:
+    def test_stuck_uuid_pruned_from_exec(self, tmp_path):
+        """Case C: done マーカーあり・ファイルなし → exec.jsonl から除去される"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        # ファイルは作らない（stuck 状態：前回の cleanup で既にアーカイブ済み）
+        _make_done_flag(done_dir, UUID_A)
+        _make_exec_jsonl(exec_jsonl, [UUID_A])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+
+        assert res.pruned_exec == 1
+        assert res.archived_done == 0
+        assert UUID_A not in exec_jsonl.read_text()
+
+    def test_stuck_uuid_done_marker_preserved(self, tmp_path):
+        """Case C: stuck 後も done マーカーは削除されない"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        _make_done_flag(done_dir, UUID_A)
+        _make_exec_jsonl(exec_jsonl, [UUID_A])
+
+        cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+
+        assert (done_dir / UUID_A).exists()
+
+    def test_done_recent_not_pruned(self, tmp_path):
+        """Case B: done あり・ファイルあり・cutoff 未到達 → exec.jsonl は除去されない"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        order, result = _make_queue_files(queue_dir, UUID_B)
+        _set_mtime(order, days_ago=0.5)
+        _make_done_flag(done_dir, UUID_B)
+        _make_exec_jsonl(exec_jsonl, [UUID_B])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+
+        assert res.pruned_exec == 0
+        assert res.archived_done == 0
+        assert UUID_B in exec_jsonl.read_text()
+        assert order.exists()
+        assert result.exists()
+
+    def test_stuck_cleanup_idempotent(self, tmp_path):
+        """Case C を 2 回連続実行 → 2 回目は pruned_exec == 0、エラーなし"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        _make_done_flag(done_dir, UUID_A)
+        _make_exec_jsonl(exec_jsonl, [UUID_A])
+
+        res1 = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+        res2 = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+
+        assert res1.pruned_exec == 1
+        assert res2.pruned_exec == 0
+
+    def test_dead_entry_pruned(self, tmp_path):
+        """Case F: done なし・ファイルなし → exec.jsonl から除去される"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        # done マーカーなし、ファイルなし（dead entry）
+        _make_exec_jsonl(exec_jsonl, [UUID_C])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            cutoff_days=1,
+        )
+
+        assert res.pruned_exec == 1
+        assert res.archived_done == 0
+        assert UUID_C not in exec_jsonl.read_text()
