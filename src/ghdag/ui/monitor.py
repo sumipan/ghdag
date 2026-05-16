@@ -237,6 +237,17 @@ def extract_result_path(cmd: str) -> str:
     return m.group(0) if m else ""
 
 
+def _normalize_result_path(result_path: str, repo_root: Path) -> str:
+    """絶対パスの result_path をリポジトリルートからの相対パスに正規化する。"""
+    if not result_path or not result_path.startswith("/"):
+        return result_path
+    try:
+        return str(Path(result_path).relative_to(repo_root))
+    except ValueError:
+        relative = extract_result_path(result_path)
+        return relative if relative else result_path
+
+
 def order_task_name(cmd: str, repo_root: Path) -> Optional[str]:
     m = _ORDER_PATH_RE.search(cmd)
     if not m:
@@ -424,7 +435,7 @@ def build_rows(
             tree_ts="",
             engine_model=extract_engine_model(task.command),
             order_path=extract_order_path(task.command),
-            result_path=task.result_path or extract_result_path(task.command),
+            result_path=_normalize_result_path(task.result_path or extract_result_path(task.command), repo_root),
         )
 
     rows = _rows_with_tree_layout(tasks, file_order, pending)
