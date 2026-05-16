@@ -203,7 +203,53 @@ class CursorAdapter:
         }
 
 
+class ShellAdapter:
+    """bash スクリプトを order_path から直接実行するアダプター。
+
+    order ファイルは LLM プロンプトではなく実行可能な bash スクリプト本体として扱う。
+    `prompt` / `model` パラメーターは無視する（model は常に "bash" 固定）。
+    """
+
+    name = "shell"
+
+    def build_exec_line(
+        self,
+        *,
+        uuid: str,
+        order_path: str,
+        result_path: str,
+        prompt: str,
+        model: str | None,
+        depends: list[str],
+    ) -> str:
+        deps = f"[depends:{','.join(depends)}]" if depends else ""
+        return (
+            f"{uuid}{deps}: bash -o pipefail {order_path}"
+            f" | tee -a {result_path}"
+        )
+
+    def build_exec_record(
+        self,
+        *,
+        uuid: str,
+        order_path: str,
+        result_path: str,
+        prompt: str,
+        model: str | None,
+        depends: list[str],
+    ) -> dict:
+        return {
+            "uuid": uuid,
+            "command": f"bash -o pipefail {order_path}",
+            "depends": depends,
+            "result_path": result_path,
+            "retry": 0,
+            "annotations": {},
+        }
+
+
 # 起動時に登録
 register_adapter(ClaudeAdapter())
 register_adapter(GeminiAdapter())
 register_adapter(CursorAdapter())
+register_adapter(ShellAdapter())

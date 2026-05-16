@@ -30,6 +30,7 @@ ENGINE_CLI: dict[str, str] = {
     "claude": "claude",
     "gemini": "gemini",
     "cursor": "agent",
+    "shell": "bash",
 }
 
 # エンジンごとのデフォルトモデル
@@ -37,6 +38,7 @@ ENGINE_DEFAULTS: dict[str, str] = {
     "claude": "claude-sonnet-4-6",
     "gemini": "gemini-2.5-flash",
     "cursor": "auto",
+    "shell": "bash",
 }
 
 
