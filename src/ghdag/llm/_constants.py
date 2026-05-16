@@ -27,4 +27,8 @@ DEFAULT_ENGINE_MODELS: dict[str, list[str]] = {
         "gpt-5.3-codex-high-fast",
         "gpt-5.4-medium-fast",
     ],
+    # shell エンジンは bash スクリプトを order_path から直接実行する。LLM 呼び出しは行わない。
+    "shell": [
+        "bash",
+    ],
 }

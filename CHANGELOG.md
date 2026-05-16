@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.16.0] - 2026-05-16
+
+### Added
+
+- `workflow/engine.py`: `ShellAdapter` を追加。`engine: shell` で order ファイルを bash スクリプトとして直接実行する。`prompt` / `model` パラメーターは無視され、command は `bash -o pipefail {order_path}` 固定
+- `llm/_constants.py`, `llm/engines.py`: `shell` エンジンを `DEFAULT_ENGINE_MODELS` / `ENGINE_CLI` / `ENGINE_DEFAULTS` に追加（model は `bash` のみ）
+
 ## [0.15.1] - 2026-05-11
 
 ### Added

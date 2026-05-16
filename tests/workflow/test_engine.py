@@ -8,6 +8,7 @@ from ghdag.workflow.engine import (
     ClaudeAdapter,
     GeminiAdapter,
     CursorAdapter,
+    ShellAdapter,
     get_adapter,
     register_adapter,
     _ADAPTERS,
@@ -274,6 +275,99 @@ class TestCursorAdapter:
         assert "cat " not in line
 
 
+class TestShellAdapter:
+    def setup_method(self):
+        self.adapter = ShellAdapter()
+        self.base_kwargs = dict(
+            order_path="queue/ts-shell-order-abc123.md",
+            result_path="queue/ts-shell-result-abc123.md",
+            prompt="受け取った内容を実行して",
+        )
+
+    def test_name(self):
+        assert self.adapter.name == "shell"
+
+    def test_build_exec_line_no_depends(self):
+        line = self.adapter.build_exec_line(
+            uuid="abc123",
+            model="bash",
+            depends=[],
+            **self.base_kwargs,
+        )
+        expected = (
+            "abc123: bash -o pipefail queue/ts-shell-order-abc123.md"
+            " | tee -a queue/ts-shell-result-abc123.md"
+        )
+        assert line == expected
+
+    def test_build_exec_line_with_depends(self):
+        line = self.adapter.build_exec_line(
+            uuid="def456",
+            model=None,
+            depends=["abc123", "xyz"],
+            **self.base_kwargs,
+        )
+        assert line.startswith("def456[depends:abc123,xyz]: bash -o pipefail ")
+
+    def test_model_is_ignored(self):
+        """model パラメーターは無視され、コマンドに出現しない。"""
+        line = self.adapter.build_exec_line(
+            uuid="abc",
+            model="claude-opus-4-7",
+            depends=[],
+            **self.base_kwargs,
+        )
+        assert "claude" not in line
+        assert "--model" not in line
+
+    def test_prompt_is_ignored(self):
+        """prompt パラメーターは無視され、コマンドに出現しない。"""
+        line = self.adapter.build_exec_line(
+            uuid="abc",
+            model=None,
+            depends=[],
+            order_path="queue/order.md",
+            result_path="queue/result.md",
+            prompt="このプロンプトは無視される",
+        )
+        assert "このプロンプトは無視される" not in line
+        assert "-p" not in line
+
+    def test_build_exec_record(self):
+        result = self.adapter.build_exec_record(
+            uuid="abc-123",
+            model="bash",
+            depends=["dep-456"],
+            **self.base_kwargs,
+        )
+        assert result == {
+            "uuid": "abc-123",
+            "command": "bash -o pipefail queue/ts-shell-order-abc123.md",
+            "depends": ["dep-456"],
+            "result_path": "queue/ts-shell-result-abc123.md",
+            "retry": 0,
+            "annotations": {},
+        }
+
+    def test_record_no_tee_in_command(self):
+        result = self.adapter.build_exec_record(
+            uuid="x",
+            model=None,
+            depends=[],
+            **self.base_kwargs,
+        )
+        assert "tee" not in result["command"]
+
+    def test_pipefail_option_always_present(self):
+        line = self.adapter.build_exec_line(
+            uuid="x",
+            model=None,
+            depends=[],
+            **self.base_kwargs,
+        )
+        assert "-o pipefail" in line
+
+
 # ---------------------------------------------------------------------------
 # get_adapter / register_adapter
 # ---------------------------------------------------------------------------
@@ -290,6 +384,10 @@ class TestGetAdapter:
     def test_get_cursor_returns_cursor_adapter(self):
         adapter = get_adapter("cursor")
         assert isinstance(adapter, CursorAdapter)
+
+    def test_get_shell_returns_shell_adapter(self):
+        adapter = get_adapter("shell")
+        assert isinstance(adapter, ShellAdapter)
 
     def test_unknown_engine_raises_value_error(self):
         with pytest.raises(ValueError, match="Unknown engine"):
@@ -351,7 +449,7 @@ class TestBuildExecRecord:
 
     def test_no_tee_in_command_all_adapters_ac2(self):
         kwargs = {**self.BASE_KWARGS, "model": "some-model"}
-        for adapter in [ClaudeAdapter(), GeminiAdapter(), CursorAdapter()]:
+        for adapter in [ClaudeAdapter(), GeminiAdapter(), CursorAdapter(), ShellAdapter()]:
             result = adapter.build_exec_record(**kwargs)
             assert "tee" not in result["command"], f"{adapter.name}: command contains tee"
 
