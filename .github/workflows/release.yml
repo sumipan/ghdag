@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from pyproject.toml
+        id: version
+        run: |
+          VERSION=$(python3 -c "
+          import re
+          with open('pyproject.toml') as f:
+              content = f.read()
+          m = re.search(r'^version\s*=\s*[\"\']([\d.]+)[\"\']\s*$', content, re.MULTILINE)
+          print(m.group(1))
+          ")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag already exists
+        id: check_tag
+        run: |
+          if git ls-remote --tags origin "refs/tags/v${{ steps.version.outputs.version }}" | grep -q .; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract CHANGELOG entry
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          python3 -c "
+          import re
+          text = open('CHANGELOG.md').read()
+          pattern = r'## \[' + re.escape('$VERSION') + r'\].*?(?=\n## \[|\Z)'
+          m = re.search(pattern, text, re.DOTALL)
+          print(m.group(0).strip() if m else 'Release $VERSION')
+          " > /tmp/release_notes.md
+
+      - name: Create GitHub Release
+        if: steps.check_tag.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --title "ghdag ${{ steps.version.outputs.tag }}" \
+            --notes-file /tmp/release_notes.md
