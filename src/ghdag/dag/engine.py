@@ -256,6 +256,7 @@ class DagEngine:
                     wall_time_sec=round(finished_at - rt.started_at, 3),
                     token_count=token_count, status="failure",
                     started_at=rt.started_at, finished_at=finished_at,
+                    correlation_id=task.idempotency_key,
                 )
                 timeout_msg = f"TIMEOUT: task exceeded task_timeout={self._config.task_timeout}s"
                 self._hooks.on_task_failure(uuid, task, returncode, timeout_msg, metrics)
@@ -282,6 +283,7 @@ class DagEngine:
                         wall_time_sec=round(finished_at - rt.started_at, 3),
                         token_count=token_count, status="rejected",
                         started_at=rt.started_at, finished_at=finished_at,
+                        correlation_id=task.idempotency_key,
                     )
                     self._hooks.on_task_rejected(uuid, task, retry_depth, is_final, metrics)
 
@@ -293,6 +295,7 @@ class DagEngine:
                         wall_time_sec=round(finished_at - rt.started_at, 3),
                         token_count=token_count, status="failure",
                         started_at=rt.started_at, finished_at=finished_at,
+                        correlation_id=task.idempotency_key,
                     )
                     self._hooks.on_task_failure(uuid, task, 0, f"PIPELINE_FAILED:{pipeline_status}", metrics)
 
@@ -304,6 +307,7 @@ class DagEngine:
                         wall_time_sec=round(finished_at - rt.started_at, 3),
                         token_count=token_count, status="empty_result",
                         started_at=rt.started_at, finished_at=finished_at,
+                        correlation_id=task.idempotency_key,
                     )
                     self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
 
@@ -314,6 +318,7 @@ class DagEngine:
                         wall_time_sec=round(finished_at - rt.started_at, 3),
                         token_count=token_count, status="success",
                         started_at=rt.started_at, finished_at=finished_at,
+                        correlation_id=task.idempotency_key,
                     )
                     self._hooks.on_task_success(uuid, task, metrics)
 
@@ -324,6 +329,7 @@ class DagEngine:
                     wall_time_sec=round(finished_at - rt.started_at, 3),
                     token_count=token_count, status="failure",
                     started_at=rt.started_at, finished_at=finished_at,
+                    correlation_id=task.idempotency_key,
                 )
                 self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
 

@@ -114,3 +114,84 @@ class TestDefaultHooksAudit:
         hooks.on_task_rejected(UUID, task, 0, False, metrics)
         hooks.on_task_dep_failed(UUID, task, "dep")
         hooks.on_task_empty_result(UUID, task, "", metrics)
+
+    # --- Issue #961 tests ---
+
+    def _make_metrics_with_correlation(self, status: str = "success", correlation_id: str | None = None) -> TaskMetrics:
+        now = time.time()
+        return TaskMetrics(
+            uuid=UUID,
+            engine="claude",
+            model="claude-sonnet-4-6",
+            wall_time_sec=10.5,
+            token_count=1500,
+            status=status,
+            started_at=now,
+            finished_at=now + 10.5,
+            correlation_id=correlation_id,
+        )
+
+    def test_ac6_on_task_success_correlation_id(self, tmp_path):
+        """AC-6: on_task_success の metrics.correlation_id が exit audit レコードに反映される。"""
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = DefaultHooks(audit_path=audit_path)
+        hooks.on_task_success(UUID, _make_task(), self._make_metrics_with_correlation("success", "test:key"))
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["correlation_id"] == "test:key"
+
+    def test_ac6_on_task_failure_correlation_id(self, tmp_path):
+        """AC-6: on_task_failure の metrics.correlation_id が exit audit レコードに反映される。"""
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = DefaultHooks(audit_path=audit_path)
+        hooks.on_task_failure(UUID, _make_task(), 1, "error", self._make_metrics_with_correlation("failure", "test:key"))
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["correlation_id"] == "test:key"
+
+    def test_ac6_on_task_rejected_correlation_id(self, tmp_path):
+        """AC-6: on_task_rejected の metrics.correlation_id が exit audit レコードに反映される。"""
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = DefaultHooks(audit_path=audit_path)
+        hooks.on_task_rejected(UUID, _make_task(), 0, False, self._make_metrics_with_correlation("rejected", "test:key"))
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["correlation_id"] == "test:key"
+
+    def test_ac6_on_task_empty_result_correlation_id(self, tmp_path):
+        """AC-6: on_task_empty_result の metrics.correlation_id が exit audit レコードに反映される。"""
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = DefaultHooks(audit_path=audit_path)
+        hooks.on_task_empty_result(UUID, _make_task(), "", self._make_metrics_with_correlation("empty_result", "test:key"))
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["correlation_id"] == "test:key"
+
+    def test_ac6_on_task_dep_failed_uses_idempotency_key(self, tmp_path):
+        """AC-6: on_task_dep_failed は task.idempotency_key を correlation_id として exit audit に書く。"""
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = DefaultHooks(audit_path=audit_path)
+        task = Task(uuid=UUID, command="echo hello", idempotency_key="test:key")
+        hooks.on_task_dep_failed(UUID, task, "dep-uuid")
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["correlation_id"] == "test:key"
+
+    def test_ac7_correlation_id_null_when_not_set(self, tmp_path):
+        """AC-7: idempotency_key なしの Task から correlation_id は null になる。"""
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = DefaultHooks(audit_path=audit_path)
+        task = Task(uuid=UUID, command="echo hello")  # idempotency_key=None
+        hooks.on_task_dep_failed(UUID, task, "dep-uuid")
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r.get("correlation_id") is None
+
+    def test_ac7_metrics_correlation_id_none_audit_null(self, tmp_path):
+        """AC-7: correlation_id=None の TaskMetrics → exit audit の correlation_id は null。"""
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = DefaultHooks(audit_path=audit_path)
+        hooks.on_task_success(UUID, _make_task(), self._make_metrics_with_correlation("success", None))
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r.get("correlation_id") is None
