@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import time
 
-import pytest
 
 from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import Task

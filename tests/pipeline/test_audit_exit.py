@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
 
 from ghdag.pipeline.audit import write_task_exit_audit
 
