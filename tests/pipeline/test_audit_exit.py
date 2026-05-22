@@ -203,3 +203,46 @@ class TestWriteTaskExitAudit:
         r = json.loads(audit_path.read_text().strip())
         # デフォルト None → JSON では null or フィールドなし
         assert r.get("correlation_id") is None
+
+    # --- Issue #962 tests ---
+
+    def test_failure_class_in_record(self, tmp_path):
+        """failure_class="TIMEOUT" → JSON レコードに "failure_class": "TIMEOUT" が含まれる。"""
+        audit_path = tmp_path / "audit.jsonl"
+        write_task_exit_audit(
+            audit_path,
+            event_type="task_failed",
+            uuid=UUID,
+            status="failure",
+            failure_class="TIMEOUT",
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["failure_class"] == "TIMEOUT"
+
+    def test_failure_class_null_for_success(self, tmp_path):
+        """failure_class=None → JSON レコードに "failure_class": null が含まれる。"""
+        audit_path = tmp_path / "audit.jsonl"
+        write_task_exit_audit(
+            audit_path,
+            event_type="task_complete",
+            uuid=UUID,
+            status="success",
+            failure_class=None,
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["failure_class"] is None
+
+    def test_failure_class_default_null(self, tmp_path):
+        """failure_class 未指定 → JSON レコードに "failure_class": null が含まれる。"""
+        audit_path = tmp_path / "audit.jsonl"
+        write_task_exit_audit(
+            audit_path,
+            event_type="task_complete",
+            uuid=UUID,
+            status="success",
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["failure_class"] is None

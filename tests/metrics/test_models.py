@@ -54,3 +54,26 @@ class TestTaskMetrics:
         )
         with pytest.raises(Exception):
             m.correlation_id = "should-fail"  # type: ignore[misc]
+
+    # --- Issue #962 tests ---
+
+    def test_failure_class_default_none(self):
+        """failure_class 未指定 → None（後方互換）。"""
+        now = time.time()
+        m = TaskMetrics(
+            uuid=UUID, engine=None, model=None,
+            wall_time_sec=1.0, token_count=None, status="failure",
+            started_at=now, finished_at=now + 1.0,
+        )
+        assert m.failure_class is None
+
+    def test_failure_class_set(self):
+        """failure_class="TIMEOUT" を渡すとフィールドに格納される。"""
+        now = time.time()
+        m = TaskMetrics(
+            uuid=UUID, engine=None, model=None,
+            wall_time_sec=1.0, token_count=None, status="failure",
+            started_at=now, finished_at=now + 1.0,
+            failure_class="TIMEOUT",
+        )
+        assert m.failure_class == "TIMEOUT"

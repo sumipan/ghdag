@@ -257,6 +257,7 @@ class DagEngine:
                     token_count=token_count, status="failure",
                     started_at=rt.started_at, finished_at=finished_at,
                     correlation_id=task.idempotency_key,
+                    failure_class="TIMEOUT",
                 )
                 timeout_msg = f"TIMEOUT: task exceeded task_timeout={self._config.task_timeout}s"
                 self._hooks.on_task_failure(uuid, task, returncode, timeout_msg, metrics)
@@ -284,6 +285,7 @@ class DagEngine:
                         token_count=token_count, status="rejected",
                         started_at=rt.started_at, finished_at=finished_at,
                         correlation_id=task.idempotency_key,
+                        failure_class="REJECTED",
                     )
                     self._hooks.on_task_rejected(uuid, task, retry_depth, is_final, metrics)
 
@@ -296,6 +298,7 @@ class DagEngine:
                         token_count=token_count, status="failure",
                         started_at=rt.started_at, finished_at=finished_at,
                         correlation_id=task.idempotency_key,
+                        failure_class="PIPELINE_FAILED",
                     )
                     self._hooks.on_task_failure(uuid, task, 0, f"PIPELINE_FAILED:{pipeline_status}", metrics)
 
@@ -308,6 +311,7 @@ class DagEngine:
                         token_count=token_count, status="empty_result",
                         started_at=rt.started_at, finished_at=finished_at,
                         correlation_id=task.idempotency_key,
+                        failure_class="EMPTY_RESULT",
                     )
                     self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
 
@@ -330,6 +334,7 @@ class DagEngine:
                     token_count=token_count, status="failure",
                     started_at=rt.started_at, finished_at=finished_at,
                     correlation_id=task.idempotency_key,
+                    failure_class="PROCESS_ERROR",
                 )
                 self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
 
