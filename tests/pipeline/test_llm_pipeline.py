@@ -43,7 +43,8 @@ class TestAC1SingleStep:
         exec_lines = api.submit(steps, {"issue_number": "10"})
 
         assert len(exec_lines) == 1
-        pipeline_state.append_exec.assert_called_once_with(exec_lines)
+        call_args = pipeline_state.append_exec.call_args
+        assert call_args[0][0] == exec_lines
 
     def test_submit_writes_order_file(self):
         """write_order_file が 1 回呼ばれる。"""
@@ -587,3 +588,54 @@ class TestJsonlMode:
         record = _json.loads(exec_lines[0])
         assert record["idempotency_key"] == key
         assert "# idempotency:" not in exec_lines[0]
+
+
+# ---------------------------------------------------------------------------
+# Issue #961: audit_context 伝搬テスト (AC-1, AC-5)
+# ---------------------------------------------------------------------------
+
+
+class TestAuditContextPropagation:
+    def test_ac5_submit_without_audit_context_does_not_raise(self):
+        """AC-5: audit_context を渡さない既存の呼び出しがエラーにならない。"""
+        api, pipeline_state, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        api.submit(steps, {"issue_number": "10"}, idempotency_key="wf:h:10")
+        pipeline_state.append_exec.assert_called_once()
+
+    def test_ac5_jsonl_submit_without_audit_context_does_not_raise(self):
+        """AC-5 (JSONL mode): audit_context を渡さない既存の呼び出しがエラーにならない。"""
+        api, pipeline_state, _ = _make_api(jsonl_mode=True)
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        api.submit(steps, {"issue_number": "10"}, idempotency_key="wf:h:10")
+        pipeline_state.append_exec_records.assert_called_once()
+
+    def test_ac1_audit_context_passed_to_append_exec_records(self):
+        """AC-1: JSONL モードで audit_context が append_exec_records に中継される。"""
+        from ghdag.pipeline.audit import AuditContext
+
+        api, pipeline_state, _ = _make_api(jsonl_mode=True)
+        ctx = AuditContext(source="issuesmith", correlation_id="test:key")
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        api.submit(steps, {}, audit_context=ctx)
+
+        call_kwargs = pipeline_state.append_exec_records.call_args
+        passed_ctx = call_kwargs[1].get("audit_context") or (
+            call_kwargs[0][1] if len(call_kwargs[0]) > 1 else None
+        )
+        assert passed_ctx is ctx
+
+    def test_ac1_audit_context_passed_to_append_exec(self):
+        """AC-1: テキストモードで audit_context が append_exec に中継される。"""
+        from ghdag.pipeline.audit import AuditContext
+
+        api, pipeline_state, _ = _make_api(jsonl_mode=False)
+        ctx = AuditContext(source="issuesmith", correlation_id="test:key")
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        api.submit(steps, {}, audit_context=ctx)
+
+        call_kwargs = pipeline_state.append_exec.call_args
+        passed_ctx = call_kwargs[1].get("audit_context") or (
+            call_kwargs[0][1] if len(call_kwargs[0]) > 1 else None
+        )
+        assert passed_ctx is ctx

@@ -86,6 +86,7 @@ def write_task_exit_audit(
     token_count: int | None = None,
     model: str | None = None,
     engine: str | None = None,
+    correlation_id: str | None = None,
     schema_version: int = 1,
 ) -> None:
     record = {
@@ -98,6 +99,7 @@ def write_task_exit_audit(
         "token_count": token_count,
         "model": model,
         "engine": engine,
+        "correlation_id": correlation_id,
     }
 
     try:

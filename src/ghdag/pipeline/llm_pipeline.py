@@ -13,6 +13,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
+from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import PipelineState
 
@@ -121,6 +122,7 @@ class LLMPipelineAPI:
         base_context: dict[str, str],
         *,
         idempotency_key: str | None = None,
+        audit_context: AuditContext | None = None,
     ) -> list[str]:
         """ステップ群を order/exec ファイルに投入する。
 
@@ -131,6 +133,7 @@ class LLMPipelineAPI:
             steps: 実行する StepConfig のリスト
             base_context: 全ステップ共通のコンテキスト変数
             idempotency_key: 冪等性キー（省略時は記録しない）
+            audit_context: enqueue audit に記録するコンテキスト（省略時はデフォルト AuditContext）
 
         Returns:
             書き込んだエントリを文字列化したリスト（DispatchResult 用）
@@ -145,11 +148,11 @@ class LLMPipelineAPI:
         if self._jsonl_mode:
             return self._submit_jsonl(
                 steps, base_context, idempotency_key, ts, order_builder,
-                step_uuid_map, step_engine_map,
+                step_uuid_map, step_engine_map, audit_context,
             )
         return self._submit_text(
             steps, base_context, idempotency_key, ts, order_builder,
-            step_uuid_map, step_engine_map,
+            step_uuid_map, step_engine_map, audit_context,
         )
 
     def _submit_text(
@@ -161,6 +164,7 @@ class LLMPipelineAPI:
         order_builder: OrderBuilder,
         step_uuid_map: dict[str, str],
         step_engine_map: dict[str, str],
+        audit_context: AuditContext | None = None,
     ) -> list[str]:
         """テキスト形式（exec.md）への書き込み。"""
         exec_lines: list[str] = []
@@ -205,7 +209,7 @@ class LLMPipelineAPI:
             )
             exec_lines.append(exec_line)
 
-        self._state.append_exec(exec_lines)
+        self._state.append_exec(exec_lines, audit_context=audit_context)
         return exec_lines
 
     def _submit_jsonl(
@@ -217,6 +221,7 @@ class LLMPipelineAPI:
         order_builder: OrderBuilder,
         step_uuid_map: dict[str, str],
         step_engine_map: dict[str, str],
+        audit_context: AuditContext | None = None,
     ) -> list[str]:
         """JSONL 形式（exec.jsonl）への書き込み。"""
         import json as _json
@@ -262,7 +267,7 @@ class LLMPipelineAPI:
                 record["idempotency_key"] = idempotency_key
             records.append(record)
 
-        self._state.append_exec_records(records)
+        self._state.append_exec_records(records, audit_context=audit_context)
         return [_json.dumps(r, ensure_ascii=False) for r in records]
 
     def _resolve_order_builder(self, workflow_name: str | None) -> OrderBuilder:

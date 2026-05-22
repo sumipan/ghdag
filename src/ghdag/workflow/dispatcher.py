@@ -9,6 +9,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.github import GitHubIssueClient
 from ghdag.workflow.schema import (
@@ -144,10 +145,12 @@ class WorkflowDispatcher:
             base_context.update(self._run_context_hook(handler.context_hook, issue_number))
 
         # 5. パイプライン投入
+        audit_ctx = AuditContext(source="issuesmith", correlation_id=idempotency_key)
         exec_lines = self._pipeline.submit(
             steps=handler.steps,
             base_context=base_context,
             idempotency_key=idempotency_key,
+            audit_context=audit_ctx,
         )
 
         # 6. ラベル遷移（*-ready → *-running）

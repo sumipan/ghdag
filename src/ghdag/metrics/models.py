@@ -15,3 +15,4 @@ class TaskMetrics:
     status: str
     started_at: float
     finished_at: float
+    correlation_id: str | None = None

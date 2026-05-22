@@ -148,3 +148,58 @@ class TestWriteTaskExitAudit:
         exit_r = json.loads(lines[1])
         assert "task_uuids" in enqueue_r
         assert exit_r["event_type"] == "task_complete"
+
+    # --- Issue #961 tests ---
+
+    def test_ac2_exit_audit_with_correlation_id(self, tmp_path):
+        """AC-2: write_task_exit_audit に correlation_id を渡すとレコードに含まれる。"""
+        audit_path = tmp_path / "audit.jsonl"
+        write_task_exit_audit(
+            audit_path,
+            event_type="task_complete",
+            uuid=UUID,
+            status="success",
+            correlation_id="test:key",
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["correlation_id"] == "test:key"
+
+    def test_ac3_enqueue_and_exit_same_correlation_id(self, tmp_path):
+        """AC-3: enqueue と exit レコードが同じ correlation_id を持つ。"""
+        from ghdag.pipeline.audit import AuditContext, write_audit_log
+
+        audit_path = tmp_path / "audit.jsonl"
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID],
+            exec_lines_count=1,
+            context=AuditContext(source="issuesmith", correlation_id="test:key"),
+        )
+        write_task_exit_audit(
+            audit_path,
+            event_type="task_complete",
+            uuid=UUID,
+            status="success",
+            correlation_id="test:key",
+        )
+
+        lines = audit_path.read_text().strip().splitlines()
+        assert len(lines) == 2
+        for line in lines:
+            r = json.loads(line)
+            assert r["correlation_id"] == "test:key"
+
+    def test_exit_audit_default_no_correlation_id(self, tmp_path):
+        """correlation_id を省略した場合、レコードに含まれないか null になる。"""
+        audit_path = tmp_path / "audit.jsonl"
+        write_task_exit_audit(
+            audit_path,
+            event_type="task_complete",
+            uuid=UUID,
+            status="success",
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        # デフォルト None → JSON では null or フィールドなし
+        assert r.get("correlation_id") is None

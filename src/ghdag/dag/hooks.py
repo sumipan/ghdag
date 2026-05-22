@@ -38,6 +38,7 @@ class DefaultHooks:
                 event_type="task_complete", uuid=uuid, status="success",
                 elapsed_sec=metrics.wall_time_sec, token_count=metrics.token_count,
                 model=metrics.model, engine=metrics.engine,
+                correlation_id=metrics.correlation_id,
             )
 
     def on_task_failure(self, uuid: str, task: Task, returncode: int, stderr_text: str, metrics: TaskMetrics) -> None:
@@ -49,6 +50,7 @@ class DefaultHooks:
                 event_type="task_failed", uuid=uuid, status="failure",
                 elapsed_sec=metrics.wall_time_sec, token_count=metrics.token_count,
                 model=metrics.model, engine=metrics.engine,
+                correlation_id=metrics.correlation_id,
             )
 
     def on_task_rejected(self, uuid: str, task: Task, retry_depth: int, is_final: bool, metrics: TaskMetrics) -> None:
@@ -60,6 +62,7 @@ class DefaultHooks:
                 event_type="task_rejected", uuid=uuid, status="rejected",
                 elapsed_sec=metrics.wall_time_sec, token_count=metrics.token_count,
                 model=metrics.model, engine=metrics.engine,
+                correlation_id=metrics.correlation_id,
             )
 
     def on_task_dep_failed(self, uuid: str, task: Task, failed_dep: str) -> None:
@@ -69,6 +72,7 @@ class DefaultHooks:
             write_task_exit_audit(
                 self._audit_path,
                 event_type="task_dep_failed", uuid=uuid, status="dep_failed",
+                correlation_id=task.idempotency_key,
             )
 
     def on_task_empty_result(self, uuid: str, task: Task, stderr_text: str, metrics: TaskMetrics) -> None:
@@ -80,6 +84,7 @@ class DefaultHooks:
                 event_type="task_empty_result", uuid=uuid, status="empty_result",
                 elapsed_sec=metrics.wall_time_sec, token_count=metrics.token_count,
                 model=metrics.model, engine=metrics.engine,
+                correlation_id=metrics.correlation_id,
             )
 
     def on_shutdown(self, signum: int) -> None:
