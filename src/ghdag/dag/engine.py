@@ -35,7 +35,11 @@ _STDIN_REDIR_RE = re.compile(r"(?<!<)<\s+(\S+)")
 class DagEngine:
     def __init__(self, config: DagConfig, hooks: DagHooks | None = None) -> None:
         self._config = config
-        self._hooks: DagHooks = hooks or DefaultHooks()
+        if hooks is None:
+            audit_path = Path(config.exec_md_path).parent / "audit.jsonl"
+            self._hooks: DagHooks = DefaultHooks(audit_path=audit_path)
+        else:
+            self._hooks = hooks
         self._running: dict[str, RunningTask] = {}
         self._tasks: dict[str, Task] = {}
         self._shutdown = False
