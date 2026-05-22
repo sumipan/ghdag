@@ -60,6 +60,7 @@ def test_success_path(mock_tee, mock_mark_done, tmp_path):
     assert isinstance(metrics.wall_time_sec, float)
     assert metrics.wall_time_sec > 0
     assert metrics.uuid == rt.uuid
+    assert metrics.failure_class is None
 
 
 @patch("ghdag.dag.engine.state_mark_done")
@@ -75,6 +76,7 @@ def test_failure_path(mock_tee, mock_mark_done, tmp_path):
     uuid_arg, task_arg, returncode_arg, stderr_arg, metrics = hooks.on_task_failure.call_args[0]
     assert isinstance(metrics, TaskMetrics)
     assert metrics.status == "failure"
+    assert metrics.failure_class == "PROCESS_ERROR"
 
 
 @patch("ghdag.dag.engine.state_mark_done")
@@ -91,6 +93,7 @@ def test_rejected_path(mock_tee, mock_mark_done, tmp_path):
     uuid_arg, task_arg, retry_depth_arg, is_final_arg, metrics = hooks.on_task_rejected.call_args[0]
     assert isinstance(metrics, TaskMetrics)
     assert metrics.status == "rejected"
+    assert metrics.failure_class == "REJECTED"
 
 
 @patch("ghdag.dag.engine.state_mark_done")
@@ -109,6 +112,7 @@ def test_empty_result_path(mock_mark_done, tmp_path):
     uuid_arg, task_arg, stderr_arg, metrics = hooks.on_task_empty_result.call_args[0]
     assert isinstance(metrics, TaskMetrics)
     assert metrics.status == "empty_result"
+    assert metrics.failure_class == "EMPTY_RESULT"
 
 
 @patch("ghdag.dag.engine.state_mark_done")
@@ -124,3 +128,38 @@ def test_engine_model_in_metrics(mock_tee, mock_mark_done, tmp_path):
     uuid_arg, task_arg, metrics = hooks.on_task_success.call_args[0]
     assert metrics.engine == "claude"
     assert metrics.model == "claude-opus-4-6"
+
+
+# --- Issue #962 tests ---
+
+@patch("ghdag.dag.engine.state_mark_done")
+@patch("ghdag.dag.engine._extract_tee_target", return_value=None)
+def test_timeout_failure_class(mock_tee, mock_mark_done, tmp_path):
+    """タイムアウトパス → metrics.failure_class == "TIMEOUT"。"""
+    engine, hooks = make_engine(tmp_path)
+    rt = make_running_task()
+    rt.term_sent_at = time.monotonic() - 1.0
+    engine._running[rt.uuid] = rt
+
+    engine._check_completions()
+
+    hooks.on_task_failure.assert_called_once()
+    _, _, _, _, metrics = hooks.on_task_failure.call_args[0]
+    assert metrics.failure_class == "TIMEOUT"
+
+
+@patch("ghdag.dag.engine.state_mark_done")
+@patch("ghdag.dag.engine._extract_tee_target", return_value="result.md")
+def test_pipeline_failed_failure_class(mock_tee, mock_mark_done, tmp_path):
+    """PIPELINE_STATUS: *_FAILED パス → metrics.failure_class == "PIPELINE_FAILED"。"""
+    engine, hooks = make_engine(tmp_path)
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = "IMPL_FAILED"
+    rt = make_running_task()
+    engine._running[rt.uuid] = rt
+
+    engine._check_completions()
+
+    hooks.on_task_failure.assert_called_once()
+    _, _, _, _, metrics = hooks.on_task_failure.call_args[0]
+    assert metrics.failure_class == "PIPELINE_FAILED"

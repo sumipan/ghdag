@@ -195,3 +195,46 @@ class TestDefaultHooksAudit:
 
         r = json.loads(audit_path.read_text().strip())
         assert r.get("correlation_id") is None
+
+    # --- Issue #962 tests ---
+
+    def _make_metrics_with_failure_class(self, status: str = "failure", failure_class: str | None = None) -> TaskMetrics:
+        now = time.time()
+        return TaskMetrics(
+            uuid=UUID,
+            engine="claude",
+            model="claude-sonnet-4-6",
+            wall_time_sec=10.5,
+            token_count=1500,
+            status=status,
+            started_at=now,
+            finished_at=now + 10.5,
+            failure_class=failure_class,
+        )
+
+    def test_failure_class_propagated_from_metrics(self, tmp_path):
+        """on_task_failure(metrics=TaskMetrics(failure_class="TIMEOUT")) → audit レコードに "failure_class": "TIMEOUT"。"""
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = DefaultHooks(audit_path=audit_path)
+        hooks.on_task_failure(UUID, _make_task(), 1, "timeout", self._make_metrics_with_failure_class("failure", "TIMEOUT"))
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["failure_class"] == "TIMEOUT"
+
+    def test_dep_failed_failure_class(self, tmp_path):
+        """on_task_dep_failed → audit レコードに "failure_class": "DEP_FAILED"。"""
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = DefaultHooks(audit_path=audit_path)
+        hooks.on_task_dep_failed(UUID, _make_task(), "dep-uuid")
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["failure_class"] == "DEP_FAILED"
+
+    def test_success_failure_class_null(self, tmp_path):
+        """on_task_success(metrics=TaskMetrics(failure_class=None)) → audit レコードに "failure_class": null。"""
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = DefaultHooks(audit_path=audit_path)
+        hooks.on_task_success(UUID, _make_task(), self._make_metrics_with_failure_class("success", None))
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["failure_class"] is None

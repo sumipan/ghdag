@@ -87,6 +87,7 @@ def write_task_exit_audit(
     model: str | None = None,
     engine: str | None = None,
     correlation_id: str | None = None,
+    failure_class: str | None = None,
     schema_version: int = 1,
 ) -> None:
     record = {
@@ -95,6 +96,7 @@ def write_task_exit_audit(
         "timestamp": datetime.now(JST).isoformat(),
         "uuid": uuid,
         "status": status,
+        "failure_class": failure_class,
         "elapsed_sec": elapsed_sec,
         "token_count": token_count,
         "model": model,
