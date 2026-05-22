@@ -76,6 +76,37 @@ def write_llm_audit_log(
         print(f"[audit] warning: failed to write audit log: {e}", file=sys.stderr)
 
 
+def write_task_exit_audit(
+    audit_path: Path,
+    *,
+    event_type: str,
+    uuid: str,
+    status: str,
+    elapsed_sec: float | None = None,
+    token_count: int | None = None,
+    model: str | None = None,
+    engine: str | None = None,
+    schema_version: int = 1,
+) -> None:
+    record = {
+        "schema_version": schema_version,
+        "event_type": event_type,
+        "timestamp": datetime.now(JST).isoformat(),
+        "uuid": uuid,
+        "status": status,
+        "elapsed_sec": elapsed_sec,
+        "token_count": token_count,
+        "model": model,
+        "engine": engine,
+    }
+
+    try:
+        with open(audit_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError as e:
+        print(f"[audit] warning: failed to write audit log: {e}", file=sys.stderr)
+
+
 def _capture_caller_stack() -> list[str]:
     frames = []
     for fi in inspect.stack():
