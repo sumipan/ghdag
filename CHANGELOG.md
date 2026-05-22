@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.17.1] - 2026-05-22
+
+### Added
+
+- `pipeline/audit.py`: `write_task_exit_audit()` を追加。タスク完了・失敗・拒否・依存失敗・空結果の出口イベントを audit.jsonl に JSONL 形式で記録
+- `dag/hooks.py`: `DefaultHooks.__init__(audit_path)` を追加。各フックメソッド (`on_task_success`, `on_task_failure`, `on_task_rejected`, `on_task_dep_failed`, `on_task_empty_result`) で `write_task_exit_audit()` を呼び出し
+- `dag/engine.py`: `hooks is None` の場合に `exec_md_path` 親ディレクトリの `audit.jsonl` を `audit_path` として `DefaultHooks` に渡す
+
+### Fixed
+
+- `tests/`: 未使用 pytest import を削除 (ruff F401)
+
 ## [0.16.0] - 2026-05-16
 
 ### Added
