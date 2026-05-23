@@ -13,7 +13,8 @@ import pytest
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.github import GitHubIssueClient
-from ghdag.workflow.loader import load_workflows
+from ghdag.workflow.dispatcher import ContextHookError
+from ghdag.workflow.loader import ValidationError, load_workflows
 from ghdag.workflow.schema import (
     DispatchResult,
     HandlerConfig,
@@ -158,7 +159,7 @@ handlers:
       - template: brushup
 """
         (tmp_path / "bad.yml").write_text(yaml_no_model, encoding="utf-8")
-        with pytest.raises(ValueError, match="model"):
+        with pytest.raises(ValidationError, match="model"):
             load_workflows(tmp_path)
 
     def test_trigger_missing_handler_raises_validation_error(self, tmp_path):
@@ -173,7 +174,7 @@ handlers:
         model: claude-sonnet-4-6
 """
         (tmp_path / "bad.yml").write_text(yaml_no_handler, encoding="utf-8")
-        with pytest.raises(ValueError, match="handler"):
+        with pytest.raises(ValidationError, match="handler"):
             load_workflows(tmp_path)
 
     def test_trigger_missing_label_raises_validation_error(self, tmp_path):
@@ -188,7 +189,7 @@ handlers:
         model: claude-sonnet-4-6
 """
         (tmp_path / "bad.yml").write_text(yaml_no_label, encoding="utf-8")
-        with pytest.raises(ValueError, match="label"):
+        with pytest.raises(ValidationError, match="label"):
             load_workflows(tmp_path)
 
     def test_unknown_keys_ignored(self, tmp_path):
@@ -816,7 +817,7 @@ handlers:
         mock_result.returncode = 0
         mock_result.stdout = "not json"
         with patch("ghdag.workflow.dispatcher.subprocess.run", return_value=mock_result):
-            with pytest.raises(ValueError, match="JSON"):
+            with pytest.raises(ContextHookError, match="JSON"):
                 dispatcher._run_context_hook("echo test", 10)
 
     def test_run_context_hook_returns_empty_on_empty_stdout(self):
@@ -1206,7 +1207,7 @@ handlers:
         model: claude-sonnet-4-6
 """
         (tmp_path / "bad.yml").write_text(yaml_content, encoding="utf-8")
-        with pytest.raises(ValueError, match="handlers に定義されていません"):
+        with pytest.raises(ValidationError, match="not defined in handlers"):
             load_workflows(tmp_path)
 
     def test_handler_reference_mismatch_includes_handler_name(self, tmp_path):
@@ -1223,7 +1224,7 @@ handlers:
         model: claude-sonnet-4-6
 """
         (tmp_path / "bad.yml").write_text(yaml_content, encoding="utf-8")
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             load_workflows(tmp_path)
         msg = str(exc_info.value)
         assert "nonexistent" in msg
@@ -1244,9 +1245,9 @@ handlers:
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
         (tmp_path / "templates").mkdir()
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             load_workflows(tmp_path)
-        assert "ファイルが見つかりません" in str(exc_info.value)
+        assert "file not found" in str(exc_info.value)
         assert "brushup" in str(exc_info.value)
 
     def test_template_default_dir(self, tmp_path):
@@ -1263,7 +1264,7 @@ handlers:
         model: claude-sonnet-4-6
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             load_workflows(tmp_path)
         assert "templates" in str(exc_info.value)
 

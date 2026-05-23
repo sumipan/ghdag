@@ -18,6 +18,10 @@ from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import PipelineState
 
+
+class DependencyError(ValueError):
+    """Raised when step dependencies are invalid or circular."""
+
 if TYPE_CHECKING:
     from ghdag.workflow.schema import StepConfig
 
@@ -33,7 +37,7 @@ def _validate_depends(steps: "list[StepConfig]") -> None:
     for step in steps:
         for dep_id in step.depends:
             if dep_id not in step_ids:
-                raise ValueError(f"Unknown dependency: {dep_id!r}")
+                raise DependencyError(f"Unknown dependency: {dep_id!r}")
 
     # トポロジカルソートで循環参照を検出
     in_degree: dict[str, int] = {s.id: 0 for s in steps if s.id is not None}
@@ -57,7 +61,7 @@ def _validate_depends(steps: "list[StepConfig]") -> None:
                 queue.append(neighbor)
 
     if visited < len(in_degree):
-        raise ValueError("circular dependency detected among steps")
+        raise DependencyError("circular dependency detected among steps")
 
 
 @dataclass

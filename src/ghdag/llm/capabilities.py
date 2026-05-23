@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 
 class LLMParseError(Exception):
-    """output_format 契約に違反したレスポンスに対して送出。"""
+    """Raised when a response violates the output_format contract."""
     def __init__(self, raw: str, reason: str):
         self.raw = raw
         self.reason = reason
