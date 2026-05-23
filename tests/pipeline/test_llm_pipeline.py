@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -643,3 +643,109 @@ class TestAuditContextPropagation:
             call_kwargs[0][1] if len(call_kwargs[0]) > 1 else None
         )
         assert passed_ctx is ctx
+
+
+# ---------------------------------------------------------------------------
+# Issue #1014: result content injection into context (AC1-AC4)
+# ---------------------------------------------------------------------------
+
+_P1_UUID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+_P2_UUID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+_P3_UUID = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+_TS = "20260523120000"
+
+
+def _make_api_with_tmpdir(tmp_path):
+    """LLMPipelineAPI that uses a real tmp_path as queue_dir."""
+    pipeline_state = MagicMock()
+    pipeline_state.check_idempotency.return_value = True
+    pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+    pipeline_state._is_jsonl_mode = False
+    order_builder = MagicMock()
+    order_builder.build_order.return_value = "order content"
+    api = LLMPipelineAPI(
+        pipeline_state=pipeline_state,
+        order_builder=order_builder,
+        queue_dir=str(tmp_path),
+    )
+    return api, pipeline_state, order_builder
+
+
+class TestResultContentInjection:
+    """Issue #1014: ${dep_id_result_content} コンテキスト注入。"""
+
+    def test_ac1_result_content_injected_when_file_exists(self, tmp_path):
+        """AC1: result ファイル存在時、p1_result_content が p2 コンテキストに注入される。"""
+        result_content = "# Analysis Result\nScore: 85"
+        result_file = tmp_path / f"{_TS}-claude-result-{_P1_UUID}.md"
+        result_file.write_text(result_content, encoding="utf-8")
+
+        api, _, order_builder = _make_api_with_tmpdir(tmp_path)
+        steps = [
+            StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
+            StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
+        ]
+        with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID]), \
+             patch("ghdag.pipeline.llm_pipeline.datetime") as mock_dt:
+            mock_dt.now.return_value.strftime.return_value = _TS
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        p2_ctx = order_builder.build_order.call_args_list[1][0][1]
+        assert p2_ctx["p1_result_content"] == result_content
+
+    def test_ac2_empty_string_when_result_file_missing(self, tmp_path):
+        """AC2: result ファイル未存在時、p1_result_content が空文字列になる（エラーなし）。"""
+        api, _, order_builder = _make_api_with_tmpdir(tmp_path)
+        steps = [
+            StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
+            StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
+        ]
+        with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID]), \
+             patch("ghdag.pipeline.llm_pipeline.datetime") as mock_dt:
+            mock_dt.now.return_value.strftime.return_value = _TS
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        p2_ctx = order_builder.build_order.call_args_list[1][0][1]
+        assert p2_ctx["p1_result_content"] == ""
+
+    def test_ac3_result_filename_and_content_coexist(self, tmp_path):
+        """AC3: p1_result_filename と p1_result_content が両方正しく展開される。"""
+        result_content = "summary output"
+        result_file = tmp_path / f"{_TS}-claude-result-{_P1_UUID}.md"
+        result_file.write_text(result_content, encoding="utf-8")
+
+        api, _, order_builder = _make_api_with_tmpdir(tmp_path)
+        steps = [
+            StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
+            StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
+        ]
+        with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID]), \
+             patch("ghdag.pipeline.llm_pipeline.datetime") as mock_dt:
+            mock_dt.now.return_value.strftime.return_value = _TS
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        p2_ctx = order_builder.build_order.call_args_list[1][0][1]
+        assert p2_ctx["p1_result_filename"] == f"{_TS}-claude-result-{_P1_UUID}.md"
+        assert p2_ctx["p1_result_content"] == result_content
+
+    def test_ac4_multiple_dep_contents_injected(self, tmp_path):
+        """AC4: p3 が p1・p2 両方に依存 → 両方の result_content が注入される。"""
+        content_p1 = "p1 result"
+        content_p2 = "p2 result"
+        (tmp_path / f"{_TS}-claude-result-{_P1_UUID}.md").write_text(content_p1, encoding="utf-8")
+        (tmp_path / f"{_TS}-claude-result-{_P2_UUID}.md").write_text(content_p2, encoding="utf-8")
+
+        api, _, order_builder = _make_api_with_tmpdir(tmp_path)
+        steps = [
+            StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
+            StepConfig(id="p2", template="p2", model="claude-sonnet-4-6"),
+            StepConfig(id="p3", template="p3", model="claude-sonnet-4-6", depends=["p1", "p2"]),
+        ]
+        with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID, _P3_UUID]), \
+             patch("ghdag.pipeline.llm_pipeline.datetime") as mock_dt:
+            mock_dt.now.return_value.strftime.return_value = _TS
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        p3_ctx = order_builder.build_order.call_args_list[2][0][1]
+        assert p3_ctx["p1_result_content"] == content_p1
+        assert p3_ctx["p2_result_content"] == content_p2
