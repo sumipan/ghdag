@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 
@@ -9,3 +10,23 @@ class MdFile:
     path: str
     frontmatter: dict[str, Any]
     content: str
+
+
+class AppendStatus(Enum):
+    APPENDED = "appended"
+    NOOP = "noop"
+    RECOVERED = "recovered"
+
+
+@dataclass(frozen=True)
+class AppendResult:
+    status: AppendStatus
+    path: str
+    section: str
+    body_hash: str
+
+
+@dataclass(frozen=True)
+class WriteResult:
+    path: str
+    bytes_written: int
