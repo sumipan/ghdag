@@ -24,7 +24,6 @@ from ghdag.llm import (
     list_models,
     validate_engine_model,
 )
-import warnings
 
 from ghdag.llm.spec import render_exec_command, render_exec_line
 from ghdag.workflow.engine import ClaudeAdapter, GeminiAdapter, CursorAdapter, ShellAdapter
