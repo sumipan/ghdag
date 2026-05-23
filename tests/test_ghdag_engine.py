@@ -670,3 +670,151 @@ class TestEngineModelFromStructuredFields:
         metrics = call_args[0][2]
         assert metrics.engine == "claude"
         assert metrics.model == "claude-opus-4-6"
+
+
+class TestReaderThreadJoin:
+    """スレッド回収テスト — 受け入れ条件: 正常系"""
+
+    def test_stderr_thread_not_alive_after_completion(self, tmp_path):
+        """タスク完了後、stderr_thread が alive でないこと"""
+        captured_rt = []
+        config = _make_config(tmp_path, "uuid-a: echo hello\n")
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        def capture(uuid, task):
+            if uuid in engine._running:
+                captured_rt.append(engine._running[uuid])
+
+        hooks.on_task_start.side_effect = capture
+        _run_engine_with_timeout(engine, timeout=3.0)
+
+        assert len(captured_rt) > 0
+        rt = captured_rt[0]
+        assert rt.stderr_thread is not None
+        assert not rt.stderr_thread.is_alive()
+
+    def test_stdout_thread_none_when_no_result_path(self, tmp_path):
+        """result_path 未指定の場合、stdout_thread は None"""
+        captured_rt = []
+        config = _make_config(tmp_path, "uuid-a: echo hello\n")
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        def capture(uuid, task):
+            if uuid in engine._running:
+                captured_rt.append(engine._running[uuid])
+
+        hooks.on_task_start.side_effect = capture
+        _run_engine_with_timeout(engine, timeout=3.0)
+
+        assert len(captured_rt) > 0
+        assert captured_rt[0].stdout_thread is None
+
+    def test_both_threads_recovered_with_result_path(self, tmp_path):
+        """result_path 指定時、stderr_thread と stdout_thread の両方が回収される"""
+        captured_rt = []
+        result_path = str(tmp_path / "result.md")
+        config = _make_jsonl_config(tmp_path, [
+            _jsonl_task("uuid-a", "echo hello", result_path)
+        ])
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        hooks.check_pipeline_status.return_value = None
+        engine = DagEngine(config, hooks)
+
+        def capture(uuid, task):
+            if uuid in engine._running:
+                captured_rt.append(engine._running[uuid])
+
+        hooks.on_task_start.side_effect = capture
+        _run_engine_with_timeout(engine, timeout=5.0)
+
+        assert len(captured_rt) > 0
+        rt = captured_rt[0]
+        assert rt.stderr_thread is not None
+        assert rt.stdout_thread is not None
+        assert not rt.stderr_thread.is_alive()
+        assert not rt.stdout_thread.is_alive()
+
+
+class TestThreadLeakPrevention:
+    """スレッドリーク防止テスト"""
+
+    def test_100_tasks_thread_count_within_bounds(self, tmp_path):
+        """100 タスク連続実行後のスレッド数が起動時 +2 以内"""
+        baseline = threading.active_count()
+        tasks = "\n".join(f"uuid-{i:03d}: echo task{i}" for i in range(100))
+        config = _make_config(tmp_path, tasks + "\n")
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=20.0)
+        time.sleep(0.5)
+
+        final_count = threading.active_count()
+        assert final_count <= baseline + 2, (
+            f"Thread leak detected: baseline={baseline}, final={final_count}"
+        )
+
+
+class TestTimeoutReaderJoin:
+    """タイムアウト後のスレッド回収テスト"""
+
+    def test_timeout_threads_joined(self, tmp_path):
+        """タイムアウトで強制終了されたタスクでも reader スレッドが回収される"""
+        captured_rt = []
+        config = _make_config(
+            tmp_path,
+            "uuid-a: sleep 60\n",
+            task_timeout=1.0,
+            kill_grace=1.0,
+        )
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        def capture(uuid, task):
+            if uuid in engine._running:
+                captured_rt.append(engine._running[uuid])
+
+        hooks.on_task_start.side_effect = capture
+        _run_engine_with_timeout(engine, timeout=6.0)
+
+        assert len(captured_rt) > 0
+        rt = captured_rt[0]
+        assert rt.stderr_thread is not None
+        assert not rt.stderr_thread.is_alive()
+
+    def test_join_warning_when_reader_thread_hangs(self, tmp_path, caplog):
+        """`_join_reader_threads` でスレッドが 2.0s 内に終了しない場合、warning が出力される"""
+        stop_event = threading.Event()
+
+        def hanging_reader():
+            stop_event.wait(timeout=30.0)
+
+        hanging_thread = threading.Thread(target=hanging_reader, daemon=True)
+        hanging_thread.start()
+        try:
+            config = _make_config(tmp_path, "")
+            engine = DagEngine(config, MagicMock())
+
+            class FakeRT:
+                uuid = "test-uuid"
+                stderr_thread = hanging_thread
+                stdout_thread = None
+
+            with caplog.at_level(logging.WARNING, logger="ghdag.dag.engine"):
+                engine._join_reader_threads(FakeRT())
+
+            assert any(
+                "reader thread did not terminate within 2.0s" in r.message
+                for r in caplog.records
+                if r.levelno == logging.WARNING
+            )
+        finally:
+            stop_event.set()
+            hanging_thread.join(timeout=1.0)

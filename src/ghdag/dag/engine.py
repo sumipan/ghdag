@@ -196,6 +196,7 @@ class DagEngine:
                 return
 
         stdout_buf: io.BytesIO | None = None
+        t_stdout: threading.Thread | None = None
         if task.result_path is not None:
             proc = subprocess.Popen(
                 ["bash", "-o", "pipefail", "-c", task.command],
@@ -204,7 +205,8 @@ class DagEngine:
                 cwd=cwd,
             )
             stdout_buf = io.BytesIO()
-            threading.Thread(target=_stdout_reader, args=(proc, stdout_buf), daemon=True).start()
+            t_stdout = threading.Thread(target=_stdout_reader, args=(proc, stdout_buf), daemon=True)
+            t_stdout.start()
         else:
             proc = subprocess.Popen(
                 ["bash", "-o", "pipefail", "-c", task.command],
@@ -213,7 +215,8 @@ class DagEngine:
             )
 
         stderr_buf = io.BytesIO()
-        threading.Thread(target=_stderr_reader, args=(proc, stderr_buf), daemon=True).start()
+        t_stderr = threading.Thread(target=_stderr_reader, args=(proc, stderr_buf), daemon=True)
+        t_stderr.start()
         self._running[uuid] = RunningTask(
             uuid=uuid,
             task=task,
@@ -223,6 +226,8 @@ class DagEngine:
             stderr_buf=stderr_buf,
             retry_depth=task.retry,
             stdout_buf=stdout_buf,
+            stderr_thread=t_stderr,
+            stdout_thread=t_stdout,
         )
         self._hooks.on_task_start(uuid, task)
 
@@ -247,9 +252,10 @@ class DagEngine:
 
             was_timeout = rt.term_sent_at is not None
             finished_at = time.time()
+            del self._running[uuid]
+            self._join_reader_threads(rt)
             stderr_text = rt.stderr_buf.getvalue().decode("utf-8", errors="replace").strip()
             returncode = rt.proc.returncode
-            del self._running[uuid]
 
             task = rt.task
             engine = task.engine
@@ -455,6 +461,17 @@ class DagEngine:
             )
         except Exception:
             logger.warning("Promote failed for %s → %s", result_path, promote_target, exc_info=True)
+
+    def _join_reader_threads(self, rt: "RunningTask") -> None:
+        for name, th in [("stderr", rt.stderr_thread), ("stdout", rt.stdout_thread)]:
+            if th is None:
+                continue
+            th.join(timeout=2.0)
+            if th.is_alive():
+                logger.warning(
+                    "Task [%s] %s reader thread did not terminate within 2.0s",
+                    rt.uuid, name,
+                )
 
     def _propagate_dep_failed(self, known_done: set[str], known_succeeded: set[str]) -> None:
         """Mark tasks whose dependencies have failed as DEP_FAILED."""
