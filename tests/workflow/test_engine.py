@@ -128,7 +128,7 @@ class TestGeminiAdapter:
         )
         assert "abc123:" in line
         assert "gemini -p" in line
-        assert "-m flash" in line
+        assert "--model 'flash'" in line  # -m から --model に統一（#985）
         assert "--approval-mode yolo" in line
         assert "[depends:" not in line
 
@@ -464,7 +464,7 @@ class TestBuildExecRecord:
         )
         assert result["uuid"] == "abc-123"
         assert "gemini -p" in result["command"]
-        assert "-m flash" in result["command"]
+        assert "--model 'flash'" in result["command"]  # -m から --model に統一（#985）
         assert "--approval-mode yolo" in result["command"]
         assert "tee" not in result["command"]
         assert result["result_path"] == "queue/result.md"
