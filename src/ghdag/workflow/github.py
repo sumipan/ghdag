@@ -134,6 +134,23 @@ class GitHubIssueClient:
         )
 
 
+    def get_rate_limit(self) -> dict | None:
+        """gh api rate_limit を実行し、core rate limit 情報を返す。
+
+        Returns:
+            {"limit": int, "remaining": int, "reset": int} or None（取得失敗時）
+        """
+        try:
+            result = subprocess.run(
+                ["gh", "api", "rate_limit", "--jq", ".rate"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return json.loads(result.stdout)
+        except (subprocess.CalledProcessError, json.JSONDecodeError):
+            return None
+
     def remove_label(self, number: int, label: str) -> None:
         """gh issue edit {number} --remove-label {label}。
 

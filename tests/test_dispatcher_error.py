@@ -42,6 +42,7 @@ def _make_issue(number: int) -> dict:
 
 def _make_dispatcher(workflow: WorkflowConfig) -> tuple[WorkflowDispatcher, MagicMock]:
     github_client = MagicMock(spec=GitHubIssueClient)
+    github_client.get_rate_limit.return_value = None  # rate limit 観測をスキップ
     pipeline = MagicMock(spec=LLMPipelineAPI)
     dispatcher = WorkflowDispatcher(
         workflows=[workflow],
