@@ -5,10 +5,8 @@ pipeline/state.py — パイプライン状態管理
         tools/stash-developer/stash_developer/exec_writer.py
 
 2つの永続化先を管理:
-  (1) {state_dir}/{id}.json — パイプライン実行のライフサイクル状態（フェーズ遷移・結果・メタデータ）。
-      パイプライン単位の冪等性判定（同一 Issue の重複起動抑止）に使用する。
-  (2) exec.jsonl — DagEngine へのタスク投入キュー。タスク単位の冪等性キーを保持し、
-      DagEngine が直接読み取る。(1) とは責務が異なり、タスクスケジューリング専用。
+  (1) {state_dir}/{id}.json — パイプライン実行状態
+  (2) exec.jsonl — 冪等性キー（idempotency_key フィールドを持つ JSONL レコード）
 """
 
 from __future__ import annotations
