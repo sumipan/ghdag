@@ -10,6 +10,8 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+FANOUT_SEPARATOR = "--fo--"
+
 
 @dataclass
 class FanOutItem:
@@ -76,6 +78,10 @@ def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
         except (KeyError, TypeError) as exc:
             logger.warning("parse_fanout_spec: malformed child entry in %s: %s", result_path, exc)
             return None
+        if FANOUT_SEPARATOR in str(child_id):
+            raise ValueError(
+                f"child id {child_id!r} contains reserved separator {FANOUT_SEPARATOR!r}"
+            )
         ids.append(child_id)
         children.append(FanOutItem(id=child_id, command=child_cmd))
 

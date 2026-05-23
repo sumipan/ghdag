@@ -100,6 +100,46 @@ class TestParseFanoutSpec:
             result = parse_fanout_spec(str(f))
         assert result is None
 
+    def test_t2_child_id_contains_fo_separator_raises(self, tmp_path):
+        """T2: child.id = 'foo--fo--bar' → ValueError (contains reserved separator)."""
+        f = tmp_path / "result.md"
+        f.write_text(
+            "---\nghdag_fanout:\n  children:\n"
+            "    - id: foo--fo--bar\n      command: echo 1\n"
+        )
+        with pytest.raises(ValueError, match="--fo--"):
+            parse_fanout_spec(str(f))
+
+    def test_t3_child_id_leading_fo_separator_raises(self, tmp_path):
+        """T3: child.id = '--fo--leading' → ValueError (leading separator)."""
+        f = tmp_path / "result.md"
+        f.write_text(
+            "---\nghdag_fanout:\n  children:\n"
+            "    - id: \"--fo--leading\"\n      command: echo 1\n"
+        )
+        with pytest.raises(ValueError, match="--fo--"):
+            parse_fanout_spec(str(f))
+
+    def test_t4_child_id_trailing_fo_separator_raises(self, tmp_path):
+        """T4: child.id = 'trailing--fo--' → ValueError (trailing separator)."""
+        f = tmp_path / "result.md"
+        f.write_text(
+            "---\nghdag_fanout:\n  children:\n"
+            "    - id: \"trailing--fo--\"\n      command: echo 1\n"
+        )
+        with pytest.raises(ValueError, match="--fo--"):
+            parse_fanout_spec(str(f))
+
+    def test_t5_child_id_is_separator_itself_raises(self, tmp_path):
+        """T5: child.id = '--fo--' → ValueError (separator itself)."""
+        f = tmp_path / "result.md"
+        f.write_text(
+            "---\nghdag_fanout:\n  children:\n"
+            "    - id: \"--fo--\"\n      command: echo 1\n"
+        )
+        with pytest.raises(ValueError, match="--fo--"):
+            parse_fanout_spec(str(f))
+
 
 class TestBuildChildExecLine:
     def test_format(self):

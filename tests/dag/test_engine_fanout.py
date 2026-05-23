@@ -306,6 +306,45 @@ class TestAC9ValidateDependencies:
         assert "parent--fo--c2" not in invalid
 
 
+class TestAC2FanoutParseFailed:
+    def test_t6_invalid_child_id_marks_parent_fanout_parse_failed(self, tmp_path):
+        """T6: fanout spec with --fo-- in child id → FANOUT_PARSE_FAILED status."""
+        engine, hooks, exec_file = _make_engine(tmp_path, jsonl=True)
+        uuid = "parent-parse-fail"
+        result_file = tmp_path / "result_pf.md"
+        task = Task(uuid=uuid, command="true", result_path=str(result_file))
+
+        # Result file with invalid child id containing --fo--
+        invalid_fanout = b"""\
+Some output.
+
+---
+ghdag_fanout:
+  children:
+    - id: foo--fo--bar
+      command: "echo 1"
+"""
+        rt = _make_completed_running_task(uuid, task, stdout_content=invalid_fanout)
+        engine._running[uuid] = rt
+
+        engine._check_completions()
+
+        # Parent should be marked done with FANOUT_PARSE_FAILED
+        done_file = tmp_path / "done" / uuid
+        assert done_file.exists()
+        assert done_file.read_text() == "FANOUT_PARSE_FAILED"
+
+        # Failure hook should be called with FANOUT_PARSE_FAILED
+        assert len(hooks.failure) == 1
+        assert hooks.failure[0][0] == uuid
+        assert "FANOUT_PARSE_FAILED" in hooks.failure[0][3] or "--fo--" in hooks.failure[0][3]
+        assert hooks.failure[0][4].failure_class == FailureClass.FANOUT_PARSE_FAILED
+
+        # No children should be spawned
+        lines = [ln for ln in exec_file.read_text().splitlines() if ln.strip()]
+        assert len(lines) == 0
+
+
 class TestParentNotRelaunched:
     def test_parent_in_fanout_pending_is_skipped_in_launch_loop(self, tmp_path):
         """Parent UUID in _fanout_pending must not be re-launched."""

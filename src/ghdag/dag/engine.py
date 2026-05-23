@@ -349,9 +349,9 @@ class DagEngine:
                                 token_count=token_count, status="failure",
                                 started_at=rt.started_at, finished_at=finished_at,
                                 correlation_id=task.idempotency_key,
-                                failure_class=FailureClass.FANOUT_CHILD_FAILED,
+                                failure_class=FailureClass.FANOUT_PARSE_FAILED,
                             )
-                            state_mark_done(self._config.exec_done_dir, uuid, "FANOUT_CHILD_FAILED")
+                            state_mark_done(self._config.exec_done_dir, uuid, "FANOUT_PARSE_FAILED")
                             self._hooks.on_task_failure(uuid, task, 0, str(exc), failure_metrics)
                             continue
                         if fanout_spec:
