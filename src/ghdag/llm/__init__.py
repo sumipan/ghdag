@@ -21,13 +21,16 @@ from ghdag.llm.engines import (
     list_models,
     validate_engine_model,
 )
+from ghdag.llm.spec import EngineSpec, ENGINE_SPECS
 
 __all__ = [
     "_config",
     "DEFAULT_ENGINE_MODELS",
     "ENGINE_DEFAULTS",
     "ENGINE_MODELS",
+    "ENGINE_SPECS",
     "EngineModelError",
+    "EngineSpec",
     "LLMCapabilities",
     "LLMParseError",
     "LLMResult",

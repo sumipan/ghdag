@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from ghdag.llm._config import load_engine_models
 from ghdag.llm.capabilities import LLMCapabilities, LLMParseError, TEXT_ONLY
+from ghdag.llm.spec import ENGINE_SPECS
 
 
 class EngineModelError(Exception):
@@ -25,21 +26,11 @@ class EngineModelError(Exception):
 
 ENGINE_MODELS: dict[str, list[str]] = load_engine_models()
 
-# エンジンごとの CLI コマンド名
-ENGINE_CLI: dict[str, str] = {
-    "claude": "claude",
-    "gemini": "gemini",
-    "cursor": "agent",
-    "shell": "bash",
-}
+# エンジンごとの CLI コマンド名（spec から派生）
+ENGINE_CLI: dict[str, str] = {name: spec.cli for name, spec in ENGINE_SPECS.items()}
 
-# エンジンごとのデフォルトモデル
-ENGINE_DEFAULTS: dict[str, str] = {
-    "claude": "claude-sonnet-4-6",
-    "gemini": "gemini-2.5-flash",
-    "cursor": "auto",
-    "shell": "bash",
-}
+# エンジンごとのデフォルトモデル（spec から派生）
+ENGINE_DEFAULTS: dict[str, str | None] = {name: spec.default_model for name, spec in ENGINE_SPECS.items()}
 
 
 def list_engines() -> list[str]:
@@ -169,7 +160,8 @@ def build_llm_cmd(
     Returns:
         subprocess 用のコマンドリスト
     """
-    cli = ENGINE_CLI.get(engine, engine)
+    spec = ENGINE_SPECS.get(engine)
+    cli = spec.cli if spec else engine
     cmd = [cli, "--model", model, "-p", prompt]
 
     if engine == "claude":

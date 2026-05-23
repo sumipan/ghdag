@@ -9,6 +9,8 @@ import pytest
 from ghdag.llm import (
     ENGINE_DEFAULTS,
     EngineModelError,
+    EngineSpec,
+    ENGINE_SPECS,
     LLMCapabilities,
     LLMParseError,
     LLMResult,
@@ -22,6 +24,8 @@ from ghdag.llm import (
     list_models,
     validate_engine_model,
 )
+from ghdag.llm.spec import render_exec_command, render_exec_line
+from ghdag.workflow.engine import ClaudeAdapter, GeminiAdapter, CursorAdapter, ShellAdapter
 
 
 # ---------------------------------------------------------------------------
@@ -517,3 +521,212 @@ class TestCLI:
         with pytest.raises(SystemExit) as exc_info:
             main(["llm", "--list-models", "--engine", "unknown"])
         assert exc_info.value.code == 1
+
+
+# ---------------------------------------------------------------------------
+# EngineSpec / ENGINE_SPECS
+# ---------------------------------------------------------------------------
+
+class TestEngineSpec:
+    def test_engine_specs_has_all_engines(self):
+        assert "claude" in ENGINE_SPECS
+        assert "gemini" in ENGINE_SPECS
+        assert "cursor" in ENGINE_SPECS
+        assert "shell" in ENGINE_SPECS
+
+    def test_engine_spec_frozen(self):
+        import dataclasses
+        spec = ENGINE_SPECS["claude"]
+        with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
+            spec.name = "other"  # type: ignore
+
+    def test_claude_spec_cli(self):
+        assert ENGINE_SPECS["claude"].cli == "claude"
+
+    def test_gemini_spec_cli(self):
+        assert ENGINE_SPECS["gemini"].cli == "gemini"
+
+    def test_cursor_spec_cli(self):
+        assert ENGINE_SPECS["cursor"].cli == "agent"
+
+    def test_shell_spec_cli(self):
+        assert ENGINE_SPECS["shell"].cli == "bash"
+
+    def test_engine_specs_exported_from_ghdag_llm(self):
+        assert EngineSpec is not None
+        assert ENGINE_SPECS is not None
+
+    def test_cursor_danger_flag_position_after_prompt(self):
+        assert ENGINE_SPECS["cursor"].danger_flag_position == "after_prompt"
+
+    def test_claude_danger_flag_position_trailing(self):
+        assert ENGINE_SPECS["claude"].danger_flag_position == "trailing"
+
+    def test_gemini_model_flag_is_double_dash(self):
+        assert ENGINE_SPECS["gemini"].model_flag == "--model"
+
+    def test_gemini_no_danger_flag(self):
+        assert ENGINE_SPECS["gemini"].danger_flag is None
+
+    def test_shell_no_model_flag(self):
+        assert ENGINE_SPECS["shell"].model_flag is None
+
+    def test_shell_extra_args_pipefail(self):
+        assert "-o" in ENGINE_SPECS["shell"].extra_args
+        assert "pipefail" in ENGINE_SPECS["shell"].extra_args
+
+
+# ---------------------------------------------------------------------------
+# render_exec_command
+# ---------------------------------------------------------------------------
+
+class TestRenderExecCommand:
+    def test_claude_with_model(self):
+        spec = ENGINE_SPECS["claude"]
+        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="hello", model="claude-opus-4-6")
+        assert cmd == "cat queue/order.md | claude -p 'hello' --model 'claude-opus-4-6' --dangerously-skip-permissions"
+
+    def test_claude_without_model(self):
+        spec = ENGINE_SPECS["claude"]
+        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="hello", model=None)
+        assert cmd == "cat queue/order.md | claude -p 'hello' --dangerously-skip-permissions"
+
+    def test_gemini_with_model(self):
+        spec = ENGINE_SPECS["gemini"]
+        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="hello", model="gemini-2.5-flash")
+        assert cmd == "cat queue/order.md | gemini -p 'hello' --model 'gemini-2.5-flash' --approval-mode yolo"
+
+    def test_gemini_no_dash_m(self):
+        """gemini コマンドに -m を含まないこと（--model に統一）"""
+        spec = ENGINE_SPECS["gemini"]
+        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="hello", model="gemini-2.5-flash")
+        assert " -m " not in cmd
+        assert "--model" in cmd
+
+    def test_cursor_with_model(self):
+        spec = ENGINE_SPECS["cursor"]
+        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="", model="auto")
+        assert cmd == "agent --model 'auto' -p --force < queue/order.md"
+
+    def test_cursor_without_model(self):
+        spec = ENGINE_SPECS["cursor"]
+        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="", model=None)
+        assert cmd == "agent -p --force < queue/order.md"
+
+    def test_cursor_p_force_adjacent(self):
+        """-p と --force が隣接していること"""
+        spec = ENGINE_SPECS["cursor"]
+        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="", model="auto")
+        assert "-p --force" in cmd
+
+    def test_shell_command(self):
+        spec = ENGINE_SPECS["shell"]
+        cmd = render_exec_command(spec, order_path="queue/order.sh", prompt="", model=None)
+        assert cmd == "bash -o pipefail queue/order.sh"
+
+
+# ---------------------------------------------------------------------------
+# render_exec_line
+# ---------------------------------------------------------------------------
+
+class TestRenderExecLine:
+    def test_claude_exec_line_structure(self):
+        spec = ENGINE_SPECS["claude"]
+        line = render_exec_line(
+            spec,
+            uuid="abc123",
+            order_path="queue/order.md",
+            result_path="results/result.md",
+            prompt="hello",
+            model="claude-sonnet-4-6",
+            depends=[],
+        )
+        assert line.startswith("abc123: ")
+        assert "| tee -a results/result.md" in line
+        assert "claude -p 'hello'" in line
+
+    def test_claude_exec_line_with_depends(self):
+        spec = ENGINE_SPECS["claude"]
+        line = render_exec_line(
+            spec,
+            uuid="abc123",
+            order_path="queue/order.md",
+            result_path="results/result.md",
+            prompt="hello",
+            model=None,
+            depends=["dep1", "dep2"],
+        )
+        assert "abc123[depends:dep1,dep2]: " in line
+
+    def test_cursor_exec_line(self):
+        spec = ENGINE_SPECS["cursor"]
+        line = render_exec_line(
+            spec,
+            uuid="xyz",
+            order_path="queue/order.md",
+            result_path="results/result.md",
+            prompt="",
+            model="auto",
+            depends=[],
+        )
+        assert line == "xyz: agent --model 'auto' -p --force < queue/order.md | tee -a results/result.md"
+
+
+# ---------------------------------------------------------------------------
+# Adapter outputs via spec
+# ---------------------------------------------------------------------------
+
+class TestAdapterOutputs:
+    def test_claude_adapter_build_exec_record(self):
+        adapter = ClaudeAdapter()
+        record = adapter.build_exec_record(
+            uuid="u1",
+            order_path="queue/order.md",
+            result_path="results/result.md",
+            prompt="hello",
+            model="claude-sonnet-4-6",
+            depends=[],
+        )
+        assert record["uuid"] == "u1"
+        cmd = record["command"]
+        assert "cat queue/order.md | claude -p 'hello' --model 'claude-sonnet-4-6' --dangerously-skip-permissions" == cmd
+
+    def test_gemini_adapter_uses_double_dash_model(self):
+        """GeminiAdapter が -m ではなく --model を使う"""
+        adapter = GeminiAdapter()
+        record = adapter.build_exec_record(
+            uuid="u1",
+            order_path="queue/order.md",
+            result_path="results/result.md",
+            prompt="hello",
+            model="gemini-2.5-flash",
+            depends=[],
+        )
+        cmd = record["command"]
+        assert " -m " not in cmd
+        assert "--model 'gemini-2.5-flash'" in cmd
+
+    def test_cursor_adapter_p_force_adjacent(self):
+        """CursorAdapter の出力で -p --force が隣接"""
+        adapter = CursorAdapter()
+        line = adapter.build_exec_line(
+            uuid="u1",
+            order_path="queue/order.md",
+            result_path="results/result.md",
+            prompt="",
+            model="auto",
+            depends=[],
+        )
+        assert "-p --force" in line
+
+    def test_shell_adapter_bash_pipefail(self):
+        adapter = ShellAdapter()
+        record = adapter.build_exec_record(
+            uuid="u1",
+            order_path="queue/order.sh",
+            result_path="results/result.md",
+            prompt="",
+            model=None,
+            depends=[],
+        )
+        assert record["command"] == "bash -o pipefail queue/order.sh"

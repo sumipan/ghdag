@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from ghdag.llm.spec import ENGINE_SPECS, render_exec_command, render_exec_line
+
 
 class EngineAdapter(Protocol):
     """エンジンごとの exec 行組み立てを担う"""
@@ -56,6 +58,7 @@ class EngineAdapter(Protocol):
 
 class ClaudeAdapter:
     name = "claude"
+    _spec = ENGINE_SPECS["claude"]
 
     def build_exec_line(
         self,
@@ -67,13 +70,14 @@ class ClaudeAdapter:
         model: str | None,
         depends: list[str],
     ) -> str:
-        deps = f"[depends:{','.join(depends)}]" if depends else ""
-        model_flag = f" --model '{model}'" if model else ""
-        return (
-            f"{uuid}{deps}: cat {order_path}"
-            f" | claude -p '{prompt}'{model_flag}"
-            f" --dangerously-skip-permissions"
-            f" | tee -a {result_path}"
+        return render_exec_line(
+            self._spec,
+            uuid=uuid,
+            order_path=order_path,
+            result_path=result_path,
+            prompt=prompt,
+            model=model,
+            depends=depends,
         )
 
     def build_exec_record(
@@ -86,14 +90,9 @@ class ClaudeAdapter:
         model: str | None,
         depends: list[str],
     ) -> dict:
-        model_flag = f" --model '{model}'" if model else ""
         return {
             "uuid": uuid,
-            "command": (
-                f"cat {order_path}"
-                f" | claude -p '{prompt}'{model_flag}"
-                f" --dangerously-skip-permissions"
-            ),
+            "command": render_exec_command(self._spec, order_path=order_path, prompt=prompt, model=model),
             "depends": depends,
             "result_path": result_path,
             "retry": 0,
@@ -103,6 +102,7 @@ class ClaudeAdapter:
 
 class GeminiAdapter:
     name = "gemini"
+    _spec = ENGINE_SPECS["gemini"]
 
     def build_exec_line(
         self,
@@ -114,13 +114,14 @@ class GeminiAdapter:
         model: str | None,
         depends: list[str],
     ) -> str:
-        deps = f"[depends:{','.join(depends)}]" if depends else ""
-        model_flag = f" -m {model}" if model else ""
-        return (
-            f"{uuid}{deps}: cat {order_path}"
-            f" | gemini -p '{prompt}'{model_flag}"
-            f" --approval-mode yolo"
-            f" | tee -a {result_path}"
+        return render_exec_line(
+            self._spec,
+            uuid=uuid,
+            order_path=order_path,
+            result_path=result_path,
+            prompt=prompt,
+            model=model,
+            depends=depends,
         )
 
     def build_exec_record(
@@ -133,14 +134,9 @@ class GeminiAdapter:
         model: str | None,
         depends: list[str],
     ) -> dict:
-        model_flag = f" -m {model}" if model else ""
         return {
             "uuid": uuid,
-            "command": (
-                f"cat {order_path}"
-                f" | gemini -p '{prompt}'{model_flag}"
-                f" --approval-mode yolo"
-            ),
+            "command": render_exec_command(self._spec, order_path=order_path, prompt=prompt, model=model),
             "depends": depends,
             "result_path": result_path,
             "retry": 0,
@@ -163,6 +159,7 @@ def get_adapter(name: str) -> EngineAdapter:
 
 class CursorAdapter:
     name = "cursor"
+    _spec = ENGINE_SPECS["cursor"]
 
     def build_exec_line(
         self,
@@ -174,12 +171,14 @@ class CursorAdapter:
         model: str | None,
         depends: list[str],
     ) -> str:
-        deps = f"[depends:{','.join(depends)}]" if depends else ""
-        model_flag = f" --model '{model}'" if model else ""
-        return (
-            f"{uuid}{deps}: agent{model_flag} -p --force"
-            f" < {order_path}"
-            f" | tee -a {result_path}"
+        return render_exec_line(
+            self._spec,
+            uuid=uuid,
+            order_path=order_path,
+            result_path=result_path,
+            prompt=prompt,
+            model=model,
+            depends=depends,
         )
 
     def build_exec_record(
@@ -192,10 +191,9 @@ class CursorAdapter:
         model: str | None,
         depends: list[str],
     ) -> dict:
-        model_flag = f" --model '{model}'" if model else ""
         return {
             "uuid": uuid,
-            "command": f"agent{model_flag} -p --force < {order_path}",
+            "command": render_exec_command(self._spec, order_path=order_path, prompt=prompt, model=model),
             "depends": depends,
             "result_path": result_path,
             "retry": 0,
@@ -211,6 +209,7 @@ class ShellAdapter:
     """
 
     name = "shell"
+    _spec = ENGINE_SPECS["shell"]
 
     def build_exec_line(
         self,
@@ -222,10 +221,14 @@ class ShellAdapter:
         model: str | None,
         depends: list[str],
     ) -> str:
-        deps = f"[depends:{','.join(depends)}]" if depends else ""
-        return (
-            f"{uuid}{deps}: bash -o pipefail {order_path}"
-            f" | tee -a {result_path}"
+        return render_exec_line(
+            self._spec,
+            uuid=uuid,
+            order_path=order_path,
+            result_path=result_path,
+            prompt=prompt,
+            model=model,
+            depends=depends,
         )
 
     def build_exec_record(
@@ -240,7 +243,7 @@ class ShellAdapter:
     ) -> dict:
         return {
             "uuid": uuid,
-            "command": f"bash -o pipefail {order_path}",
+            "command": render_exec_command(self._spec, order_path=order_path, prompt=prompt, model=model),
             "depends": depends,
             "result_path": result_path,
             "retry": 0,
