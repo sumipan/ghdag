@@ -1,9 +1,11 @@
-"""Tests for ghdag.workflow — TC-1 〜 TC-8 (Issue #79 extended schema)."""
+"""Tests for ghdag.workflow — TC-1 〜 TC-11 (Issue #79 extended schema)."""
 
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -75,41 +77,55 @@ polling_interval: 30
 """
 
 
+def _make_templates(base_dir: Path, *names: str) -> None:
+    """Create placeholder template .md files in base_dir/templates/."""
+    tdir = base_dir / "templates"
+    tdir.mkdir(exist_ok=True)
+    for name in names:
+        (tdir / f"{name}.md").write_text(f"# {name}\n", encoding="utf-8")
+
+
+def _setup_extended_yaml(tmp_path: Path) -> None:
+    """Write _EXTENDED_YAML and its required template files to tmp_path."""
+    (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+    _make_templates(tmp_path, "brushup", "p1-implement", "p2-verify", "p3-report", "merge")
+
+
 class TestTC1YamlParseOk:
     def test_load_returns_config_list(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        _setup_extended_yaml(tmp_path)
         configs = load_workflows(tmp_path)
         assert len(configs) == 1
 
     def test_workflow_name(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        _setup_extended_yaml(tmp_path)
         config = load_workflows(tmp_path)[0]
         assert config.name == "stash-pipeline"
 
     def test_trigger_count(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        _setup_extended_yaml(tmp_path)
         config = load_workflows(tmp_path)[0]
         assert len(config.triggers) == 4
 
     def test_trigger_handler_field(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        _setup_extended_yaml(tmp_path)
         config = load_workflows(tmp_path)[0]
         assert config.triggers[0].label == "pipeline:draft-ready"
         assert config.triggers[0].handler == "brushup"
 
     def test_handlers_is_dict(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        _setup_extended_yaml(tmp_path)
         config = load_workflows(tmp_path)[0]
         assert isinstance(config.handlers, dict)
         assert "impl" in config.handlers
 
     def test_impl_handler_has_three_steps(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        _setup_extended_yaml(tmp_path)
         config = load_workflows(tmp_path)[0]
         assert len(config.handlers["impl"].steps) == 3
 
     def test_impl_steps_ids_and_models(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        _setup_extended_yaml(tmp_path)
         config = load_workflows(tmp_path)[0]
         steps = config.handlers["impl"].steps
         assert steps[0].id == "p1"
@@ -120,13 +136,13 @@ class TestTC1YamlParseOk:
         assert steps[2].depends == ["p2"]
 
     def test_on_trigger_issue_context(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        _setup_extended_yaml(tmp_path)
         config = load_workflows(tmp_path)[0]
         assert config.handlers["brushup"].on_trigger is not None
         assert config.handlers["brushup"].on_trigger.issue_context is True
 
     def test_reset_handler_type(self, tmp_path):
-        (tmp_path / "test.yml").write_text(_EXTENDED_YAML, encoding="utf-8")
+        _setup_extended_yaml(tmp_path)
         config = load_workflows(tmp_path)[0]
         assert config.handlers["reset"].type == "reset"
 
@@ -190,6 +206,7 @@ handlers:
 polling_interval: 30
 """
         (tmp_path / "test.yml").write_text(yaml_unknown, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
         configs = load_workflows(tmp_path)
         assert len(configs) == 1
 
@@ -671,6 +688,7 @@ handlers:
 polling_interval: 30
 """
         (tmp_path / "stash-pipeline.yml").write_text(stash_pipeline_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup", "p1-implement", "p2-verify", "p3-report", "merge")
         configs = load_workflows(tmp_path)
         assert len(configs) == 1
         config = configs[0]
@@ -699,6 +717,7 @@ handlers:
         model: claude-opus-4-6
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
         configs = load_workflows(tmp_path)
         assert configs[0].handlers["brushup"].context_hook == "python -m my_hook"
 
@@ -716,6 +735,7 @@ handlers:
         model: claude-opus-4-6
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
         configs = load_workflows(tmp_path)
         assert configs[0].handlers["brushup"].context_hook is None
 
@@ -940,6 +960,9 @@ class TestRemoveIdempotencyMatching:
 class TestTC10TemplateDir:
     def test_template_dir_parsed_from_yaml(self, tmp_path):
         """template_dir が YAML から WorkflowConfig にパースされる"""
+        my_templates = tmp_path / "my-templates"
+        my_templates.mkdir()
+        (my_templates / "brushup.md").write_text("# brushup\n", encoding="utf-8")
         yaml_content = """\
 name: test-pipeline
 template_dir: my-templates
@@ -972,14 +995,18 @@ handlers:
         model: claude-opus-4-6
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
         configs = load_workflows(tmp_path)
         assert configs[0].template_dir is None
 
     def test_template_dir_absolute_path_preserved(self, tmp_path):
         """template_dir が絶対パスの場合はそのまま保持される"""
-        yaml_content = """\
+        abs_templates = tmp_path / "abs-templates"
+        abs_templates.mkdir()
+        (abs_templates / "brushup.md").write_text("# brushup\n", encoding="utf-8")
+        yaml_content = f"""\
 name: test-pipeline
-template_dir: /absolute/path/to/templates
+template_dir: {abs_templates}
 triggers:
   - label: "pipeline:draft-ready"
     handler: brushup
@@ -991,12 +1018,15 @@ handlers:
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
         configs = load_workflows(tmp_path)
-        assert configs[0].template_dir == "/absolute/path/to/templates"
+        assert configs[0].template_dir == str(abs_templates)
 
     def test_template_dir_relative_resolved_against_workflow_dir(self, tmp_path):
         """template_dir の相対パスがワークフローディレクトリ基準で解決される"""
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
+        shared_templates = tmp_path / "shared-templates"
+        shared_templates.mkdir()
+        (shared_templates / "brushup.md").write_text("# brushup\n", encoding="utf-8")
         yaml_content = """\
 name: test-pipeline
 template_dir: ../shared-templates
@@ -1047,6 +1077,7 @@ handlers:
         engine: cursor
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
         configs = load_workflows(tmp_path)
         step = configs[0].handlers["brushup"].steps[0]
         assert step.engine == "cursor"
@@ -1066,6 +1097,7 @@ handlers:
         agent: gemini
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
         configs = load_workflows(tmp_path)
         step = configs[0].handlers["brushup"].steps[0]
         assert step.engine == "claude"
@@ -1086,6 +1118,7 @@ handlers:
         agent: claude
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
         configs = load_workflows(tmp_path)
         step = configs[0].handlers["brushup"].steps[0]
         assert step.engine == "cursor"
@@ -1104,6 +1137,7 @@ handlers:
         model: claude-opus-4-6
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
         configs = load_workflows(tmp_path)
         step = configs[0].handlers["brushup"].steps[0]
         assert step.engine == "claude"
@@ -1145,6 +1179,192 @@ handlers:
         agent: cursor
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
         configs = load_workflows(tmp_path)
         step = configs[0].handlers["brushup"].steps[0]
         assert step.engine == "claude"
+
+# ---------------------------------------------------------------------------
+# TC-11: 静的参照検証（Issue #1045）
+# ---------------------------------------------------------------------------
+
+
+class TestTC11StaticValidation:
+    """AC-3〜AC-10 をカバーするテスト群"""
+
+    def test_handler_reference_mismatch(self, tmp_path):
+        """AC-3: trigger が存在しない handler を参照すると ValueError"""
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: nonexistent
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-sonnet-4-6
+"""
+        (tmp_path / "bad.yml").write_text(yaml_content, encoding="utf-8")
+        with pytest.raises(ValueError, match="handlers に定義されていません"):
+            load_workflows(tmp_path)
+
+    def test_handler_reference_mismatch_includes_handler_name(self, tmp_path):
+        """AC-4: エラーメッセージに未知の handler 名と定義済みリストが含まれる"""
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: nonexistent
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-sonnet-4-6
+"""
+        (tmp_path / "bad.yml").write_text(yaml_content, encoding="utf-8")
+        with pytest.raises(ValueError) as exc_info:
+            load_workflows(tmp_path)
+        msg = str(exc_info.value)
+        assert "nonexistent" in msg
+        assert "brushup" in msg
+
+    def test_template_file_not_found(self, tmp_path):
+        """AC-5, AC-6: template ファイルが存在しない場合 ValueError"""
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-sonnet-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        (tmp_path / "templates").mkdir()
+        with pytest.raises(ValueError) as exc_info:
+            load_workflows(tmp_path)
+        assert "ファイルが見つかりません" in str(exc_info.value)
+        assert "brushup" in str(exc_info.value)
+
+    def test_template_default_dir(self, tmp_path):
+        """AC-7: template_dir 未指定時は 'templates' がデフォルトとして使われる"""
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-sonnet-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        with pytest.raises(ValueError) as exc_info:
+            load_workflows(tmp_path)
+        assert "templates" in str(exc_info.value)
+
+    def test_reset_handler_skips_template_check(self, tmp_path):
+        """AC-8: type: reset handler はテンプレート検証をスキップ（steps が空）"""
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:reset"
+    handler: reset
+handlers:
+  reset:
+    type: reset
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        configs = load_workflows(tmp_path)
+        assert len(configs) == 1
+
+    def test_context_hook_not_found_warns(self, tmp_path, caplog):
+        """AC-9: context_hook コマンドが見つからない場合 warning ログが出る（エラーにはならない）"""
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    context_hook: "nonexistent_cmd_ghdag_test_xyz"
+    steps:
+      - template: brushup
+        model: claude-sonnet-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
+        with caplog.at_level(logging.WARNING, logger="ghdag.workflow.loader"):
+            configs = load_workflows(tmp_path)
+        assert len(configs) == 1
+        assert any(
+            "nonexistent_cmd_ghdag_test_xyz" in r.message for r in caplog.records
+        )
+
+    def test_context_hook_multi_token_checks_first_only(self, tmp_path, caplog):
+        """AC-10: 複数トークンの context_hook は最初のトークン（python）のみ検証される"""
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    context_hook: "python -m nonexistent_module_xyz"
+    steps:
+      - template: brushup
+        model: claude-sonnet-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
+        with caplog.at_level(logging.WARNING, logger="ghdag.workflow.loader"):
+            configs = load_workflows(tmp_path)
+        assert len(configs) == 1
+        assert not any("python" in r.message for r in caplog.records)
+
+    def test_no_warning_without_context_hook(self, tmp_path, caplog):
+        """AC-2: context_hook が未指定の handler では warning が出力されない"""
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-sonnet-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
+        with caplog.at_level(logging.WARNING, logger="ghdag.workflow.loader"):
+            configs = load_workflows(tmp_path)
+        assert len(configs) == 1
+        assert len(caplog.records) == 0
+
+    def test_valid_workflow_loads_successfully(self, tmp_path):
+        """AC-1: 有効な workflow（テンプレート実在・handler 参照正しい）は成功する"""
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+  - label: "pipeline:reset"
+    handler: reset
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+  reset:
+    type: reset
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
+        configs = load_workflows(tmp_path)
+        assert len(configs) == 1
+        assert configs[0].name == "test"
