@@ -50,11 +50,14 @@ class PipelineState:
         """
         if not self._exec_md_path.exists():
             return True
-        needle = f'"idempotency_key": "{key}"'
         with open(self._exec_md_path, encoding="utf-8") as f:
             for line in f:
-                if needle in line:
-                    return False
+                try:
+                    rec = json.loads(line)
+                    if rec.get("idempotency_key") == key:
+                        return False
+                except json.JSONDecodeError:
+                    continue
         return True
 
     def remove_idempotency_matching(self, workflow_name: str, issue_number: int) -> int:
