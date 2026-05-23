@@ -688,7 +688,7 @@ class TestResultContentInjection:
         with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID]), \
              patch("ghdag.pipeline.llm_pipeline.datetime") as mock_dt:
             mock_dt.now.return_value.strftime.return_value = _TS
-            api.submit(steps, {})
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         p2_ctx = order_builder.build_order.call_args_list[1][0][1]
         assert p2_ctx["p1_result_content"] == result_content
@@ -703,7 +703,7 @@ class TestResultContentInjection:
         with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID]), \
              patch("ghdag.pipeline.llm_pipeline.datetime") as mock_dt:
             mock_dt.now.return_value.strftime.return_value = _TS
-            api.submit(steps, {})
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         p2_ctx = order_builder.build_order.call_args_list[1][0][1]
         assert p2_ctx["p1_result_content"] == ""
@@ -722,7 +722,7 @@ class TestResultContentInjection:
         with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID]), \
              patch("ghdag.pipeline.llm_pipeline.datetime") as mock_dt:
             mock_dt.now.return_value.strftime.return_value = _TS
-            api.submit(steps, {})
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         p2_ctx = order_builder.build_order.call_args_list[1][0][1]
         assert p2_ctx["p1_result_filename"] == f"{_TS}-claude-result-{_P1_UUID}.md"
@@ -744,7 +744,7 @@ class TestResultContentInjection:
         with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID, _P3_UUID]), \
              patch("ghdag.pipeline.llm_pipeline.datetime") as mock_dt:
             mock_dt.now.return_value.strftime.return_value = _TS
-            api.submit(steps, {})
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         p3_ctx = order_builder.build_order.call_args_list[2][0][1]
         assert p3_ctx["p1_result_content"] == content_p1
