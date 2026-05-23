@@ -125,7 +125,13 @@ class DagEngine:
                 if not all_deps_done:
                     continue
 
-                # All deps succeeded — launch
+                # All deps succeeded — check concurrency limit before launching
+                if (
+                    self._config.max_concurrency is not None
+                    and len(self._running) >= self._config.max_concurrency
+                ):
+                    continue
+
                 if launched > 0:
                     time.sleep(self._config.launch_stagger)
 
