@@ -9,9 +9,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
