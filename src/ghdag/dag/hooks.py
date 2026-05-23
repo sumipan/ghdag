@@ -22,6 +22,7 @@ class DagHooks(Protocol):
     def on_shutdown(self, signum: int) -> None: ...
     def check_rejected(self, result_path: str) -> bool: ...
     def check_pipeline_status(self, result_path: str) -> "str | None": ...
+    def check_promote_target(self, result_path: str) -> "str | None": ...
 
 
 class DefaultHooks:
@@ -112,3 +113,11 @@ class DefaultHooks:
     def check_pipeline_status(self, result_path: str) -> "str | None":
         from ._util import check_pipeline_status
         return check_pipeline_status(result_path)
+
+    def check_promote_target(self, result_path: str) -> "str | None":
+        """Return the target path to promote result_path to, or None to skip.
+
+        Opt-in: only returns a non-None value when a hook subclass overrides this.
+        Callers must never auto-promote without an explicit non-None return value.
+        """
+        return None

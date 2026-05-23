@@ -352,6 +352,7 @@ class DagEngine:
                     else:
                         state_mark_done(self._config.exec_done_dir, uuid, 0)
                         self._hooks.on_task_success(uuid, task, metrics)
+                        self._run_promote(effective_result_path)
 
             else:
                 state_mark_done(self._config.exec_done_dir, uuid, returncode)
@@ -417,11 +418,29 @@ class DagEngine:
                 self._hooks.on_task_success(parent_uuid, parent_task, parent_metrics)
                 known_done.add(parent_uuid)
                 known_succeeded.add(parent_uuid)
+                parent_result_path = parent_task.result_path or _extract_tee_target(parent_task.command)
+                self._run_promote(parent_result_path)
 
             del self._fanout_pending[parent_uuid]
             del self._fanout_tasks[parent_uuid]
             del self._fanout_metrics[parent_uuid]
             logger.info("FanOut join complete for [%s] (failed_children=%s)", parent_uuid, failed_children)
+
+    def _run_promote(self, result_path: str | None) -> None:
+        if not result_path:
+            return
+        promote_target = self._hooks.check_promote_target(result_path)
+        if not promote_target:
+            return
+        from ghdag.files import md_promote
+        try:
+            md_promote(
+                result_path,
+                promote_target,
+                repo_root=Path(self._config.exec_md_path).parent,
+            )
+        except Exception:
+            logger.warning("Promote failed for %s → %s", result_path, promote_target, exc_info=True)
 
     def _propagate_dep_failed(self, known_done: set[str], known_succeeded: set[str]) -> None:
         """Mark tasks whose dependencies have failed as DEP_FAILED."""
