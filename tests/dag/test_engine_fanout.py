@@ -52,8 +52,8 @@ class _CapturingHooks:
         return None
 
 
-def _make_engine(tmp_path: Path, jsonl: bool = True) -> tuple[DagEngine, _CapturingHooks, Path]:
-    exec_file = tmp_path / ("exec.jsonl" if jsonl else "exec.md")
+def _make_engine(tmp_path: Path) -> tuple[DagEngine, _CapturingHooks, Path]:
+    exec_file = tmp_path / "exec.jsonl"
     exec_file.write_text("")
     done_dir = tmp_path / "done"
     done_dir.mkdir()
@@ -113,7 +113,7 @@ ghdag_fanout:
 
 class TestAC1FanoutSpawnChildren:
     def test_spawn_adds_three_jsonl_children(self, tmp_path):
-        engine, hooks, exec_file = _make_engine(tmp_path, jsonl=True)
+        engine, hooks, exec_file = _make_engine(tmp_path)
         parent_uuid = "parent-001"
         task = Task(uuid=parent_uuid, command="true")
         spec = FanOutSpec(children=[
@@ -130,20 +130,8 @@ class TestAC1FanoutSpawnChildren:
         assert f"{parent_uuid}--fo--item-002" in uuids
         assert f"{parent_uuid}--fo--item-003" in uuids
 
-    def test_spawn_adds_exec_md_children(self, tmp_path):
-        engine, hooks, exec_file = _make_engine(tmp_path, jsonl=False)
-        parent_uuid = "parent-md"
-        task = Task(uuid=parent_uuid, command="true")
-        spec = FanOutSpec(children=[
-            FanOutItem(id="child-a", command="echo a"),
-        ])
-        engine._spawn_fanout(parent_uuid, task, spec, _base_metrics(parent_uuid))
-
-        content = exec_file.read_text()
-        assert f"{parent_uuid}--fo--child-a: echo a" in content
-
     def test_check_completions_detects_fanout_from_result_file(self, tmp_path):
-        engine, hooks, exec_file = _make_engine(tmp_path, jsonl=True)
+        engine, hooks, exec_file = _make_engine(tmp_path)
         parent_uuid = "parent-check"
         result_file = tmp_path / "result.md"
         task = Task(uuid=parent_uuid, command="true", result_path=str(result_file))
@@ -161,7 +149,7 @@ class TestAC1FanoutSpawnChildren:
 
 class TestAC2ParentNotMarkedDone:
     def test_parent_not_done_after_spawn(self, tmp_path):
-        engine, hooks, exec_file = _make_engine(tmp_path, jsonl=True)
+        engine, hooks, exec_file = _make_engine(tmp_path)
         parent_uuid = "parent-nodelay"
         task = Task(uuid=parent_uuid, command="true")
         spec = FanOutSpec(children=[FanOutItem(id="c1", command="echo 1")])
@@ -172,7 +160,7 @@ class TestAC2ParentNotMarkedDone:
         assert parent_uuid in engine._fanout_pending
 
     def test_parent_not_done_after_check_completions(self, tmp_path):
-        engine, hooks, exec_file = _make_engine(tmp_path, jsonl=True)
+        engine, hooks, exec_file = _make_engine(tmp_path)
         parent_uuid = "parent-no-done"
         result_file = tmp_path / "result2.md"
         task = Task(uuid=parent_uuid, command="true", result_path=str(result_file))
@@ -188,7 +176,7 @@ class TestAC2ParentNotMarkedDone:
 
 class TestAC3JoinAllChildrenSuccess:
     def test_all_children_succeed_marks_parent_done(self, tmp_path):
-        engine, hooks, exec_file = _make_engine(tmp_path, jsonl=True)
+        engine, hooks, exec_file = _make_engine(tmp_path)
         parent_uuid = "parent-join"
         task = Task(uuid=parent_uuid, command="true")
         metrics = _base_metrics(parent_uuid)
@@ -210,7 +198,7 @@ class TestAC3JoinAllChildrenSuccess:
         assert parent_uuid not in engine._fanout_pending
 
     def test_partial_done_does_not_trigger(self, tmp_path):
-        engine, hooks, exec_file = _make_engine(tmp_path, jsonl=True)
+        engine, hooks, exec_file = _make_engine(tmp_path)
         parent_uuid = "parent-partial"
         task = Task(uuid=parent_uuid, command="true")
         child_uuids = {f"{parent_uuid}--fo--c1", f"{parent_uuid}--fo--c2"}
@@ -231,7 +219,7 @@ class TestAC3JoinAllChildrenSuccess:
 
 class TestAC4ChildFailurePropagates:
     def test_failed_child_marks_parent_fanout_failed(self, tmp_path):
-        engine, hooks, exec_file = _make_engine(tmp_path, jsonl=True)
+        engine, hooks, exec_file = _make_engine(tmp_path)
         parent_uuid = "parent-fail"
         task = Task(uuid=parent_uuid, command="true")
         child_uuids = {f"{parent_uuid}--fo--c1", f"{parent_uuid}--fo--c2"}
@@ -258,7 +246,7 @@ class TestAC4ChildFailurePropagates:
 
 class TestAC8NoFanoutNormalSuccess:
     def test_no_fanout_block_triggers_normal_success(self, tmp_path):
-        engine, hooks, exec_file = _make_engine(tmp_path, jsonl=True)
+        engine, hooks, exec_file = _make_engine(tmp_path)
         uuid = "task-normal"
         # Use command with no tee, no result_path → effective_result_path is None
         task = Task(uuid=uuid, command="true")
@@ -272,7 +260,7 @@ class TestAC8NoFanoutNormalSuccess:
         assert hooks.success[0][0] == uuid
 
     def test_result_file_without_fanout_block_normal_success(self, tmp_path):
-        engine, hooks, exec_file = _make_engine(tmp_path, jsonl=True)
+        engine, hooks, exec_file = _make_engine(tmp_path)
         uuid = "task-plain-result"
         result_file = tmp_path / "plain.md"
         task = Task(uuid=uuid, command="true", result_path=str(result_file))
@@ -309,7 +297,7 @@ class TestAC9ValidateDependencies:
 class TestAC2FanoutParseFailed:
     def test_t6_invalid_child_id_marks_parent_fanout_parse_failed(self, tmp_path):
         """T6: fanout spec with --fo-- in child id → FANOUT_PARSE_FAILED status."""
-        engine, hooks, exec_file = _make_engine(tmp_path, jsonl=True)
+        engine, hooks, exec_file = _make_engine(tmp_path)
         uuid = "parent-parse-fail"
         result_file = tmp_path / "result_pf.md"
         task = Task(uuid=uuid, command="true", result_path=str(result_file))
@@ -348,7 +336,7 @@ ghdag_fanout:
 class TestParentNotRelaunched:
     def test_parent_in_fanout_pending_is_skipped_in_launch_loop(self, tmp_path):
         """Parent UUID in _fanout_pending must not be re-launched."""
-        engine, hooks, exec_file = _make_engine(tmp_path, jsonl=True)
+        engine, hooks, exec_file = _make_engine(tmp_path)
         parent_uuid = "parent-skip"
         task = Task(uuid=parent_uuid, command="true")
         engine._tasks[parent_uuid] = task
