@@ -48,7 +48,7 @@ def _make_config(tmp_path, exec_md_content: str, **overrides) -> DagConfig:
     exec_jsonl.parent.mkdir(parents=True, exist_ok=True)
     exec_jsonl.write_text(_md_to_jsonl(exec_md_content), encoding="utf-8")
     defaults = dict(
-        exec_md_path=str(exec_jsonl),
+        exec_jsonl_path=str(exec_jsonl),
         exec_done_dir=str(tmp_path / "jobs" / "done"),
         poll_interval=0.1,
         launch_stagger=0.0,
@@ -188,7 +188,7 @@ class TestAppendTask:
 
         assert not errors
 
-        lines = Path(config.exec_md_path).read_text().strip().split("\n")
+        lines = Path(config.exec_jsonl_path).read_text().strip().split("\n")
         # Should have 40 non-empty lines
         non_empty = [line for line in lines if line.strip()]
         assert len(non_empty) == 40
@@ -300,11 +300,11 @@ class TestDagConfigDefaults:
     """AC 4-1, 4-2: lock_file のデフォルト"""
 
     def test_lock_file_defaults_to_exec_md_parent(self, tmp_path):
-        """4-1: lock_file 未指定時は exec_md_path の親ディレクトリに .ghdag.lock が作られる"""
+        """4-1: lock_file 未指定時は exec_jsonl_path の親ディレクトリに .ghdag.lock が作られる"""
         exec_jsonl = tmp_path / "jobs" / "exec.jsonl"
         exec_jsonl.parent.mkdir(parents=True, exist_ok=True)
         exec_jsonl.write_text("")
-        config = DagConfig(exec_md_path=str(exec_jsonl))
+        config = DagConfig(exec_jsonl_path=str(exec_jsonl))
         assert config.lock_file == Path(str(exec_jsonl.parent)) / ".ghdag.lock"
 
     def test_lock_file_explicit_preserved(self, tmp_path):
@@ -312,7 +312,7 @@ class TestDagConfigDefaults:
         exec_jsonl = tmp_path / "exec.jsonl"
         exec_jsonl.write_text("")
         custom = str(tmp_path / "custom.lock")
-        config = DagConfig(exec_md_path=str(exec_jsonl), lock_file=custom)
+        config = DagConfig(exec_jsonl_path=str(exec_jsonl), lock_file=custom)
         assert config.lock_file == Path(custom)
 
 
@@ -422,7 +422,7 @@ def _make_jsonl_config(tmp_path, tasks: list[dict], **overrides) -> DagConfig:
     lines = [json.dumps(t) for t in tasks]
     exec_jsonl.write_text("\n".join(lines), encoding="utf-8")
     defaults = dict(
-        exec_md_path=str(exec_jsonl),
+        exec_jsonl_path=str(exec_jsonl),
         exec_done_dir=str(tmp_path / "jobs" / "done"),
         poll_interval=0.1,
         launch_stagger=0.0,
@@ -620,7 +620,7 @@ class TestEngineModelFromStructuredFields:
         exec_jsonl.parent.mkdir(parents=True, exist_ok=True)
         exec_jsonl.write_text(jsonl_content, encoding="utf-8")
         defaults = dict(
-            exec_md_path=str(exec_jsonl),
+            exec_jsonl_path=str(exec_jsonl),
             exec_done_dir=str(tmp_path / "jobs" / "done"),
             poll_interval=0.1,
             launch_stagger=0.0,

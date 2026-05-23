@@ -180,7 +180,7 @@ class TestAppendExecRecordsAudit:
         from ghdag.pipeline.state import PipelineState
 
         exec_path = tmp_path / "exec.jsonl"
-        state = PipelineState(state_dir=tmp_path / ".state", exec_md_path=exec_path)
+        state = PipelineState(state_dir=tmp_path / ".state", exec_jsonl_path=exec_path)
         ctx = AuditContext(source="issuesmith")
         records = [{"uuid": UUID1, "command": "claude -p --force < order.md"}]
 
@@ -197,7 +197,7 @@ class TestAppendExecRecordsAudit:
         from ghdag.pipeline.state import PipelineState
 
         exec_path = tmp_path / "exec.jsonl"
-        state = PipelineState(state_dir=tmp_path / ".state", exec_md_path=exec_path)
+        state = PipelineState(state_dir=tmp_path / ".state", exec_jsonl_path=exec_path)
         records = [{"command": "cmd", "idempotency_key": "k"}]
 
         state.append_exec_records(records, audit_context=AuditContext())

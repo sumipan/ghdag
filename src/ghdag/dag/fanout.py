@@ -96,7 +96,7 @@ def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
 
 
 def build_child_exec_line(child_uuid: str, command: str) -> str:
-    """Build an exec.md-format line for a fan-out child task."""
+    """Build an exec.jsonl-format line for a fan-out child task."""
     return f"{child_uuid}: {command}"
 
 

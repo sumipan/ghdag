@@ -72,7 +72,7 @@ def _make_config(tmp_path, records: list[dict], **overrides) -> DagConfig:
         encoding="utf-8",
     )
     defaults = dict(
-        exec_md_path=str(exec_jsonl),
+        exec_jsonl_path=str(exec_jsonl),
         exec_done_dir=str(tmp_path / "jobs" / "done"),
         poll_interval=0.1,
         launch_stagger=0.0,

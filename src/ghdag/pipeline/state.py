@@ -22,14 +22,14 @@ from ghdag.pipeline.audit import AuditContext, write_audit_log
 
 
 class PipelineState:
-    def __init__(self, state_dir: str | Path, exec_md_path: str | Path):
+    def __init__(self, state_dir: str | Path, exec_jsonl_path: str | Path):
         """
         Args:
             state_dir: JSON 状態ファイルの保存先ディレクトリ（例: .pipeline-state/）
-            exec_md_path: exec.md のパス（冪等性キーの読み書き先）
+            exec_jsonl_path: exec.md のパス（冪等性キーの読み書き先）
         """
         self._state_dir = Path(state_dir)
-        self._exec_md_path = Path(exec_md_path)
+        self._exec_jsonl_path = Path(exec_jsonl_path)
 
     # --- 冪等性（exec.jsonl レコード） ---
 
@@ -39,9 +39,9 @@ class PipelineState:
         JSONL レコードの "idempotency_key" フィールドで判定する。
         ファイルが存在しない場合も True を返す。
         """
-        if not self._exec_md_path.exists():
+        if not self._exec_jsonl_path.exists():
             return True
-        with open(self._exec_md_path, encoding="utf-8") as f:
+        with open(self._exec_jsonl_path, encoding="utf-8") as f:
             for line in f:
                 try:
                     rec = json.loads(line)
@@ -57,13 +57,13 @@ class PipelineState:
         Returns:
             削除したレコード数
         """
-        if not self._exec_md_path.exists():
+        if not self._exec_jsonl_path.exists():
             return 0
 
         prefix = f"{workflow_name}:"
         suffix = f":{issue_number}"
 
-        with open(self._exec_md_path, encoding="utf-8") as f:
+        with open(self._exec_jsonl_path, encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_SH)
             try:
                 lines = f.readlines()
@@ -89,7 +89,7 @@ class PipelineState:
             new_lines.append(line)
 
         if removed > 0:
-            with open(self._exec_md_path, "w", encoding="utf-8") as f:
+            with open(self._exec_jsonl_path, "w", encoding="utf-8") as f:
                 fcntl.flock(f, fcntl.LOCK_EX)
                 try:
                     f.writelines(new_lines)
@@ -132,7 +132,7 @@ class PipelineState:
     ) -> None:
         """exec.jsonl に records を JSONL 形式で追記。fcntl 排他ロック付き。"""
         lines = [json.dumps(r, ensure_ascii=False) for r in records]
-        with open(self._exec_md_path, "a", encoding="utf-8") as f:
+        with open(self._exec_jsonl_path, "a", encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
             try:
                 f.write("\n".join(lines) + "\n")
@@ -140,7 +140,7 @@ class PipelineState:
                 fcntl.flock(f, fcntl.LOCK_UN)
 
         ctx = audit_context or AuditContext()
-        audit_path = self._exec_md_path.parent / "audit.jsonl"
+        audit_path = self._exec_jsonl_path.parent / "audit.jsonl"
         uuids = [r["uuid"] for r in records if "uuid" in r]
         write_audit_log(
             audit_path,
@@ -195,12 +195,12 @@ class PipelineState:
             repo_root: リポジトリルートのパス
 
         Returns:
-            PipelineState(state_dir=repo_root/.pipeline-state, exec_md_path=repo_root/jobs/exec.jsonl)
+            PipelineState(state_dir=repo_root/.pipeline-state, exec_jsonl_path=repo_root/jobs/exec.jsonl)
         """
         root = Path(repo_root)
         return cls(
             state_dir=root / ".pipeline-state",
-            exec_md_path=root / "jobs" / "exec.jsonl",
+            exec_jsonl_path=root / "jobs" / "exec.jsonl",
         )
 
     def parse_exec_tasks(self) -> dict[str, str]:
@@ -211,11 +211,11 @@ class PipelineState:
         Returns:
             {uuid: command} の辞書。
         """
-        if not self._exec_md_path.exists():
+        if not self._exec_jsonl_path.exists():
             return {}
 
         result: dict[str, str] = {}
-        with open(self._exec_md_path, encoding="utf-8") as f:
+        with open(self._exec_jsonl_path, encoding="utf-8") as f:
             for line in f:
                 stripped = line.strip()
                 if not stripped:
@@ -239,10 +239,10 @@ class PipelineState:
         Returns:
             削除した行数
         """
-        if not self._exec_md_path.exists():
+        if not self._exec_jsonl_path.exists():
             return 0
 
-        with open(self._exec_md_path, "a+", encoding="utf-8") as f:
+        with open(self._exec_jsonl_path, "a+", encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
             try:
                 f.seek(0)

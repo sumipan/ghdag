@@ -232,7 +232,7 @@ class TestDagHooksIntegration:
         hooks.check_promote_target.return_value = str(target_file)
 
         config = DagConfig(
-            exec_md_path=str(exec_file),
+            exec_jsonl_path=str(exec_file),
             exec_done_dir=str(done_dir),
             lock_file=str(repo_root / ".lock"),
         )
@@ -283,7 +283,7 @@ class TestDagHooksIntegration:
         hooks.check_promote_target.return_value = None
 
         config = DagConfig(
-            exec_md_path=str(exec_file),
+            exec_jsonl_path=str(exec_file),
             exec_done_dir=str(done_dir),
             lock_file=str(repo_root / ".lock"),
         )
@@ -328,7 +328,7 @@ class TestDagHooksIntegration:
         hooks.check_promote_target.return_value = "notes/summary.md"
 
         config = DagConfig(
-            exec_md_path=str(exec_file),
+            exec_jsonl_path=str(exec_file),
             exec_done_dir=str(done_dir),
             lock_file=str(repo_root / ".lock"),
         )
