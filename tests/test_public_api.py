@@ -1,7 +1,6 @@
 """Tests for public API surface and py.typed marker (issue-1064)."""
 
 import pathlib
-import importlib
 
 
 def test_py_typed_marker_exists():
