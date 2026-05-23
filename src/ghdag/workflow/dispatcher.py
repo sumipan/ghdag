@@ -9,7 +9,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from ghdag.pipeline.audit import AuditContext
+from ghdag.pipeline.audit import AuditContext, write_rate_limit_audit
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.github import GitHubIssueClient
 from ghdag.workflow.schema import (
@@ -20,6 +20,8 @@ from ghdag.workflow.schema import (
 )
 
 logger = logging.getLogger(__name__)
+
+_RATE_LIMIT_THRESHOLD = 100
 
 
 class WorkflowDispatcher:
@@ -168,6 +170,7 @@ class WorkflowDispatcher:
         count = 0
         while max_iterations is None or count < max_iterations:
             matches = self.poll_once()
+            self._observe_rate_limit()
             for match in matches:
                 try:
                     self.dispatch(
@@ -204,6 +207,30 @@ class WorkflowDispatcher:
             count += 1
             if max_iterations is None or count < max_iterations:
                 time.sleep(polling_interval)
+
+    def _observe_rate_limit(self) -> None:
+        """GitHub API rate limit を取得し、audit.jsonl に記録する。"""
+        rate = self._github.get_rate_limit()
+        if rate is None:
+            return
+        remaining = rate.get("remaining")
+        limit = rate.get("limit")
+        reset = rate.get("reset")
+        if remaining is None or limit is None or reset is None:
+            return
+
+        audit_path = Path(self._queue_dir) / "audit.jsonl"
+        write_rate_limit_audit(
+            audit_path,
+            remaining=remaining,
+            limit=limit,
+            reset=reset,
+        )
+        if remaining <= _RATE_LIMIT_THRESHOLD:
+            logger.warning(
+                "GitHub API rate limit low: %d/%d remaining (resets at %d)",
+                remaining, limit, reset,
+            )
 
     # --- internal helpers ---
 

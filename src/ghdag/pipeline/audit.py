@@ -146,6 +146,31 @@ def write_task_exit_audit(
         print(f"[audit] warning: failed to write audit log: {e}", file=sys.stderr)
 
 
+def write_rate_limit_audit(
+    audit_path: Path,
+    *,
+    remaining: int,
+    limit: int,
+    reset: int,
+    correlation_id: str | None = None,
+) -> None:
+    """rate limit snapshot を audit.jsonl に 1 行追記する。"""
+    _maybe_rotate(audit_path)
+    record = {
+        "event": "github_rate_limit",
+        "timestamp": datetime.now(JST).isoformat(),
+        "remaining": remaining,
+        "limit": limit,
+        "reset": reset,
+        "correlation_id": correlation_id,
+    }
+    try:
+        with open(audit_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError as e:
+        print(f"[audit] warning: failed to write rate limit audit: {e}", file=sys.stderr)
+
+
 def _capture_caller_stack() -> list[str]:
     frames = []
     for fi in inspect.stack():
