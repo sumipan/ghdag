@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ghdag.files.models import PromoteResult, PromoteStatus
+from ghdag.files.models import PathTraversalError, PromoteResult, PromoteStatus
 
 
 @pytest.fixture
@@ -169,7 +169,7 @@ class TestMdPromoteErrors:
 
         write_file(repo_root / "notes" / "summary.md", "# Summary\n")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(PathTraversalError):
             md_promote("../../../etc/passwd", "notes/summary.md", repo_root=repo_root)
 
     def test_p11_path_traversal_target(self, repo_root: Path) -> None:
@@ -178,7 +178,7 @@ class TestMdPromoteErrors:
 
         write_file(repo_root / "result" / "r1.md", "content\n")
 
-        with pytest.raises(ValueError):
+        with pytest.raises(PathTraversalError):
             md_promote("result/r1.md", "../../../etc/passwd", repo_root=repo_root)
 
     def test_p12_audit_write_failure_does_not_raise(self, repo_root: Path) -> None:

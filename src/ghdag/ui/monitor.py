@@ -95,41 +95,6 @@ def max_ts_in_command(cmd: str) -> Optional[datetime]:
     return best
 
 
-def parse_exec_md(path: str) -> tuple[dict[str, MonitorTask], list[str]]:
-    tasks: dict[str, MonitorTask] = {}
-    file_order: list[str] = []
-    try:
-        with open(path, encoding="utf-8") as f:
-            lines = f.readlines()
-    except FileNotFoundError:
-        return tasks, file_order
-
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-
-        m = re.match(r"^([a-fA-F0-9\-]+)((?:\[[^\]]+\])*)\s*:\s*(.+)$", line)
-        if not m:
-            continue
-
-        uuid = m.group(1).strip()
-        annotations = m.group(2)
-        command = m.group(3).strip()
-
-        depends_m = re.search(r"\[depends:([^\]]+)\]", annotations)
-        depends = set(d.strip() for d in depends_m.group(1).split(",")) if depends_m else set()
-
-        retry_m = re.search(r"\[retry:(\d+)\]", annotations)
-        retry = int(retry_m.group(1)) if retry_m else 0
-
-        if uuid not in tasks:
-            file_order.append(uuid)
-        tasks[uuid] = MonitorTask(uuid=uuid, command=command, depends=depends, retry=retry)
-
-    return tasks, file_order
-
-
 def topo_sort_tasks(tasks: dict[str, MonitorTask], file_order: list[str]) -> list[str]:
     file_idx = {u: i for i, u in enumerate(file_order)}
     in_deg = {u: sum(1 for d in tasks[u].depends if d in tasks) for u in tasks}
@@ -388,13 +353,9 @@ def _parse_exec_jsonl(path: str) -> tuple[dict[str, MonitorTask], list[str]]:
     return tasks, file_order
 
 
-def _detect_exec_path(repo_root: Path) -> tuple[Path, bool]:
-    """exec ファイルを自動検出する。(path, is_jsonl) を返す。"""
-    jsonl = repo_root / "jobs" / "exec.jsonl"
-    if jsonl.exists():
-        return jsonl, True
-    legacy = repo_root / "queue" / "exec.md"
-    return legacy, False
+def _detect_exec_path(repo_root: Path) -> Path:
+    """exec.jsonl のパスを返す。"""
+    return repo_root / "jobs" / "exec.jsonl"
 
 
 def _detect_exec_done_dir(repo_root: Path) -> Path:
@@ -409,12 +370,9 @@ def build_rows(
     running_uuids_override: Optional[set[str]] = None,
     detect_running: bool = True,
 ) -> tuple[list[Row], dict[str, MonitorTask], list[str]]:
-    exec_path, is_jsonl = _detect_exec_path(repo_root)
+    exec_path = _detect_exec_path(repo_root)
     exec_done_dir = _detect_exec_done_dir(repo_root)
-    if is_jsonl:
-        tasks, file_order = _parse_exec_jsonl(str(exec_path))
-    else:
-        tasks, file_order = parse_exec_md(str(exec_path))
+    tasks, file_order = _parse_exec_jsonl(str(exec_path))
     if not tasks:
         return [], tasks, file_order
 

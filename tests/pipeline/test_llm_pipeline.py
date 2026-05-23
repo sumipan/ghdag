@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ghdag.pipeline.audit import AuditContext
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.pipeline.llm_pipeline import DependencyError, LLMPipelineAPI
 from ghdag.workflow.schema import StepConfig
 
 
@@ -16,14 +16,11 @@ _TEST_AUDIT_CTX = AuditContext(source="test")
 
 def _make_api(
     queue_dir: str = "queue",
-    *,
-    jsonl_mode: bool = False,
 ) -> tuple[LLMPipelineAPI, MagicMock, MagicMock]:
     """LLMPipelineAPI with mocked PipelineState and OrderBuilder."""
     pipeline_state = MagicMock()
     pipeline_state.check_idempotency.return_value = True
     pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
-    pipeline_state._is_jsonl_mode = jsonl_mode
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
     api = LLMPipelineAPI(
@@ -40,15 +37,19 @@ def _make_api(
 
 
 class TestAC1SingleStep:
-    def test_submit_single_step_returns_exec_lines(self):
-        """1 step で exec_lines 1 行（idempotency なし）。"""
+    def test_submit_single_step_returns_exec_records(self):
+        """1 step で exec_records 1 レコード（JSONL 形式）。"""
+        import json as _json
         api, pipeline_state, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {"issue_number": "10"}, audit_context=_TEST_AUDIT_CTX)
 
         assert len(exec_lines) == 1
-        call_args = pipeline_state.append_exec.call_args
-        assert call_args[0][0] == exec_lines
+        # JSON parse succeeds
+        record = _json.loads(exec_lines[0])
+        assert "uuid" in record
+        assert "command" in record
+        pipeline_state.append_exec_records.assert_called_once()
 
     def test_submit_writes_order_file(self):
         """write_order_file が 1 回呼ばれる。"""
@@ -68,28 +69,16 @@ class TestAC1SingleStep:
         call_args = order_builder.build_order.call_args[0]
         assert call_args[0] == "brushup"
 
-    def test_exec_line_format(self):
-        """exec 行が {uuid}: cat queue/{order} | {cmd} | tee -a queue/{result} 形式。"""
-        api, pipeline_state, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        line = exec_lines[0]
-        assert ": cat queue/" in line
-        assert " | " in line
-        assert " | tee -a queue/" in line
-        assert "[depends:" not in line
-
-    def test_exec_line_contains_model(self):
-        """exec 行にモデル名が含まれる。"""
+    def test_exec_record_contains_model(self):
+        """exec レコードの command にモデル名が含まれる。"""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        assert "--model" in exec_lines[0] and "claude-opus-4-6" in exec_lines[0]
+        assert "claude-opus-4-6" in exec_lines[0]
 
-    def test_exec_line_contains_dangerously_skip_permissions(self):
-        """exec 行に --dangerously-skip-permissions が含まれる（engine=claude）。"""
+    def test_exec_record_contains_dangerously_skip_permissions(self):
+        """exec レコードの command に --dangerously-skip-permissions が含まれる（engine=claude）。"""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
@@ -119,7 +108,8 @@ class TestAC1IdempotencyKey:
 
 class TestAC1TwoStepsWithDepends:
     def test_p2_has_depends_p1_uuid(self):
-        """p2 の exec 行に [depends:{p1_uuid}] が含まれる。"""
+        """p2 の exec レコードの depends に p1_uuid が含まれる。"""
+        import json as _json
         api, _, _ = _make_api()
         steps = [
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
@@ -127,8 +117,9 @@ class TestAC1TwoStepsWithDepends:
         ]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        p1_uuid = exec_lines[0].split(":")[0]
-        assert f"[depends:{p1_uuid}]" in exec_lines[1]
+        p1_record = _json.loads(exec_lines[0])
+        p2_record = _json.loads(exec_lines[1])
+        assert p1_record["uuid"] in p2_record["depends"]
 
     def test_p2_context_has_p1_result_filename(self):
         """P2 の build_order に渡される context に p1_result_filename が含まれる。"""
@@ -148,7 +139,8 @@ class TestAC1TwoStepsWithDepends:
         assert p2_ctx["p1_result_filename"] == expected
 
     def test_three_steps_chain(self):
-        """p1→p2→p3 チェーンで 3 exec 行生成、依存が正しく解決される。"""
+        """p1→p2→p3 チェーンで 3 exec レコード生成、依存が正しく解決される。"""
+        import json as _json
         api, pipeline_state, _ = _make_api()
         steps = [
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
@@ -158,10 +150,11 @@ class TestAC1TwoStepsWithDepends:
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         assert len(exec_lines) == 3
-        p1_uuid = exec_lines[0].split(":")[0]
-        p2_uuid = exec_lines[1].split("[")[0]
-        assert f"[depends:{p1_uuid}]" in exec_lines[1]
-        assert f"[depends:{p2_uuid}]" in exec_lines[2]
+        p1 = _json.loads(exec_lines[0])
+        p2 = _json.loads(exec_lines[1])
+        p3 = _json.loads(exec_lines[2])
+        assert p1["uuid"] in p2["depends"]
+        assert p2["uuid"] in p3["depends"]
 
 
 # ---------------------------------------------------------------------------
@@ -205,14 +198,16 @@ class TestAC4EngineResultFilename:
         expected = f"{p1_ctx['ts']}-gemini-result-{p1_ctx['result_uuid']}.md"
         assert p2_ctx["p1_result_filename"] == expected
 
-    def test_gemini_engine_exec_line_no_skip_permissions(self):
-        """engine=gemini のとき exec 行に --dangerously-skip-permissions が含まれない。"""
+    def test_gemini_engine_exec_record_no_skip_permissions(self):
+        """engine=gemini のとき exec レコードの command に --dangerously-skip-permissions が含まれない。"""
+        import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="p1", model="gemini-2.5-flash", engine="gemini")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        assert "--dangerously-skip-permissions" not in exec_lines[0]
-        assert "gemini" in exec_lines[0]
+        record = _json.loads(exec_lines[0])
+        assert "--dangerously-skip-permissions" not in record["command"]
+        assert "gemini" in record["command"]
 
 
 # ---------------------------------------------------------------------------
@@ -221,19 +216,21 @@ class TestAC4EngineResultFilename:
 
 
 class TestAC3ExecFormat:
-    def test_uuid_at_start_of_exec_line(self):
-        """exec 行が UUID で始まる（36文字のハイフン区切り形式）。"""
+    def test_uuid_field_in_exec_record(self):
+        """exec レコードの uuid フィールドが UUID 形式（36文字のハイフン区切り）。"""
         import re
+        import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        uuid_pattern = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-        assert re.match(uuid_pattern, exec_lines[0])
+        record = _json.loads(exec_lines[0])
+        uuid_pattern = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        assert re.match(uuid_pattern, record["uuid"])
 
-    def test_depends_format(self):
-        """depends の書式が [depends:{uuid1},{uuid2}] 形式。"""
-        import re
+    def test_depends_field_in_exec_record(self):
+        """exec レコードの depends フィールドに p1 の uuid が含まれる。"""
+        import json as _json
         api, _, _ = _make_api()
         steps = [
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
@@ -241,18 +238,21 @@ class TestAC3ExecFormat:
         ]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        dep_pattern = r"\[depends:[0-9a-f\-]+\]"
-        assert re.search(dep_pattern, exec_lines[1])
+        p1_record = _json.loads(exec_lines[0])
+        p2_record = _json.loads(exec_lines[1])
+        assert p1_record["uuid"] in p2_record["depends"]
 
-    def test_tee_appends_to_result_file(self):
-        """exec 行に tee -a queue/{result} が含まれる。"""
+    def test_result_path_in_exec_record(self):
+        """exec レコードに result_path フィールドが含まれる。"""
+        import json as _json
         api, pipeline_state, _ = _make_api()
         pipeline_state.write_order_file.return_value = "20260419-claude-order-abc.md"
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        assert "tee -a queue/" in exec_lines[0]
-        assert "-result-" in exec_lines[0]
+        record = _json.loads(exec_lines[0])
+        assert "result_path" in record
+        assert "-result-" in record["result_path"]
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +311,6 @@ class TestPerWorkflowOrderBuilder:
         pipeline_state = MagicMock()
         pipeline_state.check_idempotency.return_value = True
         pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
-        pipeline_state._is_jsonl_mode = False
 
         default_builder = MagicMock()
         default_builder.build_order.return_value = "default order content"
@@ -351,7 +350,6 @@ class TestPerWorkflowOrderBuilder:
         pipeline_state = MagicMock()
         pipeline_state.check_idempotency.return_value = True
         pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
-        pipeline_state._is_jsonl_mode = False
 
         default_builder = MagicMock()
         default_builder.build_order.return_value = "default order"
@@ -379,7 +377,6 @@ class TestPerWorkflowOrderBuilder:
         pipeline_state = MagicMock()
         pipeline_state.check_idempotency.return_value = True
         pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
-        pipeline_state._is_jsonl_mode = False
 
         default_builder = MagicMock()
         default_builder.build_order.return_value = "default order"
@@ -404,7 +401,6 @@ class TestPerWorkflowOrderBuilder:
         pipeline_state = MagicMock()
         pipeline_state.check_idempotency.return_value = True
         pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
-        pipeline_state._is_jsonl_mode = False
 
         order_builder = MagicMock()
         order_builder.build_order.return_value = "order content"
@@ -432,7 +428,7 @@ class TestAC3DependsValidation:
         steps = [
             StepConfig(id="step_a", template="t", model="m", depends=["nonexistent_step"]),
         ]
-        with pytest.raises(ValueError, match="nonexistent_step"):
+        with pytest.raises(DependencyError, match="nonexistent_step"):
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
     def test_circular_dependency_a_b_a_raises_value_error(self):
@@ -442,7 +438,7 @@ class TestAC3DependsValidation:
             StepConfig(id="a", template="t", model="m", depends=["b"]),
             StepConfig(id="b", template="t", model="m", depends=["a"]),
         ]
-        with pytest.raises(ValueError, match="circular dependency"):
+        with pytest.raises(DependencyError, match="circular dependency"):
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
     def test_valid_linear_dependency_passes(self):
@@ -455,30 +451,30 @@ class TestAC3DependsValidation:
         ]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
         assert len(exec_lines) == 3
-        pipeline_state.append_exec.assert_called_once()
+        pipeline_state.append_exec_records.assert_called_once()
 
     def test_validation_error_no_order_file_written(self):
-        """検証エラー時、order ファイルも exec.md への追記も行われない"""
+        """検証エラー時、order ファイルも exec.jsonl への追記も行われない"""
         api, pipeline_state, _ = _make_api()
         steps = [
             StepConfig(id="a", template="t", model="m", depends=["nonexistent"]),
         ]
-        with pytest.raises(ValueError):
+        with pytest.raises(DependencyError):
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
         pipeline_state.write_order_file.assert_not_called()
-        pipeline_state.append_exec.assert_not_called()
+        pipeline_state.append_exec_records.assert_not_called()
 
     def test_validation_error_circular_no_files_written(self):
-        """循環参照エラー時も order ファイルと exec.md への追記が行われない"""
+        """循環参照エラー時も order ファイルと exec.jsonl への追記が行われない"""
         api, pipeline_state, _ = _make_api()
         steps = [
             StepConfig(id="x", template="t", model="m", depends=["y"]),
             StepConfig(id="y", template="t", model="m", depends=["x"]),
         ]
-        with pytest.raises(ValueError):
+        with pytest.raises(DependencyError):
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
         pipeline_state.write_order_file.assert_not_called()
-        pipeline_state.append_exec.assert_not_called()
+        pipeline_state.append_exec_records.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -487,21 +483,20 @@ class TestAC3DependsValidation:
 
 
 class TestJsonlMode:
-    def test_jsonl_mode_calls_append_exec_records(self):
-        """JSONL モードでは append_exec_records が呼ばれ append_exec は呼ばれない。"""
-        api, pipeline_state, _ = _make_api(jsonl_mode=True)
+    def test_calls_append_exec_records(self):
+        """append_exec_records が呼ばれる。"""
+        api, pipeline_state, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         pipeline_state.append_exec_records.assert_called_once()
-        pipeline_state.append_exec.assert_not_called()
         assert len(exec_lines) == 1
 
-    def test_jsonl_mode_returns_json_strings(self):
-        """JSONL モードの exec_lines は JSON 文字列（uuid フィールドを含む）。"""
+    def test_returns_json_strings(self):
+        """exec_lines は JSON 文字列（uuid フィールドを含む）。"""
         import json as _json
 
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
@@ -510,11 +505,11 @@ class TestJsonlMode:
         assert "command" in record
         assert "result_path" in record
 
-    def test_jsonl_mode_idempotency_in_record(self):
-        """JSONL モードでは idempotency_key がレコードに埋め込まれ、コメント行は生成されない。"""
+    def test_idempotency_in_record(self):
+        """idempotency_key がレコードに埋め込まれ、コメント行は生成されない。"""
         import json as _json
 
-        api, pipeline_state, _ = _make_api(jsonl_mode=True)
+        api, pipeline_state, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, idempotency_key="workflow:handler:42", audit_context=_TEST_AUDIT_CTX)
 
@@ -522,31 +517,31 @@ class TestJsonlMode:
         record = _json.loads(exec_lines[0])
         assert record.get("idempotency_key") == "workflow:handler:42"
 
-    def test_jsonl_mode_result_path_in_record(self):
-        """JSONL モードの result_path フィールドが queue_dir/filename 形式。"""
+    def test_result_path_in_record(self):
+        """result_path フィールドが queue_dir/filename 形式。"""
         import json as _json
 
-        api, _, _ = _make_api(queue_dir="jobs", jsonl_mode=True)
+        api, _, _ = _make_api(queue_dir="jobs")
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         record = _json.loads(exec_lines[0])
         assert record["result_path"].startswith("jobs/")
 
-    def test_jsonl_mode_no_comment_idempotency_line(self):
-        """JSONL モードでは exec_lines に # idempotency: コメント行が含まれない。"""
-        api, _, _ = _make_api(jsonl_mode=True)
+    def test_no_comment_idempotency_line(self):
+        """exec_lines に # idempotency: コメント行が含まれない。"""
+        api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, idempotency_key="scheduler:diary_review:ts", audit_context=_TEST_AUDIT_CTX)
 
         for line in exec_lines:
             assert not line.startswith("#"), f"comment line found: {line!r}"
 
-    def test_jsonl_mode_cursor_engine_valid_json(self):
-        """cursor engine の JSONL レコードが valid JSON で command に agent が含まれる。"""
+    def test_cursor_engine_valid_json(self):
+        """cursor engine の exec レコードが valid JSON で command に agent が含まれる。"""
         import json as _json
 
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         steps = [StepConfig(template="skill", model="auto", engine="cursor")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
@@ -554,20 +549,11 @@ class TestJsonlMode:
         assert "uuid" in record
         assert "agent" in record["command"]
 
-    def test_text_mode_does_not_call_append_exec_records(self):
-        """テキストモードでは append_exec_records が呼ばれない（append_exec のみ）。"""
-        api, pipeline_state, _ = _make_api(jsonl_mode=False)
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        pipeline_state.append_exec_records.assert_not_called()
-        pipeline_state.append_exec.assert_called_once()
-
-    def test_jsonl_mode_all_exec_lines_are_parseable_json(self):
-        """JSONL モードで複数ステップを submit したとき、全 exec_lines が JSON パース可能。"""
+    def test_all_exec_lines_are_parseable_json(self):
+        """複数ステップを submit したとき、全 exec_lines が JSON パース可能。"""
         import json as _json
 
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         steps = [
             StepConfig(id="s1", template="t1", model="m1"),
             StepConfig(id="s2", template="t2", model="m2", depends=["s1"]),
@@ -580,11 +566,11 @@ class TestJsonlMode:
             assert "uuid" in record
             assert "command" in record
 
-    def test_jsonl_mode_scheduler_idempotency_key_format(self):
+    def test_scheduler_idempotency_key_format(self):
         """スケジューラー形式 (scheduler:job_id:ISO8601) の idempotency_key が正常に埋め込まれる。"""
         import json as _json
 
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         key = "scheduler:diary_review:2026-05-08T23:00:00.123456+09:00"
         steps = [StepConfig(template="diary-review", model="auto", engine="cursor")]
         exec_lines = api.submit(steps, {"workflow_name": "scheduler"}, idempotency_key=key, audit_context=_TEST_AUDIT_CTX)
@@ -607,38 +593,16 @@ class TestAuditContextPropagation:
         with pytest.raises(TypeError):
             api.submit(steps, {"issue_number": "10"}, idempotency_key="wf:h:10")
 
-    def test_ac5_jsonl_submit_without_audit_context_raises_type_error(self):
-        """AC-5 (必須化, JSONL mode): audit_context を省略した submit() が TypeError を送出する。"""
-        api, _, _ = _make_api(jsonl_mode=True)
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        with pytest.raises(TypeError):
-            api.submit(steps, {"issue_number": "10"}, idempotency_key="wf:h:10")
-
     def test_ac1_audit_context_passed_to_append_exec_records(self):
-        """AC-1: JSONL モードで audit_context が append_exec_records に中継される。"""
+        """AC-1: audit_context が append_exec_records に中継される。"""
         from ghdag.pipeline.audit import AuditContext
 
-        api, pipeline_state, _ = _make_api(jsonl_mode=True)
+        api, pipeline_state, _ = _make_api()
         ctx = AuditContext(source="issuesmith", correlation_id="test:key")
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         api.submit(steps, {}, audit_context=ctx)
 
         call_kwargs = pipeline_state.append_exec_records.call_args
-        passed_ctx = call_kwargs[1].get("audit_context") or (
-            call_kwargs[0][1] if len(call_kwargs[0]) > 1 else None
-        )
-        assert passed_ctx is ctx
-
-    def test_ac1_audit_context_passed_to_append_exec(self):
-        """AC-1: テキストモードで audit_context が append_exec に中継される。"""
-        from ghdag.pipeline.audit import AuditContext
-
-        api, pipeline_state, _ = _make_api(jsonl_mode=False)
-        ctx = AuditContext(source="issuesmith", correlation_id="test:key")
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {}, audit_context=ctx)
-
-        call_kwargs = pipeline_state.append_exec.call_args
         passed_ctx = call_kwargs[1].get("audit_context") or (
             call_kwargs[0][1] if len(call_kwargs[0]) > 1 else None
         )
@@ -660,7 +624,6 @@ def _make_api_with_tmpdir(tmp_path):
     pipeline_state = MagicMock()
     pipeline_state.check_idempotency.return_value = True
     pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
-    pipeline_state._is_jsonl_mode = False
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
     api = LLMPipelineAPI(

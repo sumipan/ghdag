@@ -15,7 +15,7 @@ from ghdag.metrics.models import FailureClass, TaskMetrics
 
 def make_config(tmp_path):
     return DagConfig(
-        exec_md_path=str(tmp_path / "exec.md"),
+        exec_md_path=str(tmp_path / "exec.jsonl"),
         exec_done_dir=str(tmp_path / "done"),
     )
 

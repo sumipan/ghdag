@@ -14,16 +14,11 @@ from __future__ import annotations
 import fcntl
 import json
 import os
-import re
 from pathlib import Path
 
 import yaml
 
 from ghdag.pipeline.audit import AuditContext, write_audit_log
-
-_UUID_RE = re.compile(
-    r"^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
-)
 
 
 class PipelineState:
@@ -37,10 +32,6 @@ class PipelineState:
         self._exec_md_path = Path(exec_md_path)
 
     # --- 冪等性（exec.jsonl レコード） ---
-
-    @property
-    def _is_jsonl_mode(self) -> bool:
-        return str(self._exec_md_path).endswith(".jsonl")
 
     def check_idempotency(self, key: str) -> bool:
         """exec.jsonl 内に指定キーの idempotency 記録がなければ True（未処理）。
@@ -61,13 +52,10 @@ class PipelineState:
         return True
 
     def remove_idempotency_matching(self, workflow_name: str, issue_number: int) -> int:
-        """exec ファイルから workflow_name:*:issue_number にマッチする冪等性記録を削除。
-
-        JSONL モード: idempotency_key フィールドで判定し、マッチするレコードを除外。
-        テキストモード: "# idempotency: ..." コメント行をパターンマッチで除外。
+        """exec.jsonl から workflow_name:*:issue_number にマッチする冪等性記録を削除。
 
         Returns:
-            削除したレコード/行数
+            削除したレコード数
         """
         if not self._exec_md_path.exists():
             return 0
@@ -85,31 +73,20 @@ class PipelineState:
         new_lines = []
         removed = 0
 
-        if self._is_jsonl_mode:
-            for line in lines:
-                stripped = line.strip()
-                if not stripped:
-                    new_lines.append(line)
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                new_lines.append(line)
+                continue
+            try:
+                data = json.loads(stripped)
+                key = data.get("idempotency_key", "")
+                if key and key.startswith(prefix) and key.endswith(suffix):
+                    removed += 1
                     continue
-                try:
-                    data = json.loads(stripped)
-                    key = data.get("idempotency_key", "")
-                    if key and key.startswith(prefix) and key.endswith(suffix):
-                        removed += 1
-                        continue
-                except json.JSONDecodeError:
-                    pass
-                new_lines.append(line)
-        else:
-            _idem_re = re.compile(r"^# idempotency: (.+)$")
-            for line in lines:
-                m = _idem_re.match(line.rstrip("\n"))
-                if m:
-                    key = m.group(1)
-                    if key.startswith(prefix) and key.endswith(suffix):
-                        removed += 1
-                        continue
-                new_lines.append(line)
+            except json.JSONDecodeError:
+                pass
+            new_lines.append(line)
 
         if removed > 0:
             with open(self._exec_md_path, "w", encoding="utf-8") as f:
@@ -172,25 +149,6 @@ class PipelineState:
             context=ctx,
         )
 
-    def append_exec(self, lines: list[str], audit_context: AuditContext | None = None) -> None:
-        """exec.md に lines を追記。fcntl 排他ロック付き。"""
-        with open(self._exec_md_path, "a", encoding="utf-8") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            try:
-                f.write("\n".join(lines) + "\n")
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-
-        ctx = audit_context or AuditContext()
-        audit_path = self._exec_md_path.parent / "audit.jsonl"
-        uuids = [m.group(1) for line in lines if (m := _UUID_RE.match(line.strip()))]
-        write_audit_log(
-            audit_path,
-            task_uuids=uuids,
-            exec_lines_count=len(lines),
-            context=ctx,
-        )
-
     def write_order_file(
         self,
         ts: str,
@@ -237,19 +195,17 @@ class PipelineState:
             repo_root: リポジトリルートのパス
 
         Returns:
-            PipelineState(state_dir=repo_root/.pipeline-state, exec_md_path=repo_root/queue/exec.md)
+            PipelineState(state_dir=repo_root/.pipeline-state, exec_md_path=repo_root/jobs/exec.jsonl)
         """
         root = Path(repo_root)
         return cls(
             state_dir=root / ".pipeline-state",
-            exec_md_path=root / "queue" / "exec.md",
+            exec_md_path=root / "jobs" / "exec.jsonl",
         )
 
     def parse_exec_tasks(self) -> dict[str, str]:
-        """exec ファイルをパースし {uuid: command} の辞書を返す。
+        """exec.jsonl をパースし {uuid: command} の辞書を返す。
 
-        JSONL 形式（exec.jsonl）: 各行を json.loads でパースし uuid/command を取得。
-        テキスト形式（exec.md）: コメント行と空行をスキップし正規表現でパース。
         ファイルが存在しない場合は空辞書を返す。
 
         Returns:
@@ -258,37 +214,24 @@ class PipelineState:
         if not self._exec_md_path.exists():
             return {}
 
-        if self._is_jsonl_mode:
-            result: dict[str, str] = {}
-            with open(self._exec_md_path, encoding="utf-8") as f:
-                for line in f:
-                    stripped = line.strip()
-                    if not stripped:
-                        continue
-                    try:
-                        data = json.loads(stripped)
-                    except json.JSONDecodeError:
-                        continue
-                    uuid = data.get("uuid")
-                    command = data.get("command")
-                    if uuid and command:
-                        result[uuid] = command
-            return result
-
-        pattern = re.compile(r"^([a-fA-F0-9\-]+)(?:\[[^\]]+\])*\s*:\s*(.+)$")
-        result = {}
+        result: dict[str, str] = {}
         with open(self._exec_md_path, encoding="utf-8") as f:
             for line in f:
-                stripped = line.rstrip("\n")
-                if not stripped or stripped.startswith("#"):
+                stripped = line.strip()
+                if not stripped:
                     continue
-                m = pattern.match(stripped)
-                if m:
-                    result[m.group(1)] = m.group(2)
+                try:
+                    data = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                uuid = data.get("uuid")
+                command = data.get("command")
+                if uuid and command:
+                    result[uuid] = command
         return result
 
     def remove_exec_entries(self, uuids: set[str]) -> int:
-        """exec ファイルから指定 UUID のエントリ行を削除する。fcntl ロック付き。
+        """exec.jsonl から指定 UUID のエントリ行を削除する。fcntl ロック付き。
 
         Args:
             uuids: 削除対象の UUID 集合
@@ -299,37 +242,6 @@ class PipelineState:
         if not self._exec_md_path.exists():
             return 0
 
-        if self._is_jsonl_mode:
-            with open(self._exec_md_path, "a+", encoding="utf-8") as f:
-                fcntl.flock(f, fcntl.LOCK_EX)
-                try:
-                    f.seek(0)
-                    lines = f.readlines()
-                    new_lines = []
-                    removed = 0
-                    for line in lines:
-                        stripped = line.strip()
-                        if not stripped:
-                            new_lines.append(line)
-                            continue
-                        try:
-                            data = json.loads(stripped)
-                            if data.get("uuid") in uuids:
-                                removed += 1
-                                continue
-                        except json.JSONDecodeError:
-                            pass
-                        new_lines.append(line)
-                    if removed > 0:
-                        f.seek(0)
-                        f.truncate()
-                        f.writelines(new_lines)
-                finally:
-                    fcntl.flock(f, fcntl.LOCK_UN)
-            return removed
-
-        pattern = re.compile(r"^([a-fA-F0-9\-]+)(?:\[[^\]]+\])*\s*:")
-
         with open(self._exec_md_path, "a+", encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
             try:
@@ -338,18 +250,24 @@ class PipelineState:
                 new_lines = []
                 removed = 0
                 for line in lines:
-                    m = pattern.match(line)
-                    if m and m.group(1) in uuids:
-                        removed += 1
-                    else:
+                    stripped = line.strip()
+                    if not stripped:
                         new_lines.append(line)
+                        continue
+                    try:
+                        data = json.loads(stripped)
+                        if data.get("uuid") in uuids:
+                            removed += 1
+                            continue
+                    except json.JSONDecodeError:
+                        pass
+                    new_lines.append(line)
                 if removed > 0:
                     f.seek(0)
                     f.truncate()
                     f.writelines(new_lines)
             finally:
                 fcntl.flock(f, fcntl.LOCK_UN)
-
         return removed
 
 

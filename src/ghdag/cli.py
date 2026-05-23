@@ -39,8 +39,8 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(title="subcommands")
 
     # ghdag run
-    run_parser = subparsers.add_parser("run", help="Run exec.md via DagEngine")
-    run_parser.add_argument("exec_md", help="Path to exec.md file")
+    run_parser = subparsers.add_parser("run", help="Run exec.jsonl via DagEngine")
+    run_parser.add_argument("exec_md", help="Path to exec.jsonl file")
     run_parser.add_argument(
         "--interval",
         type=float,
@@ -53,6 +53,13 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="MODULE",
         help="Python module path for DagHooks implementation (e.g. scripts.diary_hooks)",
+    )
+    run_parser.add_argument(
+        "--max-concurrency",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Maximum number of concurrent tasks (default: unlimited)",
     )
     run_parser.set_defaults(func=_cmd_run)
 
@@ -70,10 +77,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     watch_parser.add_argument(
         "--exec-md",
-        default="exec.md",
+        default="jobs/exec.jsonl",
         dest="exec_md",
         metavar="PATH",
-        help="Output path for exec.md (default: exec.md)",
+        help="Output path for exec.jsonl (default: jobs/exec.jsonl)",
     )
     watch_parser.add_argument(
         "--once",
@@ -88,7 +95,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--repo-root",
         default=".",
         metavar="PATH",
-        help="Repository root containing jobs/exec.jsonl or queue/exec.md (default: .)",
+        help="Repository root containing jobs/exec.jsonl (default: .)",
     )
     ui_parser.add_argument(
         "--host",
@@ -193,6 +200,7 @@ def _build_parser() -> argparse.ArgumentParser:
     cleanup_parser.add_argument("--dry-run", action="store_true", help="Show targets without making changes")
     cleanup_parser.add_argument("--cutoff-days", type=int, default=1, help="Days before archiving completed tasks (default: 1)")
     cleanup_parser.add_argument("--orphan-days", type=int, default=7, help="Days before archiving orphaned tasks (default: 7)")
+    cleanup_parser.add_argument("--auto-repair", action="store_true", help="Auto-fix orphan (Case D) and dead entry (Case F) issues; default is detect-only")
     cleanup_parser.set_defaults(func=_cmd_cleanup)
 
     # ghdag trigger
@@ -215,10 +223,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     trigger_parser.add_argument(
         "--exec-md",
-        default="queue/exec.md",
+        default="jobs/exec.jsonl",
         dest="exec_md",
         metavar="PATH",
-        help="Output path for exec.md (default: queue/exec.md)",
+        help="Output path for exec.jsonl (default: jobs/exec.jsonl)",
     )
     trigger_parser.add_argument(
         "--workflow",
@@ -251,7 +259,12 @@ def _cmd_run(args: argparse.Namespace) -> None:
     from ghdag.dag.models import DagConfig
 
     cwd = getattr(args, "cwd", None) or str(Path(args.exec_md).resolve().parent.parent)
-    config = DagConfig(exec_md_path=args.exec_md, poll_interval=args.interval, cwd=cwd)
+    config = DagConfig(
+        exec_md_path=args.exec_md,
+        poll_interval=args.interval,
+        cwd=cwd,
+        max_concurrency=args.max_concurrency,
+    )
     hooks = _load_hooks(args.hooks) if args.hooks else None
     engine = DagEngine(config, hooks)
     if hooks is not None and hasattr(hooks, "set_engine"):
@@ -559,14 +572,25 @@ def _cmd_cleanup(args: argparse.Namespace) -> None:
         cutoff_days=args.cutoff_days,
         orphan_days=args.orphan_days,
         dry_run=args.dry_run,
+        auto_repair=args.auto_repair,
     )
-    print(
-        f"cleanup: archived done={result.archived_done}, "
-        f"orphan={result.archived_orphan}, "
-        f"extras={result.swept_extras}, "
-        f"exec pruned={result.pruned_exec}"
-        + (" [dry-run]" if args.dry_run else "")
-    )
+    if args.auto_repair:
+        msg = (
+            f"cleanup: archived done={result.archived_done}, "
+            f"orphan={result.archived_orphan}, "
+            f"extras={result.swept_extras}, "
+            f"exec pruned={result.pruned_exec}"
+        )
+    else:
+        msg = f"cleanup: archived done={result.archived_done}, extras={result.swept_extras}"
+        if result.detected_orphan > 0 or result.detected_dead > 0:
+            msg += (
+                f" | detected: orphan={result.detected_orphan}, dead={result.detected_dead}"
+                " (use --auto-repair to fix)"
+            )
+    if args.dry_run:
+        msg += " [dry-run]"
+    print(msg)
 
 
 def _cmd_version(args: argparse.Namespace) -> None:

@@ -138,6 +138,26 @@ Archives files from `jobs/` based on age. Completed tasks older than
 | `reason` | `str` | `""` | Human-readable reason |
 | `exec_lines` | `list[str]` | `[]` | Written exec entries |
 
+### WorkflowConfig フィールド
+
+| フィールド | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `name` | str | ○ | ワークフロー名 |
+| `triggers` | list[TriggerConfig] | ○ | ラベルマッチ条件 |
+| `handlers` | dict[str, HandlerConfig] | ○ | ハンドラー定義 |
+| `polling_interval` | int | — | ポーリング間隔（秒、デフォルト 30） |
+| `template_dir` | str | — | テンプレートディレクトリ |
+
+### StepConfig フィールド
+
+| フィールド | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `template` | str | ○ | order テンプレートファイル名（拡張子なし） |
+| `model` | str | ○ | 実行モデル |
+| `engine` | str | — | LLM エンジン名（デフォルト: `claude`） |
+| `id` | str | — | ステップ ID（depends 参照用） |
+| `depends` | list[str] | — | 依存ステップ ID リスト |
+
 ## Architecture
 
 ghdag is organized into the following modules under `src/ghdag/`:
