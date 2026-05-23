@@ -123,6 +123,7 @@ class LLMPipelineAPI:
         *,
         idempotency_key: str | None = None,
         audit_context: AuditContext | None = None,
+        metadata: dict[str, str] | None = None,
     ) -> list[str]:
         """ステップ群を order/exec ファイルに投入する。
 
@@ -134,6 +135,8 @@ class LLMPipelineAPI:
             base_context: 全ステップ共通のコンテキスト変数
             idempotency_key: 冪等性キー（省略時は記録しない）
             audit_context: enqueue audit に記録するコンテキスト（省略時はデフォルト AuditContext）
+            metadata: 全ステップ共通のメタデータ（JSONL モードで exec.jsonl の annotations に格納）。
+                テキストモードでは無視される。省略時は既存動作と同一（後方互換）。
 
         Returns:
             書き込んだエントリを文字列化したリスト（DispatchResult 用）
@@ -149,10 +152,12 @@ class LLMPipelineAPI:
             return self._submit_jsonl(
                 steps, base_context, idempotency_key, ts, order_builder,
                 step_uuid_map, step_engine_map, audit_context,
+                metadata=metadata,
             )
         return self._submit_text(
             steps, base_context, idempotency_key, ts, order_builder,
             step_uuid_map, step_engine_map, audit_context,
+            # metadata は渡さない — テキストモードではサポート対象外
         )
 
     def _submit_text(
@@ -222,6 +227,8 @@ class LLMPipelineAPI:
         step_uuid_map: dict[str, str],
         step_engine_map: dict[str, str],
         audit_context: AuditContext | None = None,
+        *,
+        metadata: dict[str, str] | None = None,
     ) -> list[str]:
         """JSONL 形式（exec.jsonl）への書き込み。"""
         import json as _json
@@ -263,6 +270,8 @@ class LLMPipelineAPI:
                 engine=engine,
                 model=step.model,
             )
+            if metadata:
+                record.setdefault("annotations", {}).update(metadata)
             if idempotency_key:
                 record["idempotency_key"] = idempotency_key
             records.append(record)
