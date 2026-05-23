@@ -772,7 +772,6 @@ class TestMaxConcurrency:
         hooks.check_rejected.return_value = False
         engine = DagEngine(config, hooks)
 
-        max_seen = 0
         samples = []
 
         def sampler():
@@ -821,7 +820,6 @@ class TestMaxConcurrency:
         hooks.check_rejected.return_value = False
         engine = DagEngine(config, hooks)
 
-        max_seen = 0
         samples = []
 
         def sampler():
