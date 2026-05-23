@@ -120,6 +120,8 @@ def parse_jsonl(text: str) -> list[Task]:
             annotations=data.get("annotations", {}),
             result_path=data.get("result_path"),
             idempotency_key=data.get("idempotency_key"),
+            engine=data.get("engine"),
+            model=data.get("model"),
         ))
 
     return tasks

@@ -246,7 +246,10 @@ class DagEngine:
             del self._running[uuid]
 
             task = rt.task
-            engine, model = parse_engine_model(task.command)
+            engine = task.engine
+            model = task.model
+            if engine is None:
+                engine, model = parse_engine_model(task.command)
             token_count = parse_token_count(engine, stderr_text)
 
             if was_timeout:

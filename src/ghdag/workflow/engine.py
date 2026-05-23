@@ -92,6 +92,8 @@ class ClaudeAdapter:
     ) -> dict:
         return {
             "uuid": uuid,
+            "engine": self.name,
+            "model": model,
             "command": render_exec_command(self._spec, order_path=order_path, prompt=prompt, model=model),
             "depends": depends,
             "result_path": result_path,
@@ -136,6 +138,8 @@ class GeminiAdapter:
     ) -> dict:
         return {
             "uuid": uuid,
+            "engine": self.name,
+            "model": model,
             "command": render_exec_command(self._spec, order_path=order_path, prompt=prompt, model=model),
             "depends": depends,
             "result_path": result_path,
@@ -193,6 +197,8 @@ class CursorAdapter:
     ) -> dict:
         return {
             "uuid": uuid,
+            "engine": self.name,
+            "model": model,
             "command": render_exec_command(self._spec, order_path=order_path, prompt=prompt, model=model),
             "depends": depends,
             "result_path": result_path,
@@ -243,6 +249,8 @@ class ShellAdapter:
     ) -> dict:
         return {
             "uuid": uuid,
+            "engine": self.name,
+            "model": None,
             "command": render_exec_command(self._spec, order_path=order_path, prompt=prompt, model=model),
             "depends": depends,
             "result_path": result_path,
