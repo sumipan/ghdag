@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 InputMode = Literal["cat_pipe", "stdin_redirect", "argv"]
