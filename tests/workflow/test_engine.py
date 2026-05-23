@@ -342,6 +342,8 @@ class TestShellAdapter:
         )
         assert result == {
             "uuid": "abc-123",
+            "engine": "shell",
+            "model": None,
             "command": "bash -o pipefail queue/ts-shell-order-abc123.md",
             "depends": ["dep-456"],
             "result_path": "queue/ts-shell-result-abc123.md",
@@ -435,6 +437,8 @@ class TestBuildExecRecord:
         )
         assert result == {
             "uuid": "abc-123",
+            "engine": "claude",
+            "model": "claude-sonnet-4-6",
             "command": (
                 "cat queue/order.md"
                 " | claude -p '受け取った内容を実行して'"
@@ -495,3 +499,31 @@ class TestBuildExecRecord:
             result = adapter.build_exec_record(**self.BASE_KWARGS, model=None)
             assert result["result_path"] == "queue/result.md"
             assert "queue/result.md" not in result["command"]
+
+    # AC1: engine/model フィールドが build_exec_record 戻り値に含まれることを検証
+    def test_claude_engine_model_fields_ac1(self):
+        result = ClaudeAdapter().build_exec_record(**self.BASE_KWARGS, model="claude-opus-4-6")
+        assert result["engine"] == "claude"
+        assert result["model"] == "claude-opus-4-6"
+
+    def test_cursor_engine_model_none_ac1(self):
+        result = CursorAdapter().build_exec_record(**self.BASE_KWARGS, model=None)
+        assert result["engine"] == "cursor"
+        assert result["model"] is None
+
+    def test_gemini_engine_model_fields_ac1(self):
+        result = GeminiAdapter().build_exec_record(**self.BASE_KWARGS, model="gemini-2.5-flash")
+        assert result["engine"] == "gemini"
+        assert result["model"] == "gemini-2.5-flash"
+
+    def test_shell_engine_model_none_ac1(self):
+        result = ShellAdapter().build_exec_record(**self.BASE_KWARGS, model=None)
+        assert result["engine"] == "shell"
+        assert result["model"] is None
+
+    def test_all_adapters_existing_keys_preserved_ac1(self):
+        """AC1: 全Adapterで既存キー（command, uuid, depends, result_path, retry, annotations）が維持される"""
+        for adapter in [ClaudeAdapter(), GeminiAdapter(), CursorAdapter(), ShellAdapter()]:
+            result = adapter.build_exec_record(**self.BASE_KWARGS, model=None)
+            for key in ("uuid", "command", "depends", "result_path", "retry", "annotations"):
+                assert key in result, f"{adapter.name}: missing key {key!r}"

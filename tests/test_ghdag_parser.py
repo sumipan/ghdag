@@ -169,6 +169,30 @@ class TestParseJsonl:
         assert tasks[0].retry == 2
         assert tasks[0].annotations == {"model": "sonnet"}
 
+    def test_p10_engine_and_model_fields(self):
+        """P10: engine/model フィールドが存在する場合、Task にセットされる（AC2）"""
+        text = '{"uuid":"a","command":"claude -p \'x\'","engine":"claude","model":"claude-sonnet-4-6"}\n'
+        tasks = parse_jsonl(text)
+        assert len(tasks) == 1
+        assert tasks[0].engine == "claude"
+        assert tasks[0].model == "claude-sonnet-4-6"
+
+    def test_p11_missing_engine_model_defaults_to_none(self):
+        """P11: engine/model フィールドが存在しない場合（旧形式）、Task.engine/model は None（後方互換）（AC2）"""
+        text = '{"uuid":"b","command":"agent -p < order.md"}\n'
+        tasks = parse_jsonl(text)
+        assert len(tasks) == 1
+        assert tasks[0].engine is None
+        assert tasks[0].model is None
+
+    def test_p12_engine_present_model_absent(self):
+        """P12: engine フィールドのみ存在し model が欠落している場合、model は None（AC2）"""
+        text = '{"uuid":"c","command":"bash -o pipefail run.sh","engine":"shell"}\n'
+        tasks = parse_jsonl(text)
+        assert len(tasks) == 1
+        assert tasks[0].engine == "shell"
+        assert tasks[0].model is None
+
 
 class TestParseExecMdLocking:
     """AC 2-1, 2-2: parse_exec_md の共有ロック"""
