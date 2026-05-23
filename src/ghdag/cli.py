@@ -54,6 +54,13 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="MODULE",
         help="Python module path for DagHooks implementation (e.g. scripts.diary_hooks)",
     )
+    run_parser.add_argument(
+        "--max-concurrency",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Maximum number of concurrent tasks (default: unlimited)",
+    )
     run_parser.set_defaults(func=_cmd_run)
 
     # ghdag watch
@@ -251,7 +258,12 @@ def _cmd_run(args: argparse.Namespace) -> None:
     from ghdag.dag.models import DagConfig
 
     cwd = getattr(args, "cwd", None) or str(Path(args.exec_md).resolve().parent.parent)
-    config = DagConfig(exec_md_path=args.exec_md, poll_interval=args.interval, cwd=cwd)
+    config = DagConfig(
+        exec_md_path=args.exec_md,
+        poll_interval=args.interval,
+        cwd=cwd,
+        max_concurrency=args.max_concurrency,
+    )
     hooks = _load_hooks(args.hooks) if args.hooks else None
     engine = DagEngine(config, hooks)
     if hooks is not None and hasattr(hooks, "set_engine"):

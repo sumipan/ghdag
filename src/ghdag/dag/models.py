@@ -49,6 +49,7 @@ class DagConfig:
     cwd: str | Path | None = None
     task_timeout: float | None = None
     kill_grace: float = 10.0
+    max_concurrency: int | None = None
 
     def __post_init__(self) -> None:
         if self.lock_file is None:

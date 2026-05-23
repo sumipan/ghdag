@@ -822,3 +822,52 @@ class TestLlmAuditPath:
                 main(["llm", "hello"])
 
         assert exc.value.code == 0
+
+
+# ---------------------------------------------------------------------------
+# AC3: ghdag run --max-concurrency
+# ---------------------------------------------------------------------------
+
+
+class TestRunMaxConcurrency:
+    def test_max_concurrency_arg(self, tmp_path):
+        """--max-concurrency が DagConfig に正しく渡されること"""
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+
+        mock_engine_cls = MagicMock()
+        mock_config_cls = MagicMock()
+
+        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
+             patch("ghdag.dag.models.DagConfig", mock_config_cls):
+            from ghdag.cli import main
+            main(["run", str(exec_md), "--max-concurrency", "4"])
+
+        call_kwargs = mock_config_cls.call_args[1]
+        assert call_kwargs["max_concurrency"] == 4
+
+    def test_max_concurrency_default_none(self, tmp_path):
+        """--max-concurrency 未指定時に None であること"""
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+
+        mock_engine_cls = MagicMock()
+        mock_config_cls = MagicMock()
+
+        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
+             patch("ghdag.dag.models.DagConfig", mock_config_cls):
+            from ghdag.cli import main
+            main(["run", str(exec_md)])
+
+        call_kwargs = mock_config_cls.call_args[1]
+        assert call_kwargs["max_concurrency"] is None
+
+    def test_max_concurrency_invalid_type_exits_2(self, tmp_path, capsys):
+        """--max-concurrency abc が argparse のエラーで終了すること"""
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+
+        from ghdag.cli import main
+        with pytest.raises(SystemExit) as exc:
+            main(["run", str(exec_md), "--max-concurrency", "abc"])
+        assert exc.value.code == 2
