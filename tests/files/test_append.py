@@ -57,7 +57,7 @@ class TestMdAppendBasic:
         assert content_after_first == content_after_second
 
     def test_a3_partial_write_recovery(self, repo_root: Path) -> None:
-        """A3: 開始マーカのみ存在時に再実行で RECOVERED が返り、正常に追記される"""
+        """A3: allow_recover=True で開始マーカのみ存在時に RECOVERED が返り、正常に追記される"""
         body = "OK"
         hash16 = _hash16(body)
 
@@ -67,7 +67,7 @@ class TestMdAppendBasic:
             f"## 結果\n\n<!-- ghdag:append:start sha256={hash16} -->\npartial content\n",
         )
 
-        result = md_append("order/foo.md", "結果", body, repo_root=repo_root)
+        result = md_append("order/foo.md", "結果", body, allow_recover=True, repo_root=repo_root)
 
         assert result.status == AppendStatus.RECOVERED
         content = f.read_text(encoding="utf-8")
@@ -152,3 +152,99 @@ class TestMdAppendBasic:
         assert result.status == AppendStatus.NOOP
         content = f.read_text(encoding="utf-8")
         assert "<!-- ghdag:append key=retry-001 -->" in content
+
+
+class TestAllowRecover:
+    def test_allow_recover_false_raises_on_start_marker(self, repo_root: Path) -> None:
+        """allow_recover=False: start marker 検出時に AppendRecoverError を raise する"""
+        from ghdag.files.append import AppendRecoverError
+        body = "OK"
+        hash16 = _hash16(body)
+        f = repo_root / "order" / "foo.md"
+        write_file(
+            f,
+            f"## 結果\n\n<!-- ghdag:append:start sha256={hash16} -->\npartial content\n",
+        )
+
+        with pytest.raises(AppendRecoverError):
+            md_append("order/foo.md", "結果", body, allow_recover=False, repo_root=repo_root)
+
+    def test_allow_recover_false_file_unchanged(self, repo_root: Path) -> None:
+        """allow_recover=False: エラー時にファイルが変更されない"""
+        from ghdag.files.append import AppendRecoverError
+        body = "OK"
+        hash16 = _hash16(body)
+        f = repo_root / "order" / "foo.md"
+        original_content = f"## 結果\n\n<!-- ghdag:append:start sha256={hash16} -->\npartial content\n"
+        write_file(f, original_content)
+
+        with pytest.raises(AppendRecoverError):
+            md_append("order/foo.md", "結果", body, allow_recover=False, repo_root=repo_root)
+
+        assert f.read_text(encoding="utf-8") == original_content
+
+    def test_allow_recover_true_recovers_as_before(self, repo_root: Path) -> None:
+        """allow_recover=True: start marker 検出時に RECOVERED を返す（従来動作）"""
+        body = "OK"
+        hash16 = _hash16(body)
+        f = repo_root / "order" / "foo.md"
+        write_file(
+            f,
+            f"## 結果\n\n<!-- ghdag:append:start sha256={hash16} -->\npartial content\n",
+        )
+
+        result = md_append("order/foo.md", "結果", body, allow_recover=True, repo_root=repo_root)
+
+        assert result.status == AppendStatus.RECOVERED
+        content = f.read_text(encoding="utf-8")
+        assert "partial content" not in content
+        assert "OK" in content
+
+    def test_error_message_contains_path_section_marker(self, repo_root: Path) -> None:
+        """AppendRecoverError のメッセージに file path, section 名, marker 内容が含まれる"""
+        from ghdag.files.append import AppendRecoverError
+        body = "OK"
+        hash16 = _hash16(body)
+        f = repo_root / "order" / "foo.md"
+        write_file(
+            f,
+            f"## 結果\n\n<!-- ghdag:append:start sha256={hash16} -->\npartial content\n",
+        )
+
+        with pytest.raises(AppendRecoverError) as exc_info:
+            md_append("order/foo.md", "結果", body, allow_recover=False, repo_root=repo_root)
+
+        msg = str(exc_info.value)
+        assert "order/foo.md" in msg
+        assert "結果" in msg
+        assert "ghdag:append:start" in msg
+
+    def test_a3_updated_requires_allow_recover_true(self, repo_root: Path) -> None:
+        """A3互換: allow_recover=True で RECOVERED 動作が維持される（デフォルト変更の検証）"""
+        body = "OK"
+        hash16 = _hash16(body)
+        f = repo_root / "order" / "foo.md"
+        write_file(
+            f,
+            f"## 結果\n\n<!-- ghdag:append:start sha256={hash16} -->\npartial content\n",
+        )
+
+        result = md_append("order/foo.md", "結果", body, allow_recover=True, repo_root=repo_root)
+
+        assert result.status == AppendStatus.RECOVERED
+        content = f.read_text(encoding="utf-8")
+        assert "partial content" not in content
+        assert f"<!-- ghdag:append sha256={hash16} -->" in content
+
+    def test_normal_append_noop_unaffected_by_allow_recover(self, repo_root: Path) -> None:
+        """正常系（APPENDED/NOOP）は allow_recover の値に関わらず動作不変"""
+        f = repo_root / "order" / "bar.md"
+        write_file(f, "## 結果\n\n")
+
+        # allow_recover=False でも正常 append は機能する
+        result1 = md_append("order/bar.md", "結果", "hello", allow_recover=False, repo_root=repo_root)
+        assert result1.status == AppendStatus.APPENDED
+
+        # 2 回目は NOOP
+        result2 = md_append("order/bar.md", "結果", "hello", allow_recover=False, repo_root=repo_root)
+        assert result2.status == AppendStatus.NOOP

@@ -362,8 +362,8 @@ class TestRotation:
         assert len(lines) == 1
         assert json.loads(lines[0])["exec_lines_count"] == 1
 
-    def test_ac2_daily_rotation_triggers(self, tmp_path):
-        """AC-2: first-line timestamp is previous day (JST) → rotation."""
+    def test_ac2_daily_rotation_removed(self, tmp_path):
+        """AC-2 (updated): previous-day timestamp → NO rotation (daily rotation removed)."""
         audit_path = tmp_path / "audit.jsonl"
         old_record = json.dumps({"timestamp": "2026-05-22T23:59:59+09:00"}) + "\n"
         audit_path.write_text(old_record)
@@ -371,10 +371,9 @@ class TestRotation:
         write_audit_log(audit_path, task_uuids=[], exec_lines_count=1, context=AuditContext())
 
         rotated = sorted(tmp_path.glob("audit.*.jsonl"))
-        assert len(rotated) == 1
+        assert len(rotated) == 0
         lines = audit_path.read_text().strip().splitlines()
-        assert len(lines) == 1
-        assert json.loads(lines[0])["exec_lines_count"] == 1
+        assert len(lines) == 2
 
     def test_ac3_no_rotation_same_day_small_file(self, tmp_path):
         """AC-3: same-day, small file → no rotation; record appended."""
@@ -391,6 +390,11 @@ class TestRotation:
         assert len(rotated) == 0
         lines = audit_path.read_text().strip().splitlines()
         assert len(lines) == 2
+
+    def test_ac_should_rotate_daily_not_exists(self):
+        """_should_rotate_daily 関数が存在しないこと（dead code 除去）"""
+        import ghdag.pipeline.audit as audit_mod
+        assert not hasattr(audit_mod, "_should_rotate_daily")
 
     def test_ac4_no_existing_file_creates_new(self, tmp_path):
         """AC-4: no existing file → new file created, no rotation."""

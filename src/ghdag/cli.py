@@ -200,6 +200,7 @@ def _build_parser() -> argparse.ArgumentParser:
     cleanup_parser.add_argument("--dry-run", action="store_true", help="Show targets without making changes")
     cleanup_parser.add_argument("--cutoff-days", type=int, default=1, help="Days before archiving completed tasks (default: 1)")
     cleanup_parser.add_argument("--orphan-days", type=int, default=7, help="Days before archiving orphaned tasks (default: 7)")
+    cleanup_parser.add_argument("--auto-repair", action="store_true", help="Auto-fix orphan (Case D) and dead entry (Case F) issues; default is detect-only")
     cleanup_parser.set_defaults(func=_cmd_cleanup)
 
     # ghdag trigger
@@ -571,14 +572,25 @@ def _cmd_cleanup(args: argparse.Namespace) -> None:
         cutoff_days=args.cutoff_days,
         orphan_days=args.orphan_days,
         dry_run=args.dry_run,
+        auto_repair=args.auto_repair,
     )
-    print(
-        f"cleanup: archived done={result.archived_done}, "
-        f"orphan={result.archived_orphan}, "
-        f"extras={result.swept_extras}, "
-        f"exec pruned={result.pruned_exec}"
-        + (" [dry-run]" if args.dry_run else "")
-    )
+    if args.auto_repair:
+        msg = (
+            f"cleanup: archived done={result.archived_done}, "
+            f"orphan={result.archived_orphan}, "
+            f"extras={result.swept_extras}, "
+            f"exec pruned={result.pruned_exec}"
+        )
+    else:
+        msg = f"cleanup: archived done={result.archived_done}, extras={result.swept_extras}"
+        if result.detected_orphan > 0 or result.detected_dead > 0:
+            msg += (
+                f" | detected: orphan={result.detected_orphan}, dead={result.detected_dead}"
+                " (use --auto-repair to fix)"
+            )
+    if args.dry_run:
+        msg += " [dry-run]"
+    print(msg)
 
 
 def _cmd_version(args: argparse.Namespace) -> None:

@@ -21,6 +21,8 @@ class CleanupResult:
     archived_orphan: int  # 孤立アーカイブ件数
     pruned_exec: int      # exec から除去した行数
     swept_extras: int = 0  # sweep フェーズでアーカイブした件数
+    detected_orphan: int = 0  # 検出のみ（auto_repair=False）の孤立件数
+    detected_dead: int = 0    # 検出のみ（auto_repair=False）の dead entry 件数
 
 
 def file_timestamp(path: Path) -> float:
@@ -78,6 +80,7 @@ def cleanup_queue(
     cutoff_days: int = 1,
     orphan_days: int = 7,
     dry_run: bool = False,
+    auto_repair: bool = False,
 ) -> CleanupResult:
     """jobs/ ディレクトリのクリーンアップを実行する。
 
@@ -107,6 +110,7 @@ def cleanup_queue(
         cutoff_days: 完了タスクをアーカイブするまでの日数
         orphan_days: 未完了タスクを孤立扱いにする日数
         dry_run: True の場合、対象を表示するのみで変更しない
+        auto_repair: True の場合、Case D/F を自動修復する。False（デフォルト）の場合は検出レポートのみ
 
     Returns:
         CleanupResult: アーカイブ件数と除去エントリ数
@@ -149,7 +153,10 @@ def cleanup_queue(
 
     archived_done = 0
     archived_orphan = 0
+    detected_orphan = 0
+    detected_dead = 0
     prune_uuids: set[str] = set()
+    detected_uuids: set[str] = set()  # auto_repair=False で検出のみした UUID（Phase 3 除外用）
     # done マーカーの削除は exec prune 後に行う（削除順序の保証）
     deferred_done_deletes: set[str] = set()
 
@@ -187,16 +194,28 @@ def cleanup_queue(
                 ref_path = entry.get("order") or entry.get("result") or entry.get("stderr")
                 mtime = file_timestamp(ref_path)
                 if mtime <= orphan_ts:
-                    # Case D: old → orphan archive + prune
-                    if not dry_run:
-                        done_dir.mkdir(parents=True, exist_ok=True)
-                        flag = done_dir / uuid
-                        flag.write_text("ORPHAN_ARCHIVED", encoding="utf-8")
+                    # Case D: old → orphan archive + prune (auto_repair=True)
+                    #                or detect-only report (auto_repair=False)
+                    if auto_repair:
+                        if not dry_run:
+                            done_dir.mkdir(parents=True, exist_ok=True)
+                            flag = done_dir / uuid
+                            flag.write_text("ORPHAN_ARCHIVED", encoding="utf-8")
+                        else:
+                            print(f"[dry] create done marker (orphan): {uuid}")
+                        _archive_files(entry, archive_dir, orphan=True, dry_run=dry_run)
+                        prune_uuids.add(uuid)
+                        archived_orphan += 1
                     else:
-                        print(f"[dry] create done marker (orphan): {uuid}")
-                    _archive_files(entry, archive_dir, orphan=True, dry_run=dry_run)
-                    prune_uuids.add(uuid)
-                    archived_orphan += 1
+                        files = [k for k in ("order", "result", "stderr") if entry.get(k)]
+                        age_days = int((now.timestamp() - mtime) / 86400)
+                        print(
+                            f"[cleanup] ORPHAN detected: uuid={uuid}, files={files}, "
+                            f"age={age_days}d (use --auto-repair to fix)",
+                            file=sys.stderr,
+                        )
+                        detected_orphan += 1
+                        detected_uuids.add(uuid)
                 # else Case E: new → keep（何もしない）
             else:
                 # Case F: done なし・ファイルなし（dead entry）
@@ -206,9 +225,16 @@ def cleanup_queue(
                 # したがって「exec.jsonl にあるが files なし」は pending ではなく、
                 # 手動削除・旧バグ・部分失敗のいずれかで生じた dead entry である。
                 # graph-watcher が存在しないファイルを参照して失敗ループに陥らないよう除去する。
-                if dry_run:
-                    print(f"[dry] prune dead exec entry: {uuid}")
-                prune_uuids.add(uuid)
+                if auto_repair:
+                    if dry_run:
+                        print(f"[dry] prune dead exec entry: {uuid}")
+                    prune_uuids.add(uuid)
+                else:
+                    print(
+                        f"[cleanup] DEAD_ENTRY detected: uuid={uuid} (use --auto-repair to fix)",
+                        file=sys.stderr,
+                    )
+                    detected_dead += 1
 
     # exec.jsonl のエントリ除去
     pruned_exec = 0
@@ -279,6 +305,10 @@ def cleanup_queue(
             continue
         if path.name in _SWEEP_WHITELIST_NAMES:
             continue
+        # auto_repair=False で検出のみ済みの UUID ファイルはスキップ
+        m = QUEUE_FILE_RE.match(path.name)
+        if m and m.group(4).lower() in detected_uuids:
+            continue
         mtime = file_timestamp(path)
         if mtime > orphan_ts:
             continue
@@ -298,6 +328,8 @@ def cleanup_queue(
         archived_orphan=archived_orphan,
         pruned_exec=pruned_exec,
         swept_extras=swept_extras,
+        detected_orphan=detected_orphan,
+        detected_dead=detected_dead,
     )
 
 

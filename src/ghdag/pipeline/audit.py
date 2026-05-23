@@ -15,19 +15,6 @@ _MAX_FRAMES = 5
 _MAX_AUDIT_BYTES = 64 * 1024 * 1024
 
 
-def _should_rotate_daily(audit_path: Path) -> bool:
-    with open(audit_path, encoding="utf-8") as f:
-        first_line = f.readline().strip()
-    if not first_line:
-        return False
-    try:
-        rec = json.loads(first_line)
-        ts = datetime.fromisoformat(rec["timestamp"])
-        return ts.astimezone(JST).date() < datetime.now(JST).date()
-    except (json.JSONDecodeError, KeyError, ValueError):
-        return False
-
-
 def _do_rotate(audit_path: Path) -> None:
     ts = datetime.now(JST).strftime("%Y-%m-%dT%H-%M-%S")
     rotated = audit_path.with_name(f"audit.{ts}.jsonl")
@@ -38,7 +25,7 @@ def _maybe_rotate(audit_path: Path) -> None:
     if not audit_path.exists():
         return
     try:
-        if audit_path.stat().st_size > _MAX_AUDIT_BYTES or _should_rotate_daily(audit_path):
+        if audit_path.stat().st_size > _MAX_AUDIT_BYTES:
             _do_rotate(audit_path)
     except OSError as e:
         print(f"[audit] warning: rotation failed: {e}", file=sys.stderr)
