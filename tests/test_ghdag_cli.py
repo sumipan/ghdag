@@ -610,13 +610,21 @@ class TestGitHubIssueClientExtended:
 
 
 class TestCleanupNormal:
-    def test_cleanup_calls_cleanup_queue(self, tmp_path):
-        from unittest.mock import MagicMock, patch
-
+    def _make_mock_result(self, **kwargs):
+        from unittest.mock import MagicMock
         mock_result = MagicMock()
-        mock_result.archived_done = 1
-        mock_result.archived_orphan = 0
-        mock_result.pruned_exec = 1
+        mock_result.archived_done = kwargs.get("archived_done", 0)
+        mock_result.archived_orphan = kwargs.get("archived_orphan", 0)
+        mock_result.pruned_exec = kwargs.get("pruned_exec", 0)
+        mock_result.swept_extras = kwargs.get("swept_extras", 0)
+        mock_result.detected_orphan = kwargs.get("detected_orphan", 0)
+        mock_result.detected_dead = kwargs.get("detected_dead", 0)
+        return mock_result
+
+    def test_cleanup_calls_cleanup_queue(self, tmp_path):
+        from unittest.mock import patch
+
+        mock_result = self._make_mock_result(archived_done=1, pruned_exec=1)
 
         with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
             from ghdag.cli import main
@@ -627,14 +635,24 @@ class TestCleanupNormal:
         assert call_kwargs["cutoff_days"] == 1
         assert call_kwargs["orphan_days"] == 7
         assert call_kwargs["dry_run"] is False
+        assert call_kwargs["auto_repair"] is False
+
+    def test_cleanup_auto_repair_flag(self, tmp_path):
+        from unittest.mock import patch
+
+        mock_result = self._make_mock_result(archived_orphan=1, pruned_exec=1)
+
+        with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
+            from ghdag.cli import main
+            main(["cleanup", str(tmp_path), "--auto-repair"])
+
+        call_kwargs = mock_fn.call_args[1]
+        assert call_kwargs["auto_repair"] is True
 
     def test_cleanup_dry_run_flag(self, tmp_path):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
-        mock_result = MagicMock()
-        mock_result.archived_done = 0
-        mock_result.archived_orphan = 0
-        mock_result.pruned_exec = 0
+        mock_result = self._make_mock_result()
 
         with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
             from ghdag.cli import main
@@ -644,12 +662,9 @@ class TestCleanupNormal:
         assert call_kwargs["dry_run"] is True
 
     def test_cleanup_custom_days(self, tmp_path):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
-        mock_result = MagicMock()
-        mock_result.archived_done = 0
-        mock_result.archived_orphan = 0
-        mock_result.pruned_exec = 0
+        mock_result = self._make_mock_result()
 
         with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
             from ghdag.cli import main

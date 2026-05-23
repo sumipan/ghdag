@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.24.0 — 2026-05-24
+
+### BREAKING
+
+- `cleanup_queue()` のデフォルト動作変更: Case D（orphan）・Case F（dead entry）の自動修復を廃止。デフォルトは検出レポートのみ（stderr 出力 + `detected_orphan` / `detected_dead` カウント）。自動修復には `auto_repair=True` / `--auto-repair` フラグが必要 (diary #1057)
+- `md_append()` のデフォルト動作変更: 部分書き込み（start marker 検出）時に `AppendRecoverError` を raise。従来の RECOVERED 動作には `allow_recover=True` が必要 (diary #1057)
+
+### Changed
+
+- `pipeline/audit.py`: 日次ローテーション（`_should_rotate_daily`）を廃止。サイズベース（64MB 超）ローテーションのみ維持。`cat jobs/audit.jsonl` で全ログが参照可能になる (diary #1057)
+- `cleanup.py`: `CleanupResult` に `detected_orphan` / `detected_dead` フィールドを追加
+- `cli.py`: `ghdag cleanup` に `--auto-repair` フラグを追加。出力フォーマットを `auto_repair` 有無で分岐
+
 ## 0.18.0 — 2026-05-23
 
 ### Removed

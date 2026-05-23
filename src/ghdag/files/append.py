@@ -10,6 +10,10 @@ from ghdag.files.models import AppendResult, AppendStatus
 _NEXT_HEADING_RE = re.compile(r"^#{1,6}\s+")
 
 
+class AppendRecoverError(ValueError):
+    """Partial write detected (start marker present without completion marker)."""
+
+
 def _hash16(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
 
@@ -109,6 +113,7 @@ def md_append(
     *,
     idempotency_key: str | None = None,
     repo_root: Path | None = None,
+    allow_recover: bool = False,
 ) -> AppendResult:
     root = repo_root if repo_root is not None else Path.cwd()
     resolved = (root / path).resolve()
@@ -126,6 +131,13 @@ def md_append(
             status, new_content = _process_append(
                 content, section, body, body_hash, idempotency_key
             )
+            if status == AppendStatus.RECOVERED and not allow_recover:
+                key = idempotency_key if idempotency_key is not None else body_hash
+                use_key = idempotency_key is not None
+                start = _start_marker(key, use_key)
+                raise AppendRecoverError(
+                    f"Partial write detected: path={path!r}, section={section!r}, marker={start!r}"
+                )
             if new_content is not None:
                 f.seek(0)
                 f.write(new_content)

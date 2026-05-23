@@ -189,6 +189,7 @@ class TestArchivedOrphan:
             done_dir=done_dir,
             exec_md=exec_md,
             orphan_days=7,
+            auto_repair=True,
         )
 
         assert res.archived_orphan == 1
@@ -210,6 +211,7 @@ class TestArchivedOrphan:
             done_dir=done_dir,
             exec_md=exec_md,
             orphan_days=7,
+            auto_repair=True,
         )
 
         dest_dir = archive_dir / "2026-01" / "orphan"
@@ -326,6 +328,7 @@ class TestOrderOnlyOrphan:
             done_dir=done_dir,
             exec_md=exec_md,
             orphan_days=7,
+            auto_repair=True,
         )
 
         assert res.archived_orphan == 1
@@ -527,6 +530,7 @@ class TestCompoundToolName:
             done_dir=done_dir,
             exec_md=exec_md,
             orphan_days=7,
+            auto_repair=True,
         )
 
         assert res.archived_orphan == 1
@@ -573,6 +577,7 @@ class TestStderrKind:
             done_dir=done_dir,
             exec_md=exec_md,
             orphan_days=7,
+            auto_repair=True,
         )
 
         assert res.archived_orphan == 1
@@ -723,6 +728,7 @@ class TestOrphanDoneMark:
             done_dir=done_dir,
             exec_md=exec_jsonl,
             orphan_days=7,
+            auto_repair=True,
         )
 
         assert res.archived_orphan == 1
@@ -753,6 +759,7 @@ class TestOrphanDoneMark:
                     done_dir=done_dir,
                     exec_md=exec_jsonl,
                     orphan_days=7,
+                    auto_repair=True,
                 )
 
         done_flag = done_dir / UUID_B
@@ -1072,8 +1079,172 @@ class TestStuckDoneExecPrune:
             done_dir=done_dir,
             exec_md=exec_jsonl,
             cutoff_days=1,
+            auto_repair=True,
         )
 
         assert res.pruned_exec == 1
         assert res.archived_done == 0
         assert UUID_C not in exec_jsonl.read_text()
+
+
+# ---------------------------------------------------------------------------
+# Issue-1057: auto_repair=False デフォルト動作（検出のみ）
+# ---------------------------------------------------------------------------
+
+
+class TestAutoRepairFalse:
+    def test_case_d_no_archive_detected_orphan(self, tmp_path, capsys):
+        """auto_repair=False: Case D orphan は検出のみ, ファイル移動なし, detected_orphan=1"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        order, result = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order, days_ago=10)
+        _make_exec_jsonl(exec_jsonl, [UUID_A])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            orphan_days=7,
+            auto_repair=False,
+        )
+
+        assert res.archived_orphan == 0
+        assert res.detected_orphan == 1
+        assert res.pruned_exec == 0
+        assert order.exists()
+        assert result.exists()
+        assert UUID_A in exec_jsonl.read_text()
+
+    def test_case_d_stderr_report_orphan(self, tmp_path, capsys):
+        """auto_repair=False: Case D → stderr に ORPHAN detected レポートが出力される"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        order, _ = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order, days_ago=10)
+        _make_exec_jsonl(exec_jsonl, [UUID_A])
+
+        cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            orphan_days=7,
+            auto_repair=False,
+        )
+
+        err = capsys.readouterr().err
+        assert "ORPHAN detected" in err
+        assert UUID_A in err
+        assert "--auto-repair" in err
+
+    def test_case_d_no_done_marker_created(self, tmp_path):
+        """auto_repair=False: Case D → done マーカーが作成されない"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        order, _ = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order, days_ago=10)
+        _make_exec_jsonl(exec_jsonl, [UUID_A])
+
+        cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            orphan_days=7,
+            auto_repair=False,
+        )
+
+        assert not (done_dir / UUID_A).exists()
+
+    def test_case_f_no_prune_detected_dead(self, tmp_path, capsys):
+        """auto_repair=False: Case F dead entry は検出のみ, exec 行削除なし, detected_dead=1"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        _make_exec_jsonl(exec_jsonl, [UUID_B])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            auto_repair=False,
+        )
+
+        assert res.detected_dead == 1
+        assert res.pruned_exec == 0
+        assert UUID_B in exec_jsonl.read_text()
+
+    def test_case_f_stderr_report_dead(self, tmp_path, capsys):
+        """auto_repair=False: Case F → stderr に DEAD_ENTRY detected レポートが出力される"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        _make_exec_jsonl(exec_jsonl, [UUID_B])
+
+        cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            auto_repair=False,
+        )
+
+        err = capsys.readouterr().err
+        assert "DEAD_ENTRY detected" in err
+        assert UUID_B in err
+        assert "--auto-repair" in err
+
+    def test_auto_repair_true_case_d_archives(self, tmp_path):
+        """auto_repair=True: Case D → 従来通り orphan アーカイブされる"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        order, result = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order, days_ago=10)
+        _make_exec_jsonl(exec_jsonl, [UUID_A])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            orphan_days=7,
+            auto_repair=True,
+        )
+
+        assert res.archived_orphan == 1
+        assert res.detected_orphan == 0
+        assert not order.exists()
+        assert not result.exists()
+
+    def test_auto_repair_true_case_f_prunes(self, tmp_path):
+        """auto_repair=True: Case F → 従来通り exec 行削除される"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        _make_exec_jsonl(exec_jsonl, [UUID_B])
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            auto_repair=True,
+        )
+
+        assert res.pruned_exec == 1
+        assert res.detected_dead == 0
+        assert UUID_B not in exec_jsonl.read_text()
+
+    def test_auto_repair_false_dry_run_no_dry_prefix_in_stderr(self, tmp_path, capsys):
+        """auto_repair=False, dry_run=True: Case D/F の検出レポートは [dry] プレフィックスなし"""
+        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
+        order, _ = _make_queue_files(queue_dir, UUID_A)
+        _set_mtime(order, days_ago=10)
+        _make_exec_jsonl(exec_jsonl, [UUID_A])
+
+        cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_jsonl,
+            orphan_days=7,
+            auto_repair=False,
+            dry_run=True,
+        )
+
+        err = capsys.readouterr().err
+        assert "ORPHAN detected" in err
+        assert "[dry]" not in err
