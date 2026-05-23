@@ -13,8 +13,6 @@ import threading
 import time
 from pathlib import Path
 
-_STDIN_REDIR_RE = re.compile(r"<\s+(\S+)")
-
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .hooks import DefaultHooks, DagHooks
 from .models import DagConfig, RunningTask, Task
@@ -219,6 +217,7 @@ class DagEngine:
             retry_depth=task.retry,
             stdout_buf=stdout_buf,
         )
+        self._hooks.on_task_start(uuid, task)
 
     def _check_completions(self) -> None:
         for uuid in list(self._running):

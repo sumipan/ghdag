@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 class DagHooks(Protocol):
+    def on_task_start(self, uuid: str, task: Task) -> None: ...
     def on_task_success(self, uuid: str, task: Task, metrics: TaskMetrics) -> None: ...
     def on_task_failure(self, uuid: str, task: Task, returncode: int, stderr_text: str, metrics: TaskMetrics) -> None: ...
     def on_task_rejected(self, uuid: str, task: Task, retry_depth: int, is_final: bool, metrics: TaskMetrics) -> None: ...
@@ -28,6 +29,15 @@ class DefaultHooks:
 
     def __init__(self, audit_path: Path | None = None) -> None:
         self._audit_path = audit_path
+
+    def on_task_start(self, uuid: str, task: Task) -> None:
+        logger.info("Task started: %s", uuid)
+        if self._audit_path:
+            from ghdag.pipeline.audit import write_task_exit_audit
+            write_task_exit_audit(
+                self._audit_path,
+                event_type="task_started", uuid=uuid, status="running",
+            )
 
     def on_task_success(self, uuid: str, task: Task, metrics: TaskMetrics) -> None:
         logger.info("Task succeeded: %s", uuid)
