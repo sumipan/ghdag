@@ -102,8 +102,11 @@ class DagEngine:
             self._propagate_dep_failed(known_done, known_succeeded)
 
             # Launch ready tasks
+            max_concurrent = self._config.max_concurrency
             launched = 0
             for uuid, task in self._tasks.items():
+                if len(self._running) >= max_concurrent:
+                    break
                 if uuid in known_done or uuid in self._running or uuid in self._fanout_pending:
                     continue
                 deps = set(task.depends)

@@ -3,6 +3,7 @@
 import json
 import logging
 import signal
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -818,3 +819,105 @@ class TestTimeoutReaderJoin:
         finally:
             stop_event.set()
             hanging_thread.join(timeout=1.0)
+
+
+class TestMaxConcurrency:
+    """AC1, AC2, AC6: max_concurrency フィールドと並列数制限"""
+
+    def test_default_max_concurrency_is_4(self, tmp_path):
+        """AC1: DagConfig() 引数なしで max_concurrency=4"""
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+        config = DagConfig(exec_md_path=str(exec_md))
+        assert config.max_concurrency == 4
+
+    def test_explicit_max_concurrency(self, tmp_path):
+        """AC1: DagConfig(max_concurrency=2) で max_concurrency=2"""
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+        config = DagConfig(exec_md_path=str(exec_md), max_concurrency=2)
+        assert config.max_concurrency == 2
+
+    def test_zero_max_concurrency_raises_valueerror(self, tmp_path):
+        """AC6: max_concurrency=0 は ValueError"""
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+        import pytest
+        with pytest.raises(ValueError):
+            DagConfig(exec_md_path=str(exec_md), max_concurrency=0)
+
+    def test_negative_max_concurrency_raises_valueerror(self, tmp_path):
+        """AC6: max_concurrency=-1 は ValueError"""
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+        import pytest
+        with pytest.raises(ValueError):
+            DagConfig(exec_md_path=str(exec_md), max_concurrency=-1)
+
+    def test_max_concurrency_limits_running_tasks(self, tmp_path):
+        """AC2: max_concurrency=2 のとき _running が 2 を超えないこと"""
+        tasks = "\n".join(
+            f"uuid-{i:02d}: sleep 2" for i in range(5)
+        )
+        config = _make_config(tmp_path, tasks + "\n", max_concurrency=2)
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        max_concurrent = [0]
+        observed_counts = []
+
+        def monitor():
+            while not engine._shutdown:
+                count = len(engine._running)
+                observed_counts.append(count)
+                if count > max_concurrent[0]:
+                    max_concurrent[0] = count
+                time.sleep(0.05)
+
+        t_monitor = threading.Thread(target=monitor, daemon=True)
+        t_engine = threading.Thread(target=engine.run, daemon=True)
+        t_engine.start()
+        t_monitor.start()
+        time.sleep(0.8)
+        engine._shutdown = True
+        t_engine.join(timeout=3.0)
+
+        assert max_concurrent[0] <= 2, (
+            f"Concurrency exceeded limit: max observed={max_concurrent[0]}, "
+            f"counts={observed_counts}"
+        )
+
+    def test_all_tasks_complete_with_max_concurrency(self, tmp_path):
+        """AC2: max_concurrency=2 でも全 5 件が完了すること"""
+        tasks = "\n".join(
+            f"uuid-{i:02d}: echo task{i}" for i in range(5)
+        )
+        config = _make_config(tmp_path, tasks + "\n", max_concurrency=2)
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=15.0)
+
+        done = load_done_from_dir(config.exec_done_dir)
+        for i in range(5):
+            assert f"uuid-{i:02d}" in done
+
+
+class TestMaxConcurrencyCLI:
+    """AC3: CLI --max-concurrency オプション"""
+
+    def test_max_concurrency_cli_option(self, tmp_path):
+        """AC3: --max-concurrency 8 で DagConfig.max_concurrency=8 になること"""
+        from ghdag.cli import _build_parser
+        parser = _build_parser()
+        args = parser.parse_args(["run", "exec.jsonl", "--max-concurrency", "8"])
+        assert args.max_concurrency == 8
+
+    def test_max_concurrency_cli_default(self, tmp_path):
+        """AC3: --max-concurrency 省略時は None（DagConfig のデフォルト 4 が使われる）"""
+        from ghdag.cli import _build_parser
+        parser = _build_parser()
+        args = parser.parse_args(["run", "exec.jsonl"])
+        assert args.max_concurrency is None

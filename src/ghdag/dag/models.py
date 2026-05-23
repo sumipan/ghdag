@@ -49,9 +49,12 @@ class DagConfig:
     cwd: str | Path | None = None
     task_timeout: float | None = None
     kill_grace: float = 10.0
+    max_concurrency: int = 4
 
     def __post_init__(self) -> None:
         if self.lock_file is None:
             self.lock_file = Path(self.exec_md_path).parent / ".ghdag.lock"
         else:
             self.lock_file = Path(self.lock_file)
+        if self.max_concurrency <= 0:
+            raise ValueError(f"max_concurrency must be >= 1, got {self.max_concurrency}")
