@@ -16,8 +16,6 @@ from __future__ import annotations
 import json as _json
 from unittest.mock import MagicMock
 
-import pytest
-
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.schema import StepConfig
 
