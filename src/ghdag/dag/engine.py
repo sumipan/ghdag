@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
+from .fanout import FanOutSpec, build_child_exec_line, build_child_jsonl_record, parse_fanout_spec
 from .hooks import DefaultHooks, DagHooks
 from .models import DagConfig, RunningTask, Task
 from .parser import parse_exec_md, parse_jsonl, validate_dependencies
@@ -42,6 +43,9 @@ class DagEngine:
         self._tasks: dict[str, Task] = {}
         self._shutdown = False
         self._lock_fh = None
+        self._fanout_pending: dict[str, set[str]] = {}
+        self._fanout_tasks: dict[str, Task] = {}
+        self._fanout_metrics: dict[str, TaskMetrics] = {}
 
     def run(self) -> None:
         """Main loop (blocking). Graceful shutdown on SIGINT/SIGTERM."""
@@ -83,6 +87,9 @@ class DagEngine:
             known_done = load_done_from_dir(self._config.exec_done_dir)
             known_succeeded = load_succeeded_from_dir(self._config.exec_done_dir)
 
+            # Join fan-out parents whose children have all completed
+            self._check_fanout_completions(known_done, known_succeeded)
+
             # Validate dependency graph and mark invalid tasks immediately
             invalid_tasks = validate_dependencies(list(self._tasks.values()), known_done)
             for inv_uuid, reason in invalid_tasks.items():
@@ -97,7 +104,7 @@ class DagEngine:
             # Launch ready tasks
             launched = 0
             for uuid, task in self._tasks.items():
-                if uuid in known_done or uuid in self._running:
+                if uuid in known_done or uuid in self._running or uuid in self._fanout_pending:
                     continue
                 deps = set(task.depends)
                 # Check if any dep failed (non-success done)
@@ -318,7 +325,6 @@ class DagEngine:
                     self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
 
                 else:
-                    state_mark_done(self._config.exec_done_dir, uuid, 0)
                     metrics = TaskMetrics(
                         uuid=uuid, engine=engine, model=model,
                         wall_time_sec=round(finished_at - rt.started_at, 3),
@@ -326,7 +332,26 @@ class DagEngine:
                         started_at=rt.started_at, finished_at=finished_at,
                         correlation_id=task.idempotency_key,
                     )
-                    self._hooks.on_task_success(uuid, task, metrics)
+                    try:
+                        fanout_spec = parse_fanout_spec(effective_result_path)
+                    except ValueError as exc:
+                        logger.warning("FanOut parse error for [%s]: %s", uuid, exc)
+                        failure_metrics = TaskMetrics(
+                            uuid=uuid, engine=engine, model=model,
+                            wall_time_sec=round(finished_at - rt.started_at, 3),
+                            token_count=token_count, status="failure",
+                            started_at=rt.started_at, finished_at=finished_at,
+                            correlation_id=task.idempotency_key,
+                            failure_class="FANOUT_CHILD_FAILED",
+                        )
+                        state_mark_done(self._config.exec_done_dir, uuid, "FANOUT_CHILD_FAILED")
+                        self._hooks.on_task_failure(uuid, task, 0, str(exc), failure_metrics)
+                        continue
+                    if fanout_spec:
+                        self._spawn_fanout(uuid, task, fanout_spec, metrics)
+                    else:
+                        state_mark_done(self._config.exec_done_dir, uuid, 0)
+                        self._hooks.on_task_success(uuid, task, metrics)
 
             else:
                 state_mark_done(self._config.exec_done_dir, uuid, returncode)
@@ -339,6 +364,64 @@ class DagEngine:
                     failure_class="PROCESS_ERROR",
                 )
                 self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
+
+    def _spawn_fanout(self, parent_uuid: str, parent_task: Task,
+                      spec: FanOutSpec, metrics: TaskMetrics) -> None:
+        """Append child tasks to the exec file and register the parent in _fanout_pending."""
+        exec_path = str(self._config.exec_md_path)
+        child_uuids: set[str] = set()
+        for child in spec.children:
+            child_uuid = f"{parent_uuid}--fo--{child.id}"
+            child_uuids.add(child_uuid)
+            if exec_path.endswith(".jsonl"):
+                line = build_child_jsonl_record(child_uuid, child.command)
+            else:
+                line = build_child_exec_line(child_uuid, child.command)
+            self.append_task(line)
+            logger.info("FanOut [%s]: spawned child [%s]", parent_uuid, child_uuid)
+        self._fanout_pending[parent_uuid] = child_uuids
+        self._fanout_tasks[parent_uuid] = parent_task
+        self._fanout_metrics[parent_uuid] = metrics
+
+    def _check_fanout_completions(self, known_done: set[str], known_succeeded: set[str]) -> None:
+        """Check whether all children of each pending fan-out parent have completed."""
+        for parent_uuid in list(self._fanout_pending):
+            child_uuids = self._fanout_pending[parent_uuid]
+            if not child_uuids.issubset(known_done):
+                continue
+
+            parent_task = self._fanout_tasks[parent_uuid]
+            parent_metrics = self._fanout_metrics[parent_uuid]
+            failed_children = child_uuids - known_succeeded
+
+            if failed_children:
+                state_mark_done(self._config.exec_done_dir, parent_uuid, "FANOUT_CHILD_FAILED")
+                failure_metrics = TaskMetrics(
+                    uuid=parent_uuid,
+                    engine=parent_metrics.engine,
+                    model=parent_metrics.model,
+                    wall_time_sec=parent_metrics.wall_time_sec,
+                    token_count=parent_metrics.token_count,
+                    status="failure",
+                    started_at=parent_metrics.started_at,
+                    finished_at=parent_metrics.finished_at,
+                    correlation_id=parent_metrics.correlation_id,
+                    failure_class="FANOUT_CHILD_FAILED",
+                )
+                self._hooks.on_task_failure(
+                    parent_uuid, parent_task, 0, "FANOUT_CHILD_FAILED", failure_metrics
+                )
+                known_done.add(parent_uuid)
+            else:
+                state_mark_done(self._config.exec_done_dir, parent_uuid, 0)
+                self._hooks.on_task_success(parent_uuid, parent_task, parent_metrics)
+                known_done.add(parent_uuid)
+                known_succeeded.add(parent_uuid)
+
+            del self._fanout_pending[parent_uuid]
+            del self._fanout_tasks[parent_uuid]
+            del self._fanout_metrics[parent_uuid]
+            logger.info("FanOut join complete for [%s] (failed_children=%s)", parent_uuid, failed_children)
 
     def _propagate_dep_failed(self, known_done: set[str], known_succeeded: set[str]) -> None:
         """Mark tasks whose dependencies have failed as DEP_FAILED."""

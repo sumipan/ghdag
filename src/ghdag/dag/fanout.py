@@ -1,0 +1,95 @@
+"""Fan-out specification parsing and child task record building."""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass
+
+import yaml
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class FanOutItem:
+    id: str
+    command: str
+
+
+@dataclass
+class FanOutSpec:
+    children: list[FanOutItem]
+
+
+def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
+    """Detect and parse a ``ghdag_fanout:`` YAML block from the tail of a result file.
+
+    Searches backwards for the last ``---`` line, then parses everything after it
+    as YAML. Returns None if no block is found or parsing fails (with a warning log).
+    Raises ValueError if child ``id`` values are duplicated.
+    """
+    if result_path is None:
+        return None
+
+    try:
+        with open(result_path, encoding="utf-8") as f:
+            content = f.read()
+    except OSError:
+        return None
+
+    lines = content.splitlines()
+
+    last_sep_idx: int | None = None
+    for i in range(len(lines) - 1, -1, -1):
+        if lines[i].strip() == "---":
+            last_sep_idx = i
+            break
+
+    if last_sep_idx is None:
+        return None
+
+    yaml_text = "\n".join(lines[last_sep_idx + 1:])
+    try:
+        data = yaml.safe_load(yaml_text)
+    except yaml.YAMLError as exc:
+        logger.warning("parse_fanout_spec: invalid YAML in %s: %s", result_path, exc)
+        return None
+
+    if not isinstance(data, dict) or "ghdag_fanout" not in data:
+        return None
+
+    fanout_data = data["ghdag_fanout"]
+    if not isinstance(fanout_data, dict):
+        return None
+
+    children_data = fanout_data.get("children") or []
+    if not children_data:
+        return None
+
+    ids: list[str] = []
+    children: list[FanOutItem] = []
+    for c in children_data:
+        try:
+            child_id = c["id"]
+            child_cmd = c["command"]
+        except (KeyError, TypeError) as exc:
+            logger.warning("parse_fanout_spec: malformed child entry in %s: %s", result_path, exc)
+            return None
+        ids.append(child_id)
+        children.append(FanOutItem(id=child_id, command=child_cmd))
+
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"Duplicate child ids in fanout spec: {ids}")
+
+    return FanOutSpec(children=children)
+
+
+def build_child_exec_line(child_uuid: str, command: str) -> str:
+    """Build an exec.md-format line for a fan-out child task."""
+    return f"{child_uuid}: {command}"
+
+
+def build_child_jsonl_record(child_uuid: str, command: str) -> str:
+    """Build an exec.jsonl-format JSON line for a fan-out child task."""
+    return json.dumps({"uuid": child_uuid, "command": command})
