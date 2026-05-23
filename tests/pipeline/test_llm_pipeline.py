@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ghdag.pipeline.audit import AuditContext
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.pipeline.llm_pipeline import DependencyError, LLMPipelineAPI
 from ghdag.workflow.schema import StepConfig
 
 
@@ -428,7 +428,7 @@ class TestAC3DependsValidation:
         steps = [
             StepConfig(id="step_a", template="t", model="m", depends=["nonexistent_step"]),
         ]
-        with pytest.raises(ValueError, match="nonexistent_step"):
+        with pytest.raises(DependencyError, match="nonexistent_step"):
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
     def test_circular_dependency_a_b_a_raises_value_error(self):
@@ -438,7 +438,7 @@ class TestAC3DependsValidation:
             StepConfig(id="a", template="t", model="m", depends=["b"]),
             StepConfig(id="b", template="t", model="m", depends=["a"]),
         ]
-        with pytest.raises(ValueError, match="circular dependency"):
+        with pytest.raises(DependencyError, match="circular dependency"):
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
     def test_valid_linear_dependency_passes(self):
@@ -459,7 +459,7 @@ class TestAC3DependsValidation:
         steps = [
             StepConfig(id="a", template="t", model="m", depends=["nonexistent"]),
         ]
-        with pytest.raises(ValueError):
+        with pytest.raises(DependencyError):
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
         pipeline_state.write_order_file.assert_not_called()
         pipeline_state.append_exec_records.assert_not_called()
@@ -471,7 +471,7 @@ class TestAC3DependsValidation:
             StepConfig(id="x", template="t", model="m", depends=["y"]),
             StepConfig(id="y", template="t", model="m", depends=["x"]),
         ]
-        with pytest.raises(ValueError):
+        with pytest.raises(DependencyError):
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
         pipeline_state.write_order_file.assert_not_called()
         pipeline_state.append_exec_records.assert_not_called()

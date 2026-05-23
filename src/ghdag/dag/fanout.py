@@ -13,6 +13,10 @@ logger = logging.getLogger(__name__)
 FANOUT_SEPARATOR = "--fo--"
 
 
+class FanoutError(ValueError):
+    """Raised when a fan-out spec contains invalid entries."""
+
+
 @dataclass
 class FanOutItem:
     id: str
@@ -79,14 +83,14 @@ def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
             logger.warning("parse_fanout_spec: malformed child entry in %s: %s", result_path, exc)
             return None
         if FANOUT_SEPARATOR in str(child_id):
-            raise ValueError(
+            raise FanoutError(
                 f"child id {child_id!r} contains reserved separator {FANOUT_SEPARATOR!r}"
             )
         ids.append(child_id)
         children.append(FanOutItem(id=child_id, command=child_cmd))
 
     if len(ids) != len(set(ids)):
-        raise ValueError(f"Duplicate child ids in fanout spec: {ids}")
+        raise FanoutError(f"Duplicate child ids in fanout spec: {ids}")
 
     return FanOutSpec(children=children)
 

@@ -86,13 +86,17 @@ class GeminiAdapter:
 _ADAPTERS: dict[str, EngineAdapter] = {}
 
 
+class AdapterNotFoundError(ValueError):
+    """Raised when an unregistered engine adapter is requested."""
+
+
 def register_adapter(adapter: EngineAdapter) -> None:
     _ADAPTERS[adapter.name] = adapter
 
 
 def get_adapter(name: str) -> EngineAdapter:
     if name not in _ADAPTERS:
-        raise ValueError(f"Unknown engine: {name!r}. Available: {list(_ADAPTERS)}")
+        raise AdapterNotFoundError(f"Unknown engine: {name!r}. Available: {list(_ADAPTERS)}")
     return _ADAPTERS[name]
 
 

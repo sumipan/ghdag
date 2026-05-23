@@ -62,7 +62,7 @@ class TestEngineModels:
 
     def test_list_models_unknown_engine(self):
         """未知エンジン → EngineModelError"""
-        with pytest.raises(EngineModelError, match="未知のエンジン"):
+        with pytest.raises(EngineModelError, match="Unknown engine"):
             list_models("openai")
 
 
@@ -100,12 +100,12 @@ class TestValidateEngineModel:
 
     def test_unknown_engine(self):
         """未知エンジン → EngineModelError"""
-        with pytest.raises(EngineModelError, match="未知のエンジン"):
+        with pytest.raises(EngineModelError, match="Unknown engine"):
             validate_engine_model("openai", "gpt-4o")
 
     def test_invalid_model(self):
         """許可外モデル → EngineModelError"""
-        with pytest.raises(EngineModelError, match="許可リストにないモデル"):
+        with pytest.raises(EngineModelError, match="Model not in allowlist"):
             validate_engine_model("claude", "gpt-4o")
 
     def test_invalid_model_contains_info(self):

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ghdag.files.append import md_append
-from ghdag.files.models import AppendStatus, PromoteResult, PromoteStatus
+from ghdag.files.models import AppendStatus, PathTraversalError, PromoteResult, PromoteStatus
 from ghdag.files.reader import md_read
 from ghdag.pipeline.audit import _maybe_rotate
 
@@ -50,12 +50,12 @@ def md_promote(
     # Validate source path (md_read raises FileNotFoundError / ValueError)
     resolved_source = (root / source_path).resolve()
     if not resolved_source.is_relative_to(root.resolve()):
-        raise ValueError(f"Path traversal detected: {source_path}")
+        raise PathTraversalError(f"Path traversal detected: {source_path}")
 
     # Validate target path before calling md_append
     resolved_target = (root / target_path).resolve()
     if not resolved_target.is_relative_to(root.resolve()):
-        raise ValueError(f"Path traversal detected: {target_path}")
+        raise PathTraversalError(f"Path traversal detected: {target_path}")
 
     source_file = md_read(source_path, repo_root=root)
 

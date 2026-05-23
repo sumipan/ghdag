@@ -37,7 +37,7 @@ for line in sys.stdin:
 " < jobs/exec.md > jobs/exec.jsonl
 ```
 
-## 0.18.0 — 2026-05-23
+## [0.18.0] - 2026-05-23
 
 ### Removed
 - `ghdag shr` subcommand and `ghdag.shr` package (self-hosted runner management).

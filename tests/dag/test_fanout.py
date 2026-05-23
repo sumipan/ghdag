@@ -8,6 +8,7 @@ import logging
 import pytest
 
 from ghdag.dag.fanout import (
+    FanoutError,
     build_child_exec_line,
     build_child_jsonl_record,
     parse_fanout_spec,
@@ -76,7 +77,7 @@ class TestParseFanoutSpec:
             "    - id: dup\n      command: echo 1\n"
             "    - id: dup\n      command: echo 2\n"
         )
-        with pytest.raises(ValueError, match="[Dd]uplicate"):
+        with pytest.raises(FanoutError, match="[Dd]uplicate"):
             parse_fanout_spec(str(f))
 
     def test_uses_last_separator(self, tmp_path):
@@ -107,7 +108,7 @@ class TestParseFanoutSpec:
             "---\nghdag_fanout:\n  children:\n"
             "    - id: foo--fo--bar\n      command: echo 1\n"
         )
-        with pytest.raises(ValueError, match="--fo--"):
+        with pytest.raises(FanoutError, match="--fo--"):
             parse_fanout_spec(str(f))
 
     def test_t3_child_id_leading_fo_separator_raises(self, tmp_path):
@@ -117,7 +118,7 @@ class TestParseFanoutSpec:
             "---\nghdag_fanout:\n  children:\n"
             "    - id: \"--fo--leading\"\n      command: echo 1\n"
         )
-        with pytest.raises(ValueError, match="--fo--"):
+        with pytest.raises(FanoutError, match="--fo--"):
             parse_fanout_spec(str(f))
 
     def test_t4_child_id_trailing_fo_separator_raises(self, tmp_path):
@@ -127,7 +128,7 @@ class TestParseFanoutSpec:
             "---\nghdag_fanout:\n  children:\n"
             "    - id: \"trailing--fo--\"\n      command: echo 1\n"
         )
-        with pytest.raises(ValueError, match="--fo--"):
+        with pytest.raises(FanoutError, match="--fo--"):
             parse_fanout_spec(str(f))
 
     def test_t5_child_id_is_separator_itself_raises(self, tmp_path):
@@ -137,7 +138,7 @@ class TestParseFanoutSpec:
             "---\nghdag_fanout:\n  children:\n"
             "    - id: \"--fo--\"\n      command: echo 1\n"
         )
-        with pytest.raises(ValueError, match="--fo--"):
+        with pytest.raises(FanoutError, match="--fo--"):
             parse_fanout_spec(str(f))
 
 

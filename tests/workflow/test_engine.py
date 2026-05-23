@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from ghdag.workflow.engine import (
+    AdapterNotFoundError,
     ClaudeAdapter,
     GeminiAdapter,
     CursorAdapter,
@@ -124,11 +125,11 @@ class TestGetAdapter:
         assert isinstance(adapter, ShellAdapter)
 
     def test_unknown_engine_raises_value_error(self):
-        with pytest.raises(ValueError, match="Unknown engine"):
+        with pytest.raises(AdapterNotFoundError, match="Unknown engine"):
             get_adapter("unknown")
 
     def test_error_message_contains_available_engines(self):
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(AdapterNotFoundError) as exc_info:
             get_adapter("unknown")
         msg = str(exc_info.value)
         assert "claude" in msg or "gemini" in msg

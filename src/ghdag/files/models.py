@@ -5,6 +5,10 @@ from enum import Enum
 from typing import Any
 
 
+class PathTraversalError(ValueError):
+    """Raised when a file path escapes the repository root."""
+
+
 @dataclass(frozen=True)
 class MdFile:
     path: str
