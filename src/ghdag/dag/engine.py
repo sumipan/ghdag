@@ -219,6 +219,7 @@ class DagEngine:
             retry_depth=task.retry,
             stdout_buf=stdout_buf,
         )
+        self._hooks.on_task_start(uuid, task)
 
     def _check_completions(self) -> None:
         for uuid in list(self._running):

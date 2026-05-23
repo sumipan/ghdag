@@ -179,6 +179,33 @@ class TestAppendTask:
 class TestHooksCalled:
     """§5.4 hooks 呼び出し"""
 
+    def test_on_task_start_called(self, tmp_path):
+        """タスク起動時に on_task_start が正しい uuid と task で 1 回呼ばれること"""
+        config = _make_config(tmp_path, "uuid-a: echo hello\n")
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=3.0)
+
+        hooks.on_task_start.assert_called_once()
+        call_args = hooks.on_task_start.call_args
+        assert call_args[0][0] == "uuid-a"  # uuid
+        assert call_args[0][1].uuid == "uuid-a"  # task
+
+    def test_on_task_start_not_called_for_skipped_missing_input(self, tmp_path):
+        """stdin ファイルが存在しないタスクでは on_task_start が呼ばれないこと"""
+        config = _make_config(
+            tmp_path,
+            "uuid-a: agent -p --force < /tmp/nonexistent_ghdag_xxxxxx.md | tee -a result.md\n",
+        )
+        hooks = MagicMock()
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=3.0)
+
+        hooks.on_task_start.assert_not_called()
+
     def test_on_task_success_called(self, tmp_path):
         """タスク成功時に on_task_success が呼ばれること"""
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
