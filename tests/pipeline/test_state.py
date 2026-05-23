@@ -320,6 +320,25 @@ class TestCheckIdempotencyJsonlMode:
 
         assert pipeline_jsonl.check_idempotency("scheduler:diary_review:ts") is True
 
+    def test_invalid_json_line_skipped(self, pipeline_jsonl):
+        """JSON パース失敗行はスキップし正常行のみ判定する（A1-2）。"""
+        key = "scheduler:diary_review:2026-05-08T23:00:00+09:00"
+        valid_record = json.dumps({"uuid": UUID1, "command": "cmd", "idempotency_key": key})
+        pipeline_jsonl._exec_md_path.write_text(
+            "this-is-broken-json\n"
+            + valid_record + "\n",
+            encoding="utf-8",
+        )
+        assert pipeline_jsonl.check_idempotency(key) is False
+
+    def test_record_without_idempotency_key_does_not_match(self, pipeline_jsonl):
+        """idempotency_key フィールドを持たないレコードはマッチしない（A1-2）。"""
+        key = "some:key:value"
+        record = json.dumps({"uuid": UUID1, "command": "cmd"})
+        pipeline_jsonl._exec_md_path.write_text(record + "\n", encoding="utf-8")
+
+        assert pipeline_jsonl.check_idempotency(key) is True
+
 
 # ---------------------------------------------------------------------------
 # JSONL モード: remove_idempotency_matching (AC2)

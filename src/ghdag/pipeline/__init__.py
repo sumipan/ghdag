@@ -1,5 +1,6 @@
 """ghdag.pipeline — Layer 1 パイプライン公開 API"""
 
+from ghdag.pipeline.audit_query import get_latest_status, read_task_exit_events
 from ghdag.pipeline.config import (
     ModelValidationError,
     PipelineConfig,
@@ -37,6 +38,8 @@ __all__ = [
     "SubmittedStep",
     "task_status",
     "wait_for_result",
+    "read_task_exit_events",
+    "get_latest_status",
     "STATE_EMPTY",
     "STATE_FAIL",
     "STATE_OK",
