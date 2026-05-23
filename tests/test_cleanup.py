@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,7 +47,7 @@ def _set_mtime(path: Path, days_ago: float) -> None:
 
 
 def _make_exec_jsonl(exec_md: Path, entries: list[str]) -> None:
-    lines = [f"{uuid}: cat queue/order.md | claude\n" for uuid in entries]
+    lines = [json.dumps({"uuid": uuid, "command": "cat queue/order.md | claude", "depends": []}) + "\n" for uuid in entries]
     exec_md.write_text("".join(lines), encoding="utf-8")
 
 
