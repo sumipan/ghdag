@@ -6,7 +6,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ghdag.files.models import WriteResult
+from ghdag.files.models import PathTraversalError, WriteResult
 from ghdag.pipeline.audit import _maybe_rotate
 
 JST = timezone(timedelta(hours=9))
@@ -42,7 +42,7 @@ def md_write(
     root = repo_root if repo_root is not None else Path.cwd()
     resolved = (root / path).resolve()
     if not resolved.is_relative_to(root.resolve()):
-        raise ValueError(f"Path traversal detected: {path}")
+        raise PathTraversalError(f"Path traversal detected: {path}")
 
     encoded = content.encode("utf-8")
     bytes_written = len(encoded)
