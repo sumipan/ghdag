@@ -1,4 +1,4 @@
-"""Tests for pipeline/audit_query.py (Issue #983 A1-1)."""
+"""Tests for pipeline/audit_query.py (Issue #983 A1-1, Issue #1046 AC-8–12)."""
 
 from __future__ import annotations
 
@@ -206,3 +206,84 @@ class TestPublicAPI:
         ])
         result = public_get(audit_path, "cid")
         assert result == "success"
+
+
+# ---------------------------------------------------------------------------
+# Multi-file read (Issue #1046) — AC-8 through AC-12
+# ---------------------------------------------------------------------------
+
+class TestMultiFileRead:
+    def test_ac8_rotated_plus_current_returns_all(self, tmp_path):
+        """AC-8: 3 records in rotated + 2 in current → 5 total."""
+        audit_path = tmp_path / "audit.jsonl"
+        rotated = tmp_path / "audit.2026-05-22T00-00-00.jsonl"
+
+        _write_events(rotated, [
+            {"event_type": "task_complete", "uuid": f"u{i}", "status": "success",
+             "correlation_id": "cid", "timestamp": "2026-05-22T00:00:00+09:00"}
+            for i in range(3)
+        ])
+        _write_events(audit_path, [
+            {"event_type": "task_complete", "uuid": f"u{i+3}", "status": "success",
+             "correlation_id": "cid", "timestamp": "2026-05-23T00:00:00+09:00"}
+            for i in range(2)
+        ])
+
+        result = read_task_exit_events(audit_path)
+        assert len(result) == 5
+
+    def test_ac9_rotated_only_no_current(self, tmp_path):
+        """AC-9: only rotated file exists → records returned."""
+        audit_path = tmp_path / "audit.jsonl"
+        rotated = tmp_path / "audit.2026-05-22T00-00-00.jsonl"
+
+        _write_events(rotated, [
+            {"event_type": "task_complete", "uuid": "u1", "status": "success",
+             "correlation_id": "cid", "timestamp": "2026-05-22T00:00:00+09:00"},
+        ])
+
+        result = read_task_exit_events(audit_path)
+        assert len(result) == 1
+        assert result[0]["uuid"] == "u1"
+
+    def test_ac10_since_filter_across_files(self, tmp_path):
+        """AC-10: since filter applies across rotated + current."""
+        import datetime
+        audit_path = tmp_path / "audit.jsonl"
+        rotated = tmp_path / "audit.2026-05-22T00-00-00.jsonl"
+
+        _write_events(rotated, [
+            {"event_type": "task_complete", "uuid": "old", "status": "success",
+             "correlation_id": "cid", "timestamp": "2026-05-22T00:00:00+09:00"},
+        ])
+        _write_events(audit_path, [
+            {"event_type": "task_complete", "uuid": "new", "status": "success",
+             "correlation_id": "cid", "timestamp": "2026-05-23T00:00:00+09:00"},
+        ])
+
+        since_dt = datetime.datetime(
+            2026, 5, 23, 0, 0, 0,
+            tzinfo=datetime.timezone(datetime.timedelta(hours=9)),
+        )
+        result = read_task_exit_events(audit_path, since=since_dt.timestamp())
+
+        assert len(result) == 1
+        assert result[0]["uuid"] == "new"
+
+    def test_ac11_get_latest_status_from_rotated(self, tmp_path):
+        """AC-11: get_latest_status finds record in rotated file."""
+        audit_path = tmp_path / "audit.jsonl"
+        rotated = tmp_path / "audit.2026-05-22T00-00-00.jsonl"
+
+        _write_events(rotated, [
+            {"event_type": "task_complete", "uuid": "u1", "status": "success",
+             "correlation_id": "cid:123", "timestamp": "2026-05-22T00:00:00+09:00"},
+        ])
+
+        result = get_latest_status(audit_path, "cid:123")
+        assert result == "success"
+
+    def test_ac12_no_files_returns_empty(self, tmp_path):
+        """AC-12: no files at all → empty list."""
+        result = read_task_exit_events(tmp_path / "audit.jsonl")
+        assert result == []

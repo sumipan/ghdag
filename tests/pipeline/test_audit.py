@@ -1,4 +1,4 @@
-"""Tests for pipeline/audit.py — AC 1-9 (Issue #863), AC 1-11 (Issue #762)."""
+"""Tests for pipeline/audit.py — AC 1-9 (Issue #863), AC 1-11 (Issue #762), AC 1-7 (Issue #1046)."""
 
 from __future__ import annotations
 
@@ -372,3 +372,149 @@ class TestWriteLlmAuditLog:
         llm_r = json.loads(lines[1])
         assert "event" not in enqueue_r
         assert llm_r["event"] == "llm_call"
+
+
+# ---------------------------------------------------------------------------
+# Rotation (Issue #1046) — AC-1 through AC-7
+# ---------------------------------------------------------------------------
+
+class TestRotation:
+    def test_ac1_size_rotation_triggers(self, tmp_path, monkeypatch):
+        """AC-1: file > threshold → rotate; new record in fresh audit.jsonl."""
+        import ghdag.pipeline.audit as audit_mod
+        monkeypatch.setattr(audit_mod, "_MAX_AUDIT_BYTES", 5)
+
+        audit_path = tmp_path / "audit.jsonl"
+        old_content = "x" * 10 + "\n"
+        audit_path.write_text(old_content)
+
+        write_audit_log(audit_path, task_uuids=[], exec_lines_count=1, context=AuditContext())
+
+        rotated = sorted(tmp_path.glob("audit.*.jsonl"))
+        assert len(rotated) == 1
+        assert rotated[0].read_text() == old_content
+        lines = audit_path.read_text().strip().splitlines()
+        assert len(lines) == 1
+        assert json.loads(lines[0])["exec_lines_count"] == 1
+
+    def test_ac2_daily_rotation_triggers(self, tmp_path):
+        """AC-2: first-line timestamp is previous day (JST) → rotation."""
+        audit_path = tmp_path / "audit.jsonl"
+        old_record = json.dumps({"timestamp": "2026-05-22T23:59:59+09:00"}) + "\n"
+        audit_path.write_text(old_record)
+
+        write_audit_log(audit_path, task_uuids=[], exec_lines_count=1, context=AuditContext())
+
+        rotated = sorted(tmp_path.glob("audit.*.jsonl"))
+        assert len(rotated) == 1
+        lines = audit_path.read_text().strip().splitlines()
+        assert len(lines) == 1
+        assert json.loads(lines[0])["exec_lines_count"] == 1
+
+    def test_ac3_no_rotation_same_day_small_file(self, tmp_path):
+        """AC-3: same-day, small file → no rotation; record appended."""
+        from datetime import datetime, timezone, timedelta
+        JST = timezone(timedelta(hours=9))
+        today_ts = datetime.now(JST).isoformat()
+
+        audit_path = tmp_path / "audit.jsonl"
+        audit_path.write_text(json.dumps({"timestamp": today_ts}) + "\n")
+
+        write_audit_log(audit_path, task_uuids=[], exec_lines_count=1, context=AuditContext())
+
+        rotated = list(tmp_path.glob("audit.*.jsonl"))
+        assert len(rotated) == 0
+        lines = audit_path.read_text().strip().splitlines()
+        assert len(lines) == 2
+
+    def test_ac4_no_existing_file_creates_new(self, tmp_path):
+        """AC-4: no existing file → new file created, no rotation."""
+        audit_path = tmp_path / "audit.jsonl"
+        assert not audit_path.exists()
+
+        write_audit_log(audit_path, task_uuids=[], exec_lines_count=1, context=AuditContext())
+
+        assert audit_path.exists()
+        assert list(tmp_path.glob("audit.*.jsonl")) == []
+
+    def test_ac5_oserror_on_rotation_warns_and_writes(self, tmp_path, monkeypatch, capsys):
+        """AC-5: OSError during rotation → stderr warning; write still proceeds."""
+        import ghdag.pipeline.audit as audit_mod
+        monkeypatch.setattr(audit_mod, "_MAX_AUDIT_BYTES", 5)
+
+        def bad_rotate(p):
+            raise OSError("permission denied")
+        monkeypatch.setattr(audit_mod, "_do_rotate", bad_rotate)
+
+        audit_path = tmp_path / "audit.jsonl"
+        audit_path.write_text("x" * 10 + "\n")
+
+        write_audit_log(audit_path, task_uuids=[], exec_lines_count=1, context=AuditContext())
+
+        captured = capsys.readouterr()
+        assert "[audit] warning:" in captured.err
+        json_records = []
+        for line in audit_path.read_text().splitlines():
+            try:
+                json_records.append(json.loads(line))
+            except json.JSONDecodeError:
+                pass
+        assert any(r.get("exec_lines_count") == 1 for r in json_records)
+
+    def test_ac6_write_llm_audit_log_rotates(self, tmp_path, monkeypatch):
+        """AC-6: write_llm_audit_log triggers rotation."""
+        import ghdag.pipeline.audit as audit_mod
+        from ghdag.pipeline.audit import write_llm_audit_log
+        monkeypatch.setattr(audit_mod, "_MAX_AUDIT_BYTES", 5)
+
+        audit_path = tmp_path / "audit.jsonl"
+        audit_path.write_text("x" * 10 + "\n")
+
+        write_llm_audit_log(audit_path, engine="claude", model="model", exit_code=0)
+
+        assert len(sorted(tmp_path.glob("audit.*.jsonl"))) == 1
+
+    def test_ac6_write_task_exit_audit_rotates(self, tmp_path, monkeypatch):
+        """AC-6: write_task_exit_audit triggers rotation."""
+        import ghdag.pipeline.audit as audit_mod
+        from ghdag.pipeline.audit import write_task_exit_audit
+        monkeypatch.setattr(audit_mod, "_MAX_AUDIT_BYTES", 5)
+
+        audit_path = tmp_path / "audit.jsonl"
+        audit_path.write_text("x" * 10 + "\n")
+
+        write_task_exit_audit(audit_path, event_type="task_complete", uuid="u1", status="success")
+
+        assert len(sorted(tmp_path.glob("audit.*.jsonl"))) == 1
+
+    def test_ac7_write_md_write_audit_rotates(self, tmp_path, monkeypatch):
+        """AC-7: write_md_write_audit in files/writer.py triggers rotation."""
+        import ghdag.pipeline.audit as audit_mod
+        from ghdag.files.writer import write_md_write_audit
+        monkeypatch.setattr(audit_mod, "_MAX_AUDIT_BYTES", 5)
+
+        audit_path = tmp_path / "audit.jsonl"
+        audit_path.write_text("x" * 10 + "\n")
+
+        write_md_write_audit(audit_path, path="result/foo.md", bytes_written=10)
+
+        assert len(sorted(tmp_path.glob("audit.*.jsonl"))) == 1
+
+    def test_ac7_write_promote_audit_rotates(self, tmp_path, monkeypatch):
+        """AC-7: _write_promote_audit in files/promote.py triggers rotation."""
+        import ghdag.pipeline.audit as audit_mod
+        from ghdag.files.promote import _write_promote_audit
+        monkeypatch.setattr(audit_mod, "_MAX_AUDIT_BYTES", 5)
+
+        audit_path = tmp_path / "audit.jsonl"
+        audit_path.write_text("x" * 10 + "\n")
+
+        _write_promote_audit(
+            audit_path,
+            source_path="order/foo.md",
+            target_path="result/foo.md",
+            section="Promoted",
+            status="promoted",
+        )
+
+        assert len(sorted(tmp_path.glob("audit.*.jsonl"))) == 1
