@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from ghdag.metrics.models import FailureClass
+
 JST = timezone(timedelta(hours=9))
 _MAX_FRAMES = 5
 
@@ -87,7 +89,7 @@ def write_task_exit_audit(
     model: str | None = None,
     engine: str | None = None,
     correlation_id: str | None = None,
-    failure_class: str | None = None,
+    failure_class: FailureClass | None = None,
     schema_version: int = 1,
 ) -> None:
     record = {
@@ -96,7 +98,7 @@ def write_task_exit_audit(
         "timestamp": datetime.now(JST).isoformat(),
         "uuid": uuid,
         "status": status,
-        "failure_class": failure_class,
+        "failure_class": failure_class.value if failure_class else None,
         "elapsed_sec": elapsed_sec,
         "token_count": token_count,
         "model": model,

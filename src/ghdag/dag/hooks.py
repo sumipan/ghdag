@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Protocol
 
 from .models import Task
-from ghdag.metrics.models import TaskMetrics
+from ghdag.metrics.models import FailureClass, TaskMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ class DefaultHooks:
                 self._audit_path,
                 event_type="task_dep_failed", uuid=uuid, status="dep_failed",
                 correlation_id=task.idempotency_key,
-                failure_class="DEP_FAILED",
+                failure_class=FailureClass.DEP_FAILED,
             )
 
     def on_task_empty_result(self, uuid: str, task: Task, stderr_text: str, metrics: TaskMetrics) -> None:

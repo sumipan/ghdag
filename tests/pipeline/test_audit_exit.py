@@ -1,10 +1,11 @@
-"""Tests for write_task_exit_audit() — Issue #960 AC-1, AC-2, ..., AC-9."""
+"""Tests for write_task_exit_audit() — Issue #960 AC-1, AC-2, ..., AC-9, Issue #1041."""
 
 from __future__ import annotations
 
 import json
 
 
+from ghdag.metrics.models import FailureClass
 from ghdag.pipeline.audit import write_task_exit_audit
 
 
@@ -207,14 +208,14 @@ class TestWriteTaskExitAudit:
     # --- Issue #962 tests ---
 
     def test_failure_class_in_record(self, tmp_path):
-        """failure_class="TIMEOUT" → JSON レコードに "failure_class": "TIMEOUT" が含まれる。"""
+        """failure_class=FailureClass.TIMEOUT → JSON レコードに "failure_class": "TIMEOUT" が含まれる。"""
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
             event_type="task_failed",
             uuid=UUID,
             status="failure",
-            failure_class="TIMEOUT",
+            failure_class=FailureClass.TIMEOUT,
         )
 
         r = json.loads(audit_path.read_text().strip())
@@ -242,6 +243,36 @@ class TestWriteTaskExitAudit:
             event_type="task_complete",
             uuid=UUID,
             status="success",
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["failure_class"] is None
+
+    # --- Issue #1041 tests ---
+
+    def test_failure_class_enum_serialized_as_string(self, tmp_path):
+        """write_task_exit_audit(failure_class=FailureClass.TIMEOUT) → JSON で "failure_class": "TIMEOUT"。"""
+        audit_path = tmp_path / "audit.jsonl"
+        write_task_exit_audit(
+            audit_path,
+            event_type="task_failed",
+            uuid=UUID,
+            status="failure",
+            failure_class=FailureClass.TIMEOUT,
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["failure_class"] == "TIMEOUT"
+
+    def test_failure_class_enum_none_serialized_as_null(self, tmp_path):
+        """write_task_exit_audit(failure_class=None) → JSON で "failure_class": null。"""
+        audit_path = tmp_path / "audit.jsonl"
+        write_task_exit_audit(
+            audit_path,
+            event_type="task_complete",
+            uuid=UUID,
+            status="success",
+            failure_class=None,
         )
 
         r = json.loads(audit_path.read_text().strip())
