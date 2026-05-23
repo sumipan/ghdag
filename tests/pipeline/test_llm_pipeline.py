@@ -6,8 +6,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.schema import StepConfig
+
+
+_TEST_AUDIT_CTX = AuditContext(source="test")
 
 
 def _make_api(
@@ -40,7 +44,7 @@ class TestAC1SingleStep:
         """1 step で exec_lines 1 行（idempotency なし）。"""
         api, pipeline_state, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {"issue_number": "10"})
+        exec_lines = api.submit(steps, {"issue_number": "10"}, audit_context=_TEST_AUDIT_CTX)
 
         assert len(exec_lines) == 1
         call_args = pipeline_state.append_exec.call_args
@@ -50,7 +54,7 @@ class TestAC1SingleStep:
         """write_order_file が 1 回呼ばれる。"""
         api, pipeline_state, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {})
+        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         pipeline_state.write_order_file.assert_called_once()
 
@@ -58,7 +62,7 @@ class TestAC1SingleStep:
         """build_order が 1 回呼ばれ、template 名が渡される。"""
         api, _, order_builder = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {})
+        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         order_builder.build_order.assert_called_once()
         call_args = order_builder.build_order.call_args[0]
@@ -68,7 +72,7 @@ class TestAC1SingleStep:
         """exec 行が {uuid}: cat queue/{order} | {cmd} | tee -a queue/{result} 形式。"""
         api, pipeline_state, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         line = exec_lines[0]
         assert ": cat queue/" in line
@@ -80,7 +84,7 @@ class TestAC1SingleStep:
         """exec 行にモデル名が含まれる。"""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         assert "--model" in exec_lines[0] and "claude-opus-4-6" in exec_lines[0]
 
@@ -88,7 +92,7 @@ class TestAC1SingleStep:
         """exec 行に --dangerously-skip-permissions が含まれる（engine=claude）。"""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         assert "--dangerously-skip-permissions" in exec_lines[0]
 
@@ -103,7 +107,7 @@ class TestAC1IdempotencyKey:
         """idempotency_key なしのとき先頭コメント行なし。"""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         assert not exec_lines[0].startswith("# idempotency:")
 
@@ -121,7 +125,7 @@ class TestAC1TwoStepsWithDepends:
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
         ]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         p1_uuid = exec_lines[0].split(":")[0]
         assert f"[depends:{p1_uuid}]" in exec_lines[1]
@@ -133,7 +137,7 @@ class TestAC1TwoStepsWithDepends:
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
         ]
-        api.submit(steps, {})
+        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         calls = order_builder.build_order.call_args_list
         p1_ctx = calls[0][0][1]
@@ -151,7 +155,7 @@ class TestAC1TwoStepsWithDepends:
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
             StepConfig(id="p3", template="p3", model="claude-sonnet-4-6", depends=["p2"]),
         ]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         assert len(exec_lines) == 3
         p1_uuid = exec_lines[0].split(":")[0]
@@ -170,7 +174,7 @@ class TestAC4EngineResultFilename:
         """engine=claude のとき result_filename が {ts}-claude-result-{uuid}.md。"""
         api, _, order_builder = _make_api()
         steps = [StepConfig(id="p1", template="p1", model="claude-sonnet-4-6", engine="claude")]
-        api.submit(steps, {})
+        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         ctx = order_builder.build_order.call_args[0][1]
         assert ctx["result_filename"].startswith(ctx["ts"] + "-claude-result-")
@@ -179,7 +183,7 @@ class TestAC4EngineResultFilename:
         """engine=gemini のとき result_filename が {ts}-gemini-result-{uuid}.md。"""
         api, _, order_builder = _make_api()
         steps = [StepConfig(id="p1", template="p1", model="gemini-2.5-flash", engine="gemini")]
-        api.submit(steps, {})
+        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         ctx = order_builder.build_order.call_args[0][1]
         assert ctx["result_filename"].startswith(ctx["ts"] + "-gemini-result-")
@@ -191,7 +195,7 @@ class TestAC4EngineResultFilename:
             StepConfig(id="p1", template="p1", model="gemini-2.5-flash", engine="gemini"),
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", engine="claude", depends=["p1"]),
         ]
-        api.submit(steps, {})
+        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         calls = order_builder.build_order.call_args_list
         p1_ctx = calls[0][0][1]
@@ -205,7 +209,7 @@ class TestAC4EngineResultFilename:
         """engine=gemini のとき exec 行に --dangerously-skip-permissions が含まれない。"""
         api, _, _ = _make_api()
         steps = [StepConfig(template="p1", model="gemini-2.5-flash", engine="gemini")]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         assert "--dangerously-skip-permissions" not in exec_lines[0]
         assert "gemini" in exec_lines[0]
@@ -222,7 +226,7 @@ class TestAC3ExecFormat:
         import re
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         uuid_pattern = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
         assert re.match(uuid_pattern, exec_lines[0])
@@ -235,7 +239,7 @@ class TestAC3ExecFormat:
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
         ]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         dep_pattern = r"\[depends:[0-9a-f\-]+\]"
         assert re.search(dep_pattern, exec_lines[1])
@@ -245,7 +249,7 @@ class TestAC3ExecFormat:
         api, pipeline_state, _ = _make_api()
         pipeline_state.write_order_file.return_value = "20260419-claude-order-abc.md"
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         assert "tee -a queue/" in exec_lines[0]
         assert "-result-" in exec_lines[0]
@@ -261,7 +265,7 @@ class TestBaseContextPropagation:
         """base_context の値が build_order に渡される context に含まれる。"""
         api, _, order_builder = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {"issue_number": "42", "workflow_name": "test"})
+        api.submit(steps, {"issue_number": "42", "workflow_name": "test"}, audit_context=_TEST_AUDIT_CTX)
 
         ctx = order_builder.build_order.call_args[0][1]
         assert ctx["issue_number"] == "42"
@@ -271,7 +275,7 @@ class TestBaseContextPropagation:
         """ts, order_uuid, result_uuid, result_filename が context に含まれる。"""
         api, _, order_builder = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {})
+        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         ctx = order_builder.build_order.call_args[0][1]
         assert "ts" in ctx
@@ -285,7 +289,7 @@ class TestBaseContextPropagation:
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         base = {"issue_number": "10"}
         original_keys = set(base.keys())
-        api.submit(steps, base)
+        api.submit(steps, base, audit_context=_TEST_AUDIT_CTX)
 
         assert set(base.keys()) == original_keys
 
@@ -329,13 +333,13 @@ class TestPerWorkflowOrderBuilder:
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
 
         # issuesmith の workflow_name で submit → issuesmith_builder が呼ばれる
-        api.submit(steps, {"workflow_name": "issuesmith", "issue_number": "610"})
+        api.submit(steps, {"workflow_name": "issuesmith", "issue_number": "610"}, audit_context=_TEST_AUDIT_CTX)
         issuesmith_builder.build_order.assert_called_once()
         inkwell_builder.build_order.assert_not_called()
         default_builder.build_order.assert_not_called()
 
         # 別ワークフロー名で再 submit → 該当 builder が呼ばれる
-        api.submit(steps, {"workflow_name": "inkwell"})
+        api.submit(steps, {"workflow_name": "inkwell"}, audit_context=_TEST_AUDIT_CTX)
         inkwell_builder.build_order.assert_called_once()
 
     def test_falls_back_to_default_builder_when_workflow_unknown(self):
@@ -362,7 +366,7 @@ class TestPerWorkflowOrderBuilder:
         )
 
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {"workflow_name": "research"})  # 未登録
+        api.submit(steps, {"workflow_name": "research"}, audit_context=_TEST_AUDIT_CTX)  # 未登録
         default_builder.build_order.assert_called_once()
         inkwell_builder.build_order.assert_not_called()
 
@@ -388,7 +392,7 @@ class TestPerWorkflowOrderBuilder:
         )
 
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {})  # workflow_name キーなし
+        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)  # workflow_name キーなし
         default_builder.build_order.assert_called_once()
 
     def test_backward_compat_no_order_builders_kwarg(self):
@@ -412,7 +416,7 @@ class TestPerWorkflowOrderBuilder:
         )
 
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {"workflow_name": "issuesmith"})  # 何が来ても default に落ちる
+        api.submit(steps, {"workflow_name": "issuesmith"}, audit_context=_TEST_AUDIT_CTX)  # 何が来ても default に落ちる
         order_builder.build_order.assert_called_once()
 
 
@@ -429,7 +433,7 @@ class TestAC3DependsValidation:
             StepConfig(id="step_a", template="t", model="m", depends=["nonexistent_step"]),
         ]
         with pytest.raises(ValueError, match="nonexistent_step"):
-            api.submit(steps, {})
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
     def test_circular_dependency_a_b_a_raises_value_error(self):
         """A→B→A の循環参照 → ValueError('circular dependency' を含む)"""
@@ -439,7 +443,7 @@ class TestAC3DependsValidation:
             StepConfig(id="b", template="t", model="m", depends=["a"]),
         ]
         with pytest.raises(ValueError, match="circular dependency"):
-            api.submit(steps, {})
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
     def test_valid_linear_dependency_passes(self):
         """A→B→C の正常な直列依存 → 検証通過、3 exec 行生成"""
@@ -449,7 +453,7 @@ class TestAC3DependsValidation:
             StepConfig(id="b", template="t", model="m", depends=["a"]),
             StepConfig(id="c", template="t", model="m", depends=["b"]),
         ]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
         assert len(exec_lines) == 3
         pipeline_state.append_exec.assert_called_once()
 
@@ -460,7 +464,7 @@ class TestAC3DependsValidation:
             StepConfig(id="a", template="t", model="m", depends=["nonexistent"]),
         ]
         with pytest.raises(ValueError):
-            api.submit(steps, {})
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
         pipeline_state.write_order_file.assert_not_called()
         pipeline_state.append_exec.assert_not_called()
 
@@ -472,7 +476,7 @@ class TestAC3DependsValidation:
             StepConfig(id="y", template="t", model="m", depends=["x"]),
         ]
         with pytest.raises(ValueError):
-            api.submit(steps, {})
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
         pipeline_state.write_order_file.assert_not_called()
         pipeline_state.append_exec.assert_not_called()
 
@@ -487,7 +491,7 @@ class TestJsonlMode:
         """JSONL モードでは append_exec_records が呼ばれ append_exec は呼ばれない。"""
         api, pipeline_state, _ = _make_api(jsonl_mode=True)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         pipeline_state.append_exec_records.assert_called_once()
         pipeline_state.append_exec.assert_not_called()
@@ -499,7 +503,7 @@ class TestJsonlMode:
 
         api, _, _ = _make_api(jsonl_mode=True)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         record = _json.loads(exec_lines[0])
         assert "uuid" in record
@@ -512,7 +516,7 @@ class TestJsonlMode:
 
         api, pipeline_state, _ = _make_api(jsonl_mode=True)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, idempotency_key="workflow:handler:42")
+        exec_lines = api.submit(steps, {}, idempotency_key="workflow:handler:42", audit_context=_TEST_AUDIT_CTX)
 
         assert len(exec_lines) == 1
         record = _json.loads(exec_lines[0])
@@ -524,7 +528,7 @@ class TestJsonlMode:
 
         api, _, _ = _make_api(queue_dir="jobs", jsonl_mode=True)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         record = _json.loads(exec_lines[0])
         assert record["result_path"].startswith("jobs/")
@@ -533,7 +537,7 @@ class TestJsonlMode:
         """JSONL モードでは exec_lines に # idempotency: コメント行が含まれない。"""
         api, _, _ = _make_api(jsonl_mode=True)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, idempotency_key="scheduler:diary_review:ts")
+        exec_lines = api.submit(steps, {}, idempotency_key="scheduler:diary_review:ts", audit_context=_TEST_AUDIT_CTX)
 
         for line in exec_lines:
             assert not line.startswith("#"), f"comment line found: {line!r}"
@@ -544,7 +548,7 @@ class TestJsonlMode:
 
         api, _, _ = _make_api(jsonl_mode=True)
         steps = [StepConfig(template="skill", model="auto", engine="cursor")]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         record = _json.loads(exec_lines[0])
         assert "uuid" in record
@@ -554,7 +558,7 @@ class TestJsonlMode:
         """テキストモードでは append_exec_records が呼ばれない（append_exec のみ）。"""
         api, pipeline_state, _ = _make_api(jsonl_mode=False)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {})
+        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         pipeline_state.append_exec_records.assert_not_called()
         pipeline_state.append_exec.assert_called_once()
@@ -568,7 +572,7 @@ class TestJsonlMode:
             StepConfig(id="s1", template="t1", model="m1"),
             StepConfig(id="s2", template="t2", model="m2", depends=["s1"]),
         ]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         assert len(exec_lines) == 2
         for line in exec_lines:
@@ -583,7 +587,7 @@ class TestJsonlMode:
         api, _, _ = _make_api(jsonl_mode=True)
         key = "scheduler:diary_review:2026-05-08T23:00:00.123456+09:00"
         steps = [StepConfig(template="diary-review", model="auto", engine="cursor")]
-        exec_lines = api.submit(steps, {"workflow_name": "scheduler"}, idempotency_key=key)
+        exec_lines = api.submit(steps, {"workflow_name": "scheduler"}, idempotency_key=key, audit_context=_TEST_AUDIT_CTX)
 
         record = _json.loads(exec_lines[0])
         assert record["idempotency_key"] == key
@@ -591,24 +595,24 @@ class TestJsonlMode:
 
 
 # ---------------------------------------------------------------------------
-# Issue #961: audit_context 伝搬テスト (AC-1, AC-5)
+# Issue #984: audit_context 必須化テスト (AC-1, AC-5 置換)
 # ---------------------------------------------------------------------------
 
 
 class TestAuditContextPropagation:
-    def test_ac5_submit_without_audit_context_does_not_raise(self):
-        """AC-5: audit_context を渡さない既存の呼び出しがエラーにならない。"""
-        api, pipeline_state, _ = _make_api()
+    def test_ac5_submit_without_audit_context_raises_type_error(self):
+        """AC-5 (必須化): audit_context を省略した submit() が TypeError を送出する。"""
+        api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {"issue_number": "10"}, idempotency_key="wf:h:10")
-        pipeline_state.append_exec.assert_called_once()
+        with pytest.raises(TypeError):
+            api.submit(steps, {"issue_number": "10"}, idempotency_key="wf:h:10")
 
-    def test_ac5_jsonl_submit_without_audit_context_does_not_raise(self):
-        """AC-5 (JSONL mode): audit_context を渡さない既存の呼び出しがエラーにならない。"""
-        api, pipeline_state, _ = _make_api(jsonl_mode=True)
+    def test_ac5_jsonl_submit_without_audit_context_raises_type_error(self):
+        """AC-5 (必須化, JSONL mode): audit_context を省略した submit() が TypeError を送出する。"""
+        api, _, _ = _make_api(jsonl_mode=True)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {"issue_number": "10"}, idempotency_key="wf:h:10")
-        pipeline_state.append_exec_records.assert_called_once()
+        with pytest.raises(TypeError):
+            api.submit(steps, {"issue_number": "10"}, idempotency_key="wf:h:10")
 
     def test_ac1_audit_context_passed_to_append_exec_records(self):
         """AC-1: JSONL モードで audit_context が append_exec_records に中継される。"""

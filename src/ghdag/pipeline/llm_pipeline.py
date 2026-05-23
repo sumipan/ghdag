@@ -122,7 +122,7 @@ class LLMPipelineAPI:
         base_context: dict[str, str],
         *,
         idempotency_key: str | None = None,
-        audit_context: AuditContext | None = None,
+        audit_context: AuditContext,
     ) -> list[str]:
         """ステップ群を order/exec ファイルに投入する。
 
@@ -164,7 +164,7 @@ class LLMPipelineAPI:
         order_builder: OrderBuilder,
         step_uuid_map: dict[str, str],
         step_engine_map: dict[str, str],
-        audit_context: AuditContext | None = None,
+        audit_context: AuditContext,
     ) -> list[str]:
         """テキスト形式（exec.md）への書き込み。"""
         exec_lines: list[str] = []
@@ -221,7 +221,7 @@ class LLMPipelineAPI:
         order_builder: OrderBuilder,
         step_uuid_map: dict[str, str],
         step_engine_map: dict[str, str],
-        audit_context: AuditContext | None = None,
+        audit_context: AuditContext,
     ) -> list[str]:
         """JSONL 形式（exec.jsonl）への書き込み。"""
         import json as _json
