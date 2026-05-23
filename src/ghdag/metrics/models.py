@@ -13,6 +13,7 @@ class FailureClass(Enum):
     PIPELINE_FAILED = ("PIPELINE_FAILED", "permanent", "requires_review")
     EMPTY_RESULT = ("EMPTY_RESULT", "unknown", "requires_review")
     FANOUT_CHILD_FAILED = ("FANOUT_CHILD_FAILED", "permanent", "forbidden")
+    FANOUT_PARSE_FAILED = ("FANOUT_PARSE_FAILED", "permanent", "requires_review")
     DEP_FAILED = ("DEP_FAILED", "permanent", "forbidden")
     UNKNOWN_FAILURE = ("UNKNOWN_FAILURE", "unknown", "requires_review")
 
