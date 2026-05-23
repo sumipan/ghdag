@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.22.0 — 2026-05-24
+
+### Changed
+
+- `workflow/engine.py`: 4 Adapter クラス（`ClaudeAdapter` / `GeminiAdapter` / `CursorAdapter` / `ShellAdapter`）を `_GenericAdapter(spec: EngineSpec)` に統合。`get_adapter()` は `ENGINE_SPECS` からオンデマンド生成するよう変更（diary #1056）
+- `llm/engines.py`: `_validate_capabilities_for_engine()` を `_UNSUPPORTED_CAPABILITIES` 辞書駆動に置換、`build_llm_cmd()` を `EngineSpec` フィールド + `_CAPABILITY_FLAG_BUILDERS` マップに分割（engine 文字列ハードコード分岐を解消）
+- `pipeline/llm_pipeline.py`: `_build_exec_line()` / `_build_exec_record()` の `workflow.engine.get_adapter()` への import を `llm.spec` 直接参照に置換し、Layer 1 → Layer 2 逆依存を解消
+
+### Deprecated
+
+- `ClaudeAdapter` / `GeminiAdapter` / `CursorAdapter` / `ShellAdapter`: deprecated alias 化（0.24.0 で削除予定）。`get_adapter(name)` または `_GenericAdapter(ENGINE_SPECS[name])` を使用すること
+
 ## 0.18.0 — 2026-05-23
 
 ### Removed

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ghdag.llm._config import load_engine_models
@@ -81,34 +82,67 @@ def validate_engine_model(engine: str, model: str | None) -> str:
     return model
 
 
+# ---------------------------------------------------------------------------
+# Engine-specific capability validation — data-driven, no engine string branching
+# ---------------------------------------------------------------------------
+
+_UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
+    "gemini": {"disallowed_tools", "allowed_tools", "permission_mode"},
+    "cursor": {"allowed_tools", "permission_mode"},
+}
+
+
 def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities) -> None:
     """エンジンが capabilities の機能をサポートしているか検証する。
 
     Raises:
         NotImplementedError: エンジンが対応していない機能が指定された場合
     """
-    if engine == "gemini":
-        if capabilities.disallowed_tools:
+    unsupported = _UNSUPPORTED_CAPABILITIES.get(engine, set())
+    for attr in unsupported:
+        val = getattr(capabilities, attr)
+        if attr == "permission_mode":
+            if val != "default":
+                raise NotImplementedError(
+                    f"{engine} engine does not support {attr} != default (got {val!r})"
+                )
+        elif val:
             raise NotImplementedError(
-                f"gemini engine does not support disallowed_tools (got {capabilities.disallowed_tools!r})"
+                f"{engine} engine does not support {attr} (got {val!r})"
             )
-        if capabilities.allowed_tools:
-            raise NotImplementedError(
-                f"gemini engine does not support allowed_tools (got {capabilities.allowed_tools!r})"
-            )
-        if capabilities.permission_mode != "default":
-            raise NotImplementedError(
-                f"gemini engine does not support permission_mode != default (got {capabilities.permission_mode!r})"
-            )
-    elif engine == "cursor":
-        if capabilities.allowed_tools:
-            raise NotImplementedError(
-                f"cursor engine does not support allowed_tools (got {capabilities.allowed_tools!r})"
-            )
-        if capabilities.permission_mode != "default":
-            raise NotImplementedError(
-                f"cursor engine does not support permission_mode != default (got {capabilities.permission_mode!r})"
-            )
+
+
+# ---------------------------------------------------------------------------
+# LLM command builders — per-engine capability flag helpers
+# ---------------------------------------------------------------------------
+
+def _build_claude_flags(
+    capabilities: LLMCapabilities, dangerously_skip_permissions: bool
+) -> list[str]:
+    flags = ["--permission-mode", capabilities.permission_mode]
+    if capabilities.output_format != "text":
+        flags += ["--output-format", capabilities.output_format]
+    if capabilities.allowed_tools:
+        flags += ["--allowed-tools", ",".join(capabilities.allowed_tools)]
+    if capabilities.disallowed_tools:
+        flags += ["--disallowed-tools", ",".join(capabilities.disallowed_tools)]
+    if dangerously_skip_permissions:
+        flags += ["--dangerously-skip-permissions"]
+    return flags
+
+
+def _build_cursor_flags(
+    capabilities: LLMCapabilities, dangerously_skip_permissions: bool
+) -> list[str]:
+    if dangerously_skip_permissions:
+        return ["--force"]
+    return []
+
+
+_CAPABILITY_FLAG_BUILDERS: dict[str, Callable[[LLMCapabilities, bool], list[str]]] = {
+    "claude": _build_claude_flags,
+    "cursor": _build_cursor_flags,
+}
 
 
 @dataclass
@@ -162,25 +196,21 @@ def build_llm_cmd(
     """
     spec = ENGINE_SPECS.get(engine)
     cli = spec.cli if spec else engine
-    cmd = [cli, "--model", model, "-p", prompt]
+    cmd = [cli]
 
-    if engine == "claude":
-        cmd += ["--permission-mode", capabilities.permission_mode]
+    if spec is None:
+        cmd += ["--model", model, "-p", prompt]
+    else:
+        if spec.model_flag:
+            cmd += [spec.model_flag, model]
+        if spec.prompt_flag:
+            cmd += [spec.prompt_flag, prompt]
 
-        if capabilities.output_format != "text":
-            cmd += ["--output-format", capabilities.output_format]
-
-        if capabilities.allowed_tools:
-            cmd += ["--allowed-tools", ",".join(capabilities.allowed_tools)]
-
-        if capabilities.disallowed_tools:
-            cmd += ["--disallowed-tools", ",".join(capabilities.disallowed_tools)]
-
-        if dangerously_skip_permissions:
-            cmd += ["--dangerously-skip-permissions"]
-
-    elif engine == "cursor" and dangerously_skip_permissions:
-        cmd.append("--force")
+    builder = _CAPABILITY_FLAG_BUILDERS.get(engine)
+    if builder:
+        cmd += builder(capabilities, dangerously_skip_permissions)
+    elif dangerously_skip_permissions and spec and spec.danger_flag:
+        cmd.append(spec.danger_flag)
 
     return cmd
 
