@@ -374,6 +374,10 @@ handlers:
         model: claude-sonnet-4-6
 """
         (workflows_dir / "test.yml").write_text(yaml_content, encoding="utf-8")
+        tdir = workflows_dir / "templates"
+        tdir.mkdir(exist_ok=True)
+        (tdir / "brushup.md").write_text("# brushup\n", encoding="utf-8")
+        (tdir / "p1-implement.md").write_text("# p1-implement\n", encoding="utf-8")
 
     def test_trigger_calls_dispatch(self, tmp_path):
         workflows_dir = tmp_path / "workflows"
@@ -466,6 +470,9 @@ handlers:
         model: claude-opus-4-6
 """
         (workflows_dir / "test.yml").write_text(yaml_content, encoding="utf-8")
+        tdir = workflows_dir / "templates"
+        tdir.mkdir(exist_ok=True)
+        (tdir / "brushup.md").write_text("# brushup\n", encoding="utf-8")
 
     def test_trigger_no_args_exits_2(self):
         from ghdag.cli import main

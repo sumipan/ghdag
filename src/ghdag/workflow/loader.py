@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+import shlex
+import shutil
 from pathlib import Path
 
 import yaml
@@ -13,6 +16,8 @@ from ghdag.workflow.schema import (
     TriggerConfig,
     WorkflowConfig,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ValidationError(ValueError):
@@ -47,7 +52,9 @@ def load_workflows(directory: str | Path) -> list[WorkflowConfig]:
             raise ValueError(f"YAML ルートはマッピングである必要があります: {path.name}")
 
         _validate(data, path.name)
-        configs.append(_parse(data, workflow_dir=directory.resolve()))
+        config = _parse(data, workflow_dir=directory.resolve())
+        _validate_references(config, workflow_dir=directory.resolve())
+        configs.append(config)
 
     return configs
 
@@ -97,6 +104,38 @@ def _validate(data: dict, filename: str) -> None:
                 raise ValidationError(f"ハンドラー '{handler_name}' の step[{i}] に 'template' が必須です: {filename}")
             if "model" not in step:
                 raise ValidationError(f"ハンドラー '{handler_name}' の step[{i}] に 'model' が必須です: {filename}")
+
+    handler_names = set(data["handlers"].keys())
+    for i, t in enumerate(data["triggers"]):
+        if t["handler"] not in handler_names:
+            raise ValueError(
+                f"{filename}: triggers[{i}].handler '{t['handler']}' は "
+                f"handlers に定義されていません (定義済み: {sorted(handler_names)})"
+            )
+
+
+def _validate_references(config: WorkflowConfig, *, workflow_dir: Path | None = None) -> None:
+    """テンプレートファイルの存在確認と context_hook の実行可能性チェック。"""
+    template_dir = Path(config.template_dir) if config.template_dir else (
+        workflow_dir / "templates" if workflow_dir else Path("templates")
+    )
+    for handler_name, handler in config.handlers.items():
+        if handler.context_hook:
+            tokens = shlex.split(handler.context_hook)
+            cmd = tokens[0] if tokens else handler.context_hook
+            if shutil.which(cmd) is None:
+                logger.warning(
+                    "handler '%s' の context_hook コマンド '%s' が見つかりません "
+                    "(PATH に存在しないか実行権限がありません)",
+                    handler_name, cmd,
+                )
+        for i, step in enumerate(handler.steps):
+            template_path = template_dir / f"{step.template}.md"
+            if not template_path.exists():
+                raise ValueError(
+                    f"handler '{handler_name}' steps[{i}].template: "
+                    f"ファイルが見つかりません: {template_path}"
+                )
 
 
 def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
