@@ -59,12 +59,25 @@ class TestAppendExecAuditIntegration:
         assert r["source"] == "unknown"
         assert r["correlation_id"] is None
 
-    def test_ac7_backward_compatible_no_audit_context(self, pipeline):
-        """AC7: 後方互換 — audit_context なしで呼んでも exec.md 追記は正常。"""
-        lines = [f"{UUID1}: cmd"]
-        pipeline.append_exec(lines)  # no audit_context arg
+    def test_ac7_submit_without_audit_context_raises_type_error(self):
+        """AC7: 必須化 — LLMPipelineAPI.submit() の audit_context 省略で TypeError。"""
+        from unittest.mock import MagicMock
 
-        assert UUID1 in pipeline._exec_md_path.read_text()
+        from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+        from ghdag.workflow.schema import StepConfig
+
+        pipeline_state = MagicMock()
+        pipeline_state._is_jsonl_mode = False
+        pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+        order_builder = MagicMock()
+        order_builder.build_order.return_value = "order content"
+        api = LLMPipelineAPI(
+            pipeline_state=pipeline_state,
+            order_builder=order_builder,
+        )
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        with pytest.raises(TypeError):
+            api.submit(steps, {})
 
     def test_exec_write_before_audit(self, pipeline):
         """exec.md 追記が audit より先に完了する（audit I/O 失敗でも exec は成功）。"""

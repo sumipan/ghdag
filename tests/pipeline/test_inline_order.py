@@ -6,9 +6,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.schema import StepConfig
+
+
+_TEST_AUDIT_CTX = AuditContext(source="test")
 
 
 class TestInlineOrderBuilder:
@@ -55,5 +59,6 @@ class TestInlineOrderBuilder:
         exec_lines = api.submit(
             steps,
             base_context={"workflow_name": "scheduler", "issue_number": "42"},
+            audit_context=_TEST_AUDIT_CTX,
         )
         assert len(exec_lines) == 1

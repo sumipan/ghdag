@@ -238,3 +238,32 @@ class TestDefaultHooksAudit:
 
         r = json.loads(audit_path.read_text().strip())
         assert r["failure_class"] is None
+
+    # --- Issue #1016 tests ---
+
+    def test_on_task_start_audit(self, tmp_path):
+        """on_task_start 呼び出し後、audit.jsonl に task_started レコードが追記される。"""
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = DefaultHooks(audit_path=audit_path)
+        hooks.on_task_start(UUID, _make_task())
+
+        records = [json.loads(line) for line in audit_path.read_text().splitlines()]
+        assert len(records) == 1
+        r = records[0]
+        assert r["event_type"] == "task_started"
+        assert r["uuid"] == UUID
+        assert r["status"] == "running"
+        assert r["schema_version"] == 1
+        assert "+09:00" in r["timestamp"]
+
+    def test_on_task_start_no_audit_path_no_error(self):
+        """audit_path=None の DefaultHooks で on_task_start を呼んでもエラーにならない。"""
+        hooks = DefaultHooks(audit_path=None)
+        # Should not raise
+        hooks.on_task_start(UUID, _make_task())
+
+    def test_on_task_start_no_args_init_no_error(self):
+        """DefaultHooks() (引数なし) で on_task_start を呼んでもエラーにならない。"""
+        hooks = DefaultHooks()
+        # Should not raise
+        hooks.on_task_start(UUID, _make_task())

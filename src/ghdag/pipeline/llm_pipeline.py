@@ -7,6 +7,7 @@ exec 行フォーマットを知る必要がない。
 
 from __future__ import annotations
 
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -122,7 +123,7 @@ class LLMPipelineAPI:
         base_context: dict[str, str],
         *,
         idempotency_key: str | None = None,
-        audit_context: AuditContext | None = None,
+        audit_context: AuditContext,
         metadata: dict[str, str] | None = None,
     ) -> list[str]:
         """ステップ群を order/exec ファイルに投入する。
@@ -169,7 +170,7 @@ class LLMPipelineAPI:
         order_builder: OrderBuilder,
         step_uuid_map: dict[str, str],
         step_engine_map: dict[str, str],
-        audit_context: AuditContext | None = None,
+        audit_context: AuditContext,
     ) -> list[str]:
         """テキスト形式（exec.md）への書き込み。"""
         exec_lines: list[str] = []
@@ -196,9 +197,15 @@ class LLMPipelineAPI:
                 if dep_id in step_uuid_map:
                     dep_uuid = step_uuid_map[dep_id]
                     dep_engine = step_engine_map[dep_id]
-                    context[f"{dep_id}_result_filename"] = (
-                        f"{ts}-{dep_engine}-result-{dep_uuid}.md"
-                    )
+                    dep_result_filename = f"{ts}-{dep_engine}-result-{dep_uuid}.md"
+                    context[f"{dep_id}_result_filename"] = dep_result_filename
+
+                    dep_result_path = os.path.join(self._queue_dir, dep_result_filename)
+                    if os.path.isfile(dep_result_path):
+                        with open(dep_result_path, encoding="utf-8") as f:
+                            context[f"{dep_id}_result_content"] = f.read()
+                    else:
+                        context[f"{dep_id}_result_content"] = ""
 
             order_content = order_builder.build_order(step.template, context)
             order_filename = self._state.write_order_file(
@@ -226,7 +233,7 @@ class LLMPipelineAPI:
         order_builder: OrderBuilder,
         step_uuid_map: dict[str, str],
         step_engine_map: dict[str, str],
-        audit_context: AuditContext | None = None,
+        audit_context: AuditContext,
         *,
         metadata: dict[str, str] | None = None,
     ) -> list[str]:

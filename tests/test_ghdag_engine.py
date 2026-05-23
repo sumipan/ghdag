@@ -179,6 +179,33 @@ class TestAppendTask:
 class TestHooksCalled:
     """§5.4 hooks 呼び出し"""
 
+    def test_on_task_start_called(self, tmp_path):
+        """タスク起動時に on_task_start が正しい uuid と task で 1 回呼ばれること"""
+        config = _make_config(tmp_path, "uuid-a: echo hello\n")
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=3.0)
+
+        hooks.on_task_start.assert_called_once()
+        call_args = hooks.on_task_start.call_args
+        assert call_args[0][0] == "uuid-a"  # uuid
+        assert call_args[0][1].uuid == "uuid-a"  # task
+
+    def test_on_task_start_not_called_for_skipped_missing_input(self, tmp_path):
+        """stdin ファイルが存在しないタスクでは on_task_start が呼ばれないこと"""
+        config = _make_config(
+            tmp_path,
+            "uuid-a: agent -p --force < /tmp/nonexistent_ghdag_xxxxxx.md | tee -a result.md\n",
+        )
+        hooks = MagicMock()
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=3.0)
+
+        hooks.on_task_start.assert_not_called()
+
     def test_on_task_success_called(self, tmp_path):
         """タスク成功時に on_task_success が呼ばれること"""
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
@@ -560,3 +587,86 @@ class TestStdinMissingInputSkip:
         _run_engine_with_timeout(engine, timeout=3.0)
 
         assert _read_done_status(config.exec_done_dir, "uuid-a") == "SKIPPED_MISSING_INPUT"
+
+
+class TestEngineModelFromStructuredFields:
+    """AC3: task.engine/model 優先と parse_engine_model フォールバックの検証"""
+
+    def _make_jsonl_config(self, tmp_path, jsonl_content: str, **overrides) -> DagConfig:
+        exec_jsonl = tmp_path / "exec.jsonl"
+        exec_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        exec_jsonl.write_text(jsonl_content, encoding="utf-8")
+        defaults = dict(
+            exec_md_path=str(exec_jsonl),
+            exec_done_dir=str(tmp_path / "jobs" / "done"),
+            poll_interval=0.1,
+            launch_stagger=0.0,
+            lock_file=str(tmp_path / "lock"),
+        )
+        defaults.update(overrides)
+        return DagConfig(**defaults)
+
+    def test_structured_engine_used_without_fallback(self, tmp_path):
+        """AC3: task.engine が設定されている場合、on_task_success の metrics.engine にその値が使われる"""
+        jsonl = json.dumps({
+            "uuid": "uuid-a",
+            "command": "echo hello",
+            "depends": [],
+            "engine": "cursor",
+            "model": None,
+        })
+        config = self._make_jsonl_config(tmp_path, jsonl + "\n")
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=3.0)
+
+        hooks.on_task_success.assert_called_once()
+        call_args = hooks.on_task_success.call_args
+        metrics = call_args[0][2]  # TaskMetrics (uuid, task, metrics)
+        assert metrics.engine == "cursor"
+        assert metrics.model is None
+
+    def test_fallback_when_engine_field_absent(self, tmp_path):
+        """AC3: task.engine=None（旧レコード）の場合、parse_engine_model フォールバックが動く"""
+        # claude コマンドがなくても echo でテスト: engine=null → parse_engine_model("echo hello") → engine=None
+        jsonl = json.dumps({
+            "uuid": "uuid-b",
+            "command": "echo hello",
+            "depends": [],
+        })
+        config = self._make_jsonl_config(tmp_path, jsonl + "\n")
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=3.0)
+
+        hooks.on_task_success.assert_called_once()
+        call_args = hooks.on_task_success.call_args
+        metrics = call_args[0][2]  # TaskMetrics
+        # parse_engine_model("echo hello") → engine=None（コマンドに既知エンジンなし）
+        assert metrics.engine is None
+
+    def test_structured_model_used_directly(self, tmp_path):
+        """AC3: task.model が設定されている場合、metrics.model にその値が使われる"""
+        jsonl = json.dumps({
+            "uuid": "uuid-c",
+            "command": "echo hello",
+            "depends": [],
+            "engine": "claude",
+            "model": "claude-opus-4-6",
+        })
+        config = self._make_jsonl_config(tmp_path, jsonl + "\n")
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=3.0)
+
+        hooks.on_task_success.assert_called_once()
+        call_args = hooks.on_task_success.call_args
+        metrics = call_args[0][2]
+        assert metrics.engine == "claude"
+        assert metrics.model == "claude-opus-4-6"

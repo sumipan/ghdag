@@ -16,8 +16,11 @@ from __future__ import annotations
 import json as _json
 from unittest.mock import MagicMock
 
+from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.schema import StepConfig
+
+_AUDIT = AuditContext(source="test")
 
 
 def _make_api(
@@ -50,7 +53,7 @@ class TestMetadataInAnnotations:
         """submit(metadata={"k": "v"}) で annotations に {"k": "v"} が含まれる。"""
         api, _, _ = _make_api(jsonl_mode=True)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, metadata={"k": "v"})
+        exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata={"k": "v"})
 
         record = _json.loads(exec_lines[0])
         assert record["annotations"].get("k") == "v"
@@ -60,7 +63,7 @@ class TestMetadataInAnnotations:
         api, _, _ = _make_api(jsonl_mode=True)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         metadata = {"channel_id": "C123", "thread_ts": "1234567890.000"}
-        exec_lines = api.submit(steps, {}, metadata=metadata)
+        exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata=metadata)
 
         record = _json.loads(exec_lines[0])
         assert record["annotations"]["channel_id"] == "C123"
@@ -71,7 +74,7 @@ class TestMetadataInAnnotations:
         api, _, _ = _make_api(jsonl_mode=True)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         # Should not raise
-        result = api.submit(steps, {}, metadata={"foo": "bar"})
+        result = api.submit(steps, {}, audit_context=_AUDIT, metadata={"foo": "bar"})
         assert len(result) == 1
 
 
@@ -90,7 +93,7 @@ class TestMetadataMultipleSteps:
             StepConfig(id="s3", template="t3", model="m3", depends=["s2"]),
         ]
         metadata = {"channel_id": "C999", "thread_ts": "9999.000"}
-        exec_lines = api.submit(steps, {}, metadata=metadata)
+        exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata=metadata)
 
         assert len(exec_lines) == 3
         for line in exec_lines:
@@ -106,7 +109,7 @@ class TestMetadataMultipleSteps:
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
         ]
         metadata = {"k": "v"}
-        exec_lines = api.submit(steps, {}, metadata=metadata)
+        exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata=metadata)
 
         for line in exec_lines:
             record = _json.loads(line)
@@ -136,7 +139,7 @@ class TestMetadataRoundTrip:
 
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         metadata = {"channel_id": "C123", "thread_ts": "1234567890.000"}
-        api.submit(steps, {}, metadata=metadata)
+        api.submit(steps, {}, audit_context=_AUDIT, metadata=metadata)
 
         assert len(captured_records) == 1
         # parse_jsonl は str を受け取る
@@ -164,7 +167,7 @@ class TestMetadataRoundTrip:
             StepConfig(id="p2", template="p2", model="m", depends=["p1"]),
         ]
         metadata = {"slack_channel_id": "C001", "slack_thread_ts": "111.222"}
-        api.submit(steps, {}, metadata=metadata)
+        api.submit(steps, {}, audit_context=_AUDIT, metadata=metadata)
 
         assert len(captured_records) == 2
         # parse_jsonl は str（改行区切りの JSONL テキスト）を受け取る
@@ -189,7 +192,7 @@ class TestMetadataBackwardCompat:
         """metadata を省略した場合、exec.jsonl の annotations は {} のまま。"""
         api, _, _ = _make_api(jsonl_mode=True)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_AUDIT)
 
         record = _json.loads(exec_lines[0])
         assert record.get("annotations") == {}
@@ -198,7 +201,7 @@ class TestMetadataBackwardCompat:
         """metadata なしで既存のテスト項目（uuid, command, result_path）が正常。"""
         api, _, _ = _make_api(jsonl_mode=True)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {})
+        exec_lines = api.submit(steps, {}, audit_context=_AUDIT)
 
         record = _json.loads(exec_lines[0])
         assert "uuid" in record
@@ -220,6 +223,7 @@ class TestMetadataWithIdempotencyKey:
             steps,
             {},
             idempotency_key="workflow:handler:42",
+            audit_context=_AUDIT,
             metadata={"channel_id": "C123"},
         )
 
@@ -239,14 +243,14 @@ class TestMetadataTextModeCompat:
         api, pipeline_state, _ = _make_api(jsonl_mode=False)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         # Should not raise
-        exec_lines = api.submit(steps, {}, metadata={"channel_id": "C123"})
+        exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata={"channel_id": "C123"})
         assert len(exec_lines) >= 1
 
     def test_text_mode_metadata_ignored_silently(self):
         """テキストモードでは metadata が無視される（exec 行に annotations は出ない）。"""
         api, pipeline_state, _ = _make_api(jsonl_mode=False)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, metadata={"channel_id": "C123"})
+        exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata={"channel_id": "C123"})
 
         # テキストモードの exec 行に "annotations" は含まれない
         for line in exec_lines:
@@ -263,7 +267,7 @@ class TestMetadataEmptyDict:
         """metadata={} を渡した場合、annotations は {} のまま。"""
         api, _, _ = _make_api(jsonl_mode=True)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, metadata={})
+        exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata={})
 
         record = _json.loads(exec_lines[0])
         assert record.get("annotations") == {}
@@ -279,7 +283,7 @@ class TestMetadataExplicitNone:
         """metadata=None を明示的に渡した場合、省略時と同一の動作になる。"""
         api, _, _ = _make_api(jsonl_mode=True)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, metadata=None)
+        exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata=None)
 
         record = _json.loads(exec_lines[0])
         # annotations は {} のまま（metadata なし相当）

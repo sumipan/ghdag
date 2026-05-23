@@ -17,6 +17,8 @@ class Task:
     annotations: dict[str, str] = field(default_factory=dict)
     result_path: str | None = None
     idempotency_key: str | None = None
+    engine: str | None = None
+    model: str | None = None
 
 
 @dataclass
