@@ -12,6 +12,36 @@ from ghdag.metrics.models import FailureClass
 
 JST = timezone(timedelta(hours=9))
 _MAX_FRAMES = 5
+_MAX_AUDIT_BYTES = 64 * 1024 * 1024
+
+
+def _should_rotate_daily(audit_path: Path) -> bool:
+    with open(audit_path, encoding="utf-8") as f:
+        first_line = f.readline().strip()
+    if not first_line:
+        return False
+    try:
+        rec = json.loads(first_line)
+        ts = datetime.fromisoformat(rec["timestamp"])
+        return ts.astimezone(JST).date() < datetime.now(JST).date()
+    except (json.JSONDecodeError, KeyError, ValueError):
+        return False
+
+
+def _do_rotate(audit_path: Path) -> None:
+    ts = datetime.now(JST).strftime("%Y-%m-%dT%H-%M-%S")
+    rotated = audit_path.with_name(f"audit.{ts}.jsonl")
+    audit_path.rename(rotated)
+
+
+def _maybe_rotate(audit_path: Path) -> None:
+    if not audit_path.exists():
+        return
+    try:
+        if audit_path.stat().st_size > _MAX_AUDIT_BYTES or _should_rotate_daily(audit_path):
+            _do_rotate(audit_path)
+    except OSError as e:
+        print(f"[audit] warning: rotation failed: {e}", file=sys.stderr)
 
 
 @dataclass
@@ -32,6 +62,7 @@ def write_audit_log(
     if exec_lines_count == 0:
         return
 
+    _maybe_rotate(audit_path)
     record = {
         "timestamp": datetime.now(JST).isoformat(),
         "task_uuids": task_uuids,
@@ -59,6 +90,7 @@ def write_llm_audit_log(
     timeout_sec: int | None = None,
 ) -> None:
     """llm サブコマンド用の監査ログを 1 行追記する。"""
+    _maybe_rotate(audit_path)
     record = {
         "event": "llm_call",
         "timestamp": datetime.now(JST).isoformat(),
@@ -92,6 +124,7 @@ def write_task_exit_audit(
     failure_class: FailureClass | None = None,
     schema_version: int = 1,
 ) -> None:
+    _maybe_rotate(audit_path)
     record = {
         "schema_version": schema_version,
         "event_type": event_type,

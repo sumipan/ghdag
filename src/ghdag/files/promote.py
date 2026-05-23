@@ -8,6 +8,7 @@ from pathlib import Path
 from ghdag.files.append import md_append
 from ghdag.files.models import AppendStatus, PromoteResult, PromoteStatus
 from ghdag.files.reader import md_read
+from ghdag.pipeline.audit import _maybe_rotate
 
 JST = timezone(timedelta(hours=9))
 
@@ -21,6 +22,7 @@ def _write_promote_audit(
     status: str,
     correlation_id: str | None = None,
 ) -> None:
+    _maybe_rotate(audit_path)
     record = {
         "event": "md_promote",
         "timestamp": datetime.now(JST).isoformat(),
