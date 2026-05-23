@@ -24,7 +24,7 @@ from ghdag.llm import (
     list_models,
     validate_engine_model,
 )
-from ghdag.llm.spec import render_exec_command, render_exec_line
+from ghdag.llm.spec import render_exec_command
 from ghdag.workflow.engine import ClaudeAdapter, GeminiAdapter, CursorAdapter, ShellAdapter
 
 
@@ -626,53 +626,6 @@ class TestRenderExecCommand:
 
 
 # ---------------------------------------------------------------------------
-# render_exec_line
-# ---------------------------------------------------------------------------
-
-class TestRenderExecLine:
-    def test_claude_exec_line_structure(self):
-        spec = ENGINE_SPECS["claude"]
-        line = render_exec_line(
-            spec,
-            uuid="abc123",
-            order_path="queue/order.md",
-            result_path="results/result.md",
-            prompt="hello",
-            model="claude-sonnet-4-6",
-            depends=[],
-        )
-        assert line.startswith("abc123: ")
-        assert "| tee -a results/result.md" in line
-        assert "claude -p 'hello'" in line
-
-    def test_claude_exec_line_with_depends(self):
-        spec = ENGINE_SPECS["claude"]
-        line = render_exec_line(
-            spec,
-            uuid="abc123",
-            order_path="queue/order.md",
-            result_path="results/result.md",
-            prompt="hello",
-            model=None,
-            depends=["dep1", "dep2"],
-        )
-        assert "abc123[depends:dep1,dep2]: " in line
-
-    def test_cursor_exec_line(self):
-        spec = ENGINE_SPECS["cursor"]
-        line = render_exec_line(
-            spec,
-            uuid="xyz",
-            order_path="queue/order.md",
-            result_path="results/result.md",
-            prompt="",
-            model="auto",
-            depends=[],
-        )
-        assert line == "xyz: agent --model 'auto' -p --force < queue/order.md | tee -a results/result.md"
-
-
-# ---------------------------------------------------------------------------
 # Adapter outputs via spec
 # ---------------------------------------------------------------------------
 
@@ -709,7 +662,7 @@ class TestAdapterOutputs:
     def test_cursor_adapter_p_force_adjacent(self):
         """CursorAdapter の出力で -p --force が隣接"""
         adapter = CursorAdapter()
-        line = adapter.build_exec_line(
+        record = adapter.build_exec_record(
             uuid="u1",
             order_path="queue/order.md",
             result_path="results/result.md",
@@ -717,7 +670,7 @@ class TestAdapterOutputs:
             model="auto",
             depends=[],
         )
-        assert "-p --force" in line
+        assert "-p --force" in record["command"]
 
     def test_shell_adapter_bash_pipefail(self):
         adapter = ShellAdapter()

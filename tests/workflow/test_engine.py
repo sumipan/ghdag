@@ -31,77 +31,6 @@ class TestClaudeAdapter:
     def test_name(self):
         assert self.adapter.name == "claude"
 
-    def test_full_line_with_model_no_depends(self):
-        line = self.adapter.build_exec_line(
-            uuid="abc123",
-            model="claude-opus-4-6",
-            depends=[],
-            **self.base_kwargs,
-        )
-        expected = (
-            "abc123: cat queue/ts-claude-order-abc123.md"
-            " | claude -p '受け取った内容を実行して' --model 'claude-opus-4-6'"
-            " --dangerously-skip-permissions"
-            " | tee -a queue/ts-claude-result-abc123.md"
-        )
-        assert line == expected
-
-    def test_no_model_flag_when_model_is_none(self):
-        line = self.adapter.build_exec_line(
-            uuid="def456",
-            model=None,
-            depends=["abc123"],
-            **self.base_kwargs,
-        )
-        assert "--model" not in line
-        assert "--dangerously-skip-permissions" in line
-        assert "[depends:abc123]" in line
-
-    def test_single_depends(self):
-        line = self.adapter.build_exec_line(
-            uuid="def456",
-            model=None,
-            depends=["abc123"],
-            **self.base_kwargs,
-        )
-        assert line.startswith("def456[depends:abc123]:")
-
-    def test_multiple_depends(self):
-        line = self.adapter.build_exec_line(
-            uuid="ghi789",
-            model="claude-sonnet-4-6",
-            depends=["abc123", "def456"],
-            **self.base_kwargs,
-        )
-        assert line.startswith("ghi789[depends:abc123,def456]:")
-
-    def test_no_depends_no_bracket(self):
-        line = self.adapter.build_exec_line(
-            uuid="abc123",
-            model="claude-opus-4-6",
-            depends=[],
-            **self.base_kwargs,
-        )
-        assert "[depends:" not in line
-
-    def test_tee_result_path(self):
-        line = self.adapter.build_exec_line(
-            uuid="abc123",
-            model=None,
-            depends=[],
-            **self.base_kwargs,
-        )
-        assert "| tee -a queue/ts-claude-result-abc123.md" in line
-
-    def test_dangerously_skip_permissions_always_present(self):
-        line = self.adapter.build_exec_line(
-            uuid="x",
-            model=None,
-            depends=[],
-            **self.base_kwargs,
-        )
-        assert "--dangerously-skip-permissions" in line
-
 
 # ---------------------------------------------------------------------------
 # GeminiAdapter
@@ -119,56 +48,6 @@ class TestGeminiAdapter:
     def test_name(self):
         assert self.adapter.name == "gemini"
 
-    def test_with_model_no_depends(self):
-        line = self.adapter.build_exec_line(
-            uuid="abc123",
-            model="flash",
-            depends=[],
-            **self.base_kwargs,
-        )
-        assert "abc123:" in line
-        assert "gemini -p" in line
-        assert "--model 'flash'" in line  # -m から --model に統一（#985）
-        assert "--approval-mode yolo" in line
-        assert "[depends:" not in line
-
-    def test_no_model_flag_when_model_is_none(self):
-        line = self.adapter.build_exec_line(
-            uuid="def456",
-            model=None,
-            depends=[],
-            **self.base_kwargs,
-        )
-        assert "-m " not in line
-        assert "--approval-mode yolo" in line
-
-    def test_single_depends(self):
-        line = self.adapter.build_exec_line(
-            uuid="def456",
-            model=None,
-            depends=["abc123"],
-            **self.base_kwargs,
-        )
-        assert line.startswith("def456[depends:abc123]:")
-
-    def test_tee_result_path(self):
-        line = self.adapter.build_exec_line(
-            uuid="abc123",
-            model=None,
-            depends=[],
-            **self.base_kwargs,
-        )
-        assert "| tee -a queue/ts-gemini-result-abc123.md" in line
-
-    def test_approval_mode_yolo_always_present(self):
-        line = self.adapter.build_exec_line(
-            uuid="x",
-            model=None,
-            depends=[],
-            **self.base_kwargs,
-        )
-        assert "--approval-mode yolo" in line
-
 
 class TestCursorAdapter:
     def setup_method(self):
@@ -182,98 +61,6 @@ class TestCursorAdapter:
     def test_name(self):
         assert self.adapter.name == "cursor"
 
-    def test_with_model_no_depends(self):
-        line = self.adapter.build_exec_line(
-            uuid="abc123",
-            model="gemini-3-flash",
-            depends=[],
-            **self.base_kwargs,
-        )
-        expected = (
-            "abc123: agent --model 'gemini-3-flash' -p --force"
-            " < queue/ts-cursor-order-abc123.md"
-            " | tee -a queue/ts-cursor-result-abc123.md"
-        )
-        assert line == expected
-
-    def test_no_model_flag_when_model_is_none(self):
-        line = self.adapter.build_exec_line(
-            uuid="def456",
-            model=None,
-            depends=[],
-            **self.base_kwargs,
-        )
-        assert "--model" not in line
-        assert "--force" in line
-
-    def test_single_depends(self):
-        line = self.adapter.build_exec_line(
-            uuid="def456",
-            model=None,
-            depends=["abc123"],
-            **self.base_kwargs,
-        )
-        assert line.startswith("def456[depends:abc123]:")
-
-    def test_multiple_depends(self):
-        line = self.adapter.build_exec_line(
-            uuid="ghi789",
-            model="gemini-3-flash",
-            depends=["abc123", "def456"],
-            **self.base_kwargs,
-        )
-        assert line.startswith("ghi789[depends:abc123,def456]:")
-
-    def test_no_depends_no_bracket(self):
-        line = self.adapter.build_exec_line(
-            uuid="abc123",
-            model="gemini-3-flash",
-            depends=[],
-            **self.base_kwargs,
-        )
-        assert "[depends:" not in line
-
-    def test_tee_result_path(self):
-        line = self.adapter.build_exec_line(
-            uuid="abc123",
-            model=None,
-            depends=[],
-            **self.base_kwargs,
-        )
-        assert "| tee -a queue/ts-cursor-result-abc123.md" in line
-
-    def test_force_flag_always_present(self):
-        line = self.adapter.build_exec_line(
-            uuid="x",
-            model=None,
-            depends=[],
-            **self.base_kwargs,
-        )
-        assert "--force" in line
-
-    def test_uses_agent_cli_not_cursor(self):
-        line = self.adapter.build_exec_line(
-            uuid="x",
-            model="gemini-3-flash",
-            depends=[],
-            **self.base_kwargs,
-        )
-        # cursor CLI のエントリポイントは `agent` バイナリ
-        assert "agent " in line
-        assert " | cursor " not in line
-
-    def test_uses_stdin_redirect_not_pipe_with_prompt(self):
-        line = self.adapter.build_exec_line(
-            uuid="x",
-            model=None,
-            depends=[],
-            **self.base_kwargs,
-        )
-        # -p に文字列を渡すと stdin が無視されるため、リダイレクト形式を使う
-        assert "< queue/ts-cursor-order-abc123.md" in line
-        assert "agent -p --force" in line
-        assert "cat " not in line
-
 
 class TestShellAdapter:
     def setup_method(self):
@@ -286,52 +73,6 @@ class TestShellAdapter:
 
     def test_name(self):
         assert self.adapter.name == "shell"
-
-    def test_build_exec_line_no_depends(self):
-        line = self.adapter.build_exec_line(
-            uuid="abc123",
-            model="bash",
-            depends=[],
-            **self.base_kwargs,
-        )
-        expected = (
-            "abc123: bash -o pipefail queue/ts-shell-order-abc123.md"
-            " | tee -a queue/ts-shell-result-abc123.md"
-        )
-        assert line == expected
-
-    def test_build_exec_line_with_depends(self):
-        line = self.adapter.build_exec_line(
-            uuid="def456",
-            model=None,
-            depends=["abc123", "xyz"],
-            **self.base_kwargs,
-        )
-        assert line.startswith("def456[depends:abc123,xyz]: bash -o pipefail ")
-
-    def test_model_is_ignored(self):
-        """model パラメーターは無視され、コマンドに出現しない。"""
-        line = self.adapter.build_exec_line(
-            uuid="abc",
-            model="claude-opus-4-7",
-            depends=[],
-            **self.base_kwargs,
-        )
-        assert "claude" not in line
-        assert "--model" not in line
-
-    def test_prompt_is_ignored(self):
-        """prompt パラメーターは無視され、コマンドに出現しない。"""
-        line = self.adapter.build_exec_line(
-            uuid="abc",
-            model=None,
-            depends=[],
-            order_path="queue/order.md",
-            result_path="queue/result.md",
-            prompt="このプロンプトは無視される",
-        )
-        assert "このプロンプトは無視される" not in line
-        assert "-p" not in line
 
     def test_build_exec_record(self):
         result = self.adapter.build_exec_record(
@@ -359,15 +100,6 @@ class TestShellAdapter:
             **self.base_kwargs,
         )
         assert "tee" not in result["command"]
-
-    def test_pipefail_option_always_present(self):
-        line = self.adapter.build_exec_line(
-            uuid="x",
-            model=None,
-            depends=[],
-            **self.base_kwargs,
-        )
-        assert "-o pipefail" in line
 
 
 # ---------------------------------------------------------------------------
@@ -404,8 +136,6 @@ class TestGetAdapter:
     def test_register_custom_adapter(self):
         class TestAdapter:
             name = "_test_engine_"
-            def build_exec_line(self, **kwargs):
-                return "test"
 
         original_adapters = dict(_ADAPTERS)
         try:

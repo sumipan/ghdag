@@ -45,7 +45,6 @@ class TestInlineOrderBuilder:
         """InlineOrderBuilder を order_builders に渡して submit が成功する。"""
         pipeline_state = MagicMock()
         pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
-        pipeline_state._is_jsonl_mode = False
         default_builder = MagicMock()
         default_builder.build_order.return_value = "default order"
 

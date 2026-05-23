@@ -4,40 +4,15 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from ghdag.llm.spec import ENGINE_SPECS, render_exec_command, render_exec_line
+from ghdag.llm.spec import ENGINE_SPECS, render_exec_command
 
 
 class EngineAdapter(Protocol):
-    """エンジンごとの exec 行組み立てを担う"""
+    """エンジンごとの exec レコード組み立てを担う"""
 
     @property
     def name(self) -> str:
         """エンジン名（"claude", "gemini"）"""
-        ...
-
-    def build_exec_line(
-        self,
-        *,
-        uuid: str,
-        order_path: str,
-        result_path: str,
-        prompt: str,
-        model: str | None,
-        depends: list[str],
-    ) -> str:
-        """exec.md に書き込む1行を組み立てる。
-
-        Args:
-            uuid: ジョブ識別子
-            order_path: order ファイルパス（例: queue/ts-claude-order-uuid.md）
-            result_path: result ファイルパス
-            prompt: `-p` に渡すプロンプト文字列
-            model: モデル ID（None の場合はエンジンのデフォルト）
-            depends: 依存する UUID のリスト
-
-        Returns:
-            exec.md に追記する行（例: "uuid[depends:a,b]: cat ... | claude -p ... | tee ..."）
-        """
         ...
 
     def build_exec_record(
@@ -59,26 +34,6 @@ class EngineAdapter(Protocol):
 class ClaudeAdapter:
     name = "claude"
     _spec = ENGINE_SPECS["claude"]
-
-    def build_exec_line(
-        self,
-        *,
-        uuid: str,
-        order_path: str,
-        result_path: str,
-        prompt: str,
-        model: str | None,
-        depends: list[str],
-    ) -> str:
-        return render_exec_line(
-            self._spec,
-            uuid=uuid,
-            order_path=order_path,
-            result_path=result_path,
-            prompt=prompt,
-            model=model,
-            depends=depends,
-        )
 
     def build_exec_record(
         self,
@@ -105,26 +60,6 @@ class ClaudeAdapter:
 class GeminiAdapter:
     name = "gemini"
     _spec = ENGINE_SPECS["gemini"]
-
-    def build_exec_line(
-        self,
-        *,
-        uuid: str,
-        order_path: str,
-        result_path: str,
-        prompt: str,
-        model: str | None,
-        depends: list[str],
-    ) -> str:
-        return render_exec_line(
-            self._spec,
-            uuid=uuid,
-            order_path=order_path,
-            result_path=result_path,
-            prompt=prompt,
-            model=model,
-            depends=depends,
-        )
 
     def build_exec_record(
         self,
@@ -165,26 +100,6 @@ class CursorAdapter:
     name = "cursor"
     _spec = ENGINE_SPECS["cursor"]
 
-    def build_exec_line(
-        self,
-        *,
-        uuid: str,
-        order_path: str,
-        result_path: str,
-        prompt: str,
-        model: str | None,
-        depends: list[str],
-    ) -> str:
-        return render_exec_line(
-            self._spec,
-            uuid=uuid,
-            order_path=order_path,
-            result_path=result_path,
-            prompt=prompt,
-            model=model,
-            depends=depends,
-        )
-
     def build_exec_record(
         self,
         *,
@@ -216,26 +131,6 @@ class ShellAdapter:
 
     name = "shell"
     _spec = ENGINE_SPECS["shell"]
-
-    def build_exec_line(
-        self,
-        *,
-        uuid: str,
-        order_path: str,
-        result_path: str,
-        prompt: str,
-        model: str | None,
-        depends: list[str],
-    ) -> str:
-        return render_exec_line(
-            self._spec,
-            uuid=uuid,
-            order_path=order_path,
-            result_path=result_path,
-            prompt=prompt,
-            model=model,
-            depends=depends,
-        )
 
     def build_exec_record(
         self,

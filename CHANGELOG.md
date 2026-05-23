@@ -4,6 +4,39 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.22.0] - 2026-05-24 — BREAKING
+
+### Removed
+
+- **exec.md テキスト形式サポートを完全削除（破壊的変更）**
+  - `dag/parser.py`: `parse_exec_md()` 関数を削除
+  - `dag/__init__.py`: `parse_exec_md` エクスポートを削除
+  - `pipeline/state.py`: `append_exec()` メソッド・`_is_jsonl_mode` プロパティ・テキスト形式パーサーを削除。`from_repo_root()` のデフォルトパスを `queue/exec.md` → `jobs/exec.jsonl` に変更
+  - `pipeline/llm_pipeline.py`: `_submit_text()` / `_build_exec_line()` / `_jsonl_mode` プロパティを削除。`submit()` は常に exec.jsonl JSONL 形式で書き込む
+  - `llm/spec.py`: `render_exec_line()` 関数を削除
+  - `workflow/engine.py`: `EngineAdapter` Protocol および全 Adapter (`ClaudeAdapter`, `GeminiAdapter`, `CursorAdapter`, `ShellAdapter`) から `build_exec_line()` を削除
+  - `ui/monitor.py`: `parse_exec_md()` / テキスト形式 exec.md 検出パスを削除
+  - `cleanup.py`: `EXEC_LINE_RE` 正規表現・テキスト形式 UUID 抽出ブランチを削除
+  - `dag/engine.py`: exec.md テキスト形式読み込みブランチを削除（常に JSONL パーサー使用）
+
+### Migration
+
+exec.md テキスト形式を exec.jsonl JSONL 形式に変換する:
+
+```sh
+# 変換例: uuid: command → {"uuid": "uuid", "command": "command", "depends": []}
+python3 -c "
+import json, sys, re
+for line in sys.stdin:
+    line = line.rstrip()
+    if not line or line.startswith('#'): continue
+    m = re.match(r'^([a-fA-F0-9\-]+)(?:\[depends:([^\]]+)\])?:\s*(.+)', line)
+    if m:
+        uuid, deps, cmd = m.groups()
+        print(json.dumps({'uuid': uuid, 'command': cmd, 'depends': (deps.split(',') if deps else [])}))
+" < jobs/exec.md > jobs/exec.jsonl
+```
+
 ## 0.18.0 — 2026-05-23
 
 ### Removed
