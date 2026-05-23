@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import subprocess
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -32,6 +33,8 @@ class RunningTask:
     retry_depth: int = 0
     term_sent_at: float | None = None
     stdout_buf: io.BytesIO | None = None
+    stderr_thread: threading.Thread | None = None
+    stdout_thread: threading.Thread | None = None
 
 
 @dataclass
