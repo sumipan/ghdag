@@ -13,8 +13,6 @@ import threading
 import time
 from pathlib import Path
 
-_STDIN_REDIR_RE = re.compile(r"<\s+(\S+)")
-
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .fanout import FanOutSpec, build_child_exec_line, build_child_jsonl_record, parse_fanout_spec
 from .hooks import DefaultHooks, DagHooks

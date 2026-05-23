@@ -8,8 +8,6 @@ import logging
 import pytest
 
 from ghdag.dag.fanout import (
-    FanOutItem,
-    FanOutSpec,
     build_child_exec_line,
     build_child_jsonl_record,
     parse_fanout_spec,

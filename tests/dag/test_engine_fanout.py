@@ -8,13 +8,10 @@ import subprocess
 import time
 from pathlib import Path
 
-import pytest
 
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.fanout import FanOutItem, FanOutSpec
-from ghdag.dag.hooks import DagHooks
 from ghdag.dag.models import DagConfig, RunningTask, Task
-from ghdag.dag.state import is_done, load_done_from_dir, load_succeeded_from_dir
 from ghdag.metrics.models import TaskMetrics
 
 
@@ -120,9 +117,9 @@ class TestAC1FanoutSpawnChildren:
         ])
         engine._spawn_fanout(parent_uuid, task, spec, _base_metrics(parent_uuid))
 
-        lines = [l for l in exec_file.read_text().splitlines() if l.strip()]
+        lines = [line for line in exec_file.read_text().splitlines() if line.strip()]
         assert len(lines) == 3
-        uuids = [json.loads(l)["uuid"] for l in lines]
+        uuids = [json.loads(line)["uuid"] for line in lines]
         assert f"{parent_uuid}--fo--item-001" in uuids
         assert f"{parent_uuid}--fo--item-002" in uuids
         assert f"{parent_uuid}--fo--item-003" in uuids
