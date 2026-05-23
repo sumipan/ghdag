@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.18.0 — 2026-05-23
+
+### Removed
+- `ghdag shr` subcommand and `ghdag.shr` package (self-hosted runner management).
+  SHR functionality has been superseded by polling-based execution (diary #986).
+
 ## [0.17.1] - 2026-05-22
 
 ### Added
