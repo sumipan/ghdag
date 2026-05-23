@@ -30,3 +30,16 @@ class AppendResult:
 class WriteResult:
     path: str
     bytes_written: int
+
+
+class PromoteStatus(Enum):
+    PROMOTED = "promoted"
+    NOOP = "noop"
+
+
+@dataclass(frozen=True)
+class PromoteResult:
+    status: PromoteStatus
+    source_path: str
+    target_path: str
+    section: str

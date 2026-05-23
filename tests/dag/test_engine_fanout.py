@@ -45,6 +45,12 @@ class _CapturingHooks:
     def check_pipeline_status(self, result_path):
         return None
 
+    def on_task_start(self, uuid, task):
+        pass
+
+    def check_promote_target(self, result_path):
+        return None
+
 
 def _make_engine(tmp_path: Path, jsonl: bool = True) -> tuple[DagEngine, _CapturingHooks, Path]:
     exec_file = tmp_path / ("exec.jsonl" if jsonl else "exec.md")
