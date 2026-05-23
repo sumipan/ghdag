@@ -45,9 +45,11 @@ def md_write(
     encoded = content.encode("utf-8")
     bytes_written = len(encoded)
 
-    with open(resolved, "w", encoding="utf-8") as f:
+    with open(resolved, "a+", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         try:
+            f.seek(0)
+            f.truncate()
             f.write(content)
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)

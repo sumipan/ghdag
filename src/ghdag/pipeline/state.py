@@ -218,8 +218,14 @@ class PipelineState:
             raise ValueError("engine must not be empty")
         filename = f"{ts}-{engine}-order-{order_uuid}.md"
         path = os.path.join(queue_dir, filename)
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(content)
+        with open(path, "a+", encoding="utf-8") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                f.seek(0)
+                f.truncate()
+                f.write(content)
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
         return filename
 
 
@@ -294,60 +300,55 @@ class PipelineState:
             return 0
 
         if self._is_jsonl_mode:
-            with open(self._exec_md_path, encoding="utf-8") as f:
-                fcntl.flock(f, fcntl.LOCK_SH)
+            with open(self._exec_md_path, "a+", encoding="utf-8") as f:
+                fcntl.flock(f, fcntl.LOCK_EX)
                 try:
+                    f.seek(0)
                     lines = f.readlines()
+                    new_lines = []
+                    removed = 0
+                    for line in lines:
+                        stripped = line.strip()
+                        if not stripped:
+                            new_lines.append(line)
+                            continue
+                        try:
+                            data = json.loads(stripped)
+                            if data.get("uuid") in uuids:
+                                removed += 1
+                                continue
+                        except json.JSONDecodeError:
+                            pass
+                        new_lines.append(line)
+                    if removed > 0:
+                        f.seek(0)
+                        f.truncate()
+                        f.writelines(new_lines)
                 finally:
                     fcntl.flock(f, fcntl.LOCK_UN)
-
-            new_lines = []
-            removed = 0
-            for line in lines:
-                stripped = line.strip()
-                if not stripped:
-                    new_lines.append(line)
-                    continue
-                try:
-                    data = json.loads(stripped)
-                    if data.get("uuid") in uuids:
-                        removed += 1
-                        continue
-                except json.JSONDecodeError:
-                    pass
-                new_lines.append(line)
-
-            if removed > 0:
-                with open(self._exec_md_path, "w", encoding="utf-8") as f:
-                    fcntl.flock(f, fcntl.LOCK_EX)
-                    try:
-                        f.writelines(new_lines)
-                    finally:
-                        fcntl.flock(f, fcntl.LOCK_UN)
-
             return removed
 
         pattern = re.compile(r"^([a-fA-F0-9\-]+)(?:\[[^\]]+\])*\s*:")
 
-        with open(self._exec_md_path, encoding="utf-8") as f:
-            lines = f.readlines()
-
-        new_lines = []
-        removed = 0
-        for line in lines:
-            m = pattern.match(line)
-            if m and m.group(1) in uuids:
-                removed += 1
-            else:
-                new_lines.append(line)
-
-        if removed > 0:
-            with open(self._exec_md_path, "w", encoding="utf-8") as f:
-                fcntl.flock(f, fcntl.LOCK_EX)
-                try:
+        with open(self._exec_md_path, "a+", encoding="utf-8") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                f.seek(0)
+                lines = f.readlines()
+                new_lines = []
+                removed = 0
+                for line in lines:
+                    m = pattern.match(line)
+                    if m and m.group(1) in uuids:
+                        removed += 1
+                    else:
+                        new_lines.append(line)
+                if removed > 0:
+                    f.seek(0)
+                    f.truncate()
                     f.writelines(new_lines)
-                finally:
-                    fcntl.flock(f, fcntl.LOCK_UN)
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
 
         return removed
 

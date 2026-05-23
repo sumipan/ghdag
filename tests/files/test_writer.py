@@ -1,4 +1,5 @@
 """Tests for ghdag.files.writer (md_write)."""
+import concurrent.futures
 import json
 from pathlib import Path
 from unittest.mock import patch
@@ -72,3 +73,21 @@ class TestMdWriteBasic:
 
         assert f.read_text(encoding="utf-8") == "new content"
         assert result.bytes_written == len("new content".encode("utf-8"))
+
+    def test_w6_concurrent_no_partial_write(self, repo_root: Path) -> None:
+        """TC2: 10スレッド×100回の並列 md_write でpartial writeが発生しないこと"""
+        f = repo_root / "result" / "concurrent.md"
+        write_file(f, "initial")
+
+        def write_repeatedly(i: int) -> None:
+            for _ in range(100):
+                md_write("result/concurrent.md", f"content-{i}", repo_root=repo_root)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(write_repeatedly, i) for i in range(10)]
+            for fut in futures:
+                fut.result()
+
+        final = f.read_text(encoding="utf-8")
+        valid = {f"content-{i}" for i in range(10)}
+        assert final in valid
