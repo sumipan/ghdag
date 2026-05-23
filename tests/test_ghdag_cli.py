@@ -75,7 +75,7 @@ class TestVersion:
 
 class TestRunNormal:
     def test_run_calls_dag_engine_with_defaults(self, tmp_path):
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         mock_engine_cls = MagicMock()
@@ -94,7 +94,7 @@ class TestRunNormal:
         mock_engine_cls.return_value.run.assert_called_once()
 
     def test_run_with_custom_interval(self, tmp_path):
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         mock_engine_cls = MagicMock()
@@ -137,7 +137,7 @@ class TestRunHooks:
         return mod, MyHooks
 
     def test_hooks_module_loaded_and_passed_to_engine(self, tmp_path):
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
         mock_module, MyHooks = self._make_hooks_module_with_class()
 
@@ -157,7 +157,7 @@ class TestRunHooks:
         assert isinstance(hooks_arg, MyHooks)
 
     def test_hooks_set_engine_called(self, tmp_path):
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
         mock_module, MyHooks = self._make_hooks_module_with_class()
 
@@ -175,7 +175,7 @@ class TestRunHooks:
         mock_engine_instance.run.assert_called_once()
 
     def test_hooks_invalid_module_exits_1(self, tmp_path, capsys):
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         with pytest.raises(SystemExit) as exc:
@@ -185,7 +185,7 @@ class TestRunHooks:
         assert "cannot import" in capsys.readouterr().err
 
     def test_no_hooks_arg_engine_called_with_none(self, tmp_path):
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         mock_engine_cls = MagicMock()
@@ -216,7 +216,7 @@ class TestRunError:
         from ghdag.cli import main
 
         with pytest.raises(SystemExit) as exc:
-            main(["run", "nonexistent_exec.md"])
+            main(["run", "nonexistent_exec.jsonl"])
         assert exc.value.code == 1
         assert "not found" in capsys.readouterr().err
 
@@ -328,7 +328,7 @@ class TestPythonM:
 
 class TestLogLevel:
     def _run_with_dummy_exec(self, argv: list[str], tmp_path) -> None:
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
         with patch("ghdag.dag.engine.DagEngine"), \
              patch("ghdag.dag.models.DagConfig"):
@@ -383,7 +383,7 @@ handlers:
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
         self._write_workflow_yaml(workflows_dir)
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         mock_dispatch_result = MagicMock()
@@ -421,7 +421,7 @@ handlers:
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
         self._write_workflow_yaml(workflows_dir)
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         mock_dispatch_result = MagicMock()
@@ -533,7 +533,7 @@ handlers:
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
         self._write_workflow_yaml(workflows_dir)
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         mock_dispatch_result = MagicMock()

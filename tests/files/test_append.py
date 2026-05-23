@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ghdag.files import AppendResult, AppendStatus, md_append
+from ghdag.files import AppendResult, AppendStatus, PathTraversalError, md_append
 
 
 @pytest.fixture
@@ -129,7 +129,7 @@ class TestMdAppendBasic:
 
     def test_a7_path_traversal(self, repo_root: Path) -> None:
         """A7: repo_root 外パスで ValueError"""
-        with pytest.raises(ValueError, match="Path traversal"):
+        with pytest.raises(PathTraversalError, match="Path traversal"):
             md_append("../etc/passwd", "section", "body", repo_root=repo_root)
 
     def test_a8_file_not_found(self, repo_root: Path) -> None:

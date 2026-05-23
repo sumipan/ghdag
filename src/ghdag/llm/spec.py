@@ -103,17 +103,3 @@ def render_exec_command(
     raise ValueError(f"Unknown input_mode: {spec.input_mode!r}")
 
 
-def render_exec_line(
-    spec: EngineSpec,
-    *,
-    uuid: str,
-    order_path: str,
-    result_path: str,
-    prompt: str,
-    model: str | None,
-    depends: list[str],
-) -> str:
-    """exec.md に書き込む行（uuid[depends:a,b]: <command> | tee ...）。"""
-    command = render_exec_command(spec, order_path=order_path, prompt=prompt, model=model)
-    deps = f"[depends:{','.join(depends)}]" if depends else ""
-    return f"{uuid}{deps}: {command} | tee -a {result_path}"

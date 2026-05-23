@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,8 +46,8 @@ def _set_mtime(path: Path, days_ago: float) -> None:
     os.utime(path, (t, t))
 
 
-def _make_exec_md(exec_md: Path, entries: list[str]) -> None:
-    lines = [f"{uuid}: cat queue/order.md | claude\n" for uuid in entries]
+def _make_exec_jsonl(exec_md: Path, entries: list[str]) -> None:
+    lines = [json.dumps({"uuid": uuid, "command": "cat queue/order.md | claude", "depends": []}) + "\n" for uuid in entries]
     exec_md.write_text("".join(lines), encoding="utf-8")
 
 
@@ -112,7 +113,7 @@ class TestArchivedDone:
         order, result = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=2)
         _make_done_flag(done_dir, UUID_A)
-        _make_exec_md(exec_md, [UUID_A])
+        _make_exec_jsonl(exec_md, [UUID_A])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
@@ -136,7 +137,7 @@ class TestArchivedDone:
         order, result = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=0.5)
         _make_done_flag(done_dir, UUID_A)
-        _make_exec_md(exec_md, [UUID_A])
+        _make_exec_jsonl(exec_md, [UUID_A])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
@@ -156,7 +157,7 @@ class TestArchivedDone:
         order, result = _make_queue_files(queue_dir, UUID_A, ts=ts)
         _set_mtime(order, days_ago=2)
         _make_done_flag(done_dir, UUID_A)
-        _make_exec_md(exec_md, [UUID_A])
+        _make_exec_jsonl(exec_md, [UUID_A])
 
         cleanup_queue(
             queue_dir=queue_dir,
@@ -181,7 +182,7 @@ class TestArchivedOrphan:
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, result = _make_queue_files(queue_dir, UUID_B)
         _set_mtime(order, days_ago=10)
-        _make_exec_md(exec_md, [UUID_B])
+        _make_exec_jsonl(exec_md, [UUID_B])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
@@ -203,7 +204,7 @@ class TestArchivedOrphan:
         ts = "20260115100000"
         order, result = _make_queue_files(queue_dir, UUID_B, ts=ts)
         _set_mtime(order, days_ago=10)
-        _make_exec_md(exec_md, [UUID_B])
+        _make_exec_jsonl(exec_md, [UUID_B])
 
         cleanup_queue(
             queue_dir=queue_dir,
@@ -222,7 +223,7 @@ class TestArchivedOrphan:
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, result = _make_queue_files(queue_dir, UUID_B)
         _set_mtime(order, days_ago=3)
-        _make_exec_md(exec_md, [UUID_B])
+        _make_exec_jsonl(exec_md, [UUID_B])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
@@ -247,7 +248,7 @@ class TestDryRun:
         order, result = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=2)
         _make_done_flag(done_dir, UUID_A)
-        _make_exec_md(exec_md, [UUID_A])
+        _make_exec_jsonl(exec_md, [UUID_A])
         exec_md_content_before = exec_md.read_text()
 
         res = cleanup_queue(
@@ -270,7 +271,7 @@ class TestDryRun:
         order, _ = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=2)
         _make_done_flag(done_dir, UUID_A)
-        _make_exec_md(exec_md, [UUID_A])
+        _make_exec_jsonl(exec_md, [UUID_A])
 
         cleanup_queue(
             queue_dir=queue_dir,
@@ -296,7 +297,7 @@ class TestResultOnlyDone:
         _, result = _make_queue_files(queue_dir, UUID_C, make_order=False)
         _set_mtime(result, days_ago=2)
         _make_done_flag(done_dir, UUID_C)
-        _make_exec_md(exec_md, [UUID_C])
+        _make_exec_jsonl(exec_md, [UUID_C])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
@@ -320,7 +321,7 @@ class TestOrderOnlyOrphan:
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_C, make_result=False)
         _set_mtime(order, days_ago=10)
-        _make_exec_md(exec_md, [UUID_C])
+        _make_exec_jsonl(exec_md, [UUID_C])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
@@ -345,7 +346,7 @@ class TestQueueDirMissing:
         queue_dir = tmp_path / "nonexistent_queue"
         archive_dir = tmp_path / "jobs" / "archive"
         done_dir = tmp_path / "jobs" / "done"
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         archive_dir.mkdir(parents=True)
         done_dir.mkdir(parents=True)
 
@@ -368,7 +369,7 @@ class TestQueueDirMissing:
 class TestNoMatchingFiles:
     def test_empty_queue_dir_returns_zero_counts(self, tmp_path):
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
-        _make_exec_md(exec_md, [])
+        _make_exec_jsonl(exec_md, [])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
@@ -393,7 +394,7 @@ class TestBoundaryValues:
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_A)
         _make_done_flag(done_dir, UUID_A)
-        _make_exec_md(exec_md, [UUID_A])
+        _make_exec_jsonl(exec_md, [UUID_A])
 
         # file_timestamp を固定値で mock し、cutoff_ts == file_ts の境界をテスト
         fixed_ts = 1_700_000_000.0  # 固定値
@@ -423,7 +424,7 @@ class TestBoundaryValues:
 class TestExecMdMissing:
     def test_missing_exec_md_skips_pruning_but_archives(self, tmp_path):
         queue_dir, archive_dir, done_dir, _ = _setup_dirs(tmp_path)
-        exec_md = queue_dir / "exec.md"  # does not exist
+        exec_md = queue_dir / "exec.jsonl"  # does not exist
         order, _ = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=2)
         _make_done_flag(done_dir, UUID_A)
@@ -453,7 +454,7 @@ class TestUUIDCaseInsensitive:
         order, _ = _make_queue_files(queue_dir, uuid_upper)
         _set_mtime(order, days_ago=2)
         _make_done_flag(done_dir, UUID_A.lower())
-        _make_exec_md(exec_md, [UUID_A.lower()])
+        _make_exec_jsonl(exec_md, [UUID_A.lower()])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
@@ -482,7 +483,7 @@ class TestCompoundToolName:
         result.write_text("result")
         _set_mtime(order, days_ago=2)
         _make_done_flag(done_dir, UUID_A)
-        _make_exec_md(exec_md, [UUID_A])
+        _make_exec_jsonl(exec_md, [UUID_A])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
@@ -503,7 +504,7 @@ class TestCompoundToolName:
         order.write_text("order")
         _set_mtime(order, days_ago=2)
         _make_done_flag(done_dir, UUID_B)
-        _make_exec_md(exec_md, [UUID_B])
+        _make_exec_jsonl(exec_md, [UUID_B])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
@@ -522,7 +523,7 @@ class TestCompoundToolName:
         order = queue_dir / f"{TS}-cursor-investigator-order-{UUID_C}.md"
         order.write_text("order")
         _set_mtime(order, days_ago=10)
-        _make_exec_md(exec_md, [UUID_C])
+        _make_exec_jsonl(exec_md, [UUID_C])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
@@ -550,7 +551,7 @@ class TestStderrKind:
         stderr_file.write_text("stderr content")
         _set_mtime(stderr_file, days_ago=2)
         _make_done_flag(done_dir, UUID_A)
-        _make_exec_md(exec_md, [UUID_A])
+        _make_exec_jsonl(exec_md, [UUID_A])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
@@ -569,7 +570,7 @@ class TestStderrKind:
         stderr_file = queue_dir / f"{TS}-cursor-stderr-{UUID_B}.md"
         stderr_file.write_text("stderr content")
         _set_mtime(stderr_file, days_ago=10)
-        _make_exec_md(exec_md, [UUID_B])
+        _make_exec_jsonl(exec_md, [UUID_B])
 
         res = cleanup_queue(
             queue_dir=queue_dir,
@@ -682,32 +683,6 @@ class TestJsonlPrune:
         content = exec_jsonl.read_text()
         assert "NOT_VALID_JSON" in content
         assert UUID_A not in content
-
-    def test_jsonl_exec_md_backward_compat(self, tmp_path):
-        """exec.md 形式（UUID: command）が JSONL 対応後も動作する（後方互換）"""
-        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
-        exec_md_path = queue_dir / "exec.md"
-        order_a, _ = _make_queue_files(queue_dir, UUID_A)
-        _set_mtime(order_a, days_ago=2)
-        _make_done_flag(done_dir, UUID_A)
-        # UUID_B は active pending (Case E)
-        order_b, _ = _make_queue_files(queue_dir, UUID_B)
-        _set_mtime(order_b, days_ago=0.1)
-        _make_exec_md(exec_md_path, [UUID_A, UUID_B])
-
-        res = cleanup_queue(
-            queue_dir=queue_dir,
-            archive_dir=archive_dir,
-            done_dir=done_dir,
-            exec_md=exec_md_path,
-            cutoff_days=1,
-        )
-
-        assert res.pruned_exec == 1
-        content = exec_md_path.read_text()
-        assert UUID_A not in content
-        assert UUID_B in content
-
 
 # ---------------------------------------------------------------------------
 # Issue-856: orphan done マーカー付与（AC2）

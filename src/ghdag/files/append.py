@@ -5,7 +5,7 @@ import hashlib
 import re
 from pathlib import Path
 
-from ghdag.files.models import AppendResult, AppendStatus
+from ghdag.files.models import AppendResult, AppendStatus, PathTraversalError
 
 _NEXT_HEADING_RE = re.compile(r"^#{1,6}\s+")
 
@@ -118,7 +118,7 @@ def md_append(
     root = repo_root if repo_root is not None else Path.cwd()
     resolved = (root / path).resolve()
     if not resolved.is_relative_to(root.resolve()):
-        raise ValueError(f"Path traversal detected: {path}")
+        raise PathTraversalError(f"Path traversal detected: {path}")
     if not resolved.exists():
         raise FileNotFoundError(f"File not found: {resolved}")
 

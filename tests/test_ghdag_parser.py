@@ -1,100 +1,11 @@
 """Tests for ghdag.dag.parser — §5.2 acceptance criteria."""
 
-import fcntl
-import threading
-import time
 from pathlib import Path
 
 import pytest
 
-from ghdag.dag.parser import parse_exec_md, parse_jsonl, validate_dependencies
+from ghdag.dag.parser import parse_jsonl, validate_dependencies
 from ghdag.dag.models import Task
-
-
-@pytest.fixture
-def tmp_exec_md(tmp_path):
-    """Helper to create a temporary exec.md with given content."""
-    def _write(content: str) -> Path:
-        p = tmp_path / "exec.md"
-        p.write_text(content, encoding="utf-8")
-        return p
-    return _write
-
-
-class TestParseExecMd:
-    """§5.2 parser.py テストケース"""
-
-    def test_normal_three_tasks(self, tmp_exec_md):
-        """正常系: 3 つの Task をパースする"""
-        content = (
-            "uuid-a: cat order-a.md | claude -p \"...\" | tee result-a.md\n"
-            "uuid-b[depends:uuid-a]: echo \"hello\" | tee result-b.md\n"
-            "uuid-c[depends:uuid-a,uuid-b][retry:2]: some-command\n"
-        )
-        tasks = parse_exec_md(tmp_exec_md(content))
-
-        assert len(tasks) == 3
-
-        a = tasks[0]
-        assert a.uuid == "uuid-a"
-        assert a.depends == []
-        assert a.retry == 0
-        assert "cat order-a.md" in a.command
-
-        b = tasks[1]
-        assert b.uuid == "uuid-b"
-        assert b.depends == ["uuid-a"]
-        assert b.retry == 0
-
-        c = tasks[2]
-        assert c.uuid == "uuid-c"
-        assert set(c.depends) == {"uuid-a", "uuid-b"}
-        assert c.retry == 2
-
-    def test_blank_and_comment_lines_skipped(self, tmp_exec_md):
-        """空行・コメント: # comment 行と空行がスキップされること"""
-        content = (
-            "# comment line\n"
-            "\n"
-            "uuid-a: echo hello\n"
-            "   \n"
-            "# another comment\n"
-            "uuid-b: echo world\n"
-        )
-        tasks = parse_exec_md(tmp_exec_md(content))
-        assert len(tasks) == 2
-        assert tasks[0].uuid == "uuid-a"
-        assert tasks[1].uuid == "uuid-b"
-
-    def test_invalid_lines_skipped(self, tmp_exec_md):
-        """不正行: パース不能な行が例外を投げずスキップされること"""
-        content = (
-            "uuid-a: echo hello\n"
-            "no-colon-line\n"
-            "  just some random text  \n"
-            "uuid-b: echo world\n"
-        )
-        tasks = parse_exec_md(tmp_exec_md(content))
-        assert len(tasks) == 2
-        assert tasks[0].uuid == "uuid-a"
-        assert tasks[1].uuid == "uuid-b"
-
-    def test_empty_file(self, tmp_exec_md):
-        """空ファイル: 空の exec.md に対して空リスト [] を返すこと"""
-        tasks = parse_exec_md(tmp_exec_md(""))
-        assert tasks == []
-
-    def test_file_not_found(self, tmp_path):
-        """ファイル不存在: 存在しないパスに対して FileNotFoundError を送出すること"""
-        with pytest.raises(FileNotFoundError):
-            parse_exec_md(tmp_path / "nonexistent.md")
-
-    def test_annotations_dict(self, tmp_exec_md):
-        """Custom annotations beyond depends/retry are captured."""
-        content = "uuid-a[depends:uuid-x][retry:1][model:sonnet]: echo hello\n"
-        tasks = parse_exec_md(tmp_exec_md(content))
-        assert len(tasks) == 1
-        assert tasks[0].annotations == {"model": "sonnet"}
 
 
 class TestParseJsonl:
@@ -194,65 +105,6 @@ class TestParseJsonl:
         assert tasks[0].model is None
 
 
-class TestParseExecMdLocking:
-    """AC 2-1, 2-2: parse_exec_md の共有ロック"""
-
-    def test_exclusive_lock_blocks_read(self, tmp_exec_md):
-        """2-1: LOCK_EX を持つスレッドが完了するまで parse_exec_md がブロックされる"""
-        path = tmp_exec_md("uuid-a: echo hello\n")
-
-        lock_acquired = threading.Event()
-        lock_released_at = [None]
-        reader_done_at = [None]
-
-        def exclusive_holder():
-            with open(str(path)) as f:
-                fcntl.flock(f, fcntl.LOCK_EX)
-                lock_acquired.set()
-                time.sleep(0.4)
-                lock_released_at[0] = time.monotonic()
-                fcntl.flock(f, fcntl.LOCK_UN)
-
-        def shared_reader():
-            lock_acquired.wait(timeout=2.0)
-            parse_exec_md(path)
-            reader_done_at[0] = time.monotonic()
-
-        t1 = threading.Thread(target=exclusive_holder)
-        t2 = threading.Thread(target=shared_reader)
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
-
-        assert lock_released_at[0] is not None
-        assert reader_done_at[0] is not None
-        assert reader_done_at[0] >= lock_released_at[0] - 0.05  # reader completed after lock released
-
-    def test_concurrent_reads_do_not_block(self, tmp_exec_md):
-        """2-2: 複数 parse_exec_md は並行して実行できる（LOCK_SH は競合しない）"""
-        path = tmp_exec_md("uuid-a: echo hello\n")
-        errors = []
-        results = []
-
-        def reader():
-            try:
-                tasks = parse_exec_md(path)
-                results.append(len(tasks))
-            except Exception as e:
-                errors.append(e)
-
-        threads = [threading.Thread(target=reader) for _ in range(5)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        assert not errors
-        assert len(results) == 5
-        assert all(r == 1 for r in results)
-
-
 class TestValidateDependencies:
     """AC 3-1 ~ 3-5: validate_dependencies"""
 
@@ -260,7 +112,7 @@ class TestValidateDependencies:
         return Task(uuid=uuid, command=f"echo {uuid}", depends=depends)
 
     def test_orphan_dep_detected(self):
-        """3-1: 孤立依存（exec.md にも done にも存在しない）を検出する"""
+        """3-1: 孤立依存（exec.jsonl にも done にも存在しない）を検出する"""
         tasks = [self._make_task("uuid-b", ["uuid-x"])]
         result = validate_dependencies(tasks, done=set())
         assert result == {"uuid-b": "orphan_dep:uuid-x"}

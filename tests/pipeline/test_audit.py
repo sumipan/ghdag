@@ -207,41 +207,6 @@ class TestAppendExecRecordsAudit:
         assert r["task_uuids"] == []
 
 
-class TestAppendExecAudit:
-    """AC7: append_exec 経由でテキスト行から UUID が正規表現で抽出され audit に記録される。"""
-
-    def test_ac7_uuid_from_text_line(self, tmp_path):
-        from ghdag.pipeline.state import PipelineState
-
-        exec_path = tmp_path / "exec.md"
-        state = PipelineState(state_dir=tmp_path / ".state", exec_md_path=exec_path)
-        ctx = AuditContext(source="issuesmith")
-        lines = [f"{UUID1}: claude -p --force < order.md"]
-
-        state.append_exec(lines, audit_context=ctx)
-
-        audit_path = tmp_path / "audit.jsonl"
-        assert audit_path.exists()
-        r = json.loads(audit_path.read_text().strip())
-        assert UUID1 in r["task_uuids"]
-        assert r["exec_lines_count"] == 1
-
-    def test_ac7_line_without_uuid_skipped(self, tmp_path):
-        """UUID を持たないテキスト行は task_uuids に含まれない。"""
-        from ghdag.pipeline.state import PipelineState
-
-        exec_path = tmp_path / "exec.md"
-        state = PipelineState(state_dir=tmp_path / ".state", exec_md_path=exec_path)
-        lines = ["# idempotency: issuesmith:brushup:756"]
-
-        state.append_exec(lines, audit_context=AuditContext())
-
-        audit_path = tmp_path / "audit.jsonl"
-        r = json.loads(audit_path.read_text().strip())
-        assert r["task_uuids"] == []
-        assert r["exec_lines_count"] == 1
-
-
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )

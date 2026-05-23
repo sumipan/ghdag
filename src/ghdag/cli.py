@@ -39,8 +39,8 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(title="subcommands")
 
     # ghdag run
-    run_parser = subparsers.add_parser("run", help="Run exec.md via DagEngine")
-    run_parser.add_argument("exec_md", help="Path to exec.md file")
+    run_parser = subparsers.add_parser("run", help="Run exec.jsonl via DagEngine")
+    run_parser.add_argument("exec_md", help="Path to exec.jsonl file")
     run_parser.add_argument(
         "--interval",
         type=float,
@@ -70,10 +70,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     watch_parser.add_argument(
         "--exec-md",
-        default="exec.md",
+        default="jobs/exec.jsonl",
         dest="exec_md",
         metavar="PATH",
-        help="Output path for exec.md (default: exec.md)",
+        help="Output path for exec.jsonl (default: jobs/exec.jsonl)",
     )
     watch_parser.add_argument(
         "--once",
@@ -88,7 +88,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--repo-root",
         default=".",
         metavar="PATH",
-        help="Repository root containing jobs/exec.jsonl or queue/exec.md (default: .)",
+        help="Repository root containing jobs/exec.jsonl (default: .)",
     )
     ui_parser.add_argument(
         "--host",
@@ -216,10 +216,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     trigger_parser.add_argument(
         "--exec-md",
-        default="queue/exec.md",
+        default="jobs/exec.jsonl",
         dest="exec_md",
         metavar="PATH",
-        help="Output path for exec.md (default: queue/exec.md)",
+        help="Output path for exec.jsonl (default: jobs/exec.jsonl)",
     )
     trigger_parser.add_argument(
         "--workflow",
