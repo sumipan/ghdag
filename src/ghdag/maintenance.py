@@ -49,29 +49,27 @@ def repair_exec_jsonl(exec_jsonl_path: Path, *, dry_run: bool = False) -> int:
         空行・空白のみの行も除去対象とする。
     """
     p = Path(exec_jsonl_path)
-    with open(p, encoding="utf-8") as f:
-        lines = f.readlines()
-
-    keep: list[str] = []
-    removed = 0
-    for raw in lines:
-        stripped = raw.rstrip("\n")
-        if not stripped.strip():
-            removed += 1
-            continue
-        try:
-            json.loads(stripped)
-            keep.append(raw)
-        except json.JSONDecodeError:
-            removed += 1
-
-    if removed == 0 or dry_run:
-        return removed
-
-    with open(p, "w", encoding="utf-8") as f:
+    with open(p, "a+", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         try:
-            f.writelines(keep)
+            f.seek(0)
+            lines = f.readlines()
+            keep: list[str] = []
+            removed = 0
+            for raw in lines:
+                stripped = raw.rstrip("\n")
+                if not stripped.strip():
+                    removed += 1
+                    continue
+                try:
+                    json.loads(stripped)
+                    keep.append(raw)
+                except json.JSONDecodeError:
+                    removed += 1
+            if removed > 0 and not dry_run:
+                f.seek(0)
+                f.truncate()
+                f.writelines(keep)
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
 

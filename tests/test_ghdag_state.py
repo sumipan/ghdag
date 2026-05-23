@@ -1,5 +1,7 @@
 """Tests for ghdag.dag.state — §5.3 acceptance criteria."""
 
+import concurrent.futures
+
 from ghdag.dag.state import is_done, load_done_from_dir, load_succeeded_from_dir, mark_done
 
 
@@ -47,3 +49,18 @@ class TestState:
 
         done = load_done_from_dir(tmp_path)
         assert done == {"uuid-ok", "uuid-fail", "uuid-rejected"}
+
+    def test_mark_done_concurrent_no_empty_file(self, tmp_path):
+        """TC1: 10スレッド×100回の並列 mark_done でファイルが空にならないこと"""
+        def write_repeatedly(i: int) -> None:
+            for _ in range(100):
+                mark_done(tmp_path, "test-uuid", i)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(write_repeatedly, i) for i in range(10)]
+            for f in futures:
+                f.result()
+
+        content = (tmp_path / "test-uuid").read_text()
+        assert len(content) > 0
+        assert int(content) in range(10)

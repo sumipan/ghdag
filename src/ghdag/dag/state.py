@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import os
 from pathlib import Path
 
@@ -15,8 +16,14 @@ def mark_done(exec_done_dir: str | Path, uuid: str, status: str | int) -> None:
     """Write a completion marker for the given task."""
     d = str(exec_done_dir)
     os.makedirs(d, exist_ok=True)
-    with open(os.path.join(d, uuid), "w") as f:
-        f.write(str(status))
+    with open(os.path.join(d, uuid), "a+") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.seek(0)
+            f.truncate()
+            f.write(str(status))
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def load_done_from_dir(exec_done_dir: str | Path) -> set[str]:
