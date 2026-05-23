@@ -7,6 +7,7 @@ exec 行フォーマットを知る必要がない。
 
 from __future__ import annotations
 
+import os
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -191,9 +192,15 @@ class LLMPipelineAPI:
                 if dep_id in step_uuid_map:
                     dep_uuid = step_uuid_map[dep_id]
                     dep_engine = step_engine_map[dep_id]
-                    context[f"{dep_id}_result_filename"] = (
-                        f"{ts}-{dep_engine}-result-{dep_uuid}.md"
-                    )
+                    dep_result_filename = f"{ts}-{dep_engine}-result-{dep_uuid}.md"
+                    context[f"{dep_id}_result_filename"] = dep_result_filename
+
+                    dep_result_path = os.path.join(self._queue_dir, dep_result_filename)
+                    if os.path.isfile(dep_result_path):
+                        with open(dep_result_path, encoding="utf-8") as f:
+                            context[f"{dep_id}_result_content"] = f.read()
+                    else:
+                        context[f"{dep_id}_result_content"] = ""
 
             order_content = order_builder.build_order(step.template, context)
             order_filename = self._state.write_order_file(
