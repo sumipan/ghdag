@@ -8,7 +8,7 @@ import time
 
 from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import Task
-from ghdag.metrics.models import TaskMetrics
+from ghdag.metrics.models import FailureClass, TaskMetrics
 
 
 UUID = "test-uuid-0000-0000-0000-000000000001"
@@ -198,7 +198,7 @@ class TestDefaultHooksAudit:
 
     # --- Issue #962 tests ---
 
-    def _make_metrics_with_failure_class(self, status: str = "failure", failure_class: str | None = None) -> TaskMetrics:
+    def _make_metrics_with_failure_class(self, status: str = "failure", failure_class: FailureClass | None = None) -> TaskMetrics:
         now = time.time()
         return TaskMetrics(
             uuid=UUID,
@@ -213,10 +213,10 @@ class TestDefaultHooksAudit:
         )
 
     def test_failure_class_propagated_from_metrics(self, tmp_path):
-        """on_task_failure(metrics=TaskMetrics(failure_class="TIMEOUT")) → audit レコードに "failure_class": "TIMEOUT"。"""
+        """on_task_failure(metrics=TaskMetrics(failure_class=FailureClass.TIMEOUT)) → audit レコードに "failure_class": "TIMEOUT"。"""
         audit_path = tmp_path / "audit.jsonl"
         hooks = DefaultHooks(audit_path=audit_path)
-        hooks.on_task_failure(UUID, _make_task(), 1, "timeout", self._make_metrics_with_failure_class("failure", "TIMEOUT"))
+        hooks.on_task_failure(UUID, _make_task(), 1, "timeout", self._make_metrics_with_failure_class("failure", FailureClass.TIMEOUT))
 
         r = json.loads(audit_path.read_text().strip())
         assert r["failure_class"] == "TIMEOUT"

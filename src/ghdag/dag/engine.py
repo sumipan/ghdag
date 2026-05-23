@@ -23,7 +23,7 @@ from .state import (
     load_succeeded_from_dir,
     mark_done as state_mark_done,
 )
-from ghdag.metrics.models import TaskMetrics
+from ghdag.metrics.models import FailureClass, TaskMetrics
 from ghdag.metrics.parsers import parse_engine_model, parse_token_count
 
 logger = logging.getLogger(__name__)
@@ -258,113 +258,127 @@ class DagEngine:
                 engine, model = parse_engine_model(task.command)
             token_count = parse_token_count(engine, stderr_text)
 
-            if was_timeout:
-                state_mark_done(self._config.exec_done_dir, uuid, "TIMEOUT")
-                metrics = TaskMetrics(
-                    uuid=uuid, engine=engine, model=model,
-                    wall_time_sec=round(finished_at - rt.started_at, 3),
-                    token_count=token_count, status="failure",
-                    started_at=rt.started_at, finished_at=finished_at,
-                    correlation_id=task.idempotency_key,
-                    failure_class="TIMEOUT",
-                )
-                timeout_msg = f"TIMEOUT: task exceeded task_timeout={self._config.task_timeout}s"
-                self._hooks.on_task_failure(uuid, task, returncode, timeout_msg, metrics)
-                continue
-
-            if returncode == 0:
-                if task.result_path is not None:
-                    stdout_data = rt.stdout_buf.getvalue() if rt.stdout_buf else b""
-                    Path(task.result_path).write_bytes(stdout_data)
-                    effective_result_path: str | None = task.result_path
-                else:
-                    effective_result_path = _extract_tee_target(task.command)
-
-                # Check rejected
-                if effective_result_path and self._hooks.check_rejected(effective_result_path):
-                    retry_depth = task.retry
-                    is_final = retry_depth >= self._config.max_retry
-                    if is_final:
-                        state_mark_done(self._config.exec_done_dir, uuid, "REJECTED_FINAL")
-                    else:
-                        state_mark_done(self._config.exec_done_dir, uuid, "REJECTED")
-                    metrics = TaskMetrics(
-                        uuid=uuid, engine=engine, model=model,
-                        wall_time_sec=round(finished_at - rt.started_at, 3),
-                        token_count=token_count, status="rejected",
-                        started_at=rt.started_at, finished_at=finished_at,
-                        correlation_id=task.idempotency_key,
-                        failure_class="REJECTED",
-                    )
-                    self._hooks.on_task_rejected(uuid, task, retry_depth, is_final, metrics)
-
-                # Check PIPELINE_STATUS: *_FAILED
-                elif effective_result_path and (pipeline_status := self._hooks.check_pipeline_status(effective_result_path)) and pipeline_status.endswith("_FAILED"):
-                    state_mark_done(self._config.exec_done_dir, uuid, f"PIPELINE_FAILED:{pipeline_status}")
+            try:
+                if was_timeout:
+                    state_mark_done(self._config.exec_done_dir, uuid, "TIMEOUT")
                     metrics = TaskMetrics(
                         uuid=uuid, engine=engine, model=model,
                         wall_time_sec=round(finished_at - rt.started_at, 3),
                         token_count=token_count, status="failure",
                         started_at=rt.started_at, finished_at=finished_at,
                         correlation_id=task.idempotency_key,
-                        failure_class="PIPELINE_FAILED",
+                        failure_class=FailureClass.TIMEOUT,
                     )
-                    self._hooks.on_task_failure(uuid, task, 0, f"PIPELINE_FAILED:{pipeline_status}", metrics)
+                    timeout_msg = f"TIMEOUT: task exceeded task_timeout={self._config.task_timeout}s"
+                    self._hooks.on_task_failure(uuid, task, returncode, timeout_msg, metrics)
+                    continue
 
-                # Check empty result
-                elif effective_result_path and os.path.exists(effective_result_path) and os.path.getsize(effective_result_path) == 0:
-                    state_mark_done(self._config.exec_done_dir, uuid, "EMPTY_RESULT")
-                    metrics = TaskMetrics(
-                        uuid=uuid, engine=engine, model=model,
-                        wall_time_sec=round(finished_at - rt.started_at, 3),
-                        token_count=token_count, status="empty_result",
-                        started_at=rt.started_at, finished_at=finished_at,
-                        correlation_id=task.idempotency_key,
-                        failure_class="EMPTY_RESULT",
-                    )
-                    self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
+                if returncode == 0:
+                    if task.result_path is not None:
+                        stdout_data = rt.stdout_buf.getvalue() if rt.stdout_buf else b""
+                        Path(task.result_path).write_bytes(stdout_data)
+                        effective_result_path: str | None = task.result_path
+                    else:
+                        effective_result_path = _extract_tee_target(task.command)
 
-                else:
-                    metrics = TaskMetrics(
-                        uuid=uuid, engine=engine, model=model,
-                        wall_time_sec=round(finished_at - rt.started_at, 3),
-                        token_count=token_count, status="success",
-                        started_at=rt.started_at, finished_at=finished_at,
-                        correlation_id=task.idempotency_key,
-                    )
-                    try:
-                        fanout_spec = parse_fanout_spec(effective_result_path)
-                    except ValueError as exc:
-                        logger.warning("FanOut parse error for [%s]: %s", uuid, exc)
-                        failure_metrics = TaskMetrics(
+                    # Check rejected
+                    if effective_result_path and self._hooks.check_rejected(effective_result_path):
+                        retry_depth = task.retry
+                        is_final = retry_depth >= self._config.max_retry
+                        if is_final:
+                            state_mark_done(self._config.exec_done_dir, uuid, "REJECTED_FINAL")
+                        else:
+                            state_mark_done(self._config.exec_done_dir, uuid, "REJECTED")
+                        metrics = TaskMetrics(
+                            uuid=uuid, engine=engine, model=model,
+                            wall_time_sec=round(finished_at - rt.started_at, 3),
+                            token_count=token_count, status="rejected",
+                            started_at=rt.started_at, finished_at=finished_at,
+                            correlation_id=task.idempotency_key,
+                            failure_class=FailureClass.REJECTED,
+                        )
+                        self._hooks.on_task_rejected(uuid, task, retry_depth, is_final, metrics)
+
+                    # Check PIPELINE_STATUS: *_FAILED
+                    elif effective_result_path and (pipeline_status := self._hooks.check_pipeline_status(effective_result_path)) and pipeline_status.endswith("_FAILED"):
+                        state_mark_done(self._config.exec_done_dir, uuid, f"PIPELINE_FAILED:{pipeline_status}")
+                        metrics = TaskMetrics(
                             uuid=uuid, engine=engine, model=model,
                             wall_time_sec=round(finished_at - rt.started_at, 3),
                             token_count=token_count, status="failure",
                             started_at=rt.started_at, finished_at=finished_at,
                             correlation_id=task.idempotency_key,
-                            failure_class="FANOUT_CHILD_FAILED",
+                            failure_class=FailureClass.PIPELINE_FAILED,
                         )
-                        state_mark_done(self._config.exec_done_dir, uuid, "FANOUT_CHILD_FAILED")
-                        self._hooks.on_task_failure(uuid, task, 0, str(exc), failure_metrics)
-                        continue
-                    if fanout_spec:
-                        self._spawn_fanout(uuid, task, fanout_spec, metrics)
-                    else:
-                        state_mark_done(self._config.exec_done_dir, uuid, 0)
-                        self._hooks.on_task_success(uuid, task, metrics)
-                        self._run_promote(effective_result_path)
+                        self._hooks.on_task_failure(uuid, task, 0, f"PIPELINE_FAILED:{pipeline_status}", metrics)
 
-            else:
-                state_mark_done(self._config.exec_done_dir, uuid, returncode)
+                    # Check empty result
+                    elif effective_result_path and os.path.exists(effective_result_path) and os.path.getsize(effective_result_path) == 0:
+                        state_mark_done(self._config.exec_done_dir, uuid, "EMPTY_RESULT")
+                        metrics = TaskMetrics(
+                            uuid=uuid, engine=engine, model=model,
+                            wall_time_sec=round(finished_at - rt.started_at, 3),
+                            token_count=token_count, status="empty_result",
+                            started_at=rt.started_at, finished_at=finished_at,
+                            correlation_id=task.idempotency_key,
+                            failure_class=FailureClass.EMPTY_RESULT,
+                        )
+                        self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
+
+                    else:
+                        metrics = TaskMetrics(
+                            uuid=uuid, engine=engine, model=model,
+                            wall_time_sec=round(finished_at - rt.started_at, 3),
+                            token_count=token_count, status="success",
+                            started_at=rt.started_at, finished_at=finished_at,
+                            correlation_id=task.idempotency_key,
+                        )
+                        try:
+                            fanout_spec = parse_fanout_spec(effective_result_path)
+                        except ValueError as exc:
+                            logger.warning("FanOut parse error for [%s]: %s", uuid, exc)
+                            failure_metrics = TaskMetrics(
+                                uuid=uuid, engine=engine, model=model,
+                                wall_time_sec=round(finished_at - rt.started_at, 3),
+                                token_count=token_count, status="failure",
+                                started_at=rt.started_at, finished_at=finished_at,
+                                correlation_id=task.idempotency_key,
+                                failure_class=FailureClass.FANOUT_CHILD_FAILED,
+                            )
+                            state_mark_done(self._config.exec_done_dir, uuid, "FANOUT_CHILD_FAILED")
+                            self._hooks.on_task_failure(uuid, task, 0, str(exc), failure_metrics)
+                            continue
+                        if fanout_spec:
+                            self._spawn_fanout(uuid, task, fanout_spec, metrics)
+                        else:
+                            state_mark_done(self._config.exec_done_dir, uuid, 0)
+                            self._hooks.on_task_success(uuid, task, metrics)
+                            self._run_promote(effective_result_path)
+
+                else:
+                    state_mark_done(self._config.exec_done_dir, uuid, returncode)
+                    metrics = TaskMetrics(
+                        uuid=uuid, engine=engine, model=model,
+                        wall_time_sec=round(finished_at - rt.started_at, 3),
+                        token_count=token_count, status="failure",
+                        started_at=rt.started_at, finished_at=finished_at,
+                        correlation_id=task.idempotency_key,
+                        failure_class=FailureClass.PROCESS_ERROR,
+                    )
+                    self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
+
+            except Exception as exc:
+                logger.exception("Unexpected error handling completion for task [%s]: %s", uuid, exc)
+                state_mark_done(self._config.exec_done_dir, uuid, "UNKNOWN_FAILURE")
                 metrics = TaskMetrics(
                     uuid=uuid, engine=engine, model=model,
                     wall_time_sec=round(finished_at - rt.started_at, 3),
                     token_count=token_count, status="failure",
                     started_at=rt.started_at, finished_at=finished_at,
                     correlation_id=task.idempotency_key,
-                    failure_class="PROCESS_ERROR",
+                    failure_class=FailureClass.UNKNOWN_FAILURE,
                 )
-                self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
+                self._hooks.on_task_failure(uuid, task, -1, str(exc), metrics)
 
     def _spawn_fanout(self, parent_uuid: str, parent_task: Task,
                       spec: FanOutSpec, metrics: TaskMetrics) -> None:
@@ -407,7 +421,7 @@ class DagEngine:
                     started_at=parent_metrics.started_at,
                     finished_at=parent_metrics.finished_at,
                     correlation_id=parent_metrics.correlation_id,
-                    failure_class="FANOUT_CHILD_FAILED",
+                    failure_class=FailureClass.FANOUT_CHILD_FAILED,
                 )
                 self._hooks.on_task_failure(
                     parent_uuid, parent_task, 0, "FANOUT_CHILD_FAILED", failure_metrics

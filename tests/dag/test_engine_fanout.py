@@ -12,7 +12,7 @@ from pathlib import Path
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.fanout import FanOutItem, FanOutSpec
 from ghdag.dag.models import DagConfig, RunningTask, Task
-from ghdag.metrics.models import TaskMetrics
+from ghdag.metrics.models import FailureClass, TaskMetrics
 
 
 class _CapturingHooks:
@@ -252,7 +252,7 @@ class TestAC4ChildFailurePropagates:
         assert len(hooks.failure) == 1
         assert hooks.failure[0][0] == parent_uuid
         assert hooks.failure[0][3] == "FANOUT_CHILD_FAILED"
-        assert hooks.failure[0][4].failure_class == "FANOUT_CHILD_FAILED"
+        assert hooks.failure[0][4].failure_class == FailureClass.FANOUT_CHILD_FAILED
         assert parent_uuid not in engine._fanout_pending
 
 
