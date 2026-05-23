@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ghdag.files import WriteResult, md_write
+from ghdag.files import PathTraversalError, WriteResult, md_write
 
 
 @pytest.fixture
@@ -55,7 +55,7 @@ class TestMdWriteBasic:
 
     def test_w3_path_traversal(self, repo_root: Path) -> None:
         """W3: repo_root 外パスで ValueError"""
-        with pytest.raises(ValueError, match="Path traversal"):
+        with pytest.raises(PathTraversalError, match="Path traversal"):
             md_write("../../etc/passwd", "evil", repo_root=repo_root)
 
     def test_w4_parent_dir_missing(self, repo_root: Path) -> None:

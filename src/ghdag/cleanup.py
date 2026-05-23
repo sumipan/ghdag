@@ -13,8 +13,6 @@ from pathlib import Path
 QUEUE_FILE_RE = re.compile(
     r"^(\d{14})-([\w-]+)-(order|result|stderr)-([a-fA-F0-9\-]{36})\.md$"
 )
-# exec.md の行: UUID[depends:...]: command
-EXEC_LINE_RE = re.compile(r"^([a-fA-F0-9\-]+)(?:\[depends:[^\]]+\])?\s*:")
 
 
 @dataclass
@@ -39,21 +37,16 @@ def file_timestamp(path: Path) -> float:
 
 
 def _extract_uuid_from_line(line: str) -> str | None:
-    """exec.md / exec.jsonl 両形式から UUID を抽出する。"""
+    """exec.jsonl 形式から UUID を抽出する。"""
     stripped = line.strip()
-    if not stripped:
+    if not stripped or not stripped.startswith("{"):
         return None
-    # JSONL 形式
-    if stripped.startswith("{"):
-        try:
-            obj = json.loads(stripped)
-            uuid = obj.get("uuid", "")
-            return uuid.lower() or None
-        except (json.JSONDecodeError, AttributeError):
-            return None
-    # exec.md 形式（後方互換）
-    m = EXEC_LINE_RE.match(stripped)
-    return m.group(1).lower() if m else None
+    try:
+        obj = json.loads(stripped)
+        uuid = obj.get("uuid", "")
+        return uuid.lower() or None
+    except (json.JSONDecodeError, AttributeError):
+        return None
 
 
 def _archive_files(
@@ -88,7 +81,7 @@ def cleanup_queue(
 ) -> CleanupResult:
     """jobs/ ディレクトリのクリーンアップを実行する。
 
-    処理の起点は exec.jsonl（または exec.md）のエントリ。
+    処理の起点は exec.jsonl のエントリ。
     by_uuid（jobs/ のファイル索引）は lookup テーブルとして使用し、
     ループドライバーには使わない。これにより「done 済みだがファイルが
     既にアーカイブ済み」の stuck エントリを確実に除去できる。
@@ -110,7 +103,7 @@ def cleanup_queue(
         queue_dir: jobs/ ディレクトリのパス
         archive_dir: jobs/archive/ ディレクトリのパス
         done_dir: jobs/done/ ディレクトリのパス
-        exec_md: exec ファイルのパス（exec.jsonl または exec.md）
+        exec_md: exec ファイルのパス（exec.jsonl）
         cutoff_days: 完了タスクをアーカイブするまでの日数
         orphan_days: 未完了タスクを孤立扱いにする日数
         dry_run: True の場合、対象を表示するのみで変更しない
@@ -144,7 +137,7 @@ def cleanup_queue(
         entry = by_uuid.setdefault(uuid, {"ts": ts, "tool": tool})
         entry[kind] = path  # "order", "result", or "stderr"
 
-    # exec.jsonl / exec.md を読み込む（Phase 1 のループドライバー）
+    # exec.jsonl を読み込む（Phase 1 のループドライバー）
     exec_lines: list[str] = []
     all_exec_uuids: set[str] = set()
     if exec_md.exists():
@@ -217,7 +210,7 @@ def cleanup_queue(
                     print(f"[dry] prune dead exec entry: {uuid}")
                 prune_uuids.add(uuid)
 
-    # exec.md / exec.jsonl のエントリ除去
+    # exec.jsonl のエントリ除去
     pruned_exec = 0
     if exec_lines and prune_uuids:
         new_lines = []

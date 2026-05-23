@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 _RATE_LIMIT_THRESHOLD = 100
 
 
+class ContextHookError(ValueError):
+    """Raised when context_hook stdout is not valid JSON."""
+
+
 class WorkflowDispatcher:
     """ポーリングループで GitHub Issues を監視し、トリガー条件に一致する Issue を検出して
     対応するハンドラーを exec.md 経由で実行する。
@@ -336,8 +340,8 @@ class WorkflowDispatcher:
         try:
             data = json.loads(stdout)
         except json.JSONDecodeError as e:
-            raise ValueError(
-                f"context_hook の stdout が有効な JSON ではありません: {e}"
+            raise ContextHookError(
+                f"context_hook stdout is not valid JSON: {e}"
             ) from e
 
         return {str(k): str(v) for k, v in data.items()}

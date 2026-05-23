@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ghdag.llm._config import load_engine_models
+from ghdag.llm._config import ConfigLoadError, load_engine_models
 from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
 
 
@@ -102,7 +102,7 @@ class TestLoadEngineModelsErrors:
             "models:\n  claude:\n    - opus-4-6\n",
             encoding="utf-8",
         )
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ConfigLoadError) as exc_info:
             load_engine_models(config)
         msg = str(exc_info.value)
         assert "engines" in msg
@@ -115,7 +115,7 @@ class TestLoadEngineModelsErrors:
             "engines:\n  claude: opus-4-6\n",
             encoding="utf-8",
         )
-        with pytest.raises(ValueError):
+        with pytest.raises(ConfigLoadError):
             load_engine_models(config)
 
     def test_yaml_parse_error(self, tmp_path: Path):
@@ -140,7 +140,7 @@ class TestLoadEngineModelsErrors:
             "engines:\n  claude:\n    - name: opus\n",
             encoding="utf-8",
         )
-        with pytest.raises(ValueError):
+        with pytest.raises(ConfigLoadError):
             load_engine_models(config)
 
 

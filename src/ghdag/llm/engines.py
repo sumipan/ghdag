@@ -18,7 +18,7 @@ from ghdag.llm.spec import ENGINE_SPECS
 
 
 class EngineModelError(Exception):
-    """未知のエンジンまたは許可外モデルが指定された場合に送出。"""
+    """Raised when an unknown engine or unauthorized model is specified."""
 
 
 # ---------------------------------------------------------------------------
@@ -47,8 +47,8 @@ def list_models(engine: str) -> list[str]:
     """
     if engine not in ENGINE_MODELS:
         raise EngineModelError(
-            f"未知のエンジンです: {engine!r}. "
-            f"利用可能: {sorted(ENGINE_MODELS.keys())}"
+            f"Unknown engine: {engine!r}. "
+            f"Available: {sorted(ENGINE_MODELS.keys())}"
         )
     return sorted(ENGINE_MODELS[engine])
 
@@ -66,8 +66,8 @@ def validate_engine_model(engine: str, model: str | None) -> str:
     """
     if engine not in ENGINE_MODELS:
         raise EngineModelError(
-            f"未知のエンジンです: {engine!r}. "
-            f"利用可能: {sorted(ENGINE_MODELS.keys())}"
+            f"Unknown engine: {engine!r}. "
+            f"Available: {sorted(ENGINE_MODELS.keys())}"
         )
 
     if model is None:
@@ -76,8 +76,8 @@ def validate_engine_model(engine: str, model: str | None) -> str:
     allowed = ENGINE_MODELS[engine]
     if model not in allowed:
         raise EngineModelError(
-            f"許可リストにないモデルです: {model!r} (engine={engine}). "
-            f"許可リスト: {sorted(allowed)}"
+            f"Model not in allowlist: {model!r} (engine={engine}). "
+            f"Allowed: {sorted(allowed)}"
         )
     return model
 
