@@ -240,14 +240,21 @@ class LLMPipelineAPI:
         model: str,
     ) -> dict:
         """exec.jsonl の 1 レコードを構築する（内部メソッド）。"""
-        from ghdag.workflow.engine import get_adapter
+        from ghdag.llm.spec import ENGINE_SPECS, render_exec_command
 
-        adapter = get_adapter(engine)
-        return adapter.build_exec_record(
-            uuid=step_uuid,
-            order_path=f"{self._queue_dir}/{order_filename}",
-            result_path=f"{self._queue_dir}/{result_filename}",
-            prompt="受け取った内容を実行して",
-            model=model,
-            depends=depends,
-        )
+        spec = ENGINE_SPECS[engine]
+        return {
+            "uuid": step_uuid,
+            "engine": spec.name,
+            "model": model if spec.model_flag else None,
+            "command": render_exec_command(
+                spec,
+                order_path=f"{self._queue_dir}/{order_filename}",
+                prompt="受け取った内容を実行して",
+                model=model,
+            ),
+            "depends": depends,
+            "result_path": f"{self._queue_dir}/{result_filename}",
+            "retry": 0,
+            "annotations": {},
+        }
