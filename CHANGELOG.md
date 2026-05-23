@@ -4,7 +4,50 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## 0.18.0 — 2026-05-23
+## [0.22.0] - 2026-05-24 — BREAKING
+
+### Changed
+
+- `workflow/engine.py`: 4 Adapter クラス（`ClaudeAdapter` / `GeminiAdapter` / `CursorAdapter` / `ShellAdapter`）を `_GenericAdapter(spec: EngineSpec)` に統合。`get_adapter()` は `ENGINE_SPECS` からオンデマンド生成するよう変更（diary #1056）
+- `llm/engines.py`: `_validate_capabilities_for_engine()` を `_UNSUPPORTED_CAPABILITIES` 辞書駆動に置換、`build_llm_cmd()` を `EngineSpec` フィールド + `_CAPABILITY_FLAG_BUILDERS` マップに分割（engine 文字列ハードコード分岐を解消）
+- `pipeline/llm_pipeline.py`: `_build_exec_record()` の `workflow.engine.get_adapter()` への import を `llm.spec` 直接参照に置換し、Layer 1 → Layer 2 逆依存を解消
+
+### Removed
+
+- **exec.md テキスト形式サポートを完全削除（破壊的変更）**
+  - `dag/parser.py`: `parse_exec_md()` 関数を削除
+  - `dag/__init__.py`: `parse_exec_md` エクスポートを削除
+  - `pipeline/state.py`: `append_exec()` メソッド・`_is_jsonl_mode` プロパティ・テキスト形式パーサーを削除。`from_repo_root()` のデフォルトパスを `queue/exec.md` → `jobs/exec.jsonl` に変更
+  - `pipeline/llm_pipeline.py`: `_submit_text()` / `_build_exec_line()` / `_jsonl_mode` プロパティを削除。`submit()` は常に exec.jsonl JSONL 形式で書き込む
+  - `llm/spec.py`: `render_exec_line()` 関数を削除
+  - `workflow/engine.py`: `EngineAdapter` Protocol および全 Adapter から `build_exec_line()` を削除
+  - `ui/monitor.py`: `parse_exec_md()` / テキスト形式 exec.md 検出パスを削除
+  - `cleanup.py`: `EXEC_LINE_RE` 正規表現・テキスト形式 UUID 抽出ブランチを削除
+  - `dag/engine.py`: exec.md テキスト形式読み込みブランチを削除（常に JSONL パーサー使用）
+
+### Deprecated
+
+- `ClaudeAdapter` / `GeminiAdapter` / `CursorAdapter` / `ShellAdapter`: deprecated alias 化（0.24.0 で削除予定）。`get_adapter(name)` または `_GenericAdapter(ENGINE_SPECS[name])` を使用すること
+
+### Migration
+
+exec.md テキスト形式を exec.jsonl JSONL 形式に変換する:
+
+```sh
+# 変換例: uuid: command → {"uuid": "uuid", "command": "command", "depends": []}
+python3 -c "
+import json, sys, re
+for line in sys.stdin:
+    line = line.rstrip()
+    if not line or line.startswith('#'): continue
+    m = re.match(r'^([a-fA-F0-9\-]+)(?:\[depends:([^\]]+)\])?:\s*(.+)', line)
+    if m:
+        uuid, deps, cmd = m.groups()
+        print(json.dumps({'uuid': uuid, 'command': cmd, 'depends': (deps.split(',') if deps else [])}))
+" < jobs/exec.md > jobs/exec.jsonl
+```
+
+## [0.18.0] - 2026-05-23
 
 ### Removed
 - `ghdag shr` subcommand and `ghdag.shr` package (self-hosted runner management).

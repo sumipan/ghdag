@@ -14,20 +14,41 @@ from ghdag.dag.models import DagConfig
 from ghdag.dag.state import is_done, load_done_from_dir, load_succeeded_from_dir
 
 
+import re as _re
+
+_MD_LINE_RE = _re.compile(r"^([a-zA-Z0-9\-]+)((?:\[[^\]]+\])*)\s*:\s*(.+)$")
+_MD_DEPENDS_RE = _re.compile(r"\[depends:([^\]]+)\]")
+
+
 def _read_done_status(exec_done_dir: str, uuid: str) -> str:
     return (Path(exec_done_dir) / uuid).read_text().strip()
 
 
-def _write_exec_md(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+def _md_to_jsonl(content: str) -> str:
+    """Convert exec.md text format to JSONL — test helper only."""
+    lines = []
+    for line in content.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        m = _MD_LINE_RE.match(line)
+        if not m:
+            continue
+        uid = m.group(1)
+        annotation_str = m.group(2)
+        command = m.group(3)
+        depends_m = _MD_DEPENDS_RE.search(annotation_str)
+        depends = [d.strip() for d in depends_m.group(1).split(",")] if depends_m else []
+        lines.append(json.dumps({"uuid": uid, "command": command, "depends": depends}))
+    return "\n".join(lines) + ("\n" if lines else "")
 
 
 def _make_config(tmp_path, exec_md_content: str, **overrides) -> DagConfig:
-    exec_md = tmp_path / "exec.md"
-    _write_exec_md(exec_md, exec_md_content)
+    exec_jsonl = tmp_path / "exec.jsonl"
+    exec_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    exec_jsonl.write_text(_md_to_jsonl(exec_md_content), encoding="utf-8")
     defaults = dict(
-        exec_md_path=str(exec_md),
+        exec_md_path=str(exec_jsonl),
         exec_done_dir=str(tmp_path / "jobs" / "done"),
         poll_interval=0.1,
         launch_stagger=0.0,
@@ -153,7 +174,8 @@ class TestAppendTask:
         def appender(prefix: str, count: int):
             try:
                 for i in range(count):
-                    engine.append_task(f"{prefix}-{i}: echo {prefix}-{i}")
+                    line = json.dumps({"uuid": f"{prefix}-{i}", "command": f"echo {prefix}-{i}", "depends": []})
+                    engine.append_task(line)
             except Exception as e:
                 errors.append(e)
 
@@ -171,9 +193,10 @@ class TestAppendTask:
         non_empty = [line for line in lines if line.strip()]
         assert len(non_empty) == 40
 
-        # Each line should be a complete line (not interleaved)
+        # Each line should be a complete JSONL record
         for line in non_empty:
-            assert ": echo " in line
+            data = json.loads(line)
+            assert "echo " in data["command"]
 
 
 class TestHooksCalled:
@@ -278,18 +301,18 @@ class TestDagConfigDefaults:
 
     def test_lock_file_defaults_to_exec_md_parent(self, tmp_path):
         """4-1: lock_file 未指定時は exec_md_path の親ディレクトリに .ghdag.lock が作られる"""
-        exec_md = tmp_path / "queue" / "exec.md"
-        exec_md.parent.mkdir(parents=True, exist_ok=True)
-        exec_md.write_text("")
-        config = DagConfig(exec_md_path=str(exec_md))
-        assert config.lock_file == Path(str(exec_md.parent)) / ".ghdag.lock"
+        exec_jsonl = tmp_path / "jobs" / "exec.jsonl"
+        exec_jsonl.parent.mkdir(parents=True, exist_ok=True)
+        exec_jsonl.write_text("")
+        config = DagConfig(exec_md_path=str(exec_jsonl))
+        assert config.lock_file == Path(str(exec_jsonl.parent)) / ".ghdag.lock"
 
     def test_lock_file_explicit_preserved(self, tmp_path):
         """4-2: 明示指定した lock_file は維持される（後方互換）"""
-        exec_md = tmp_path / "exec.md"
-        exec_md.write_text("")
+        exec_jsonl = tmp_path / "exec.jsonl"
+        exec_jsonl.write_text("")
         custom = str(tmp_path / "custom.lock")
-        config = DagConfig(exec_md_path=str(exec_md), lock_file=custom)
+        config = DagConfig(exec_md_path=str(exec_jsonl), lock_file=custom)
         assert config.lock_file == Path(custom)
 
 

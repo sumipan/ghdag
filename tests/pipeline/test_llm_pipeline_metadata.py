@@ -6,7 +6,6 @@ Acceptance Criteria:
 - AC-3 (正常系・ラウンドトリップ): exec.jsonl → parse_jsonl() → Task.annotations が一致する
 - AC-4 (後方互換): metadata 省略で annotations が {} のまま
 - AC-5 (後方互換): idempotency_key と metadata を同時指定できる
-- AC-6 (後方互換): テキストモードで metadata を渡してもエラーにならない
 - AC-7 (境界値): metadata={} で annotations が {} のまま
 - AC-8 (境界値): metadata=None で省略時と同一動作
 """
@@ -25,14 +24,11 @@ _AUDIT = AuditContext(source="test")
 
 def _make_api(
     queue_dir: str = "queue",
-    *,
-    jsonl_mode: bool = False,
 ) -> tuple[LLMPipelineAPI, MagicMock, MagicMock]:
     """LLMPipelineAPI with mocked PipelineState and OrderBuilder."""
     pipeline_state = MagicMock()
     pipeline_state.check_idempotency.return_value = True
     pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
-    pipeline_state._is_jsonl_mode = jsonl_mode
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
     api = LLMPipelineAPI(
@@ -51,7 +47,7 @@ def _make_api(
 class TestMetadataInAnnotations:
     def test_metadata_reflected_in_record_annotations(self):
         """submit(metadata={"k": "v"}) で annotations に {"k": "v"} が含まれる。"""
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata={"k": "v"})
 
@@ -60,7 +56,7 @@ class TestMetadataInAnnotations:
 
     def test_metadata_channel_and_thread_ts(self):
         """channel_id と thread_ts を metadata で渡すと annotations に格納される。"""
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         metadata = {"channel_id": "C123", "thread_ts": "1234567890.000"}
         exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata=metadata)
@@ -71,7 +67,7 @@ class TestMetadataInAnnotations:
 
     def test_submit_with_metadata_completes_without_error(self):
         """submit(metadata=...) が正常に完了する（例外なし）。"""
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         # Should not raise
         result = api.submit(steps, {}, audit_context=_AUDIT, metadata={"foo": "bar"})
@@ -86,7 +82,7 @@ class TestMetadataInAnnotations:
 class TestMetadataMultipleSteps:
     def test_all_steps_get_same_annotations(self):
         """複数ステップ投入時、全レコードに同一の annotations が付与される。"""
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         steps = [
             StepConfig(id="s1", template="t1", model="m1"),
             StepConfig(id="s2", template="t2", model="m2", depends=["s1"]),
@@ -103,7 +99,7 @@ class TestMetadataMultipleSteps:
 
     def test_two_steps_both_have_annotations(self):
         """2 ステップ（依存なし・依存あり）どちらにも annotations が付与される。"""
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         steps = [
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
@@ -127,7 +123,7 @@ class TestMetadataRoundTrip:
         Task.annotations に同一の値が取り出せる。"""
         from ghdag.dag.parser import parse_jsonl
 
-        api, pipeline_state, _ = _make_api(jsonl_mode=True)
+        api, pipeline_state, _ = _make_api()
 
         # append_exec_records の呼び出しをキャプチャして exec.jsonl を模擬
         captured_records: list[dict] = []
@@ -154,7 +150,7 @@ class TestMetadataRoundTrip:
         """複数ステップのラウンドトリップ: 全 Task.annotations が metadata と一致する。"""
         from ghdag.dag.parser import parse_jsonl
 
-        api, pipeline_state, _ = _make_api(jsonl_mode=True)
+        api, pipeline_state, _ = _make_api()
         captured_records: list[dict] = []
 
         def capture_records(records, **kwargs):
@@ -190,7 +186,7 @@ class TestMetadataRoundTrip:
 class TestMetadataBackwardCompat:
     def test_no_metadata_annotations_empty(self):
         """metadata を省略した場合、exec.jsonl の annotations は {} のまま。"""
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_AUDIT)
 
@@ -199,7 +195,7 @@ class TestMetadataBackwardCompat:
 
     def test_no_metadata_does_not_break_existing_behavior(self):
         """metadata なしで既存のテスト項目（uuid, command, result_path）が正常。"""
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_AUDIT)
 
@@ -217,7 +213,7 @@ class TestMetadataBackwardCompat:
 class TestMetadataWithIdempotencyKey:
     def test_idempotency_key_and_metadata_together(self):
         """idempotency_key と metadata を同時に指定できる。"""
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(
             steps,
@@ -233,31 +229,6 @@ class TestMetadataWithIdempotencyKey:
 
 
 # ---------------------------------------------------------------------------
-# AC-6: テキストモードで metadata を渡してもエラーにならない（後方互換）
-# ---------------------------------------------------------------------------
-
-
-class TestMetadataTextModeCompat:
-    def test_text_mode_with_metadata_does_not_raise(self):
-        """テキストモード（exec.md）で metadata を渡しても submit() がエラーにならない。"""
-        api, pipeline_state, _ = _make_api(jsonl_mode=False)
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        # Should not raise
-        exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata={"channel_id": "C123"})
-        assert len(exec_lines) >= 1
-
-    def test_text_mode_metadata_ignored_silently(self):
-        """テキストモードでは metadata が無視される（exec 行に annotations は出ない）。"""
-        api, pipeline_state, _ = _make_api(jsonl_mode=False)
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata={"channel_id": "C123"})
-
-        # テキストモードの exec 行に "annotations" は含まれない
-        for line in exec_lines:
-            assert "annotations" not in line
-
-
-# ---------------------------------------------------------------------------
 # AC-7: metadata={} で annotations が {} のまま（境界値）
 # ---------------------------------------------------------------------------
 
@@ -265,7 +236,7 @@ class TestMetadataTextModeCompat:
 class TestMetadataEmptyDict:
     def test_empty_metadata_dict_annotations_stays_empty(self):
         """metadata={} を渡した場合、annotations は {} のまま。"""
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata={})
 
@@ -281,7 +252,7 @@ class TestMetadataEmptyDict:
 class TestMetadataExplicitNone:
     def test_explicit_none_metadata_same_as_omitted(self):
         """metadata=None を明示的に渡した場合、省略時と同一の動作になる。"""
-        api, _, _ = _make_api(jsonl_mode=True)
+        api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata=None)
 

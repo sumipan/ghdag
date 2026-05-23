@@ -11,9 +11,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-from ghdag.workflow.dispatcher import WorkflowDispatcher
+from ghdag.workflow.dispatcher import ContextHookError, WorkflowDispatcher
 from ghdag.workflow.github import GitHubIssueClient
-from ghdag.workflow.loader import load_workflows
+from ghdag.workflow.loader import ValidationError, load_workflows
 from ghdag.workflow.schema import (
     DispatchResult,
     HandlerConfig,
@@ -158,7 +158,7 @@ handlers:
       - template: brushup
 """
         (tmp_path / "bad.yml").write_text(yaml_no_model, encoding="utf-8")
-        with pytest.raises(ValueError, match="model"):
+        with pytest.raises(ValidationError, match="model"):
             load_workflows(tmp_path)
 
     def test_trigger_missing_handler_raises_validation_error(self, tmp_path):
@@ -173,7 +173,7 @@ handlers:
         model: claude-sonnet-4-6
 """
         (tmp_path / "bad.yml").write_text(yaml_no_handler, encoding="utf-8")
-        with pytest.raises(ValueError, match="handler"):
+        with pytest.raises(ValidationError, match="handler"):
             load_workflows(tmp_path)
 
     def test_trigger_missing_label_raises_validation_error(self, tmp_path):
@@ -188,7 +188,7 @@ handlers:
         model: claude-sonnet-4-6
 """
         (tmp_path / "bad.yml").write_text(yaml_no_label, encoding="utf-8")
-        with pytest.raises(ValueError, match="label"):
+        with pytest.raises(ValidationError, match="label"):
             load_workflows(tmp_path)
 
     def test_unknown_keys_ignored(self, tmp_path):
@@ -263,7 +263,6 @@ def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tupl
     pipeline_state = MagicMock()
     pipeline_state.check_idempotency.return_value = True
     pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
-    pipeline_state._is_jsonl_mode = False
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
     pipeline = LLMPipelineAPI(
@@ -297,10 +296,10 @@ class TestTC2MultiStepDag:
         result = dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
 
         assert result.status == "dispatched"
-        pipeline_state.append_exec.assert_called_once()
-        exec_lines = pipeline_state.append_exec.call_args[0][0]
-        # idempotency line + 3 step lines
-        assert len(exec_lines) == 4
+        pipeline_state.append_exec_records.assert_called_once()
+        records = pipeline_state.append_exec_records.call_args[0][0]
+        # 3 step records (no idempotency line in JSONL - it's a field)
+        assert len(records) == 3
 
     def test_impl_p2_has_depends_p1(self):
         workflow = _make_extended_workflow()
@@ -310,18 +309,14 @@ class TestTC2MultiStepDag:
         trigger = workflow.triggers[1]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
 
-        exec_lines = pipeline_state.append_exec.call_args[0][0]
-        # exec_lines[1] = p1, exec_lines[2] = p2[depends:...], exec_lines[3] = p3[depends:...]
-        p1_line = exec_lines[1]
-        p2_line = exec_lines[2]
-        p3_line = exec_lines[3]
+        records = pipeline_state.append_exec_records.call_args[0][0]
+        # records[0] = p1, records[1] = p2, records[2] = p3
+        p1_rec = records[0]
+        p2_rec = records[1]
+        p3_rec = records[2]
 
-        # extract p1 uuid from p1_line
-        p1_uuid = p1_line.split(":")[0]
-        assert f"[depends:{p1_uuid}]" in p2_line
-
-        p2_uuid = p2_line.split("[")[0]
-        assert f"[depends:{p2_uuid}]" in p3_line
+        assert p2_rec["depends"] == [p1_rec["uuid"]]
+        assert p3_rec["depends"] == [p2_rec["uuid"]]
 
     def test_brushup_single_step_no_depends(self):
         workflow = _make_extended_workflow()
@@ -332,9 +327,9 @@ class TestTC2MultiStepDag:
         result = dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
 
         assert result.status == "dispatched"
-        exec_lines = pipeline_state.append_exec.call_args[0][0]
-        assert len(exec_lines) == 2  # idempotency + 1 step
-        assert "[depends:" not in exec_lines[1]
+        records = pipeline_state.append_exec_records.call_args[0][0]
+        assert len(records) == 1
+        assert records[0]["depends"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -418,9 +413,9 @@ class TestTC3ModelFlag:
         trigger = workflow.triggers[1]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
 
-        exec_lines = pipeline_state.append_exec.call_args[0][0]
-        p1_line = exec_lines[1]
-        assert "--model" in p1_line and "claude-sonnet-4-6" in p1_line
+        records = pipeline_state.append_exec_records.call_args[0][0]
+        p1_rec = records[0]
+        assert "--model" in p1_rec["command"] and "claude-sonnet-4-6" in p1_rec["command"]
 
     def test_opus_model_in_brushup(self):
         workflow = _make_extended_workflow()
@@ -430,8 +425,8 @@ class TestTC3ModelFlag:
         trigger = workflow.triggers[0]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
 
-        exec_lines = pipeline_state.append_exec.call_args[0][0]
-        assert "--model" in exec_lines[1] and "claude-opus-4-6" in exec_lines[1]
+        records = pipeline_state.append_exec_records.call_args[0][0]
+        assert "--model" in records[0]["command"] and "claude-opus-4-6" in records[0]["command"]
 
 
 # ---------------------------------------------------------------------------
@@ -494,7 +489,7 @@ class TestTC5BackwardGuard:
 
         assert result.status == "skipped"
         assert "backward" in result.reason
-        pipeline_state.append_exec.assert_not_called()
+        pipeline_state.append_exec_records.assert_not_called()
 
     def test_forward_transition_allowed(self):
         """draft-running 中に develop-ready が発火 → dispatched"""
@@ -507,7 +502,7 @@ class TestTC5BackwardGuard:
         result = dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
 
         assert result.status == "dispatched"
-        pipeline_state.append_exec.assert_called_once()
+        pipeline_state.append_exec_records.assert_called_once()
 
     def test_no_running_labels_allows_dispatch(self):
         """running ラベルなし → dispatched"""
@@ -570,7 +565,7 @@ class TestTC6ResetHandler:
         trigger = workflow.triggers[3]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=3)
 
-        pipeline_state.append_exec.assert_not_called()
+        pipeline_state.append_exec_records.assert_not_called()
 
     def test_reset_removes_labels_with_custom_prefix(self):
         """Issue #12: reset should use trigger label prefix, not hardcoded 'pipeline:'."""
@@ -816,7 +811,7 @@ handlers:
         mock_result.returncode = 0
         mock_result.stdout = "not json"
         with patch("ghdag.workflow.dispatcher.subprocess.run", return_value=mock_result):
-            with pytest.raises(ValueError, match="JSON"):
+            with pytest.raises(ContextHookError, match="JSON"):
                 dispatcher._run_context_hook("echo test", 10)
 
     def test_run_context_hook_returns_empty_on_empty_stdout(self):
@@ -913,32 +908,37 @@ class TestGitHubIssueClient:
 
 class TestRemoveIdempotencyMatching:
     def test_removes_matching_lines(self, tmp_path):
+        import json as _json
         from ghdag.pipeline.state import PipelineState
-        exec_md = tmp_path / "exec.md"
-        exec_md.write_text(
-            "# idempotency: stash-pipeline:brushup:42\n"
-            "# idempotency: stash-pipeline:impl:42\n"
-            "# idempotency: stash-pipeline:merge:42\n"
-            "# idempotency: stash-pipeline:brushup:99\n"
-            "some-uuid: cat queue/file.md | claude -p 'test'\n",
+        exec_jsonl = tmp_path / "exec.jsonl"
+        exec_jsonl.write_text(
+            _json.dumps({"uuid": "u1", "idempotency_key": "stash-pipeline:brushup:42"}) + "\n"
+            + _json.dumps({"uuid": "u2", "idempotency_key": "stash-pipeline:impl:42"}) + "\n"
+            + _json.dumps({"uuid": "u3", "idempotency_key": "stash-pipeline:merge:42"}) + "\n"
+            + _json.dumps({"uuid": "u4", "idempotency_key": "stash-pipeline:brushup:99"}) + "\n"
+            + _json.dumps({"uuid": "u5", "command": "cat queue/file.md | claude -p 'test'"}) + "\n",
             encoding="utf-8",
         )
-        state = PipelineState(state_dir=tmp_path / "state", exec_md_path=exec_md)
+        state = PipelineState(state_dir=tmp_path / "state", exec_md_path=exec_jsonl)
         removed = state.remove_idempotency_matching("stash-pipeline", 42)
 
         assert removed == 3
-        content = exec_md.read_text(encoding="utf-8")
-        assert "# idempotency: stash-pipeline:brushup:42" not in content
-        assert "# idempotency: stash-pipeline:impl:42" not in content
-        assert "# idempotency: stash-pipeline:merge:42" not in content
-        assert "# idempotency: stash-pipeline:brushup:99" in content
-        assert "some-uuid:" in content
+        content = exec_jsonl.read_text(encoding="utf-8")
+        assert "brushup:42" not in content
+        assert "impl:42" not in content
+        assert "merge:42" not in content
+        assert "brushup:99" in content
+        assert "u5" in content
 
     def test_returns_zero_if_no_match(self, tmp_path):
+        import json as _json
         from ghdag.pipeline.state import PipelineState
-        exec_md = tmp_path / "exec.md"
-        exec_md.write_text("# idempotency: stash-pipeline:brushup:99\n", encoding="utf-8")
-        state = PipelineState(state_dir=tmp_path / "state", exec_md_path=exec_md)
+        exec_jsonl = tmp_path / "exec.jsonl"
+        exec_jsonl.write_text(
+            _json.dumps({"uuid": "u1", "idempotency_key": "stash-pipeline:brushup:99"}) + "\n",
+            encoding="utf-8",
+        )
+        state = PipelineState(state_dir=tmp_path / "state", exec_md_path=exec_jsonl)
         removed = state.remove_idempotency_matching("stash-pipeline", 42)
         assert removed == 0
 
@@ -946,7 +946,7 @@ class TestRemoveIdempotencyMatching:
         from ghdag.pipeline.state import PipelineState
         state = PipelineState(
             state_dir=tmp_path / "state",
-            exec_md_path=tmp_path / "nonexistent.md",
+            exec_md_path=tmp_path / "nonexistent.jsonl",
         )
         removed = state.remove_idempotency_matching("stash-pipeline", 42)
         assert removed == 0
@@ -1206,7 +1206,7 @@ handlers:
         model: claude-sonnet-4-6
 """
         (tmp_path / "bad.yml").write_text(yaml_content, encoding="utf-8")
-        with pytest.raises(ValueError, match="handlers に定義されていません"):
+        with pytest.raises(ValidationError, match="not defined in handlers"):
             load_workflows(tmp_path)
 
     def test_handler_reference_mismatch_includes_handler_name(self, tmp_path):
@@ -1223,7 +1223,7 @@ handlers:
         model: claude-sonnet-4-6
 """
         (tmp_path / "bad.yml").write_text(yaml_content, encoding="utf-8")
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             load_workflows(tmp_path)
         msg = str(exc_info.value)
         assert "nonexistent" in msg
@@ -1244,9 +1244,9 @@ handlers:
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
         (tmp_path / "templates").mkdir()
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             load_workflows(tmp_path)
-        assert "ファイルが見つかりません" in str(exc_info.value)
+        assert "file not found" in str(exc_info.value)
         assert "brushup" in str(exc_info.value)
 
     def test_template_default_dir(self, tmp_path):
@@ -1263,7 +1263,7 @@ handlers:
         model: claude-sonnet-4-6
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             load_workflows(tmp_path)
         assert "templates" in str(exc_info.value)
 

@@ -1,4 +1,4 @@
-"""workflow/loader.py — ディレクトリからの YAML 読み込み、バリデーション"""
+"""workflow/loader.py — directory YAML loading and validation"""
 
 from __future__ import annotations
 
@@ -21,23 +21,23 @@ logger = logging.getLogger(__name__)
 
 
 class ValidationError(ValueError):
-    """YAML バリデーションエラー。"""
+    """Raised when workflow YAML fails validation."""
 
 
 def load_workflows(directory: str | Path) -> list[WorkflowConfig]:
-    """指定ディレクトリ配下の *.yml / *.yaml を読み込み、WorkflowConfig のリストを返す。
+    """Load *.yml / *.yaml files under the given directory and return a list of WorkflowConfig.
 
     Args:
-        directory: ワークフロー YAML の配置ディレクトリ
+        directory: directory where workflow YAML files are located
     Returns:
-        WorkflowConfig のリスト
+        list of WorkflowConfig
     Raises:
-        FileNotFoundError: ディレクトリが存在しない
-        ValueError: YAML パースエラーまたは必須フィールド不足
+        FileNotFoundError: directory does not exist
+        ValidationError: YAML parse error or missing required fields
     """
     directory = Path(directory)
     if not directory.exists():
-        raise FileNotFoundError(f"ディレクトリが存在しません: {directory}")
+        raise FileNotFoundError(f"Directory not found: {directory}")
 
     paths = sorted(directory.glob("*.yml")) + sorted(directory.glob("*.yaml"))
     configs: list[WorkflowConfig] = []
@@ -46,10 +46,10 @@ def load_workflows(directory: str | Path) -> list[WorkflowConfig]:
         try:
             data = yaml.safe_load(path.read_text(encoding="utf-8"))
         except yaml.YAMLError as e:
-            raise ValueError(f"YAML パースエラー ({path.name}): {e}") from e
+            raise ValidationError(f"YAML parse error ({path.name}): {e}") from e
 
         if not isinstance(data, dict):
-            raise ValueError(f"YAML ルートはマッピングである必要があります: {path.name}")
+            raise ValidationError(f"YAML root must be a mapping: {path.name}")
 
         _validate(data, path.name)
         config = _parse(data, workflow_dir=directory.resolve())
@@ -60,62 +60,62 @@ def load_workflows(directory: str | Path) -> list[WorkflowConfig]:
 
 
 def _validate(data: dict, filename: str) -> None:
-    """必須フィールドの存在チェック。"""
+    """Check for required fields."""
     if "name" not in data:
-        raise ValidationError(f"'name' フィールドが必須です: {filename}")
+        raise ValidationError(f"'name' field is required: {filename}")
     if "triggers" not in data or not data["triggers"]:
-        raise ValidationError(f"'triggers' フィールドが必須で空でない必要があります: {filename}")
+        raise ValidationError(f"'triggers' field is required and must not be empty: {filename}")
     if "handlers" not in data or data["handlers"] is None:
-        raise ValidationError(f"'handlers' フィールドが必須です: {filename}")
+        raise ValidationError(f"'handlers' field is required: {filename}")
 
-    # triggers の各エントリを検証
+    # validate each trigger entry
     for i, trigger in enumerate(data["triggers"]):
         if not isinstance(trigger, dict):
-            raise ValidationError(f"triggers[{i}] はマッピングである必要があります: {filename}")
+            raise ValidationError(f"triggers[{i}] must be a mapping: {filename}")
         if "label" not in trigger:
-            raise ValidationError(f"triggers[{i}] に 'label' が必須です: {filename}")
+            raise ValidationError(f"triggers[{i}] requires 'label': {filename}")
         if "handler" not in trigger:
-            raise ValidationError(f"triggers[{i}] に 'handler' が必須です: {filename}")
+            raise ValidationError(f"triggers[{i}] requires 'handler': {filename}")
 
-    # handlers の各エントリを検証
+    # validate each handler entry
     handlers = data["handlers"]
     if not isinstance(handlers, dict):
-        raise ValidationError(f"'handlers' はマッピングである必要があります: {filename}")
+        raise ValidationError(f"'handlers' must be a mapping: {filename}")
 
     for handler_name, handler_data in handlers.items():
         if handler_data is None:
             continue
         if not isinstance(handler_data, dict):
-            raise ValidationError(f"ハンドラー '{handler_name}' はマッピングである必要があります: {filename}")
+            raise ValidationError(f"handler '{handler_name}' must be a mapping: {filename}")
 
-        # reset ハンドラーは steps 不要
+        # reset handlers do not require steps
         handler_type = handler_data.get("type")
         if handler_type == "reset":
             continue
 
         steps = handler_data.get("steps")
         if steps is None:
-            raise ValidationError(f"ハンドラー '{handler_name}' に 'steps' が必須です: {filename}")
+            raise ValidationError(f"handler '{handler_name}' requires 'steps': {filename}")
 
         for i, step in enumerate(steps):
             if not isinstance(step, dict):
-                raise ValidationError(f"ハンドラー '{handler_name}' の step[{i}] はマッピングである必要があります: {filename}")
+                raise ValidationError(f"handler '{handler_name}' step[{i}] must be a mapping: {filename}")
             if "template" not in step:
-                raise ValidationError(f"ハンドラー '{handler_name}' の step[{i}] に 'template' が必須です: {filename}")
+                raise ValidationError(f"handler '{handler_name}' step[{i}] requires 'template': {filename}")
             if "model" not in step:
-                raise ValidationError(f"ハンドラー '{handler_name}' の step[{i}] に 'model' が必須です: {filename}")
+                raise ValidationError(f"handler '{handler_name}' step[{i}] requires 'model': {filename}")
 
     handler_names = set(data["handlers"].keys())
     for i, t in enumerate(data["triggers"]):
         if t["handler"] not in handler_names:
-            raise ValueError(
-                f"{filename}: triggers[{i}].handler '{t['handler']}' は "
-                f"handlers に定義されていません (定義済み: {sorted(handler_names)})"
+            raise ValidationError(
+                f"{filename}: triggers[{i}].handler '{t['handler']}' is not defined in handlers "
+                f"(available: {sorted(handler_names)})"
             )
 
 
 def _validate_references(config: WorkflowConfig, *, workflow_dir: Path | None = None) -> None:
-    """テンプレートファイルの存在確認と context_hook の実行可能性チェック。"""
+    """Check template file existence and context_hook executability."""
     template_dir = Path(config.template_dir) if config.template_dir else (
         workflow_dir / "templates" if workflow_dir else Path("templates")
     )
@@ -125,21 +125,21 @@ def _validate_references(config: WorkflowConfig, *, workflow_dir: Path | None = 
             cmd = tokens[0] if tokens else handler.context_hook
             if shutil.which(cmd) is None:
                 logger.warning(
-                    "handler '%s' の context_hook コマンド '%s' が見つかりません "
-                    "(PATH に存在しないか実行権限がありません)",
+                    "handler '%s' context_hook command '%s' not found "
+                    "(not in PATH or not executable)",
                     handler_name, cmd,
                 )
         for i, step in enumerate(handler.steps):
             template_path = template_dir / f"{step.template}.md"
             if not template_path.exists():
-                raise ValueError(
+                raise ValidationError(
                     f"handler '{handler_name}' steps[{i}].template: "
-                    f"ファイルが見つかりません: {template_path}"
+                    f"file not found: {template_path}"
                 )
 
 
 def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
-    """バリデーション済み dict を WorkflowConfig に変換。"""
+    """Convert validated dict to WorkflowConfig."""
     triggers = [
         TriggerConfig(label=t["label"], handler=t["handler"])
         for t in data["triggers"]
@@ -152,7 +152,7 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
 
         handler_type = h.get("type")
 
-        # on_trigger パース
+        # parse on_trigger
         on_trigger_data = h.get("on_trigger")
         on_trigger = None
         if on_trigger_data and isinstance(on_trigger_data, dict):
@@ -186,7 +186,7 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
             context_hook=context_hook,
         )
 
-    # template_dir の解決: 相対パスはワークフローファイルのディレクトリ基準
+    # template_dir resolution: relative paths are resolved against the workflow file directory
     raw_template_dir = data.get("template_dir")
     resolved_template_dir: str | None = None
     if raw_template_dir is not None:

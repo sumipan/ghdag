@@ -14,10 +14,10 @@ import time
 from pathlib import Path
 
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
-from .fanout import FanOutSpec, build_child_exec_line, build_child_jsonl_record, parse_fanout_spec
+from .fanout import FanOutSpec, build_child_jsonl_record, parse_fanout_spec
 from .hooks import DefaultHooks, DagHooks
 from .models import DagConfig, RunningTask, Task
-from .parser import parse_exec_md, parse_jsonl, validate_dependencies
+from .parser import parse_jsonl, validate_dependencies
 from .state import (
     load_done_from_dir,
     load_succeeded_from_dir,
@@ -67,18 +67,15 @@ class DagEngine:
 
             if mtime != last_mtime:
                 last_mtime = mtime
-                if exec_md_path.endswith(".jsonl"):
-                    with open(exec_md_path, encoding="utf-8") as f:
-                        fcntl.flock(f, fcntl.LOCK_SH)
-                        try:
-                            text = f.read()
-                        finally:
-                            fcntl.flock(f, fcntl.LOCK_UN)
-                    task_list = parse_jsonl(text)
-                else:
-                    task_list = parse_exec_md(exec_md_path)
+                with open(exec_md_path, encoding="utf-8") as f:
+                    fcntl.flock(f, fcntl.LOCK_SH)
+                    try:
+                        text = f.read()
+                    finally:
+                        fcntl.flock(f, fcntl.LOCK_UN)
+                task_list = parse_jsonl(text)
                 self._tasks = {t.uuid: t for t in task_list}
-                logger.info("Loaded exec.md (%d tasks)", len(self._tasks))
+                logger.info("Loaded exec file (%d tasks)", len(self._tasks))
 
             # Check running processes for completion (includes timeout enforcement)
             self._check_completions()
@@ -400,10 +397,7 @@ class DagEngine:
         for child in spec.children:
             child_uuid = f"{parent_uuid}--fo--{child.id}"
             child_uuids.add(child_uuid)
-            if exec_path.endswith(".jsonl"):
-                line = build_child_jsonl_record(child_uuid, child.command)
-            else:
-                line = build_child_exec_line(child_uuid, child.command)
+            line = build_child_jsonl_record(child_uuid, child.command)
             self.append_task(line)
             logger.info("FanOut [%s]: spawned child [%s]", parent_uuid, child_uuid)
         self._fanout_pending[parent_uuid] = child_uuids
