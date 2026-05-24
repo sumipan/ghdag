@@ -263,7 +263,7 @@ def _cmd_run(args: argparse.Namespace) -> None:
         exec_md_path=args.exec_md,
         poll_interval=args.interval,
         cwd=cwd,
-        max_concurrency=args.max_concurrency or 4,
+        max_concurrency=args.max_concurrency if args.max_concurrency is not None else 4,
     )
     hooks = _load_hooks(args.hooks) if args.hooks else None
     engine = DagEngine(config, hooks)
