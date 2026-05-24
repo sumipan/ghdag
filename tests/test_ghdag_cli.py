@@ -90,7 +90,10 @@ class TestRunNormal:
         assert call_kwargs["exec_md_path"] == str(exec_md)
         assert call_kwargs["poll_interval"] == 1.0
         assert "cwd" in call_kwargs
-        mock_engine_cls.assert_called_once_with(mock_config_cls.return_value, None)
+        from ghdag.pipeline.hooks import AuditHooks
+        call_args = mock_engine_cls.call_args
+        assert call_args[0][0] is mock_config_cls.return_value
+        assert isinstance(call_args[0][1], AuditHooks)
         mock_engine_cls.return_value.run.assert_called_once()
 
     def test_run_with_custom_interval(self, tmp_path):
@@ -184,7 +187,7 @@ class TestRunHooks:
         assert exc.value.code == 1
         assert "cannot import" in capsys.readouterr().err
 
-    def test_no_hooks_arg_engine_called_with_none(self, tmp_path):
+    def test_no_hooks_arg_engine_called_with_audit_hooks(self, tmp_path):
         exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
@@ -196,7 +199,10 @@ class TestRunHooks:
             from ghdag.cli import main
             main(["run", str(exec_md)])
 
-        mock_engine_cls.assert_called_once_with(mock_config_cls.return_value, None)
+        from ghdag.pipeline.hooks import AuditHooks
+        call_args = mock_engine_cls.call_args
+        assert call_args[0][0] is mock_config_cls.return_value
+        assert isinstance(call_args[0][1], AuditHooks)
 
 
 # ---------------------------------------------------------------------------

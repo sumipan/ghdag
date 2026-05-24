@@ -35,8 +35,7 @@ class DagEngine:
     def __init__(self, config: DagConfig, hooks: DagHooks | None = None) -> None:
         self._config = config
         if hooks is None:
-            audit_path = Path(config.exec_md_path).parent / "audit.jsonl"
-            self._hooks: DagHooks = DefaultHooks(audit_path=audit_path)
+            self._hooks: DagHooks = DefaultHooks()
         else:
             self._hooks = hooks
         self._running: dict[str, RunningTask] = {}
