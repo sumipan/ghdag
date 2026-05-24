@@ -59,7 +59,7 @@ def _make_engine(tmp_path: Path) -> tuple[DagEngine, _CapturingHooks, Path]:
     done_dir.mkdir()
     hooks = _CapturingHooks()
     config = DagConfig(
-        exec_md_path=exec_file,
+        exec_jsonl_path=exec_file,
         exec_done_dir=done_dir,
         lock_file=tmp_path / ".lock",
     )

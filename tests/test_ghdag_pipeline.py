@@ -176,7 +176,7 @@ class TestPipelineState:
         os.makedirs(self.queue_dir, exist_ok=True)
 
     def make_state(self) -> PipelineState:
-        return PipelineState(state_dir=self.state_dir, exec_md_path=self.exec_md)
+        return PipelineState(state_dir=self.state_dir, exec_jsonl_path=self.exec_md)
 
     # --- 冪等性 ---
 
@@ -189,7 +189,7 @@ class TestPipelineState:
         """S2: JSONL に idempotency_key が存在すると check_idempotency は False"""
         import json
         exec_jsonl = os.path.join(self.tmpdir, "exec.jsonl")
-        st = PipelineState(state_dir=self.state_dir, exec_md_path=exec_jsonl)
+        st = PipelineState(state_dir=self.state_dir, exec_jsonl_path=exec_jsonl)
         Path(exec_jsonl).write_text(
             json.dumps({"idempotency_key": "key-1", "uuid": "abc-123"}) + "\n",
             encoding="utf-8",
@@ -283,16 +283,16 @@ class TestParseFrontmatter:
 
 class TestFromRepoRoot:
     def test_ac4_from_repo_root_paths(self, tmp_path):
-        """AC-4: from_repo_root → state_dir と exec_md_path が標準パスで生成される"""
+        """AC-4: from_repo_root → state_dir と exec_jsonl_path が標準パスで生成される"""
         state = PipelineState.from_repo_root(tmp_path)
         assert state._state_dir == tmp_path / ".pipeline-state"
-        assert state._exec_md_path == tmp_path / "jobs" / "exec.jsonl"
+        assert state._exec_jsonl_path == tmp_path / "jobs" / "exec.jsonl"
 
     def test_ac4_from_repo_root_str(self, tmp_path):
         """AC-4: from_repo_root に str を渡しても Path になる"""
         state = PipelineState.from_repo_root(str(tmp_path))
         assert state._state_dir == tmp_path / ".pipeline-state"
-        assert state._exec_md_path == tmp_path / "jobs" / "exec.jsonl"
+        assert state._exec_jsonl_path == tmp_path / "jobs" / "exec.jsonl"
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +304,7 @@ class TestParseExecTasksJsonl:
     def make_state(self, tmp_path) -> PipelineState:
         return PipelineState(
             state_dir=tmp_path / ".pipeline-state",
-            exec_md_path=tmp_path / "queue" / "exec.jsonl",
+            exec_jsonl_path=tmp_path / "queue" / "exec.jsonl",
         )
 
     def test_ac1_1_normal(self, tmp_path):
@@ -361,7 +361,7 @@ class TestRemoveExecEntriesJsonl:
     def make_state(self, tmp_path) -> PipelineState:
         return PipelineState(
             state_dir=tmp_path / ".pipeline-state",
-            exec_md_path=tmp_path / "queue" / "exec.jsonl",
+            exec_jsonl_path=tmp_path / "queue" / "exec.jsonl",
         )
 
     def _write_jsonl(self, path: Path, records: list[dict]) -> None:

@@ -51,22 +51,22 @@ class DagEngine:
         self._acquire_lock()
         self._install_signal_handlers()
 
-        exec_md_path = str(self._config.exec_md_path)
+        exec_jsonl_path = str(self._config.exec_jsonl_path)
         last_mtime = 0.0
 
-        logger.info("DagEngine started — watching %s", exec_md_path)
+        logger.info("DagEngine started — watching %s", exec_jsonl_path)
 
         while not self._shutdown:
             # Detect exec.md changes
             try:
-                mtime = os.path.getmtime(exec_md_path)
+                mtime = os.path.getmtime(exec_jsonl_path)
             except FileNotFoundError:
                 time.sleep(self._config.poll_interval)
                 continue
 
             if mtime != last_mtime:
                 last_mtime = mtime
-                with open(exec_md_path, encoding="utf-8") as f:
+                with open(exec_jsonl_path, encoding="utf-8") as f:
                     fcntl.flock(f, fcntl.LOCK_SH)
                     try:
                         text = f.read()
@@ -143,7 +143,7 @@ class DagEngine:
 
     def append_task(self, line: str) -> None:
         """Append a line to exec.md with fcntl.LOCK_EX protection."""
-        path = str(self._config.exec_md_path)
+        path = str(self._config.exec_jsonl_path)
         with open(path, "a", encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
             try:
@@ -391,7 +391,7 @@ class DagEngine:
     def _spawn_fanout(self, parent_uuid: str, parent_task: Task,
                       spec: FanOutSpec, metrics: TaskMetrics) -> None:
         """Append child tasks to the exec file and register the parent in _fanout_pending."""
-        exec_path = str(self._config.exec_md_path)
+        exec_path = str(self._config.exec_jsonl_path)
         child_uuids: set[str] = set()
         for child in spec.children:
             child_uuid = f"{parent_uuid}--fo--{child.id}"
@@ -456,7 +456,7 @@ class DagEngine:
             md_promote(
                 result_path,
                 promote_target,
-                repo_root=Path(self._config.exec_md_path).parent,
+                repo_root=Path(self._config.exec_jsonl_path).parent,
             )
         except Exception:
             logger.warning("Promote failed for %s → %s", result_path, promote_target, exc_info=True)

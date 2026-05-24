@@ -21,7 +21,7 @@ except ImportError:
 
 
 class _ExecMdHandler:
-    """Watchdog handler that sets a threading.Event when exec.md changes."""
+    """Watchdog handler that sets a threading.Event when exec.jsonl changes."""
 
     def __init__(self, target_path: str, change_event: threading.Event) -> None:
         self._target = os.path.basename(target_path)
@@ -44,20 +44,20 @@ if _HAS_WATCHDOG:
 
 
 class HybridWatcher:
-    """Watch exec.md for changes using watchdog (native or polling fallback).
+    """Watch exec.jsonl for changes using watchdog (native or polling fallback).
 
     Usage:
-        watcher = HybridWatcher(exec_md_path)
+        watcher = HybridWatcher(exec_jsonl_path)
         watcher.start()
         while True:
             if watcher.wait_for_change(timeout=5.0):
-                # exec.md changed
+                # exec.jsonl changed
                 ...
         watcher.stop()
     """
 
-    def __init__(self, exec_md_path: str | Path, poll_interval: float = 1.0) -> None:
-        self._path = str(exec_md_path)
+    def __init__(self, exec_jsonl_path: str | Path, poll_interval: float = 1.0) -> None:
+        self._path = str(exec_jsonl_path)
         self._dir = os.path.dirname(os.path.abspath(self._path)) or "."
         self._poll_interval = poll_interval
         self._change_event = threading.Event()

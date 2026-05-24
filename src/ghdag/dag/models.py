@@ -39,7 +39,7 @@ class RunningTask:
 
 @dataclass
 class DagConfig:
-    exec_md_path: str | Path
+    exec_jsonl_path: str | Path
     exec_done_dir: str | Path = "jobs/done"
     poll_interval: float = 1.0
     launch_stagger: float = 0.5
@@ -53,6 +53,6 @@ class DagConfig:
 
     def __post_init__(self) -> None:
         if self.lock_file is None:
-            self.lock_file = Path(self.exec_md_path).parent / ".ghdag.lock"
+            self.lock_file = Path(self.exec_jsonl_path).parent / ".ghdag.lock"
         else:
             self.lock_file = Path(self.lock_file)

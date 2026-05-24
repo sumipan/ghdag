@@ -40,7 +40,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # ghdag run
     run_parser = subparsers.add_parser("run", help="Run exec.jsonl via DagEngine")
-    run_parser.add_argument("exec_md", help="Path to exec.jsonl file")
+    run_parser.add_argument("exec_jsonl", help="Path to exec.jsonl file")
     run_parser.add_argument(
         "--interval",
         type=float,
@@ -78,7 +78,7 @@ def _build_parser() -> argparse.ArgumentParser:
     watch_parser.add_argument(
         "--exec-md",
         default="jobs/exec.jsonl",
-        dest="exec_md",
+        dest="exec_jsonl",
         metavar="PATH",
         help="Output path for exec.jsonl (default: jobs/exec.jsonl)",
     )
@@ -224,7 +224,7 @@ def _build_parser() -> argparse.ArgumentParser:
     trigger_parser.add_argument(
         "--exec-md",
         default="jobs/exec.jsonl",
-        dest="exec_md",
+        dest="exec_jsonl",
         metavar="PATH",
         help="Output path for exec.jsonl (default: jobs/exec.jsonl)",
     )
@@ -251,16 +251,16 @@ def _setup_logging(args: argparse.Namespace) -> None:
 
 def _cmd_run(args: argparse.Namespace) -> None:
     """DagConfig を構築し DagEngine.run() を呼ぶ薄いラッパー。"""
-    if not os.path.exists(args.exec_md):
-        print(f"error: file not found: {args.exec_md}", file=sys.stderr)
+    if not os.path.exists(args.exec_jsonl):
+        print(f"error: file not found: {args.exec_jsonl}", file=sys.stderr)
         sys.exit(1)
 
     from ghdag.dag.engine import DagEngine
     from ghdag.dag.models import DagConfig
 
-    cwd = getattr(args, "cwd", None) or str(Path(args.exec_md).resolve().parent.parent)
+    cwd = getattr(args, "cwd", None) or str(Path(args.exec_jsonl).resolve().parent.parent)
     config = DagConfig(
-        exec_md_path=args.exec_md,
+        exec_jsonl_path=args.exec_jsonl,
         poll_interval=args.interval,
         cwd=cwd,
         max_concurrency=args.max_concurrency,
@@ -269,7 +269,7 @@ def _cmd_run(args: argparse.Namespace) -> None:
         hooks = _load_hooks(args.hooks)
     else:
         from ghdag.pipeline.hooks import AuditHooks
-        audit_path = Path(args.exec_md).resolve().parent.parent / "audit.jsonl"
+        audit_path = Path(args.exec_jsonl).resolve().parent.parent / "audit.jsonl"
         hooks = AuditHooks(audit_path=audit_path)
     engine = DagEngine(config, hooks)
     if hooks is not None and hasattr(hooks, "set_engine"):
@@ -376,11 +376,11 @@ def _cmd_trigger(args: argparse.Namespace) -> None:
             break
 
     github_client = GitHubIssueClient()
-    exec_md_resolved = Path(args.exec_md).resolve()
-    queue_dir = str(exec_md_resolved.parent)
+    exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
+    queue_dir = str(exec_jsonl_resolved.parent)
     pipeline_state = PipelineState(
         state_dir=".pipeline-state",
-        exec_md_path=str(exec_md_resolved),
+        exec_jsonl_path=str(exec_jsonl_resolved),
     )
     template_dir = workflow.template_dir or "templates"
     order_builder = TemplateOrderBuilder(template_dir)
@@ -433,11 +433,11 @@ def _cmd_watch(args: argparse.Namespace) -> None:
         wf.polling_interval = args.interval
 
     github_client = GitHubIssueClient()
-    exec_md_resolved = Path(args.exec_md).resolve()
-    queue_dir = str(exec_md_resolved.parent)
+    exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
+    queue_dir = str(exec_jsonl_resolved.parent)
     pipeline_state = PipelineState(
         state_dir=".pipeline-state",
-        exec_md_path=str(exec_md_resolved),
+        exec_jsonl_path=str(exec_jsonl_resolved),
     )
     # template_dir: ワークフローごとに OrderBuilder を用意し、submit() 時に
     # base_context["workflow_name"] で切り替える。`watch` はワークフローを
@@ -573,7 +573,7 @@ def _cmd_cleanup(args: argparse.Namespace) -> None:
         queue_dir=repo_root / "jobs",
         archive_dir=repo_root / "jobs" / "archive",
         done_dir=repo_root / "jobs" / "done",
-        exec_md=repo_root / "jobs" / "exec.jsonl",
+        exec_jsonl=repo_root / "jobs" / "exec.jsonl",
         cutoff_days=args.cutoff_days,
         orphan_days=args.orphan_days,
         dry_run=args.dry_run,

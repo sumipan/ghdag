@@ -1,4 +1,4 @@
-"""workflow/dispatcher.py — WorkflowDispatcher: ポーリング + イベントマッチング + exec.md 投入"""
+"""workflow/dispatcher.py — WorkflowDispatcher: ポーリング + イベントマッチング + exec.jsonl 投入"""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ class ContextHookError(ValueError):
 
 class WorkflowDispatcher:
     """ポーリングループで GitHub Issues を監視し、トリガー条件に一致する Issue を検出して
-    対応するハンドラーを exec.md 経由で実行する。
+    対応するハンドラーを exec.jsonl 経由で実行する。
     """
 
     def __init__(

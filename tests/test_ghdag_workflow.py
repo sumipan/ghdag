@@ -919,7 +919,7 @@ class TestRemoveIdempotencyMatching:
             + _json.dumps({"uuid": "u5", "command": "cat queue/file.md | claude -p 'test'"}) + "\n",
             encoding="utf-8",
         )
-        state = PipelineState(state_dir=tmp_path / "state", exec_md_path=exec_jsonl)
+        state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
         removed = state.remove_idempotency_matching("stash-pipeline", 42)
 
         assert removed == 3
@@ -938,7 +938,7 @@ class TestRemoveIdempotencyMatching:
             _json.dumps({"uuid": "u1", "idempotency_key": "stash-pipeline:brushup:99"}) + "\n",
             encoding="utf-8",
         )
-        state = PipelineState(state_dir=tmp_path / "state", exec_md_path=exec_jsonl)
+        state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
         removed = state.remove_idempotency_matching("stash-pipeline", 42)
         assert removed == 0
 
@@ -946,7 +946,7 @@ class TestRemoveIdempotencyMatching:
         from ghdag.pipeline.state import PipelineState
         state = PipelineState(
             state_dir=tmp_path / "state",
-            exec_md_path=tmp_path / "nonexistent.jsonl",
+            exec_jsonl_path=tmp_path / "nonexistent.jsonl",
         )
         removed = state.remove_idempotency_matching("stash-pipeline", 42)
         assert removed == 0

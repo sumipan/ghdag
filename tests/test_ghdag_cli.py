@@ -38,7 +38,7 @@ class TestHelp:
             main(["run", "--help"])
         assert exc.value.code == 0
         captured = capsys.readouterr()
-        assert "exec_md" in captured.out
+        assert "exec_jsonl" in captured.out
         assert "--interval" in captured.out
 
     def test_watch_help_exits_0(self, capsys):
@@ -87,7 +87,7 @@ class TestRunNormal:
             main(["run", str(exec_md)])
 
         call_kwargs = mock_config_cls.call_args[1]
-        assert call_kwargs["exec_md_path"] == str(exec_md)
+        assert call_kwargs["exec_jsonl_path"] == str(exec_md)
         assert call_kwargs["poll_interval"] == 1.0
         assert "cwd" in call_kwargs
         from ghdag.pipeline.hooks import AuditHooks
@@ -109,7 +109,7 @@ class TestRunNormal:
             main(["run", str(exec_md), "--interval", "10"])
 
         call_kwargs = mock_config_cls.call_args[1]
-        assert call_kwargs["exec_md_path"] == str(exec_md)
+        assert call_kwargs["exec_jsonl_path"] == str(exec_md)
         assert call_kwargs["poll_interval"] == 10.0
         assert "cwd" in call_kwargs
 
@@ -257,7 +257,7 @@ class TestWatchNormal:
     def test_watch_with_options(self, tmp_path):
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
-        exec_md_path = str(tmp_path / "out.md")
+        exec_jsonl_path = str(tmp_path / "out.md")
 
         mock_load = MagicMock(return_value=[])
         mock_dispatcher_cls = MagicMock()
@@ -274,12 +274,12 @@ class TestWatchNormal:
             main([
                 "watch", str(workflows_dir),
                 "--interval", "60",
-                "--exec-md", exec_md_path,
+                "--exec-md", exec_jsonl_path,
             ])
 
         mock_state_cls.assert_called_once_with(
             state_dir=".pipeline-state",
-            exec_md_path=exec_md_path,
+            exec_jsonl_path=exec_jsonl_path,
         )
         mock_dispatcher_cls.return_value.run.assert_called_once()
 
