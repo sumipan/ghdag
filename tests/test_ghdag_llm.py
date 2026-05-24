@@ -683,3 +683,75 @@ class TestAdapterOutputs:
             depends=[],
         )
         assert record["command"] == "bash -o pipefail queue/order.sh"
+
+
+# ---------------------------------------------------------------------------
+# render_exec_command with capabilities (AC1, AC2, AC3, AC8)
+# ---------------------------------------------------------------------------
+
+class TestRenderExecCommandCapabilities:
+    def test_ac1_claude_text_only_capabilities(self):
+        """AC1: capabilities=TEXT_ONLY → --permission-mode default --disallowed-tools ...、--dangerously-skip-permissions なし"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        spec = ENGINE_SPECS["claude"]
+        cmd = render_exec_command(
+            spec, order_path="queue/order.md", prompt="hello", model="claude-opus-4-6",
+            capabilities=TEXT_ONLY,
+        )
+        assert "--permission-mode" in cmd
+        assert "default" in cmd
+        assert "--disallowed-tools" in cmd
+        for tool in ("Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch"):
+            assert tool in cmd
+        assert "--dangerously-skip-permissions" not in cmd
+
+    def test_ac2_claude_dangerous_full_access(self):
+        """AC2: capabilities=DANGEROUS_FULL_ACCESS → --permission-mode bypassPermissions"""
+        from ghdag.llm.capabilities import DANGEROUS_FULL_ACCESS
+        spec = ENGINE_SPECS["claude"]
+        cmd = render_exec_command(
+            spec, order_path="queue/order.md", prompt="hello", model=None,
+            capabilities=DANGEROUS_FULL_ACCESS,
+        )
+        assert "--permission-mode" in cmd
+        assert "bypassPermissions" in cmd
+        assert "--dangerously-skip-permissions" not in cmd
+
+    def test_ac3_cursor_text_only_no_force(self):
+        """AC3: cursor + capabilities=TEXT_ONLY → --force を含まない"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        spec = ENGINE_SPECS["cursor"]
+        cmd = render_exec_command(
+            spec, order_path="queue/order.md", prompt="", model="auto",
+            capabilities=TEXT_ONLY,
+        )
+        assert "--force" not in cmd
+
+    def test_ac8_claude_capabilities_none_preserves_danger_flag(self):
+        """AC8: capabilities=None（デフォルト）→ 従来通り --dangerously-skip-permissions"""
+        spec = ENGINE_SPECS["claude"]
+        cmd = render_exec_command(
+            spec, order_path="queue/order.md", prompt="hello", model="claude-opus-4-6",
+            capabilities=None,
+        )
+        assert "--dangerously-skip-permissions" in cmd
+        assert "--permission-mode" not in cmd
+
+    def test_gemini_capabilities_fallback_to_no_flags(self):
+        """gemini + capabilities → フラグなしにフォールバック（extra_args は維持）"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        spec = ENGINE_SPECS["gemini"]
+        cmd = render_exec_command(
+            spec, order_path="queue/order.md", prompt="hello", model="gemini-2.5-flash",
+            capabilities=TEXT_ONLY,
+        )
+        assert "--permission-mode" not in cmd
+        assert "--approval-mode yolo" in cmd  # extra_args は維持
+
+    def test_shell_capabilities_no_change(self):
+        """shell + capabilities → コマンド変化なし"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        spec = ENGINE_SPECS["shell"]
+        cmd_no_caps = render_exec_command(spec, order_path="queue/order.sh", prompt="", model=None)
+        cmd_with_caps = render_exec_command(spec, order_path="queue/order.sh", prompt="", model=None, capabilities=TEXT_ONLY)
+        assert cmd_no_caps == cmd_with_caps
