@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghdag"
-version = "0.22.0"
+version = "0.24.0"
 description = "Generic DAG execution engine extracted from graph-watcher"
 readme = "README.md"
 license = "MIT"
@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0.0"]
+dev = ["pytest>=7.0.0", "mypy>=1.10.0"]
 
 [project.scripts]
 ghdag = "ghdag.cli:main"
@@ -31,7 +31,37 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "ghdag.ui" = ["static/*"]
+"ghdag" = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.mypy]
+strict = false
+warn_return_any = true
+warn_unused_configs = true
+packages = ["ghdag"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = [
+  "ghdag.cleanup",
+  "ghdag.cli",
+  "ghdag.dag._util",
+  "ghdag.dag.engine",
+  "ghdag.dag.fanout",
+  "ghdag.dag.watcher",
+  "ghdag.files.reader",
+  "ghdag.llm._config",
+  "ghdag.llm.engines",
+  "ghdag.metrics.models",
+  "ghdag.pipeline.state",
+  "ghdag.pipeline.wait",
+  "ghdag.ui.monitor",
+  "ghdag.ui.server",
+  "ghdag.workflow.dispatcher",
+  "ghdag.workflow.github",
+  "ghdag.workflow.loader",
+]
+ignore_errors = true

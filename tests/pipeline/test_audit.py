@@ -207,41 +207,6 @@ class TestAppendExecRecordsAudit:
         assert r["task_uuids"] == []
 
 
-class TestAppendExecAudit:
-    """AC7: append_exec 経由でテキスト行から UUID が正規表現で抽出され audit に記録される。"""
-
-    def test_ac7_uuid_from_text_line(self, tmp_path):
-        from ghdag.pipeline.state import PipelineState
-
-        exec_path = tmp_path / "exec.md"
-        state = PipelineState(state_dir=tmp_path / ".state", exec_md_path=exec_path)
-        ctx = AuditContext(source="issuesmith")
-        lines = [f"{UUID1}: claude -p --force < order.md"]
-
-        state.append_exec(lines, audit_context=ctx)
-
-        audit_path = tmp_path / "audit.jsonl"
-        assert audit_path.exists()
-        r = json.loads(audit_path.read_text().strip())
-        assert UUID1 in r["task_uuids"]
-        assert r["exec_lines_count"] == 1
-
-    def test_ac7_line_without_uuid_skipped(self, tmp_path):
-        """UUID を持たないテキスト行は task_uuids に含まれない。"""
-        from ghdag.pipeline.state import PipelineState
-
-        exec_path = tmp_path / "exec.md"
-        state = PipelineState(state_dir=tmp_path / ".state", exec_md_path=exec_path)
-        lines = ["# idempotency: issuesmith:brushup:756"]
-
-        state.append_exec(lines, audit_context=AuditContext())
-
-        audit_path = tmp_path / "audit.jsonl"
-        r = json.loads(audit_path.read_text().strip())
-        assert r["task_uuids"] == []
-        assert r["exec_lines_count"] == 1
-
-
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
 )
@@ -397,8 +362,8 @@ class TestRotation:
         assert len(lines) == 1
         assert json.loads(lines[0])["exec_lines_count"] == 1
 
-    def test_ac2_daily_rotation_triggers(self, tmp_path):
-        """AC-2: first-line timestamp is previous day (JST) → rotation."""
+    def test_ac2_daily_rotation_removed(self, tmp_path):
+        """AC-2 (updated): previous-day timestamp → NO rotation (daily rotation removed)."""
         audit_path = tmp_path / "audit.jsonl"
         old_record = json.dumps({"timestamp": "2026-05-22T23:59:59+09:00"}) + "\n"
         audit_path.write_text(old_record)
@@ -406,10 +371,9 @@ class TestRotation:
         write_audit_log(audit_path, task_uuids=[], exec_lines_count=1, context=AuditContext())
 
         rotated = sorted(tmp_path.glob("audit.*.jsonl"))
-        assert len(rotated) == 1
+        assert len(rotated) == 0
         lines = audit_path.read_text().strip().splitlines()
-        assert len(lines) == 1
-        assert json.loads(lines[0])["exec_lines_count"] == 1
+        assert len(lines) == 2
 
     def test_ac3_no_rotation_same_day_small_file(self, tmp_path):
         """AC-3: same-day, small file → no rotation; record appended."""
@@ -426,6 +390,11 @@ class TestRotation:
         assert len(rotated) == 0
         lines = audit_path.read_text().strip().splitlines()
         assert len(lines) == 2
+
+    def test_ac_should_rotate_daily_not_exists(self):
+        """_should_rotate_daily 関数が存在しないこと（dead code 除去）"""
+        import ghdag.pipeline.audit as audit_mod
+        assert not hasattr(audit_mod, "_should_rotate_daily")
 
     def test_ac4_no_existing_file_creates_new(self, tmp_path):
         """AC-4: no existing file → new file created, no rotation."""

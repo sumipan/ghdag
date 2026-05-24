@@ -16,12 +16,12 @@ import pytest
 
 
 class TestMonitor:
-    def _make_repo(self, tmp_path: Path, exec_md_content: str, done: dict | None = None):
-        queue = tmp_path / "queue"
-        queue.mkdir()
-        (queue / "exec.md").write_text(exec_md_content, encoding="utf-8")
+    def _make_repo(self, tmp_path: Path, exec_jsonl_content: str, done: dict | None = None):
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir(parents=True, exist_ok=True)
+        (jobs_dir / "exec.jsonl").write_text(exec_jsonl_content, encoding="utf-8")
         done_dir = tmp_path / "jobs" / "done"
-        done_dir.mkdir(parents=True)
+        done_dir.mkdir(parents=True, exist_ok=True)
         if done:
             for uuid, content in done.items():
                 (done_dir / uuid).write_text(content, encoding="utf-8")
@@ -38,8 +38,9 @@ class TestMonitor:
     def test_build_rows_single_task(self, tmp_path):
         from ghdag.ui.monitor import build_rows, STATE_PENDING_RUN
 
-        content = "aaaa-bbbb-cccc-dddd: echo hello"
-        repo = self._make_repo(tmp_path, content)
+        import json as _json
+        content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
+        repo = self._make_repo(tmp_path, content + "\n")
         rows, tasks, file_order = build_rows(repo, detect_running=False)
         assert len(rows) == 1
         assert rows[0].uuid == "aaaa-bbbb-cccc-dddd"
@@ -48,8 +49,9 @@ class TestMonitor:
     def test_build_rows_completed_task(self, tmp_path):
         from ghdag.ui.monitor import build_rows, STATE_OK
 
-        content = "aaaa-bbbb-cccc-dddd: echo hello"
-        repo = self._make_repo(tmp_path, content, done={"aaaa-bbbb-cccc-dddd": "0"})
+        import json as _json
+        content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
+        repo = self._make_repo(tmp_path, content + "\n", done={"aaaa-bbbb-cccc-dddd": "0"})
         rows, tasks, file_order = build_rows(repo, detect_running=False)
         assert len(rows) == 1
         assert rows[0].state == STATE_OK
@@ -57,17 +59,19 @@ class TestMonitor:
     def test_build_rows_failed_task(self, tmp_path):
         from ghdag.ui.monitor import build_rows, STATE_FAIL
 
-        content = "aaaa-bbbb-cccc-dddd: echo hello"
-        repo = self._make_repo(tmp_path, content, done={"aaaa-bbbb-cccc-dddd": "1"})
+        import json as _json
+        content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
+        repo = self._make_repo(tmp_path, content + "\n", done={"aaaa-bbbb-cccc-dddd": "1"})
         rows, tasks, file_order = build_rows(repo, detect_running=False)
         assert rows[0].state == STATE_FAIL
 
     def test_build_rows_with_depends(self, tmp_path):
         from ghdag.ui.monitor import build_rows, STATE_PENDING_DEPS
 
+        import json as _json
         content = (
-            "aaaa-bbbb-cccc-0001: echo first\n"
-            "aaaa-bbbb-cccc-0002[depends:aaaa-bbbb-cccc-0001]: echo second\n"
+            _json.dumps({"uuid": "aaaa-bbbb-cccc-0001", "command": "echo first", "depends": []}) + "\n"
+            + _json.dumps({"uuid": "aaaa-bbbb-cccc-0002", "command": "echo second", "depends": ["aaaa-bbbb-cccc-0001"]}) + "\n"
         )
         repo = self._make_repo(tmp_path, content)
         rows, tasks, file_order = build_rows(repo, detect_running=False)
@@ -78,8 +82,9 @@ class TestMonitor:
     def test_build_rows_running_override(self, tmp_path):
         from ghdag.ui.monitor import build_rows, STATE_RUNNING
 
-        content = "aaaa-bbbb-cccc-dddd: echo hello"
-        repo = self._make_repo(tmp_path, content)
+        import json as _json
+        content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
+        repo = self._make_repo(tmp_path, content + "\n")
         rows, _, _ = build_rows(
             repo, running_uuids_override={"aaaa-bbbb-cccc-dddd"}, detect_running=False,
         )
@@ -96,9 +101,10 @@ class TestMonitor:
     def test_filter_rows_by_state(self, tmp_path):
         from ghdag.ui.monitor import build_rows, filter_rows
 
+        import json as _json
         content = (
-            "aaaa-bbbb-cccc-0001: echo first\n"
-            "aaaa-bbbb-cccc-0002: echo second\n"
+            _json.dumps({"uuid": "aaaa-bbbb-cccc-0001", "command": "echo first", "depends": []}) + "\n"
+            + _json.dumps({"uuid": "aaaa-bbbb-cccc-0002", "command": "echo second", "depends": []}) + "\n"
         )
         repo = self._make_repo(tmp_path, content, done={"aaaa-bbbb-cccc-0001": "0"})
         rows, _, _ = build_rows(repo, detect_running=False)
@@ -149,9 +155,9 @@ class TestUiCli:
     def test_ui_calls_run_server(self, tmp_path):
         from ghdag.cli import main
 
-        queue = tmp_path / "queue"
-        queue.mkdir()
-        (queue / "exec.md").write_text("")
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+        (jobs_dir / "exec.jsonl").write_text("")
 
         with patch("ghdag.ui.server.run_server") as mock_run:
             main(["ui", "--repo-root", str(tmp_path), "--port", "9999"])
@@ -185,13 +191,14 @@ class TestStaticAssets:
 
 class TestServer:
     def _make_repo(self, tmp_path: Path):
-        queue = tmp_path / "queue"
-        queue.mkdir()
-        (queue / "exec.md").write_text(
-            "aaaa-bbbb-cccc-0001: echo hello\n",
+        import json as _json
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir(parents=True, exist_ok=True)
+        (jobs_dir / "exec.jsonl").write_text(
+            _json.dumps({"uuid": "aaaa-bbbb-cccc-0001", "command": "echo hello", "depends": []}) + "\n",
             encoding="utf-8",
         )
-        (tmp_path / "jobs" / "done").mkdir(parents=True)
+        (tmp_path / "jobs" / "done").mkdir(parents=True, exist_ok=True)
         return tmp_path
 
     def test_serve_json_endpoint(self, tmp_path):

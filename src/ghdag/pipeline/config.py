@@ -12,7 +12,7 @@ from dataclasses import dataclass
 
 
 class ModelValidationError(Exception):
-    """許可外モデル ID が指定された場合に送出。"""
+    """Raised when an unauthorized model ID is specified."""
 
 
 @dataclass
@@ -44,8 +44,8 @@ def resolve_models(config: PipelineConfig, overrides: dict[str, str]) -> dict[st
         for phase, model in result.items():
             if model not in config.allowed_models:
                 raise ModelValidationError(
-                    f"許可リストにないモデル ID です: {model!r} (phase={phase}). "
-                    f"許可リスト: {sorted(config.allowed_models)}"
+                    f"Model ID not in allowlist: {model!r} (phase={phase}). "
+                    f"Allowed: {sorted(config.allowed_models)}"
                 )
 
     return result

@@ -61,16 +61,18 @@ class TestCheckPipelineStatus:
         assert check_pipeline_status(str(f)) is None
 
 
-def _write_exec_md(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+import json as _json
 
 
-def _make_config(tmp_path, exec_md_content: str, **overrides) -> DagConfig:
-    exec_md = tmp_path / "exec.md"
-    _write_exec_md(exec_md, exec_md_content)
+def _make_config(tmp_path, records: list[dict], **overrides) -> DagConfig:
+    exec_jsonl = tmp_path / "exec.jsonl"
+    exec_jsonl.parent.mkdir(parents=True, exist_ok=True)
+    exec_jsonl.write_text(
+        "\n".join(_json.dumps(r) for r in records) + "\n",
+        encoding="utf-8",
+    )
     defaults = dict(
-        exec_md_path=str(exec_md),
+        exec_md_path=str(exec_jsonl),
         exec_done_dir=str(tmp_path / "jobs" / "done"),
         poll_interval=0.1,
         launch_stagger=0.0,
@@ -94,7 +96,7 @@ class TestEngineCheckPipelineStatus:
         result_file = tmp_path / "result.md"
         result_file.parent.mkdir(parents=True, exist_ok=True)
         cmd = f"echo PIPELINE_STATUS: IMPL_FAILED | tee {result_file}"
-        config = _make_config(tmp_path, f"uuid-a: {cmd}\n")
+        config = _make_config(tmp_path, [{"uuid": "uuid-a", "command": cmd, "depends": []}])
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = "IMPL_FAILED"
@@ -109,7 +111,7 @@ class TestEngineCheckPipelineStatus:
         result_file = tmp_path / "result.md"
         result_file.parent.mkdir(parents=True, exist_ok=True)
         cmd = f"echo PIPELINE_STATUS: IMPL_DONE | tee {result_file}"
-        config = _make_config(tmp_path, f"uuid-a: {cmd}\n")
+        config = _make_config(tmp_path, [{"uuid": "uuid-a", "command": cmd, "depends": []}])
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = "IMPL_DONE"
@@ -119,7 +121,7 @@ class TestEngineCheckPipelineStatus:
         assert "uuid-a" in succeeded
 
     def test_exit_code_nonzero_skips_pipeline_status_check(self, tmp_path):
-        config = _make_config(tmp_path, "uuid-a: exit 1\n")
+        config = _make_config(tmp_path, [{"uuid": "uuid-a", "command": "exit 1", "depends": []}])
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
         engine = DagEngine(config, hooks)
@@ -136,7 +138,10 @@ class TestEngineCheckPipelineStatus:
         cmd_a = f"echo PIPELINE_STATUS: IMPL_FAILED | tee {result_file}"
         config = _make_config(
             tmp_path,
-            f"uuid-a: {cmd_a}\nuuid-b[depends:uuid-a]: echo should-not-run\n",
+            [
+                {"uuid": "uuid-a", "command": cmd_a, "depends": []},
+                {"uuid": "uuid-b", "command": "echo should-not-run", "depends": ["uuid-a"]},
+            ],
         )
         hooks = MagicMock()
         hooks.check_rejected.return_value = False

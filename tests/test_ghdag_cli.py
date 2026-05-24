@@ -75,7 +75,7 @@ class TestVersion:
 
 class TestRunNormal:
     def test_run_calls_dag_engine_with_defaults(self, tmp_path):
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         mock_engine_cls = MagicMock()
@@ -97,7 +97,7 @@ class TestRunNormal:
         mock_engine_cls.return_value.run.assert_called_once()
 
     def test_run_with_custom_interval(self, tmp_path):
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         mock_engine_cls = MagicMock()
@@ -140,7 +140,7 @@ class TestRunHooks:
         return mod, MyHooks
 
     def test_hooks_module_loaded_and_passed_to_engine(self, tmp_path):
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
         mock_module, MyHooks = self._make_hooks_module_with_class()
 
@@ -160,7 +160,7 @@ class TestRunHooks:
         assert isinstance(hooks_arg, MyHooks)
 
     def test_hooks_set_engine_called(self, tmp_path):
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
         mock_module, MyHooks = self._make_hooks_module_with_class()
 
@@ -178,7 +178,7 @@ class TestRunHooks:
         mock_engine_instance.run.assert_called_once()
 
     def test_hooks_invalid_module_exits_1(self, tmp_path, capsys):
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         with pytest.raises(SystemExit) as exc:
@@ -188,7 +188,7 @@ class TestRunHooks:
         assert "cannot import" in capsys.readouterr().err
 
     def test_no_hooks_arg_engine_called_with_audit_hooks(self, tmp_path):
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         mock_engine_cls = MagicMock()
@@ -222,7 +222,7 @@ class TestRunError:
         from ghdag.cli import main
 
         with pytest.raises(SystemExit) as exc:
-            main(["run", "nonexistent_exec.md"])
+            main(["run", "nonexistent_exec.jsonl"])
         assert exc.value.code == 1
         assert "not found" in capsys.readouterr().err
 
@@ -334,7 +334,7 @@ class TestPythonM:
 
 class TestLogLevel:
     def _run_with_dummy_exec(self, argv: list[str], tmp_path) -> None:
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
         with patch("ghdag.dag.engine.DagEngine"), \
              patch("ghdag.dag.models.DagConfig"):
@@ -389,7 +389,7 @@ handlers:
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
         self._write_workflow_yaml(workflows_dir)
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         mock_dispatch_result = MagicMock()
@@ -427,7 +427,7 @@ handlers:
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
         self._write_workflow_yaml(workflows_dir)
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         mock_dispatch_result = MagicMock()
@@ -539,7 +539,7 @@ handlers:
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
         self._write_workflow_yaml(workflows_dir)
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
         mock_dispatch_result = MagicMock()
@@ -616,13 +616,21 @@ class TestGitHubIssueClientExtended:
 
 
 class TestCleanupNormal:
-    def test_cleanup_calls_cleanup_queue(self, tmp_path):
-        from unittest.mock import MagicMock, patch
-
+    def _make_mock_result(self, **kwargs):
+        from unittest.mock import MagicMock
         mock_result = MagicMock()
-        mock_result.archived_done = 1
-        mock_result.archived_orphan = 0
-        mock_result.pruned_exec = 1
+        mock_result.archived_done = kwargs.get("archived_done", 0)
+        mock_result.archived_orphan = kwargs.get("archived_orphan", 0)
+        mock_result.pruned_exec = kwargs.get("pruned_exec", 0)
+        mock_result.swept_extras = kwargs.get("swept_extras", 0)
+        mock_result.detected_orphan = kwargs.get("detected_orphan", 0)
+        mock_result.detected_dead = kwargs.get("detected_dead", 0)
+        return mock_result
+
+    def test_cleanup_calls_cleanup_queue(self, tmp_path):
+        from unittest.mock import patch
+
+        mock_result = self._make_mock_result(archived_done=1, pruned_exec=1)
 
         with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
             from ghdag.cli import main
@@ -633,14 +641,24 @@ class TestCleanupNormal:
         assert call_kwargs["cutoff_days"] == 1
         assert call_kwargs["orphan_days"] == 7
         assert call_kwargs["dry_run"] is False
+        assert call_kwargs["auto_repair"] is False
+
+    def test_cleanup_auto_repair_flag(self, tmp_path):
+        from unittest.mock import patch
+
+        mock_result = self._make_mock_result(archived_orphan=1, pruned_exec=1)
+
+        with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
+            from ghdag.cli import main
+            main(["cleanup", str(tmp_path), "--auto-repair"])
+
+        call_kwargs = mock_fn.call_args[1]
+        assert call_kwargs["auto_repair"] is True
 
     def test_cleanup_dry_run_flag(self, tmp_path):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
-        mock_result = MagicMock()
-        mock_result.archived_done = 0
-        mock_result.archived_orphan = 0
-        mock_result.pruned_exec = 0
+        mock_result = self._make_mock_result()
 
         with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
             from ghdag.cli import main
@@ -650,12 +668,9 @@ class TestCleanupNormal:
         assert call_kwargs["dry_run"] is True
 
     def test_cleanup_custom_days(self, tmp_path):
-        from unittest.mock import MagicMock, patch
+        from unittest.mock import patch
 
-        mock_result = MagicMock()
-        mock_result.archived_done = 0
-        mock_result.archived_orphan = 0
-        mock_result.pruned_exec = 0
+        mock_result = self._make_mock_result()
 
         with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
             from ghdag.cli import main
@@ -828,3 +843,52 @@ class TestLlmAuditPath:
                 main(["llm", "hello"])
 
         assert exc.value.code == 0
+
+
+# ---------------------------------------------------------------------------
+# AC3: ghdag run --max-concurrency
+# ---------------------------------------------------------------------------
+
+
+class TestRunMaxConcurrency:
+    def test_max_concurrency_arg(self, tmp_path):
+        """--max-concurrency が DagConfig に正しく渡されること"""
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+
+        mock_engine_cls = MagicMock()
+        mock_config_cls = MagicMock()
+
+        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
+             patch("ghdag.dag.models.DagConfig", mock_config_cls):
+            from ghdag.cli import main
+            main(["run", str(exec_md), "--max-concurrency", "4"])
+
+        call_kwargs = mock_config_cls.call_args[1]
+        assert call_kwargs["max_concurrency"] == 4
+
+    def test_max_concurrency_default_none(self, tmp_path):
+        """--max-concurrency 未指定時に None であること"""
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+
+        mock_engine_cls = MagicMock()
+        mock_config_cls = MagicMock()
+
+        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
+             patch("ghdag.dag.models.DagConfig", mock_config_cls):
+            from ghdag.cli import main
+            main(["run", str(exec_md)])
+
+        call_kwargs = mock_config_cls.call_args[1]
+        assert call_kwargs["max_concurrency"] is None
+
+    def test_max_concurrency_invalid_type_exits_2(self, tmp_path, capsys):
+        """--max-concurrency abc が argparse のエラーで終了すること"""
+        exec_md = tmp_path / "exec.md"
+        exec_md.write_text("")
+
+        from ghdag.cli import main
+        with pytest.raises(SystemExit) as exc:
+            main(["run", str(exec_md), "--max-concurrency", "abc"])
+        assert exc.value.code == 2
