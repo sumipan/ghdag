@@ -284,7 +284,10 @@ class DagEngine:
                 if returncode == 0:
                     if task.result_path is not None:
                         stdout_data = rt.stdout_buf.getvalue() if rt.stdout_buf else b""
-                        Path(task.result_path).write_bytes(stdout_data)
+                        rp = Path(task.result_path)
+                        policy = task.result_finalize or "preserve_nonempty"
+                        if policy == "stdout_only" or not (rp.exists() and rp.stat().st_size > 0):
+                            rp.write_bytes(stdout_data)
                         effective_result_path: str | None = task.result_path
                     else:
                         effective_result_path = _extract_tee_target(task.command)
@@ -297,6 +300,9 @@ class DagEngine:
                             state_mark_done(self._config.exec_done_dir, uuid, "REJECTED_FINAL")
                         else:
                             state_mark_done(self._config.exec_done_dir, uuid, "REJECTED")
+                            # preserve_nonempty が stale 結果を保持しないよう、リトライ前に削除する
+                            if task.result_path and Path(task.result_path).exists():
+                                Path(task.result_path).unlink()
                         metrics = TaskMetrics(
                             uuid=uuid, engine=engine, model=model,
                             wall_time_sec=round(finished_at - rt.started_at, 3),
@@ -391,7 +397,6 @@ class DagEngine:
     def _spawn_fanout(self, parent_uuid: str, parent_task: Task,
                       spec: FanOutSpec, metrics: TaskMetrics) -> None:
         """Append child tasks to the exec file and register the parent in _fanout_pending."""
-        exec_path = str(self._config.exec_jsonl_path)
         child_uuids: set[str] = set()
         for child in spec.children:
             child_uuid = f"{parent_uuid}--fo--{child.id}"
