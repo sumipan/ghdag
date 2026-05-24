@@ -919,7 +919,6 @@ class TestLLMCapabilitiesArgs:
 
     def test_ac7_permission_mode_plan_passed_to_call(self):
         """AC7: --permission-mode plan → call() に LLMCapabilities(permission_mode='plan') が渡される"""
-        from ghdag.llm.capabilities import LLMCapabilities
         mock_result = self._make_result()
         with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
             from ghdag.cli import main
