@@ -54,6 +54,7 @@ def parse_jsonl(text: str) -> list[Task]:
             idempotency_key=data.get("idempotency_key"),
             engine=data.get("engine"),
             model=data.get("model"),
+            result_finalize=data.get("result_finalize"),
         ))
 
     return tasks
