@@ -178,6 +178,7 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
                     model=s["model"],
                     engine=s.get("engine", "claude"),
                     depends=s.get("depends", []),
+                    permission=s.get("permission"),
                 )
             )
 
