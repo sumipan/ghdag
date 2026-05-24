@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 from collections import deque
-from pathlib import Path
 
 from .models import Task
 

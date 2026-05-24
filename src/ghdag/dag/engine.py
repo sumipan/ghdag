@@ -397,7 +397,6 @@ class DagEngine:
     def _spawn_fanout(self, parent_uuid: str, parent_task: Task,
                       spec: FanOutSpec, metrics: TaskMetrics) -> None:
         """Append child tasks to the exec file and register the parent in _fanout_pending."""
-        exec_path = str(self._config.exec_jsonl_path)
         child_uuids: set[str] = set()
         for child in spec.children:
             child_uuid = f"{parent_uuid}--fo--{child.id}"

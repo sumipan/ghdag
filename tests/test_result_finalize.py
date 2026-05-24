@@ -7,7 +7,6 @@ import threading
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig
@@ -224,7 +223,7 @@ class TestRetryResultPathCleanup:
         config = _make_config(tmp_path, [
             {
                 "uuid": "uuid-a",
-                "command": f"printf 'REJECTED: 理由'",
+                "command": "printf 'REJECTED: 理由'",
                 "depends": [],
                 "result_path": str(result_path),
                 "retry": 0,
@@ -259,7 +258,7 @@ class TestRetryResultPathCleanup:
         config = _make_config(tmp_path, [
             {
                 "uuid": "uuid-a",
-                "command": f"printf 'REJECTED: 最終'",
+                "command": "printf 'REJECTED: 最終'",
                 "depends": [],
                 "result_path": str(result_path),
                 "retry": 1,  # すでにリトライ済み
