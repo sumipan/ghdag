@@ -1,6 +1,7 @@
 """ghdag.pipeline — Layer 1 パイプライン公開 API"""
 
 from ghdag.pipeline.audit_query import get_latest_status, read_task_exit_events
+from ghdag.pipeline.hooks import AuditHooks
 from ghdag.pipeline.config import (
     ModelValidationError,
     PipelineConfig,
@@ -24,6 +25,7 @@ from ghdag.pipeline.status import (
 from ghdag.pipeline.wait import wait_for_result
 
 __all__ = [
+    "AuditHooks",
     "ModelValidationError",
     "PipelineConfig",
     "PipelineState",

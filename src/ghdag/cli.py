@@ -252,7 +252,12 @@ def _cmd_run(args: argparse.Namespace) -> None:
 
     cwd = getattr(args, "cwd", None) or str(Path(args.exec_md).resolve().parent.parent)
     config = DagConfig(exec_md_path=args.exec_md, poll_interval=args.interval, cwd=cwd)
-    hooks = _load_hooks(args.hooks) if args.hooks else None
+    if args.hooks:
+        hooks = _load_hooks(args.hooks)
+    else:
+        from ghdag.pipeline.hooks import AuditHooks
+        audit_path = Path(args.exec_md).resolve().parent.parent / "audit.jsonl"
+        hooks = AuditHooks(audit_path=audit_path)
     engine = DagEngine(config, hooks)
     if hooks is not None and hasattr(hooks, "set_engine"):
         hooks.set_engine(engine)
