@@ -476,3 +476,51 @@ class TestBuildExecRecord:
             result = self._adapter(name).build_exec_record(**self.BASE_KWARGS, model=None)
             for key in ("uuid", "command", "depends", "result_path", "retry", "annotations"):
                 assert key in result, f"{name}: missing key {key!r}"
+
+
+# ---------------------------------------------------------------------------
+# _GenericAdapter.build_exec_record + capabilities (AC4, AC9)
+# ---------------------------------------------------------------------------
+
+class TestGenericAdapterCapabilities:
+    BASE_KWARGS = dict(
+        uuid="abc-123",
+        order_path="queue/order.md",
+        result_path="queue/result.md",
+        prompt="受け取った内容を実行して",
+        depends=[],
+        model="claude-sonnet-4-6",
+    )
+
+    def test_ac4_claude_text_only_command_contains_permission_mode(self):
+        """AC4: _GenericAdapter(claude) + capabilities=TEXT_ONLY → command に --permission-mode default"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        adapter = _GenericAdapter(ENGINE_SPECS["claude"])
+        record = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=TEXT_ONLY)
+        assert "--permission-mode" in record["command"]
+        assert "default" in record["command"]
+
+    def test_ac4_claude_text_only_no_dangerously(self):
+        """AC4: TEXT_ONLY → --dangerously-skip-permissions なし"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        adapter = _GenericAdapter(ENGINE_SPECS["claude"])
+        record = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=TEXT_ONLY)
+        assert "--dangerously-skip-permissions" not in record["command"]
+
+    def test_ac9_capabilities_none_default_behavior(self):
+        """AC9: capabilities 引数なし → 従来と同一の dict"""
+        adapter = _GenericAdapter(ENGINE_SPECS["claude"])
+        record_default = adapter.build_exec_record(**self.BASE_KWARGS)
+        record_none = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=None)
+        assert record_default == record_none
+        assert "--dangerously-skip-permissions" in record_default["command"]
+
+    def test_cursor_capabilities_text_only_no_force(self):
+        """cursor + capabilities=TEXT_ONLY → --force なし"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        adapter = _GenericAdapter(ENGINE_SPECS["cursor"])
+        record = adapter.build_exec_record(
+            uuid="u1", order_path="queue/order.md", result_path="queue/result.md",
+            prompt="", model="auto", depends=[], capabilities=TEXT_ONLY,
+        )
+        assert "--force" not in record["command"]

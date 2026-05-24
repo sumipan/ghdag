@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import warnings
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from ghdag.llm.spec import ENGINE_SPECS, EngineSpec, render_exec_command
+
+if TYPE_CHECKING:
+    from ghdag.llm.capabilities import LLMCapabilities
 
 
 class EngineAdapter(Protocol):
@@ -25,6 +28,7 @@ class EngineAdapter(Protocol):
         prompt: str,
         model: str | None,
         depends: list[str],
+        capabilities: "LLMCapabilities | None" = None,
     ) -> dict:
         """exec.jsonl に書き込む 1 レコード（dict）を組み立てる。
         command フィールドに tee パイプを含めない。
@@ -51,13 +55,15 @@ class _GenericAdapter:
         prompt: str,
         model: str | None,
         depends: list[str],
+        capabilities: "LLMCapabilities | None" = None,
     ) -> dict:
         return {
             "uuid": uuid,
             "engine": self._spec.name,
             "model": model if self._spec.model_flag else None,
             "command": render_exec_command(
-                self._spec, order_path=order_path, prompt=prompt, model=model
+                self._spec, order_path=order_path, prompt=prompt, model=model,
+                capabilities=capabilities,
             ),
             "depends": depends,
             "result_path": result_path,
