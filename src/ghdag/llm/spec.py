@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from ghdag.llm.capabilities import LLMCapabilities
 
 InputMode = Literal["cat_pipe", "stdin_redirect", "argv"]
 DangerFlagPosition = Literal["after_prompt", "trailing", "none"]
@@ -64,8 +67,20 @@ def render_exec_command(
     order_path: str,
     prompt: str,
     model: str | None,
+    capabilities: "LLMCapabilities | None" = None,
 ) -> str:
-    """exec.jsonl の command フィールド用（tee パイプを含まない）。"""
+    """exec.jsonl の command フィールド用（tee パイプを含まない）。
+
+    capabilities が None の場合は従来通り EngineSpec.danger_flag を使用。
+    capabilities が指定された場合は _CAPABILITY_FLAG_BUILDERS 経由でフラグを生成。
+    """
+    perm_flags: list[str] = []
+    if capabilities is not None:
+        from ghdag.llm.engines import _CAPABILITY_FLAG_BUILDERS  # 遅延 import（循環回避）
+        builder = _CAPABILITY_FLAG_BUILDERS.get(spec.name)
+        if builder:
+            perm_flags = builder(capabilities, False)
+
     if spec.input_mode == "cat_pipe":
         parts: list[str] = [spec.cli]
         if spec.prompt_flag:
@@ -76,8 +91,11 @@ def render_exec_command(
             parts.append(f"'{model}'")
         if spec.extra_args:
             parts.extend(spec.extra_args)
-        if spec.danger_flag_position == "trailing" and spec.danger_flag:
-            parts.append(spec.danger_flag)
+        if capabilities is None:
+            if spec.danger_flag_position == "trailing" and spec.danger_flag:
+                parts.append(spec.danger_flag)
+        else:
+            parts.extend(perm_flags)
         return f"cat {order_path} | " + " ".join(parts)
 
     if spec.input_mode == "stdin_redirect":
@@ -87,8 +105,11 @@ def render_exec_command(
             parts.append(f"'{model}'")
         if spec.prompt_flag:
             parts.append(spec.prompt_flag)
-        if spec.danger_flag_position == "after_prompt" and spec.danger_flag:
-            parts.append(spec.danger_flag)
+        if capabilities is None:
+            if spec.danger_flag_position == "after_prompt" and spec.danger_flag:
+                parts.append(spec.danger_flag)
+        else:
+            parts.extend(perm_flags)
         if spec.extra_args:
             parts.extend(spec.extra_args)
         return " ".join(parts) + f" < {order_path}"
