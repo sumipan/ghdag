@@ -49,7 +49,7 @@ def parse_jsonl(text: str) -> list[Task]:
             depends=data.get("depends", []),
             retry=data.get("retry", 0),
             annotations=data.get("annotations", {}),
-            result_path=data.get("result_path"),
+            result_path=data.get("result_path") or None,
             idempotency_key=data.get("idempotency_key"),
             engine=data.get("engine"),
             model=data.get("model"),
