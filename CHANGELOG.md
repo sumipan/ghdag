@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.25.3 — 2026-05-26
+
+### Added
+
+- `fanout`: fanout アンカーを `---` セパレータ依存から `ghdag_fanout:` startswith 検出に変更。セパレータなしのファイルでも正しくパース可能 (diary #1214)
+- `ui`: `MonitorTask` と `cmd_preview` に `idempotency_key` サポートを追加 (diary #1203)
+- `pipeline/order`: `_check_missing_vars` が不足変数を全列挙する KeyError メッセージに改善 (diary #1193)
+
+### Fixed
+
+- `order`: `_check_missing_vars` の例外型を `KeyError` → `ValueError` に変更 (#137)
+- `test`: gemini モデル検証テストを `GHDAG_LLM_MODELS` 環境変数から独立させる (#138)
+
 ## 0.25.2 — 2026-05-25
 
 ### Added
