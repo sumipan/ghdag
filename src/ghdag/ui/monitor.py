@@ -233,7 +233,13 @@ def order_task_name(cmd: str, repo_root: Path) -> Optional[str]:
 _ISSUESMITH_KEY_RE = re.compile(r"^issuesmith:([^:]+):(\d+)$")
 
 
-def cmd_preview(cmd: str, n: int = 48, repo_root: Optional[Path] = None, *, idempotency_key: str = "") -> str:
+def cmd_preview(cmd: str, n: int = 48, repo_root: Optional[Path] = None, *, idempotency_key: Optional[str] = "") -> str:
+    # 防御: idempotency_key は他の subsystem (submit/audit/hooks) では
+    # `str | None = None` 仕様で扱われるため、API 利用者が直接 None を
+    # 渡してくる可能性がある。`_ISSUESMITH_KEY_RE.match(None)` で
+    # TypeError にならないよう空文字に正規化する。
+    if not idempotency_key:
+        idempotency_key = ""
     m = _ISSUESMITH_KEY_RE.match(idempotency_key)
     if m:
         return f"#{m.group(2)} \u00b7 {m.group(1)}"
@@ -347,7 +353,13 @@ def _parse_exec_jsonl(path: str) -> tuple[dict[str, MonitorTask], list[str]]:
         depends = set(depends_raw) if isinstance(depends_raw, list) else set()
         retry = int(data.get("retry", 0))
         result_path = data.get("result_path") or ""
-        idempotency_key = data.get("idempotency_key", "")
+        # `data.get(k, default)` の default は「キー欠落」時のみ適用される。
+        # 値が JSON null (= Python None) の場合は素通しで None が返るため、
+        # `or ""` で空文字に正規化しないと下流の `_ISSUESMITH_KEY_RE.match(None)`
+        # で TypeError になる。exec.jsonl には submit/audit/hooks 経路の
+        # `idempotency_key: str | None = None` 仕様により `"idempotency_key": null`
+        # が混入する。
+        idempotency_key = data.get("idempotency_key") or ""
         if uuid not in tasks:
             file_order.append(uuid)
         tasks[uuid] = MonitorTask(
