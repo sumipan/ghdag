@@ -17,6 +17,22 @@ class OrderBuilder(Protocol):
         ...
 
 
+def _check_missing_vars(
+    tmpl: string.Template,
+    context: dict[str, str],
+    source_label: str,
+) -> None:
+    required = set(tmpl.get_identifiers())
+    provided = set(context.keys())
+    missing = sorted(required - provided)
+    if missing:
+        raise KeyError(
+            f"テンプレート展開エラー ({source_label}): "
+            f"未定義変数: {missing}, "
+            f"利用可能なキー: {sorted(provided)}"
+        )
+
+
 class InlineOrderBuilder:
     """テンプレート文字列を直接受け取り string.Template で展開する OrderBuilder。
 
@@ -38,7 +54,13 @@ class InlineOrderBuilder:
             ValueError: 不正な $ 構文
         """
         tmpl = string.Template(step_id)
-        return tmpl.substitute(context)
+        _check_missing_vars(tmpl, context, "inline")
+        try:
+            return tmpl.substitute(context)
+        except ValueError as e:
+            raise ValueError(
+                f"テンプレート展開エラー (inline): {e}"
+            ) from e
 
 
 class TemplateOrderBuilder:
@@ -69,9 +91,10 @@ class TemplateOrderBuilder:
                 f"テンプレートファイルが見つかりません: {template_path}"
             )
         tmpl = string.Template(template_path.read_text(encoding="utf-8"))
+        _check_missing_vars(tmpl, context, str(template_path))
         try:
             return tmpl.substitute(context)
-        except (KeyError, ValueError) as e:
-            raise type(e)(
+        except ValueError as e:
+            raise ValueError(
                 f"テンプレート展開エラー ({template_path}): {e}"
             ) from e
