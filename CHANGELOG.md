@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.25.2 — 2026-05-25
+
+### Added
+
+- `result_finalize` ポリシー分岐とリトライ時 result_path クリア追加 (diary #1140)
+
+### Fixed
+
+- `parser`: result_path の空文字列を `None` に正規化し `IsADirectoryError` を防ぐ
+- ruff 指摘の未使用変数・import を除去
+
+## 0.25.1 — 2026-05-25
+
+### Added
+
+- `ghdag.dag.check_pipeline_status` を `ghdag.dag.__all__` に追加し public API として公開 (diary #1126)
+
+### Docs
+
+- README を v0.25.0 向けに更新: `--permission-mode`、`--max-concurrency`、`AuditHooks`、`StepConfig.permission` フィールドの記述を追加
+
 ## 0.24.0 — 2026-05-24
 
 ### BREAKING
