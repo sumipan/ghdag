@@ -63,6 +63,7 @@ class MonitorTask:
     depends: set
     retry: int = 0
     result_path: str = ""
+    idempotency_key: str = ""
 
 
 @dataclass
@@ -229,7 +230,13 @@ def order_task_name(cmd: str, repo_root: Path) -> Optional[str]:
     return None
 
 
-def cmd_preview(cmd: str, n: int = 48, repo_root: Optional[Path] = None) -> str:
+_ISSUESMITH_KEY_RE = re.compile(r"^issuesmith:([^:]+):(\d+)$")
+
+
+def cmd_preview(cmd: str, n: int = 48, repo_root: Optional[Path] = None, *, idempotency_key: str = "") -> str:
+    m = _ISSUESMITH_KEY_RE.match(idempotency_key)
+    if m:
+        return f"#{m.group(2)} \u00b7 {m.group(1)}"
     if repo_root is not None:
         name = order_task_name(cmd, repo_root)
         if name:
@@ -340,6 +347,7 @@ def _parse_exec_jsonl(path: str) -> tuple[dict[str, MonitorTask], list[str]]:
         depends = set(depends_raw) if isinstance(depends_raw, list) else set()
         retry = int(data.get("retry", 0))
         result_path = data.get("result_path") or ""
+        idempotency_key = data.get("idempotency_key", "")
         if uuid not in tasks:
             file_order.append(uuid)
         tasks[uuid] = MonitorTask(
@@ -348,6 +356,7 @@ def _parse_exec_jsonl(path: str) -> tuple[dict[str, MonitorTask], list[str]]:
             depends=depends,
             retry=retry,
             result_path=result_path,
+            idempotency_key=idempotency_key,
         )
 
     return tasks, file_order
@@ -389,7 +398,7 @@ def build_rows(
         pending[uuid] = Row(
             uuid=uuid,
             state=st,
-            cmd_preview=cmd_preview(task.command, n=cmd_preview_len, repo_root=repo_root),
+            cmd_preview=cmd_preview(task.command, n=cmd_preview_len, repo_root=repo_root, idempotency_key=task.idempotency_key),
             tree_ts="",
             engine_model=extract_engine_model(task.command),
             order_path=extract_order_path(task.command),
