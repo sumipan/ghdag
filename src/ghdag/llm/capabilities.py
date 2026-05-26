@@ -45,3 +45,10 @@ DANGEROUS_FULL_ACCESS = LLMCapabilities(
     permission_mode="bypassPermissions",
     output_format="text",
 )
+
+PRESETS: dict[str, LLMCapabilities] = {
+    "text_only": TEXT_ONLY,
+    "json_only": JSON_ONLY,
+    "web_research": WEB_RESEARCH,
+    "dangerous_full_access": DANGEROUS_FULL_ACCESS,
+}

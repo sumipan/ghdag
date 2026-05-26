@@ -53,12 +53,52 @@ class TestBuildOrderExceptionMessages:
         assert result == "Issue: 42"
 
     def test_exception_chaining_preserved(self, tmp_path):
-        """例外チェーニング（__cause__）が保持される"""
+        """ValueError の例外チェーニング（__cause__）が保持される"""
         template = tmp_path / "test.md"
-        template.write_text("${missing}", encoding="utf-8")
+        template.write_text("${}", encoding="utf-8")
 
         builder = TemplateOrderBuilder(tmp_path)
-        with pytest.raises(KeyError) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             builder.build_order("test", {})
 
         assert exc_info.value.__cause__ is not None
+
+    def test_t1_multiple_missing_vars_all_listed(self, tmp_path):
+        """T1: 複数変数不足時に全変数が KeyError メッセージに列挙される"""
+        template = tmp_path / "multi.md"
+        template.write_text("${a} ${b} ${c}", encoding="utf-8")
+
+        builder = TemplateOrderBuilder(tmp_path)
+        with pytest.raises(KeyError) as exc_info:
+            builder.build_order("multi", {"a": "1"})
+
+        msg = str(exc_info.value)
+        assert "b" in msg
+        assert "c" in msg
+        assert "a" in msg  # 利用可能キーに含まれる
+
+    def test_t2_empty_context_shows_empty_available_keys(self, tmp_path):
+        """T2: context 空のとき利用可能キーが空リストとして表示される"""
+        template = tmp_path / "empty.md"
+        template.write_text("${x}", encoding="utf-8")
+
+        builder = TemplateOrderBuilder(tmp_path)
+        with pytest.raises(KeyError) as exc_info:
+            builder.build_order("empty", {})
+
+        msg = str(exc_info.value)
+        assert "x" in msg
+        assert "[]" in msg  # 利用可能キーが空リスト
+
+    def test_t7_all_vars_missing_all_listed(self, tmp_path):
+        """T7: 全変数不足時に全変数が列挙される"""
+        template = tmp_path / "all_missing.md"
+        template.write_text("${a} ${b}", encoding="utf-8")
+
+        builder = TemplateOrderBuilder(tmp_path)
+        with pytest.raises(KeyError) as exc_info:
+            builder.build_order("all_missing", {})
+
+        msg = str(exc_info.value)
+        assert "a" in msg
+        assert "b" in msg
