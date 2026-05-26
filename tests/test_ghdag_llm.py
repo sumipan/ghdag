@@ -48,8 +48,11 @@ class TestEngineModels:
         assert "claude-opus-4-6" in models
         assert models == sorted(models)
 
-    def test_list_models_gemini(self):
-        """gemini エンジンの許可モデル一覧"""
+    def test_list_models_gemini(self, monkeypatch):
+        """gemini エンジンのデフォルト許可モデル一覧（GHDAG_LLM_MODELS 環境変数の影響を除外）"""
+        from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
+        import ghdag.llm.engines as engines_mod
+        monkeypatch.setattr(engines_mod, "ENGINE_MODELS", DEFAULT_ENGINE_MODELS)
         models = list_models("gemini")
         assert "gemini-2.5-flash" in models
         assert "gemini-2.5-pro" in models
@@ -72,8 +75,11 @@ class TestValidateEngineModel:
         result = validate_engine_model("claude", "claude-opus-4-6")
         assert result == "claude-opus-4-6"
 
-    def test_valid_gemini_model(self):
-        """gemini + 許可モデル → そのまま返る"""
+    def test_valid_gemini_model(self, monkeypatch):
+        """gemini + 許可モデル → そのまま返る（GHDAG_LLM_MODELS 環境変数の影響を除外）"""
+        from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
+        import ghdag.llm.engines as engines_mod
+        monkeypatch.setattr(engines_mod, "ENGINE_MODELS", DEFAULT_ENGINE_MODELS)
         result = validate_engine_model("gemini", "gemini-2.5-pro")
         assert result == "gemini-2.5-pro"
 
