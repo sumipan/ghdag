@@ -141,30 +141,55 @@ class TestParseFanoutSpec:
         with pytest.raises(FanoutError, match="--fo--"):
             parse_fanout_spec(str(f))
 
-    def test_ac2_fanout_block_without_separator(self, tmp_path):
-        """AC2: ghdag_fanout: block with no --- separator → parses correctly."""
+    def test_ac3_markdown_hr_without_fanout_returns_none(self, tmp_path):
+        """AC3: --- in Claude output without ghdag_fanout: → None (no warning)."""
+        f = tmp_path / "result.md"
+        f.write_text("実装完了。\n\n---\n\n**変更内容:**\nPR作成済み")
+        assert parse_fanout_spec(str(f)) is None
+
+    def test_ac4_multiple_separators_fanout_after_second(self, tmp_path):
+        """AC4: --- + markdown + --- + ghdag_fanout: → correct extraction."""
         f = tmp_path / "result.md"
         f.write_text(
-            "Some prior content.\n\n"
-            "ghdag_fanout:\n"
-            "  children:\n"
-            '    - id: item-001\n      command: "echo 1"\n'
+            "text\n\n---\n\nMore text.\n\n---\nghdag_fanout:\n"
+            "  children:\n    - id: x\n      command: echo 1\n"
         )
         spec = parse_fanout_spec(str(f))
         assert spec is not None
         assert len(spec.children) == 1
-        assert spec.children[0].id == "item-001"
-        assert spec.children[0].command == "echo 1"
+        assert spec.children[0].id == "x"
 
-    def test_ac3_multiple_fanout_anchors_last_wins(self, tmp_path):
-        """AC3: Multiple ghdag_fanout: anchors → last one is used."""
+    def test_ac5_fanout_without_separator_returns_none(self, tmp_path):
+        """AC5: ghdag_fanout: without preceding --- → None (separator required)."""
         f = tmp_path / "result.md"
         f.write_text(
             "ghdag_fanout:\n"
             "  children:\n"
+            "    - id: x\n      command: echo 1\n"
+        )
+        assert parse_fanout_spec(str(f)) is None
+
+    def test_ac6_other_yaml_keys_before_fanout(self, tmp_path):
+        """AC6: Other root-level YAML keys between --- and ghdag_fanout: → correct parse."""
+        f = tmp_path / "result.md"
+        f.write_text(
+            "---\nmetadata: v1\nghdag_fanout:\n"
+            "  children:\n    - id: x\n      command: echo 1\n"
+        )
+        spec = parse_fanout_spec(str(f))
+        assert spec is not None
+        assert len(spec.children) == 1
+        assert spec.children[0].id == "x"
+
+    def test_multiple_fanout_anchors_last_wins(self, tmp_path):
+        """Multiple ghdag_fanout: anchors → last one (with --- before it) is used."""
+        f = tmp_path / "result.md"
+        f.write_text(
+            "---\nghdag_fanout:\n"
+            "  children:\n"
             "    - id: first-ignored\n      command: echo 0\n"
             "\n"
-            "ghdag_fanout:\n"
+            "---\nghdag_fanout:\n"
             "  children:\n"
             "    - id: last-one\n      command: echo 1\n"
         )
@@ -173,10 +198,11 @@ class TestParseFanoutSpec:
         assert len(spec.children) == 1
         assert spec.children[0].id == "last-one"
 
-    def test_ac4_indented_anchor_not_detected(self, tmp_path):
-        """AC4: Indented '  ghdag_fanout:' is not detected as anchor → None."""
+    def test_indented_anchor_not_detected(self, tmp_path):
+        """Indented '  ghdag_fanout:' is not detected as anchor → None."""
         f = tmp_path / "result.md"
         f.write_text(
+            "---\n"
             "content\n"
             "  ghdag_fanout:\n"
             "    children:\n"
@@ -187,7 +213,7 @@ class TestParseFanoutSpec:
     def test_fanout_anchor_non_dict_value_returns_none(self, tmp_path):
         """ghdag_fanout: with a scalar (non-dict) value → None."""
         f = tmp_path / "result.md"
-        f.write_text("ghdag_fanout: plain-string-value\n")
+        f.write_text("---\nghdag_fanout: plain-string-value\n")
         assert parse_fanout_spec(str(f)) is None
 
 
