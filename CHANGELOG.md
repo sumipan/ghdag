@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.25.4 — 2026-05-26
+
+### Fixed
+
+- `ui`: `exec.jsonl` の `idempotency_key` が null のとき `_ISSUESMITH_KEY_RE.match(None)` で TypeError がクラッシュしていた問題を修正。`_parse_exec_jsonl` で `or ""` による入り口正規化と `cmd_preview` の None ガードで二重防御 (#141)
+
 ## 0.25.3 — 2026-05-26
 
 ### Added
