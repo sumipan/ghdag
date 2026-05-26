@@ -154,6 +154,14 @@ class TestMonitor:
         # \u672b\u5c3e\u304c\u7a7a
         assert cmd_preview("echo hello", idempotency_key="issuesmith:") == "echo hello"
 
+    def test_cmd_preview_none_key_does_not_crash(self):
+        """submit/audit/hooks \u7d4c\u8def\u306f `idempotency_key: str | None = None` \u4ed5\u69d8\u3067
+        None \u3092\u51fa\u529b\u3059\u308b\u3002cmd_preview \u304c None \u3092\u53d7\u3051\u53d6\u3063\u3066\u3082 TypeError \u3067\u306f\u306a\u304f
+        \u901a\u5e38\u306e\u30b3\u30de\u30f3\u30c9\u6587\u5b57\u5217\u306b\u30d5\u30a9\u30fc\u30eb\u30d0\u30c3\u30af\u3059\u308b\u3053\u3068\u3002"""
+        from ghdag.ui.monitor import cmd_preview
+
+        assert cmd_preview("echo hello", idempotency_key=None) == "echo hello"
+
     def test_parse_exec_jsonl_with_idempotency_key(self, tmp_path):
         import json as _json
         from ghdag.ui.monitor import _parse_exec_jsonl
@@ -177,6 +185,26 @@ class TestMonitor:
             "uuid": "aaaa-bbbb-cccc-dddd",
             "command": "echo hello",
             "depends": [],
+        })
+        path = tmp_path / "exec.jsonl"
+        path.write_text(content + "\n", encoding="utf-8")
+        tasks, _ = _parse_exec_jsonl(str(path))
+        assert tasks["aaaa-bbbb-cccc-dddd"].idempotency_key == ""
+
+    def test_parse_exec_jsonl_with_null_idempotency_key(self, tmp_path):
+        """submit/audit/hooks の `idempotency_key: str | None = None` 仕様により
+        exec.jsonl に `"idempotency_key": null` が書き出されるケース。
+        `data.get(k, default)` の default は値が null の場合は適用されず None が
+        返るため、`or ""` で空文字に正規化されないと下流の regex.match() で
+        TypeError になる。"""
+        import json as _json
+        from ghdag.ui.monitor import _parse_exec_jsonl
+
+        content = _json.dumps({
+            "uuid": "aaaa-bbbb-cccc-dddd",
+            "command": "echo hello",
+            "depends": [],
+            "idempotency_key": None,
         })
         path = tmp_path / "exec.jsonl"
         path.write_text(content + "\n", encoding="utf-8")
