@@ -20,6 +20,7 @@ class Task:
     idempotency_key: str | None = None
     engine: str | None = None
     model: str | None = None
+    result_finalize: str | None = None  # "preserve_nonempty" | "stdout_only"
 
 
 @dataclass
