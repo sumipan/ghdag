@@ -141,6 +141,55 @@ class TestParseFanoutSpec:
         with pytest.raises(FanoutError, match="--fo--"):
             parse_fanout_spec(str(f))
 
+    def test_ac2_fanout_block_without_separator(self, tmp_path):
+        """AC2: ghdag_fanout: block with no --- separator → parses correctly."""
+        f = tmp_path / "result.md"
+        f.write_text(
+            "Some prior content.\n\n"
+            "ghdag_fanout:\n"
+            "  children:\n"
+            '    - id: item-001\n      command: "echo 1"\n'
+        )
+        spec = parse_fanout_spec(str(f))
+        assert spec is not None
+        assert len(spec.children) == 1
+        assert spec.children[0].id == "item-001"
+        assert spec.children[0].command == "echo 1"
+
+    def test_ac3_multiple_fanout_anchors_last_wins(self, tmp_path):
+        """AC3: Multiple ghdag_fanout: anchors → last one is used."""
+        f = tmp_path / "result.md"
+        f.write_text(
+            "ghdag_fanout:\n"
+            "  children:\n"
+            "    - id: first-ignored\n      command: echo 0\n"
+            "\n"
+            "ghdag_fanout:\n"
+            "  children:\n"
+            "    - id: last-one\n      command: echo 1\n"
+        )
+        spec = parse_fanout_spec(str(f))
+        assert spec is not None
+        assert len(spec.children) == 1
+        assert spec.children[0].id == "last-one"
+
+    def test_ac4_indented_anchor_not_detected(self, tmp_path):
+        """AC4: Indented '  ghdag_fanout:' is not detected as anchor → None."""
+        f = tmp_path / "result.md"
+        f.write_text(
+            "content\n"
+            "  ghdag_fanout:\n"
+            "    children:\n"
+            "      - id: x\n        command: echo 1\n"
+        )
+        assert parse_fanout_spec(str(f)) is None
+
+    def test_fanout_anchor_non_dict_value_returns_none(self, tmp_path):
+        """ghdag_fanout: with a scalar (non-dict) value → None."""
+        f = tmp_path / "result.md"
+        f.write_text("ghdag_fanout: plain-string-value\n")
+        assert parse_fanout_spec(str(f)) is None
+
 
 class TestBuildChildExecLine:
     def test_format(self):
