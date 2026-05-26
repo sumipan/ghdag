@@ -31,9 +31,11 @@ class FanOutSpec:
 def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
     """Detect and parse a ``ghdag_fanout:`` YAML block from the tail of a result file.
 
-    Searches backwards for the last ``---`` line, then parses everything after it
-    as YAML. Returns None if no block is found or parsing fails (with a warning log).
-    Raises ValueError if child ``id`` values are duplicated.
+    Searches backwards for the last line starting with ``ghdag_fanout:``, then
+    verifies a ``---`` separator exists before it. Parses everything from the
+    anchor line as YAML. Returns None if no anchor or separator is found, or
+    if parsing fails (with a warning log). Raises ValueError if child ``id``
+    values are duplicated.
     """
     if result_path is None:
         return None
@@ -46,16 +48,19 @@ def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
 
     lines = content.splitlines()
 
-    last_sep_idx: int | None = None
+    fanout_line_idx: int | None = None
     for i in range(len(lines) - 1, -1, -1):
-        if lines[i].strip() == "---":
-            last_sep_idx = i
+        if lines[i].startswith("ghdag_fanout:"):
+            fanout_line_idx = i
             break
 
-    if last_sep_idx is None:
+    if fanout_line_idx is None:
         return None
 
-    yaml_text = "\n".join(lines[last_sep_idx + 1:])
+    if not any(lines[i].strip() == "---" for i in range(fanout_line_idx)):
+        return None
+
+    yaml_text = "\n".join(lines[fanout_line_idx:])
     try:
         data = yaml.safe_load(yaml_text)
     except yaml.YAMLError as exc:
