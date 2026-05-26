@@ -31,9 +31,9 @@ class TestInlineOrderBuilder:
         result = builder.build_order("${a} and ${b}", {"a": "X", "b": "Y"})
         assert result == "X and Y"
 
-    def test_undefined_variable_raises_key_error(self):
+    def test_undefined_variable_raises_value_error(self):
         builder = InlineOrderBuilder()
-        with pytest.raises(KeyError) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             builder.build_order("${missing}", {})
         assert "テンプレート展開エラー" in str(exc_info.value)
 
@@ -44,9 +44,9 @@ class TestInlineOrderBuilder:
         assert "テンプレート展開エラー" in str(exc_info.value)
 
     def test_t4_missing_var_shows_available_keys(self):
-        """T4: 不足変数+利用可能キーが KeyError メッセージに含まれる"""
+        """T4: 不足変数+利用可能キーが ValueError メッセージに含まれる"""
         builder = InlineOrderBuilder()
-        with pytest.raises(KeyError) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             builder.build_order("${p} ${q}", {"p": "1"})
 
         msg = str(exc_info.value)
