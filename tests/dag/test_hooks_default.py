@@ -8,7 +8,6 @@ from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import Task
 from ghdag.metrics.models import TaskMetrics
 
-
 UUID = "test-uuid-0000-0000-0000-000000000001"
 
 

@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Monitor tests
 # ---------------------------------------------------------------------------
@@ -36,9 +35,9 @@ class TestMonitor:
         assert tasks == {}
 
     def test_build_rows_single_task(self, tmp_path):
-        from ghdag.ui.monitor import build_rows, STATE_PENDING_RUN
-
         import json as _json
+
+        from ghdag.ui.monitor import STATE_PENDING_RUN, build_rows
         content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
         repo = self._make_repo(tmp_path, content + "\n")
         rows, tasks, file_order = build_rows(repo, detect_running=False)
@@ -47,9 +46,9 @@ class TestMonitor:
         assert rows[0].state == STATE_PENDING_RUN
 
     def test_build_rows_completed_task(self, tmp_path):
-        from ghdag.ui.monitor import build_rows, STATE_OK
-
         import json as _json
+
+        from ghdag.ui.monitor import STATE_OK, build_rows
         content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
         repo = self._make_repo(tmp_path, content + "\n", done={"aaaa-bbbb-cccc-dddd": "0"})
         rows, tasks, file_order = build_rows(repo, detect_running=False)
@@ -57,18 +56,18 @@ class TestMonitor:
         assert rows[0].state == STATE_OK
 
     def test_build_rows_failed_task(self, tmp_path):
-        from ghdag.ui.monitor import build_rows, STATE_FAIL
-
         import json as _json
+
+        from ghdag.ui.monitor import STATE_FAIL, build_rows
         content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
         repo = self._make_repo(tmp_path, content + "\n", done={"aaaa-bbbb-cccc-dddd": "1"})
         rows, tasks, file_order = build_rows(repo, detect_running=False)
         assert rows[0].state == STATE_FAIL
 
     def test_build_rows_with_depends(self, tmp_path):
-        from ghdag.ui.monitor import build_rows, STATE_PENDING_DEPS
-
         import json as _json
+
+        from ghdag.ui.monitor import STATE_PENDING_DEPS, build_rows
         content = (
             _json.dumps({"uuid": "aaaa-bbbb-cccc-0001", "command": "echo first", "depends": []}) + "\n"
             + _json.dumps({"uuid": "aaaa-bbbb-cccc-0002", "command": "echo second", "depends": ["aaaa-bbbb-cccc-0001"]}) + "\n"
@@ -80,9 +79,9 @@ class TestMonitor:
         assert row_map["aaaa-bbbb-cccc-0002"].state == STATE_PENDING_DEPS
 
     def test_build_rows_running_override(self, tmp_path):
-        from ghdag.ui.monitor import build_rows, STATE_RUNNING
-
         import json as _json
+
+        from ghdag.ui.monitor import STATE_RUNNING, build_rows
         content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
         repo = self._make_repo(tmp_path, content + "\n")
         rows, _, _ = build_rows(
@@ -99,9 +98,9 @@ class TestMonitor:
         assert extract_engine_model("echo hello") == ""
 
     def test_filter_rows_by_state(self, tmp_path):
-        from ghdag.ui.monitor import build_rows, filter_rows
-
         import json as _json
+
+        from ghdag.ui.monitor import build_rows, filter_rows
         content = (
             _json.dumps({"uuid": "aaaa-bbbb-cccc-0001", "command": "echo first", "depends": []}) + "\n"
             + _json.dumps({"uuid": "aaaa-bbbb-cccc-0002", "command": "echo second", "depends": []}) + "\n"
@@ -164,6 +163,7 @@ class TestMonitor:
 
     def test_parse_exec_jsonl_with_idempotency_key(self, tmp_path):
         import json as _json
+
         from ghdag.ui.monitor import _parse_exec_jsonl
 
         content = _json.dumps({
@@ -179,6 +179,7 @@ class TestMonitor:
 
     def test_parse_exec_jsonl_without_idempotency_key(self, tmp_path):
         import json as _json
+
         from ghdag.ui.monitor import _parse_exec_jsonl
 
         content = _json.dumps({
@@ -198,6 +199,7 @@ class TestMonitor:
         返るため、`or ""` で空文字に正規化されないと下流の regex.match() で
         TypeError になる。"""
         import json as _json
+
         from ghdag.ui.monitor import _parse_exec_jsonl
 
         content = _json.dumps({
@@ -292,6 +294,7 @@ class TestServer:
         repo = self._make_repo(tmp_path)
 
         from http.server import HTTPServer
+
         from ghdag.ui.server import _Handler
 
         _Handler.repo_root = repo
@@ -318,8 +321,9 @@ class TestServer:
 
         repo = self._make_repo(tmp_path)
 
-        from ghdag.ui.server import _Handler
         from http.server import HTTPServer
+
+        from ghdag.ui.server import _Handler
 
         _Handler.repo_root = repo
         _Handler.poll_interval = 1.0

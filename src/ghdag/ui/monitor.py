@@ -9,24 +9,24 @@ import json
 import re
 import subprocess
 from collections import defaultdict
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
 from ghdag.pipeline.status import (
+    STATE_EMPTY,
+    STATE_FAIL,
+    STATE_OK,
     STATE_PENDING_DEPS,
     STATE_PENDING_RUN,
-    STATE_RUNNING,
-    STATE_OK,
-    STATE_FAIL,
     STATE_REJECTED,
-    STATE_EMPTY,
+    STATE_RUNNING,
     STATE_UNKNOWN_DONE,
-    read_done_content,
-    interpret_done,
     dep_succeeded,
+    interpret_done,
     label_for_done,
+    read_done_content,
     task_status,
 )
 
@@ -410,7 +410,9 @@ def build_rows(
         pending[uuid] = Row(
             uuid=uuid,
             state=st,
-            cmd_preview=cmd_preview(task.command, n=cmd_preview_len, repo_root=repo_root, idempotency_key=task.idempotency_key),
+            cmd_preview=cmd_preview(
+                task.command, n=cmd_preview_len, repo_root=repo_root, idempotency_key=task.idempotency_key,
+            ),
             tree_ts="",
             engine_model=extract_engine_model(task.command),
             order_path=extract_order_path(task.command),

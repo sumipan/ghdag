@@ -2,7 +2,6 @@
 
 import io
 import threading
-
 from unittest.mock import MagicMock
 
 from ghdag.dag._util import _extract_tee_target, _stderr_reader, _stdout_reader

@@ -7,10 +7,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from ghdag.pipeline.audit import AuditContext
-from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.workflow.schema import StepConfig
-
 
 _TEST_AUDIT_CTX = AuditContext(source="test")
 

@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock
 
-
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.github import GitHubIssueClient

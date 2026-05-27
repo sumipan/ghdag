@@ -10,7 +10,6 @@ import yaml
 from ghdag.llm._config import ConfigLoadError, load_engine_models
 from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
 
-
 # ---------------------------------------------------------------------------
 # 正常系
 # ---------------------------------------------------------------------------
@@ -168,8 +167,8 @@ class TestCallWithConfig:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
         """YAML に定義されていないエンジンで call() → EngineModelError"""
-        from ghdag.llm.engines import validate_engine_model
         from ghdag.llm import EngineModelError
+        from ghdag.llm.engines import validate_engine_model
 
         monkeypatch.delenv("GHDAG_LLM_MODELS", raising=False)
         monkeypatch.chdir(tmp_path)

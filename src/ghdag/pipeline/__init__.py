@@ -1,15 +1,15 @@
 """ghdag.pipeline — Layer 1 パイプライン公開 API"""
 
 from ghdag.pipeline.audit_query import get_latest_status, read_task_exit_events
-from ghdag.pipeline.hooks import AuditHooks
 from ghdag.pipeline.config import (
     ModelValidationError,
     PipelineConfig,
     build_agent_cmd,
     resolve_models,
 )
-from ghdag.pipeline.order import InlineOrderBuilder, OrderBuilder, TemplateOrderBuilder
+from ghdag.pipeline.hooks import AuditHooks
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, SubmittedStep
+from ghdag.pipeline.order import InlineOrderBuilder, OrderBuilder, TemplateOrderBuilder
 from ghdag.pipeline.state import PipelineState, parse_frontmatter, status_rank
 from ghdag.pipeline.status import (
     STATE_EMPTY,

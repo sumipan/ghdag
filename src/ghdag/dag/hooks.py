@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Protocol
 
-from .models import Task
 from ghdag.metrics.models import TaskMetrics
+
+from .models import Task
 
 logger = logging.getLogger(__name__)
 

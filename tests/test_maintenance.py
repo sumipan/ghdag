@@ -7,8 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ghdag.maintenance import validate_exec_jsonl, repair_exec_jsonl, repair_jobs_done
-
+from ghdag.maintenance import repair_exec_jsonl, repair_jobs_done, validate_exec_jsonl
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -195,4 +194,4 @@ class TestRepairJobsDone:
 
 
 def test_public_api_importable():
-    from ghdag.maintenance import validate_exec_jsonl, repair_exec_jsonl, repair_jobs_done  # noqa: F401
+    from ghdag.maintenance import repair_exec_jsonl, repair_jobs_done, validate_exec_jsonl  # noqa: F401

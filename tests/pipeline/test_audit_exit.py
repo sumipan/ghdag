@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import json
 
-
 from ghdag.metrics.models import FailureClass
 from ghdag.pipeline.audit import write_task_exit_audit
-
 
 UUID = "8cad156e-0000-0000-0000-000000000001"
 

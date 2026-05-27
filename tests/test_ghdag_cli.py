@@ -17,7 +17,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # AC1: ヘルプ表示
 # ---------------------------------------------------------------------------
@@ -682,6 +681,7 @@ class TestCleanupNormal:
 
     def test_cleanup_help_exits_0(self, capsys):
         import pytest
+
         from ghdag.cli import main
 
         with pytest.raises(SystemExit) as exc:
@@ -697,6 +697,7 @@ class TestCleanupNormal:
 class TestCleanupError:
     def test_cleanup_no_args_exits_2(self):
         import pytest
+
         from ghdag.cli import main
 
         with pytest.raises(SystemExit) as exc:

@@ -8,7 +8,6 @@ import pytest
 
 from ghdag.metrics.models import FailureClass, TaskMetrics
 
-
 UUID = "test-uuid-0000-0000-0000-000000000001"
 
 

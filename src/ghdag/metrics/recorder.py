@@ -6,7 +6,7 @@ import fcntl
 import json
 import traceback
 import warnings
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .models import TaskMetrics

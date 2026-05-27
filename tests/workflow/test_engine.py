@@ -6,19 +6,18 @@ import warnings
 
 import pytest
 
+from ghdag.llm.spec import ENGINE_SPECS
 from ghdag.workflow.engine import (
+    _CUSTOM_ADAPTERS,
     AdapterNotFoundError,
     ClaudeAdapter,
     CursorAdapter,
     GeminiAdapter,
     ShellAdapter,
-    _CUSTOM_ADAPTERS,
     _GenericAdapter,
     get_adapter,
     register_adapter,
 )
-from ghdag.llm.spec import ENGINE_SPECS
-
 
 # ---------------------------------------------------------------------------
 # _GenericAdapter — AC3 統合テスト
@@ -358,6 +357,7 @@ class TestPipelineLayerIndependence:
     def test_llm_pipeline_does_not_import_workflow_engine(self):
         """AC1: llm_pipeline.py のソースに workflow.engine への import がない"""
         import inspect
+
         import ghdag.pipeline.llm_pipeline as mod
 
         source = inspect.getsource(mod)
