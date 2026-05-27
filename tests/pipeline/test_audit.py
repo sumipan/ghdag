@@ -7,7 +7,6 @@ import re
 
 from ghdag.pipeline.audit import AuditContext, write_audit_log
 
-
 UUID1 = "38d6b791-1072-42f0-838d-45c7d10748ff"
 UUID2 = "aaaabbbb-cccc-dddd-eeee-ffffffffffff"
 
@@ -377,7 +376,7 @@ class TestRotation:
 
     def test_ac3_no_rotation_same_day_small_file(self, tmp_path):
         """AC-3: same-day, small file → no rotation; record appended."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
         JST = timezone(timedelta(hours=9))
         today_ts = datetime.now(JST).isoformat()
 
@@ -458,9 +457,9 @@ class TestRotation:
 
     def test_ac7_write_md_write_audit_rotates(self, tmp_path, monkeypatch):
         """AC-7: write_md_write_audit in files/writer.py triggers rotation."""
-        import ghdag.pipeline.audit as audit_mod
+        import ghdag.files._rotate as rotate_mod
         from ghdag.files.writer import write_md_write_audit
-        monkeypatch.setattr(audit_mod, "_MAX_AUDIT_BYTES", 5)
+        monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
 
         audit_path = tmp_path / "audit.jsonl"
         audit_path.write_text("x" * 10 + "\n")
@@ -471,9 +470,9 @@ class TestRotation:
 
     def test_ac7_write_promote_audit_rotates(self, tmp_path, monkeypatch):
         """AC-7: _write_promote_audit in files/promote.py triggers rotation."""
-        import ghdag.pipeline.audit as audit_mod
+        import ghdag.files._rotate as rotate_mod
         from ghdag.files.promote import _write_promote_audit
-        monkeypatch.setattr(audit_mod, "_MAX_AUDIT_BYTES", 5)
+        monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
 
         audit_path = tmp_path / "audit.jsonl"
         audit_path.write_text("x" * 10 + "\n")

@@ -5,10 +5,10 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from ghdag.files._rotate import _maybe_rotate
 from ghdag.files.append import md_append
 from ghdag.files.models import AppendStatus, PathTraversalError, PromoteResult, PromoteStatus
 from ghdag.files.reader import md_read
-from ghdag.pipeline.audit import _maybe_rotate
 
 JST = timezone(timedelta(hours=9))
 
