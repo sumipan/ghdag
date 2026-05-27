@@ -184,6 +184,7 @@ class TestMdPromoteErrors:
     def test_p12_audit_write_failure_does_not_raise(self, repo_root: Path) -> None:
         """P12: audit 書き込み失敗でも promote 自体は成功する"""
         from unittest.mock import patch
+
         from ghdag.files import md_promote
 
         write_file(repo_root / "result" / "r1.md", "content\n")
@@ -213,6 +214,7 @@ class TestDagHooksIntegration:
         import subprocess
         import time
         from unittest.mock import MagicMock, patch
+
         from ghdag.dag.engine import DagEngine
         from ghdag.dag.hooks import DagHooks
         from ghdag.dag.models import DagConfig, RunningTask, Task
@@ -267,6 +269,7 @@ class TestDagHooksIntegration:
         import subprocess
         import time
         from unittest.mock import MagicMock, patch
+
         from ghdag.dag.engine import DagEngine
         from ghdag.dag.hooks import DagHooks
         from ghdag.dag.models import DagConfig, RunningTask, Task
@@ -312,6 +315,7 @@ class TestDagHooksIntegration:
         import subprocess
         import time
         from unittest.mock import MagicMock, patch
+
         from ghdag.dag.engine import DagEngine
         from ghdag.dag.hooks import DagHooks
         from ghdag.dag.models import DagConfig, RunningTask, Task

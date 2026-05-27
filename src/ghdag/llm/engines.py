@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from ghdag.llm._config import load_engine_models
-from ghdag.llm.capabilities import LLMCapabilities, LLMParseError, TEXT_ONLY
+from ghdag.llm.capabilities import TEXT_ONLY, LLMCapabilities, LLMParseError
 from ghdag.llm.spec import ENGINE_SPECS
 
 

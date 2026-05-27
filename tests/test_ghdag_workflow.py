@@ -23,7 +23,6 @@ from ghdag.workflow.schema import (
     WorkflowConfig,
 )
 
-
 # ---------------------------------------------------------------------------
 # TC-1: YAML パース（正常系）
 # ---------------------------------------------------------------------------
@@ -909,6 +908,7 @@ class TestGitHubIssueClient:
 class TestRemoveIdempotencyMatching:
     def test_removes_matching_lines(self, tmp_path):
         import json as _json
+
         from ghdag.pipeline.state import PipelineState
         exec_jsonl = tmp_path / "exec.jsonl"
         exec_jsonl.write_text(
@@ -932,6 +932,7 @@ class TestRemoveIdempotencyMatching:
 
     def test_returns_zero_if_no_match(self, tmp_path):
         import json as _json
+
         from ghdag.pipeline.state import PipelineState
         exec_jsonl = tmp_path / "exec.jsonl"
         exec_jsonl.write_text(

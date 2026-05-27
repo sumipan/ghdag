@@ -7,11 +7,9 @@ import threading
 from pathlib import Path
 from unittest.mock import MagicMock
 
-
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig
 from ghdag.dag.parser import parse_jsonl
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -10,7 +10,6 @@ from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import DependencyError, LLMPipelineAPI
 from ghdag.workflow.schema import StepConfig
 
-
 _TEST_AUDIT_CTX = AuditContext(source="test")
 
 
@@ -218,8 +217,8 @@ class TestAC4EngineResultFilename:
 class TestAC3ExecFormat:
     def test_uuid_field_in_exec_record(self):
         """exec レコードの uuid フィールドが UUID 形式（36文字のハイフン区切り）。"""
-        import re
         import json as _json
+        import re
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)

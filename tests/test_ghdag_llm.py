@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ghdag.llm import (
+    DANGEROUS_FULL_ACCESS,
     ENGINE_DEFAULTS,
+    ENGINE_SPECS,
+    JSON_ONLY,
+    TEXT_ONLY,
+    WEB_RESEARCH,
     EngineModelError,
     EngineSpec,
-    ENGINE_SPECS,
     LLMCapabilities,
     LLMParseError,
     LLMResult,
-    TEXT_ONLY,
-    JSON_ONLY,
-    WEB_RESEARCH,
-    DANGEROUS_FULL_ACCESS,
     build_llm_cmd,
     call,
     list_engines,
@@ -25,8 +25,7 @@ from ghdag.llm import (
     validate_engine_model,
 )
 from ghdag.llm.spec import render_exec_command
-from ghdag.workflow.engine import ClaudeAdapter, GeminiAdapter, CursorAdapter, ShellAdapter
-
+from ghdag.workflow.engine import ClaudeAdapter, CursorAdapter, GeminiAdapter, ShellAdapter
 
 # ---------------------------------------------------------------------------
 # ホワイトリスト・検証
@@ -50,8 +49,8 @@ class TestEngineModels:
 
     def test_list_models_gemini(self, monkeypatch):
         """gemini エンジンのデフォルト許可モデル一覧（GHDAG_LLM_MODELS 環境変数の影響を除外）"""
-        from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
         import ghdag.llm.engines as engines_mod
+        from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
         monkeypatch.setattr(engines_mod, "ENGINE_MODELS", DEFAULT_ENGINE_MODELS)
         models = list_models("gemini")
         assert "gemini-2.5-flash" in models
@@ -77,8 +76,8 @@ class TestValidateEngineModel:
 
     def test_valid_gemini_model(self, monkeypatch):
         """gemini + 許可モデル → そのまま返る（GHDAG_LLM_MODELS 環境変数の影響を除外）"""
-        from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
         import ghdag.llm.engines as engines_mod
+        from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
         monkeypatch.setattr(engines_mod, "ENGINE_MODELS", DEFAULT_ENGINE_MODELS)
         result = validate_engine_model("gemini", "gemini-2.5-pro")
         assert result == "gemini-2.5-pro"
@@ -496,9 +495,10 @@ class TestCallCapabilities:
 class TestCLI:
     def test_llm_list_engines(self):
         """ghdag llm --list-engines"""
-        from ghdag.cli import main
-        from io import StringIO
         import contextlib
+        from io import StringIO
+
+        from ghdag.cli import main
 
         buf = StringIO()
         with contextlib.redirect_stdout(buf):
@@ -509,9 +509,10 @@ class TestCLI:
 
     def test_llm_list_models(self):
         """ghdag llm --list-models --engine claude"""
-        from ghdag.cli import main
-        from io import StringIO
         import contextlib
+        from io import StringIO
+
+        from ghdag.cli import main
 
         buf = StringIO()
         with contextlib.redirect_stdout(buf):

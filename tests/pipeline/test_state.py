@@ -8,7 +8,6 @@ import pytest
 
 from ghdag.pipeline.state import PipelineState
 
-
 UUID1 = "38d6b791-1072-42f0-838d-45c7d10748ff"
 UUID2 = "aaaabbbb-cccc-dddd-eeee-ffffffffffff"
 UUID3 = "ccccdddd-eeee-ffff-0000-111122223333"

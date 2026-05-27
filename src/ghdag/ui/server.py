@@ -10,14 +10,14 @@ import re
 import signal
 import subprocess
 import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from socketserver import ThreadingMixIn
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs
+from socketserver import ThreadingMixIn
+from urllib.parse import parse_qs, urlparse
 
 from .monitor import (
-    build_rows,
     apply_default_monitor_filters,
+    build_rows,
     relayout_tree_for_visible_rows,
 )
 

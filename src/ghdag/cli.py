@@ -544,7 +544,7 @@ def _cmd_llm(args: argparse.Namespace) -> None:
     # capabilities 解決: --capabilities-preset / --permission-mode の組み合わせ
     capabilities = None
     if args.capabilities_preset is not None or args.permission_mode is not None:
-        from ghdag.llm.capabilities import LLMCapabilities, PRESETS
+        from ghdag.llm.capabilities import PRESETS, LLMCapabilities
         if args.capabilities_preset is not None:
             capabilities = PRESETS[args.capabilities_preset]
         else:
@@ -577,8 +577,8 @@ def _cmd_llm(args: argparse.Namespace) -> None:
     # 監査ログ（正常終了時のみ記録）
     audit_path = args.audit_path or os.environ.get("GHDAG_AUDIT_PATH")
     if audit_path and result.ok:
-        from ghdag.pipeline.audit import write_llm_audit_log
         from ghdag.llm.engines import validate_engine_model
+        from ghdag.pipeline.audit import write_llm_audit_log
         write_llm_audit_log(
             Path(audit_path),
             engine=args.engine,

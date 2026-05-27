@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from ghdag.dag.parser import parse_jsonl, validate_dependencies
 from ghdag.dag.models import Task
+from ghdag.dag.parser import parse_jsonl, validate_dependencies
 
 
 class TestParseJsonl:
