@@ -25,7 +25,7 @@ from ghdag.llm import (
     validate_engine_model,
 )
 from ghdag.llm.spec import render_exec_command
-from ghdag.workflow.engine import ClaudeAdapter, GeminiAdapter, CursorAdapter, ShellAdapter
+from ghdag.workflow.engine import get_adapter
 
 
 # ---------------------------------------------------------------------------
@@ -631,7 +631,7 @@ class TestRenderExecCommand:
 
 class TestAdapterOutputs:
     def test_claude_adapter_build_exec_record(self):
-        adapter = ClaudeAdapter()
+        adapter = get_adapter("claude")
         record = adapter.build_exec_record(
             uuid="u1",
             order_path="queue/order.md",
@@ -645,8 +645,8 @@ class TestAdapterOutputs:
         assert "cat queue/order.md | claude -p 'hello' --model 'claude-sonnet-4-6' --dangerously-skip-permissions" == cmd
 
     def test_gemini_adapter_uses_double_dash_model(self):
-        """GeminiAdapter が -m ではなく --model を使う"""
-        adapter = GeminiAdapter()
+        """get_adapter('gemini') が -m ではなく --model を使う"""
+        adapter = get_adapter("gemini")
         record = adapter.build_exec_record(
             uuid="u1",
             order_path="queue/order.md",
@@ -660,8 +660,8 @@ class TestAdapterOutputs:
         assert "--model 'gemini-2.5-flash'" in cmd
 
     def test_cursor_adapter_p_force_adjacent(self):
-        """CursorAdapter の出力で -p --force が隣接"""
-        adapter = CursorAdapter()
+        """get_adapter('cursor') の出力で -p --force が隣接"""
+        adapter = get_adapter("cursor")
         record = adapter.build_exec_record(
             uuid="u1",
             order_path="queue/order.md",
@@ -673,7 +673,7 @@ class TestAdapterOutputs:
         assert "-p --force" in record["command"]
 
     def test_shell_adapter_bash_pipefail(self):
-        adapter = ShellAdapter()
+        adapter = get_adapter("shell")
         record = adapter.build_exec_record(
             uuid="u1",
             order_path="queue/order.sh",
