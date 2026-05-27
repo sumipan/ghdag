@@ -7,8 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from ghdag.pipeline import get_latest_status as public_get
+from ghdag.pipeline import read_task_exit_events as public_read
 from ghdag.pipeline.audit_query import get_latest_status, read_task_exit_events
-from ghdag.pipeline import read_task_exit_events as public_read, get_latest_status as public_get
 
 
 def _write_events(path: Path, events: list[dict]) -> None:

@@ -10,9 +10,8 @@ from pathlib import Path
 import pytest
 
 from ghdag.pipeline import PipelineConfig, PipelineState, TemplateOrderBuilder
-from ghdag.pipeline.config import ModelValidationError, resolve_models, build_agent_cmd
-from ghdag.pipeline.state import status_rank, parse_frontmatter
-
+from ghdag.pipeline.config import ModelValidationError, build_agent_cmd, resolve_models
+from ghdag.pipeline.state import parse_frontmatter, status_rank
 
 # ---------------------------------------------------------------------------
 # config.py テストケース

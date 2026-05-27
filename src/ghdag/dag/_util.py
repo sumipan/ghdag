@@ -7,7 +7,6 @@ import re
 import subprocess
 from pathlib import Path
 
-
 _PIPELINE_STATUS_RE = re.compile(r"^PIPELINE_STATUS:\s*(\S+)\s*$", re.MULTILINE)
 
 # Matches: tee [-a] "quoted path" or tee [-a] unquoted-path (any extension)

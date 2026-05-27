@@ -2,19 +2,16 @@
 
 import json
 import logging
+import re as _re
 import signal
 import threading
 import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
-
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig
 from ghdag.dag.state import is_done, load_done_from_dir, load_succeeded_from_dir
-
-
-import re as _re
 
 _MD_LINE_RE = _re.compile(r"^([a-zA-Z0-9\-]+)((?:\[[^\]]+\])*)\s*:\s*(.+)$")
 _MD_DEPENDS_RE = _re.compile(r"\[depends:([^\]]+)\]")

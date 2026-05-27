@@ -159,6 +159,20 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Pass --dangerously-skip-permissions to claude CLI",
     )
     llm_parser.add_argument(
+        "--permission-mode",
+        default=None,
+        dest="permission_mode",
+        choices=["default", "plan", "bypassPermissions"],
+        help="Permission mode for Claude engine",
+    )
+    llm_parser.add_argument(
+        "--capabilities-preset",
+        default=None,
+        dest="capabilities_preset",
+        choices=["text_only", "json_only", "web_research", "dangerous_full_access"],
+        help="Capabilities preset name",
+    )
+    llm_parser.add_argument(
         "--stdin",
         action="store_true",
         dest="read_stdin",
@@ -527,15 +541,30 @@ def _cmd_llm(args: argparse.Namespace) -> None:
     if args.read_stdin and not sys.stdin.isatty():
         stdin_text = sys.stdin.read()
 
+    # capabilities 解決: --capabilities-preset / --permission-mode の組み合わせ
+    capabilities = None
+    if args.capabilities_preset is not None or args.permission_mode is not None:
+        from ghdag.llm.capabilities import PRESETS, LLMCapabilities
+        if args.capabilities_preset is not None:
+            capabilities = PRESETS[args.capabilities_preset]
+        else:
+            capabilities = LLMCapabilities()
+        if args.permission_mode is not None:
+            import dataclasses
+            capabilities = dataclasses.replace(capabilities, permission_mode=args.permission_mode)
+
+    call_kwargs: dict = dict(
+        engine=args.engine,
+        model=args.model,
+        timeout=args.timeout,
+        stdin_text=stdin_text,
+        dangerously_skip_permissions=args.dangerously_skip_permissions,
+    )
+    if capabilities is not None:
+        call_kwargs["capabilities"] = capabilities
+
     try:
-        result = call(
-            prompt,
-            engine=args.engine,
-            model=args.model,
-            timeout=args.timeout,
-            stdin_text=stdin_text,
-            dangerously_skip_permissions=args.dangerously_skip_permissions,
-        )
+        result = call(prompt, **call_kwargs)
     except EngineModelError as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -548,8 +577,8 @@ def _cmd_llm(args: argparse.Namespace) -> None:
     # 監査ログ（正常終了時のみ記録）
     audit_path = args.audit_path or os.environ.get("GHDAG_AUDIT_PATH")
     if audit_path and result.ok:
-        from ghdag.pipeline.audit import write_llm_audit_log
         from ghdag.llm.engines import validate_engine_model
+        from ghdag.pipeline.audit import write_llm_audit_log
         write_llm_audit_log(
             Path(audit_path),
             engine=args.engine,

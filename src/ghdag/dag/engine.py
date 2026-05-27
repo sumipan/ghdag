@@ -13,18 +13,21 @@ import threading
 import time
 from pathlib import Path
 
+from ghdag.metrics.models import FailureClass, TaskMetrics
+from ghdag.metrics.parsers import parse_engine_model, parse_token_count
+
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .fanout import FanOutSpec, build_child_jsonl_record, parse_fanout_spec
-from .hooks import DefaultHooks, DagHooks
+from .hooks import DagHooks, DefaultHooks
 from .models import DagConfig, RunningTask, Task
 from .parser import parse_jsonl, validate_dependencies
 from .state import (
     load_done_from_dir,
     load_succeeded_from_dir,
+)
+from .state import (
     mark_done as state_mark_done,
 )
-from ghdag.metrics.models import FailureClass, TaskMetrics
-from ghdag.metrics.parsers import parse_engine_model, parse_token_count
 
 logger = logging.getLogger(__name__)
 
@@ -284,7 +287,10 @@ class DagEngine:
                 if returncode == 0:
                     if task.result_path is not None:
                         stdout_data = rt.stdout_buf.getvalue() if rt.stdout_buf else b""
-                        Path(task.result_path).write_bytes(stdout_data)
+                        rp = Path(task.result_path)
+                        policy = task.result_finalize or "preserve_nonempty"
+                        if policy == "stdout_only" or not (rp.exists() and rp.stat().st_size > 0):
+                            rp.write_bytes(stdout_data)
                         effective_result_path: str | None = task.result_path
                     else:
                         effective_result_path = _extract_tee_target(task.command)
@@ -297,6 +303,9 @@ class DagEngine:
                             state_mark_done(self._config.exec_done_dir, uuid, "REJECTED_FINAL")
                         else:
                             state_mark_done(self._config.exec_done_dir, uuid, "REJECTED")
+                            # preserve_nonempty が stale 結果を保持しないよう、リトライ前に削除する
+                            if task.result_path and Path(task.result_path).exists():
+                                Path(task.result_path).unlink()
                         metrics = TaskMetrics(
                             uuid=uuid, engine=engine, model=model,
                             wall_time_sec=round(finished_at - rt.started_at, 3),
@@ -391,7 +400,6 @@ class DagEngine:
     def _spawn_fanout(self, parent_uuid: str, parent_task: Task,
                       spec: FanOutSpec, metrics: TaskMetrics) -> None:
         """Append child tasks to the exec file and register the parent in _fanout_pending."""
-        exec_path = str(self._config.exec_jsonl_path)
         child_uuids: set[str] = set()
         for child in spec.children:
             child_uuid = f"{parent_uuid}--fo--{child.id}"

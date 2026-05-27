@@ -8,7 +8,6 @@ import subprocess
 import time
 from pathlib import Path
 
-
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.fanout import FanOutItem, FanOutSpec
 from ghdag.dag.models import DagConfig, RunningTask, Task

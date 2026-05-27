@@ -4,6 +4,46 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.25.4 — 2026-05-26
+
+### Fixed
+
+- `ui`: `exec.jsonl` の `idempotency_key` が null のとき `_ISSUESMITH_KEY_RE.match(None)` で TypeError がクラッシュしていた問題を修正。`_parse_exec_jsonl` で `or ""` による入り口正規化と `cmd_preview` の None ガードで二重防御 (#141)
+
+## 0.25.3 — 2026-05-26
+
+### Added
+
+- `fanout`: fanout アンカーを `---` セパレータ依存から `ghdag_fanout:` startswith 検出に変更。セパレータなしのファイルでも正しくパース可能 (diary #1214)
+- `ui`: `MonitorTask` と `cmd_preview` に `idempotency_key` サポートを追加 (diary #1203)
+- `pipeline/order`: `_check_missing_vars` が不足変数を全列挙する KeyError メッセージに改善 (diary #1193)
+
+### Fixed
+
+- `order`: `_check_missing_vars` の例外型を `KeyError` → `ValueError` に変更 (#137)
+- `test`: gemini モデル検証テストを `GHDAG_LLM_MODELS` 環境変数から独立させる (#138)
+
+## 0.25.2 — 2026-05-25
+
+### Added
+
+- `result_finalize` ポリシー分岐とリトライ時 result_path クリア追加 (diary #1140)
+
+### Fixed
+
+- `parser`: result_path の空文字列を `None` に正規化し `IsADirectoryError` を防ぐ
+- ruff 指摘の未使用変数・import を除去
+
+## 0.25.1 — 2026-05-25
+
+### Added
+
+- `ghdag.dag.check_pipeline_status` を `ghdag.dag.__all__` に追加し public API として公開 (diary #1126)
+
+### Docs
+
+- README を v0.25.0 向けに更新: `--permission-mode`、`--max-concurrency`、`AuditHooks`、`StepConfig.permission` フィールドの記述を追加
+
 ## 0.24.0 — 2026-05-24
 
 ### BREAKING

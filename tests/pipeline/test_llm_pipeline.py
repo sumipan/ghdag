@@ -10,7 +10,6 @@ from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import DependencyError, LLMPipelineAPI
 from ghdag.workflow.schema import StepConfig
 
-
 _TEST_AUDIT_CTX = AuditContext(source="test")
 
 
@@ -218,8 +217,8 @@ class TestAC4EngineResultFilename:
 class TestAC3ExecFormat:
     def test_uuid_field_in_exec_record(self):
         """exec レコードの uuid フィールドが UUID 形式（36文字のハイフン区切り）。"""
-        import re
         import json as _json
+        import re
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
@@ -712,3 +711,67 @@ class TestResultContentInjection:
         p3_ctx = order_builder.build_order.call_args_list[2][0][1]
         assert p3_ctx["p1_result_content"] == content_p1
         assert p3_ctx["p2_result_content"] == content_p2
+
+
+# ---------------------------------------------------------------------------
+# StepConfig.permission → exec record capabilities (AC5, AC10, AC12)
+# ---------------------------------------------------------------------------
+
+
+class TestStepConfigPermission:
+    def test_ac5_permission_text_only_exec_record_has_permission_mode(self):
+        """AC5: permission='text_only' → exec record command に --permission-mode default --disallowed-tools"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="text_only")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "--permission-mode" in record["command"]
+        assert "default" in record["command"]
+        assert "--disallowed-tools" in record["command"]
+
+    def test_ac5_permission_text_only_no_dangerously(self):
+        """AC5: permission='text_only' → --dangerously-skip-permissions なし"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="text_only")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "--dangerously-skip-permissions" not in record["command"]
+
+    def test_ac10_permission_none_default_behavior(self):
+        """AC10: permission=None（デフォルト）→ exec record が従来と同一（--dangerously-skip-permissions）"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps_default = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        steps_none = [StepConfig(template="brushup", model="claude-opus-4-6", permission=None)]
+
+        lines_default = api.submit(steps_default, {}, audit_context=_TEST_AUDIT_CTX)
+        lines_none = api.submit(steps_none, {}, audit_context=_TEST_AUDIT_CTX)
+
+        rec_default = _json.loads(lines_default[0])
+        rec_none = _json.loads(lines_none[0])
+        assert "--dangerously-skip-permissions" in rec_default["command"]
+        # uuidが異なるので命令部だけ比較
+        assert "--dangerously-skip-permissions" in rec_none["command"]
+        assert "--permission-mode" not in rec_none["command"]
+
+    def test_ac12_unknown_preset_raises_value_error(self):
+        """AC12: permission='unknown_preset' → ValueError"""
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="unknown_preset")]
+        with pytest.raises(ValueError, match="unknown_preset"):
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+    def test_permission_dangerous_full_access(self):
+        """permission='dangerous_full_access' → --permission-mode bypassPermissions"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="dangerous_full_access")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "--permission-mode" in record["command"]
+        assert "bypassPermissions" in record["command"]
