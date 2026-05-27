@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Protocol
 
 from ghdag.llm.spec import ENGINE_SPECS, EngineSpec, render_exec_command
@@ -90,47 +89,3 @@ def get_adapter(name: str) -> EngineAdapter:
     if name in _CUSTOM_ADAPTERS:
         return _CUSTOM_ADAPTERS[name]
     raise AdapterNotFoundError(f"Unknown engine: {name!r}. Available: {sorted(ENGINE_SPECS)}")
-
-
-# ---------------------------------------------------------------------------
-# Deprecated aliases — 0.24.0 で削除予定
-# ---------------------------------------------------------------------------
-
-def ClaudeAdapter() -> _GenericAdapter:
-    warnings.warn(
-        "ClaudeAdapter is deprecated and will be removed in 0.24.0. "
-        "Use get_adapter('claude') instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return _GenericAdapter(ENGINE_SPECS["claude"])
-
-
-def GeminiAdapter() -> _GenericAdapter:
-    warnings.warn(
-        "GeminiAdapter is deprecated and will be removed in 0.24.0. "
-        "Use get_adapter('gemini') instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return _GenericAdapter(ENGINE_SPECS["gemini"])
-
-
-def CursorAdapter() -> _GenericAdapter:
-    warnings.warn(
-        "CursorAdapter is deprecated and will be removed in 0.24.0. "
-        "Use get_adapter('cursor') instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return _GenericAdapter(ENGINE_SPECS["cursor"])
-
-
-def ShellAdapter() -> _GenericAdapter:
-    warnings.warn(
-        "ShellAdapter is deprecated and will be removed in 0.24.0. "
-        "Use get_adapter('shell') instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return _GenericAdapter(ENGINE_SPECS["shell"])
