@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
 
+import pytest
+
+from ghdag import QueueTask as QueueTaskTop
+from ghdag import QueueTaskStore as QueueTaskStoreTop
 from ghdag.pipeline.result import QueueTask, QueueTaskStore
-from ghdag import QueueTask as QueueTaskTop, QueueTaskStore as QueueTaskStoreTop
 
 
 def test_top_level_exports_are_same_classes() -> None:

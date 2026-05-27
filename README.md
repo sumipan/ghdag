@@ -30,10 +30,10 @@ Use `--exec-md jobs/exec.jsonl` to write JSONL format instead.
 
 | Subcommand | Description | Key options |
 |---|---|---|
-| `run` | Run exec.jsonl (or exec.md) via DagEngine | `--interval SEC`, `--hooks MODULE` |
+| `run` | Run exec.jsonl via DagEngine | `--interval SEC`, `--hooks MODULE`, `--max-concurrency N` |
 | `watch` | Watch workflows dir and dispatch on GitHub events | `--interval SEC`, `--exec-md PATH`, `--once` |
 | `trigger` | One-shot handler dispatch for a specific issue | `--handler NAME` (required), `--workflows-dir PATH`, `--workflow NAME`, `--exec-md PATH` |
-| `llm` | One-shot LLM call without a workflow | `--engine NAME`, `--model ID`, `--list-engines`, `--list-models`, `--audit-path PATH` |
+| `llm` | One-shot LLM call without a workflow | `--engine NAME`, `--model ID`, `--list-engines`, `--list-models`, `--audit-path PATH`, `--permission-mode MODE`, `--capabilities-preset NAME` |
 | `ui` | Launch Web UI dashboard | `--host ADDR`, `--port N`, `--interval SEC`, `--max-visible N` |
 | `cleanup` | Archive completed/orphaned queue tasks | `--dry-run`, `--cutoff-days N`, `--orphan-days N` |
 | `version` | Show version and exit | — |
@@ -43,12 +43,12 @@ Global flags: `--verbose` / `-v` (DEBUG logging), `--quiet` / `-q` (WARNING+ onl
 ### `ghdag run`
 
 ```
-ghdag run <exec-file> [--interval SEC] [--hooks MODULE]
+ghdag run <exec-file> [--interval SEC] [--hooks MODULE] [--max-concurrency N]
 ```
 
-- `exec-file`: path to `exec.jsonl` (JSONL) or `exec.md` (text format, legacy).
-  The engine auto-detects format by file extension (`.jsonl` → JSONL parser).
+- `exec-file`: path to `exec.jsonl` (JSONL format).
 - `--hooks`: Python module path of a `DagHooks` implementation (e.g. `scripts.diary_hooks`).
+- `--max-concurrency N`: maximum number of tasks that may run concurrently (default: unlimited).
 
 ### `ghdag watch`
 
@@ -71,10 +71,14 @@ Fetches the issue from GitHub and immediately dispatches the named handler.
 
 ```
 ghdag llm [prompt] [--engine NAME] [--model ID] [--timeout SEC] [--stdin]
+          [--permission-mode MODE] [--capabilities-preset NAME]
 ```
 
 Reads prompt from the positional argument or stdin. Use `--list-engines` /
 `--list-models` to enumerate available engines and models.
+
+- `--permission-mode MODE`: permission mode for the Claude engine. Choices: `default`, `plan`, `bypassPermissions`.
+- `--capabilities-preset NAME`: capabilities preset to apply. Choices: `text_only`, `json_only`, `web_research`, `dangerous_full_access`.
 
 ### `ghdag cleanup`
 
@@ -129,6 +133,7 @@ Archives files from `jobs/` based on age. Completed tasks older than
 | `id` | `str \| None` | `None` | Step ID (for `depends` references) |
 | `engine` | `str` | `"claude"` | LLM engine name |
 | `depends` | `list[str]` | `[]` | Dependency step IDs |
+| `permission` | `str \| None` | `None` | Capabilities preset name |
 
 ### DispatchResult
 
@@ -137,26 +142,6 @@ Archives files from `jobs/` based on age. Completed tasks older than
 | `status` | `str` | — | `"dispatched"` / `"skipped"` / `"reset"` |
 | `reason` | `str` | `""` | Human-readable reason |
 | `exec_lines` | `list[str]` | `[]` | Written exec entries |
-
-### WorkflowConfig フィールド
-
-| フィールド | 型 | 必須 | 説明 |
-|---|---|---|---|
-| `name` | str | ○ | ワークフロー名 |
-| `triggers` | list[TriggerConfig] | ○ | ラベルマッチ条件 |
-| `handlers` | dict[str, HandlerConfig] | ○ | ハンドラー定義 |
-| `polling_interval` | int | — | ポーリング間隔（秒、デフォルト 30） |
-| `template_dir` | str | — | テンプレートディレクトリ |
-
-### StepConfig フィールド
-
-| フィールド | 型 | 必須 | 説明 |
-|---|---|---|---|
-| `template` | str | ○ | order テンプレートファイル名（拡張子なし） |
-| `model` | str | ○ | 実行モデル |
-| `engine` | str | — | LLM エンジン名（デフォルト: `claude`） |
-| `id` | str | — | ステップ ID（depends 参照用） |
-| `depends` | list[str] | — | 依存ステップ ID リスト |
 
 ## Architecture
 
@@ -168,11 +153,11 @@ Core DAG execution engine. No GitHub dependency.
 | Module | Description |
 |---|---|
 | `engine.py` | `DagEngine` — main loop, task launch, completion handling |
-| `parser.py` | `parse_jsonl()` (JSONL), `parse_exec_md()` (text, legacy), `validate_dependencies()` |
-| `models.py` | `Task`, `RunningTask`, `DagConfig` |
+| `parser.py` | `parse_jsonl()` (JSONL), `validate_dependencies()` |
+| `models.py` | `Task`, `RunningTask`, `DagConfig` (incl. `max_concurrency`) |
 | `state.py` | `jobs/done/` flag management |
 | `fanout.py` | Fan-out task expansion |
-| `hooks.py` | `DagHooks` interface, `DefaultHooks` |
+| `hooks.py` | `DagHooks` interface, `DefaultHooks` (logging-only) |
 | `watcher.py` | File-system watcher integration |
 
 ### `workflow/`
@@ -200,6 +185,7 @@ LLM pipeline state and order management.
 | `config.py` | Pipeline configuration |
 | `status.py` | Task status helpers |
 | `wait.py` | Completion waiting |
+| `hooks.py` | `AuditHooks` — `DefaultHooks` subclass that writes audit.jsonl |
 
 ### `llm/`
 Engine specs and model configuration.

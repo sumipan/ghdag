@@ -9,7 +9,6 @@ from unittest.mock import patch
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Monitor tests
 # ---------------------------------------------------------------------------
@@ -36,9 +35,9 @@ class TestMonitor:
         assert tasks == {}
 
     def test_build_rows_single_task(self, tmp_path):
-        from ghdag.ui.monitor import build_rows, STATE_PENDING_RUN
-
         import json as _json
+
+        from ghdag.ui.monitor import STATE_PENDING_RUN, build_rows
         content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
         repo = self._make_repo(tmp_path, content + "\n")
         rows, tasks, file_order = build_rows(repo, detect_running=False)
@@ -47,9 +46,9 @@ class TestMonitor:
         assert rows[0].state == STATE_PENDING_RUN
 
     def test_build_rows_completed_task(self, tmp_path):
-        from ghdag.ui.monitor import build_rows, STATE_OK
-
         import json as _json
+
+        from ghdag.ui.monitor import STATE_OK, build_rows
         content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
         repo = self._make_repo(tmp_path, content + "\n", done={"aaaa-bbbb-cccc-dddd": "0"})
         rows, tasks, file_order = build_rows(repo, detect_running=False)
@@ -57,18 +56,18 @@ class TestMonitor:
         assert rows[0].state == STATE_OK
 
     def test_build_rows_failed_task(self, tmp_path):
-        from ghdag.ui.monitor import build_rows, STATE_FAIL
-
         import json as _json
+
+        from ghdag.ui.monitor import STATE_FAIL, build_rows
         content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
         repo = self._make_repo(tmp_path, content + "\n", done={"aaaa-bbbb-cccc-dddd": "1"})
         rows, tasks, file_order = build_rows(repo, detect_running=False)
         assert rows[0].state == STATE_FAIL
 
     def test_build_rows_with_depends(self, tmp_path):
-        from ghdag.ui.monitor import build_rows, STATE_PENDING_DEPS
-
         import json as _json
+
+        from ghdag.ui.monitor import STATE_PENDING_DEPS, build_rows
         content = (
             _json.dumps({"uuid": "aaaa-bbbb-cccc-0001", "command": "echo first", "depends": []}) + "\n"
             + _json.dumps({"uuid": "aaaa-bbbb-cccc-0002", "command": "echo second", "depends": ["aaaa-bbbb-cccc-0001"]}) + "\n"
@@ -80,9 +79,9 @@ class TestMonitor:
         assert row_map["aaaa-bbbb-cccc-0002"].state == STATE_PENDING_DEPS
 
     def test_build_rows_running_override(self, tmp_path):
-        from ghdag.ui.monitor import build_rows, STATE_RUNNING
-
         import json as _json
+
+        from ghdag.ui.monitor import STATE_RUNNING, build_rows
         content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
         repo = self._make_repo(tmp_path, content + "\n")
         rows, _, _ = build_rows(
@@ -99,9 +98,9 @@ class TestMonitor:
         assert extract_engine_model("echo hello") == ""
 
     def test_filter_rows_by_state(self, tmp_path):
-        from ghdag.ui.monitor import build_rows, filter_rows
-
         import json as _json
+
+        from ghdag.ui.monitor import build_rows, filter_rows
         content = (
             _json.dumps({"uuid": "aaaa-bbbb-cccc-0001", "command": "echo first", "depends": []}) + "\n"
             + _json.dumps({"uuid": "aaaa-bbbb-cccc-0002", "command": "echo second", "depends": []}) + "\n"
@@ -125,6 +124,94 @@ class TestMonitor:
 
         assert ts_display("cat queue/20260413223000-order.md") == "2026-04-13 22:30"
         assert ts_display("echo hello") == "\u2014"
+
+    def test_cmd_preview_issuesmith_key(self):
+        from ghdag.ui.monitor import cmd_preview
+
+        assert cmd_preview("echo hello", idempotency_key="issuesmith:impl:1203") == "#1203 \u00b7 impl"
+
+    def test_cmd_preview_issuesmith_merge_key(self):
+        from ghdag.ui.monitor import cmd_preview
+
+        assert cmd_preview("echo hello", idempotency_key="issuesmith:merge:42") == "#42 \u00b7 merge"
+
+    def test_cmd_preview_empty_key_fallback(self):
+        from ghdag.ui.monitor import cmd_preview
+
+        assert cmd_preview("echo hello", idempotency_key="") == "echo hello"
+
+    def test_cmd_preview_non_issuesmith_key_fallback(self):
+        from ghdag.ui.monitor import cmd_preview
+
+        assert cmd_preview("echo hello", idempotency_key="scheduler:daily:99") == "echo hello"
+
+    def test_cmd_preview_malformed_key_fallback(self):
+        from ghdag.ui.monitor import cmd_preview
+
+        # \u30b3\u30ed\u30f3\u533a\u5207\u308a\u304c\u4e0d\u6b63\uff082\u30bb\u30af\u30b7\u30e7\u30f3\u3057\u304b\u306a\u3044\uff09
+        assert cmd_preview("echo hello", idempotency_key="issuesmith:impl") == "echo hello"
+        # \u672b\u5c3e\u304c\u7a7a
+        assert cmd_preview("echo hello", idempotency_key="issuesmith:") == "echo hello"
+
+    def test_cmd_preview_none_key_does_not_crash(self):
+        """submit/audit/hooks \u7d4c\u8def\u306f `idempotency_key: str | None = None` \u4ed5\u69d8\u3067
+        None \u3092\u51fa\u529b\u3059\u308b\u3002cmd_preview \u304c None \u3092\u53d7\u3051\u53d6\u3063\u3066\u3082 TypeError \u3067\u306f\u306a\u304f
+        \u901a\u5e38\u306e\u30b3\u30de\u30f3\u30c9\u6587\u5b57\u5217\u306b\u30d5\u30a9\u30fc\u30eb\u30d0\u30c3\u30af\u3059\u308b\u3053\u3068\u3002"""
+        from ghdag.ui.monitor import cmd_preview
+
+        assert cmd_preview("echo hello", idempotency_key=None) == "echo hello"
+
+    def test_parse_exec_jsonl_with_idempotency_key(self, tmp_path):
+        import json as _json
+
+        from ghdag.ui.monitor import _parse_exec_jsonl
+
+        content = _json.dumps({
+            "uuid": "aaaa-bbbb-cccc-dddd",
+            "command": "echo hello",
+            "depends": [],
+            "idempotency_key": "issuesmith:impl:1203",
+        })
+        path = tmp_path / "exec.jsonl"
+        path.write_text(content + "\n", encoding="utf-8")
+        tasks, _ = _parse_exec_jsonl(str(path))
+        assert tasks["aaaa-bbbb-cccc-dddd"].idempotency_key == "issuesmith:impl:1203"
+
+    def test_parse_exec_jsonl_without_idempotency_key(self, tmp_path):
+        import json as _json
+
+        from ghdag.ui.monitor import _parse_exec_jsonl
+
+        content = _json.dumps({
+            "uuid": "aaaa-bbbb-cccc-dddd",
+            "command": "echo hello",
+            "depends": [],
+        })
+        path = tmp_path / "exec.jsonl"
+        path.write_text(content + "\n", encoding="utf-8")
+        tasks, _ = _parse_exec_jsonl(str(path))
+        assert tasks["aaaa-bbbb-cccc-dddd"].idempotency_key == ""
+
+    def test_parse_exec_jsonl_with_null_idempotency_key(self, tmp_path):
+        """submit/audit/hooks の `idempotency_key: str | None = None` 仕様により
+        exec.jsonl に `"idempotency_key": null` が書き出されるケース。
+        `data.get(k, default)` の default は値が null の場合は適用されず None が
+        返るため、`or ""` で空文字に正規化されないと下流の regex.match() で
+        TypeError になる。"""
+        import json as _json
+
+        from ghdag.ui.monitor import _parse_exec_jsonl
+
+        content = _json.dumps({
+            "uuid": "aaaa-bbbb-cccc-dddd",
+            "command": "echo hello",
+            "depends": [],
+            "idempotency_key": None,
+        })
+        path = tmp_path / "exec.jsonl"
+        path.write_text(content + "\n", encoding="utf-8")
+        tasks, _ = _parse_exec_jsonl(str(path))
+        assert tasks["aaaa-bbbb-cccc-dddd"].idempotency_key == ""
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +294,7 @@ class TestServer:
         repo = self._make_repo(tmp_path)
 
         from http.server import HTTPServer
+
         from ghdag.ui.server import _Handler
 
         _Handler.repo_root = repo
@@ -233,8 +321,9 @@ class TestServer:
 
         repo = self._make_repo(tmp_path)
 
-        from ghdag.ui.server import _Handler
         from http.server import HTTPServer
+
+        from ghdag.ui.server import _Handler
 
         _Handler.repo_root = repo
         _Handler.poll_interval = 1.0

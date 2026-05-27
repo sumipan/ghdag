@@ -210,6 +210,7 @@ class LLMPipelineAPI:
                 result_filename=result_filename,
                 engine=engine,
                 model=step.model,
+                permission=step.permission,
             )
             if metadata:
                 record.setdefault("annotations", {}).update(metadata)
@@ -239,9 +240,19 @@ class LLMPipelineAPI:
         result_filename: str,
         engine: str,
         model: str,
+        permission: str | None = None,
     ) -> dict:
         """exec.jsonl の 1 レコードを構築する（内部メソッド）。"""
+        from ghdag.llm.capabilities import PRESETS
         from ghdag.llm.spec import ENGINE_SPECS, render_exec_command
+
+        if permission is not None and permission not in PRESETS:
+            raise ValueError(
+                f"Unknown permission preset: {permission!r}. "
+                f"Available: {sorted(PRESETS.keys())}"
+            )
+
+        capabilities = PRESETS[permission] if permission is not None else None
 
         spec = ENGINE_SPECS[engine]
         return {
@@ -253,6 +264,7 @@ class LLMPipelineAPI:
                 order_path=f"{self._queue_dir}/{order_filename}",
                 prompt="受け取った内容を実行して",
                 model=model,
+                capabilities=capabilities,
             ),
             "depends": depends,
             "result_path": f"{self._queue_dir}/{result_filename}",

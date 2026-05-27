@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ghdag.llm import (
+    DANGEROUS_FULL_ACCESS,
     ENGINE_DEFAULTS,
+    ENGINE_SPECS,
+    JSON_ONLY,
+    TEXT_ONLY,
+    WEB_RESEARCH,
     EngineModelError,
     EngineSpec,
-    ENGINE_SPECS,
     LLMCapabilities,
     LLMParseError,
     LLMResult,
-    TEXT_ONLY,
-    JSON_ONLY,
-    WEB_RESEARCH,
-    DANGEROUS_FULL_ACCESS,
     build_llm_cmd,
     call,
     list_engines,
@@ -25,7 +25,7 @@ from ghdag.llm import (
     validate_engine_model,
 )
 from ghdag.llm.spec import render_exec_command
-from ghdag.workflow.engine import ClaudeAdapter, GeminiAdapter, CursorAdapter, ShellAdapter
+from ghdag.workflow.engine import get_adapter
 
 
 # ---------------------------------------------------------------------------
@@ -48,8 +48,11 @@ class TestEngineModels:
         assert "claude-opus-4-6" in models
         assert models == sorted(models)
 
-    def test_list_models_gemini(self):
-        """gemini エンジンの許可モデル一覧"""
+    def test_list_models_gemini(self, monkeypatch):
+        """gemini エンジンのデフォルト許可モデル一覧（GHDAG_LLM_MODELS 環境変数の影響を除外）"""
+        import ghdag.llm.engines as engines_mod
+        from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
+        monkeypatch.setattr(engines_mod, "ENGINE_MODELS", DEFAULT_ENGINE_MODELS)
         models = list_models("gemini")
         assert "gemini-2.5-flash" in models
         assert "gemini-2.5-pro" in models
@@ -72,8 +75,11 @@ class TestValidateEngineModel:
         result = validate_engine_model("claude", "claude-opus-4-6")
         assert result == "claude-opus-4-6"
 
-    def test_valid_gemini_model(self):
-        """gemini + 許可モデル → そのまま返る"""
+    def test_valid_gemini_model(self, monkeypatch):
+        """gemini + 許可モデル → そのまま返る（GHDAG_LLM_MODELS 環境変数の影響を除外）"""
+        import ghdag.llm.engines as engines_mod
+        from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
+        monkeypatch.setattr(engines_mod, "ENGINE_MODELS", DEFAULT_ENGINE_MODELS)
         result = validate_engine_model("gemini", "gemini-2.5-pro")
         assert result == "gemini-2.5-pro"
 
@@ -490,9 +496,10 @@ class TestCallCapabilities:
 class TestCLI:
     def test_llm_list_engines(self):
         """ghdag llm --list-engines"""
-        from ghdag.cli import main
-        from io import StringIO
         import contextlib
+        from io import StringIO
+
+        from ghdag.cli import main
 
         buf = StringIO()
         with contextlib.redirect_stdout(buf):
@@ -503,9 +510,10 @@ class TestCLI:
 
     def test_llm_list_models(self):
         """ghdag llm --list-models --engine claude"""
-        from ghdag.cli import main
-        from io import StringIO
         import contextlib
+        from io import StringIO
+
+        from ghdag.cli import main
 
         buf = StringIO()
         with contextlib.redirect_stdout(buf):
@@ -631,7 +639,7 @@ class TestRenderExecCommand:
 
 class TestAdapterOutputs:
     def test_claude_adapter_build_exec_record(self):
-        adapter = ClaudeAdapter()
+        adapter = get_adapter("claude")
         record = adapter.build_exec_record(
             uuid="u1",
             order_path="queue/order.md",
@@ -645,8 +653,8 @@ class TestAdapterOutputs:
         assert "cat queue/order.md | claude -p 'hello' --model 'claude-sonnet-4-6' --dangerously-skip-permissions" == cmd
 
     def test_gemini_adapter_uses_double_dash_model(self):
-        """GeminiAdapter が -m ではなく --model を使う"""
-        adapter = GeminiAdapter()
+        """get_adapter('gemini') が -m ではなく --model を使う"""
+        adapter = get_adapter("gemini")
         record = adapter.build_exec_record(
             uuid="u1",
             order_path="queue/order.md",
@@ -660,8 +668,8 @@ class TestAdapterOutputs:
         assert "--model 'gemini-2.5-flash'" in cmd
 
     def test_cursor_adapter_p_force_adjacent(self):
-        """CursorAdapter の出力で -p --force が隣接"""
-        adapter = CursorAdapter()
+        """get_adapter('cursor') の出力で -p --force が隣接"""
+        adapter = get_adapter("cursor")
         record = adapter.build_exec_record(
             uuid="u1",
             order_path="queue/order.md",
@@ -673,7 +681,7 @@ class TestAdapterOutputs:
         assert "-p --force" in record["command"]
 
     def test_shell_adapter_bash_pipefail(self):
-        adapter = ShellAdapter()
+        adapter = get_adapter("shell")
         record = adapter.build_exec_record(
             uuid="u1",
             order_path="queue/order.sh",
@@ -683,3 +691,75 @@ class TestAdapterOutputs:
             depends=[],
         )
         assert record["command"] == "bash -o pipefail queue/order.sh"
+
+
+# ---------------------------------------------------------------------------
+# render_exec_command with capabilities (AC1, AC2, AC3, AC8)
+# ---------------------------------------------------------------------------
+
+class TestRenderExecCommandCapabilities:
+    def test_ac1_claude_text_only_capabilities(self):
+        """AC1: capabilities=TEXT_ONLY → --permission-mode default --disallowed-tools ...、--dangerously-skip-permissions なし"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        spec = ENGINE_SPECS["claude"]
+        cmd = render_exec_command(
+            spec, order_path="queue/order.md", prompt="hello", model="claude-opus-4-6",
+            capabilities=TEXT_ONLY,
+        )
+        assert "--permission-mode" in cmd
+        assert "default" in cmd
+        assert "--disallowed-tools" in cmd
+        for tool in ("Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch"):
+            assert tool in cmd
+        assert "--dangerously-skip-permissions" not in cmd
+
+    def test_ac2_claude_dangerous_full_access(self):
+        """AC2: capabilities=DANGEROUS_FULL_ACCESS → --permission-mode bypassPermissions"""
+        from ghdag.llm.capabilities import DANGEROUS_FULL_ACCESS
+        spec = ENGINE_SPECS["claude"]
+        cmd = render_exec_command(
+            spec, order_path="queue/order.md", prompt="hello", model=None,
+            capabilities=DANGEROUS_FULL_ACCESS,
+        )
+        assert "--permission-mode" in cmd
+        assert "bypassPermissions" in cmd
+        assert "--dangerously-skip-permissions" not in cmd
+
+    def test_ac3_cursor_text_only_no_force(self):
+        """AC3: cursor + capabilities=TEXT_ONLY → --force を含まない"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        spec = ENGINE_SPECS["cursor"]
+        cmd = render_exec_command(
+            spec, order_path="queue/order.md", prompt="", model="auto",
+            capabilities=TEXT_ONLY,
+        )
+        assert "--force" not in cmd
+
+    def test_ac8_claude_capabilities_none_preserves_danger_flag(self):
+        """AC8: capabilities=None（デフォルト）→ 従来通り --dangerously-skip-permissions"""
+        spec = ENGINE_SPECS["claude"]
+        cmd = render_exec_command(
+            spec, order_path="queue/order.md", prompt="hello", model="claude-opus-4-6",
+            capabilities=None,
+        )
+        assert "--dangerously-skip-permissions" in cmd
+        assert "--permission-mode" not in cmd
+
+    def test_gemini_capabilities_fallback_to_no_flags(self):
+        """gemini + capabilities → フラグなしにフォールバック（extra_args は維持）"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        spec = ENGINE_SPECS["gemini"]
+        cmd = render_exec_command(
+            spec, order_path="queue/order.md", prompt="hello", model="gemini-2.5-flash",
+            capabilities=TEXT_ONLY,
+        )
+        assert "--permission-mode" not in cmd
+        assert "--approval-mode yolo" in cmd  # extra_args は維持
+
+    def test_shell_capabilities_no_change(self):
+        """shell + capabilities → コマンド変化なし"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        spec = ENGINE_SPECS["shell"]
+        cmd_no_caps = render_exec_command(spec, order_path="queue/order.sh", prompt="", model=None)
+        cmd_with_caps = render_exec_command(spec, order_path="queue/order.sh", prompt="", model=None, capabilities=TEXT_ONLY)
+        assert cmd_no_caps == cmd_with_caps

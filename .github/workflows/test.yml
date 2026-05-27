@@ -5,6 +5,16 @@ on:
   pull_request:
     branches: [main]
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -e ".[dev]"
+      - run: ruff check src/ tests/
+      - run: lint-imports
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -16,5 +26,5 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev]"
-      - run: pytest
+      - run: pytest --cov=ghdag --cov-fail-under=70
       - run: mypy

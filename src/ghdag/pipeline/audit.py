@@ -5,20 +5,19 @@ import json
 import sys
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from ghdag.files import _rotate as _rotate_mod
 from ghdag.metrics.models import FailureClass
 
 JST = timezone(timedelta(hours=9))
 _MAX_FRAMES = 5
-_MAX_AUDIT_BYTES = 64 * 1024 * 1024
+_MAX_AUDIT_BYTES = _rotate_mod._MAX_AUDIT_BYTES
 
 
 def _do_rotate(audit_path: Path) -> None:
-    ts = datetime.now(JST).strftime("%Y-%m-%dT%H-%M-%S")
-    rotated = audit_path.with_name(f"audit.{ts}.jsonl")
-    audit_path.rename(rotated)
+    _rotate_mod._do_rotate(audit_path)
 
 
 def _maybe_rotate(audit_path: Path) -> None:

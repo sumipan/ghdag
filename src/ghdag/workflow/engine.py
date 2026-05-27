@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-import warnings
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from ghdag.exceptions import GhdagError
 from ghdag.llm.spec import ENGINE_SPECS, EngineSpec, render_exec_command
+
+if TYPE_CHECKING:
+    from ghdag.llm.capabilities import LLMCapabilities
 
 
 class EngineAdapter(Protocol):
@@ -22,10 +24,11 @@ class EngineAdapter(Protocol):
         *,
         uuid: str,
         order_path: str,
-        result_path: str,
+        result_path: str | None,
         prompt: str,
         model: str | None,
         depends: list[str],
+        capabilities: "LLMCapabilities | None" = None,
     ) -> dict:
         """exec.jsonl に書き込む 1 レコード（dict）を組み立てる。
         command フィールドに tee パイプを含めない。
@@ -48,17 +51,19 @@ class _GenericAdapter:
         *,
         uuid: str,
         order_path: str,
-        result_path: str,
+        result_path: str | None,
         prompt: str,
         model: str | None,
         depends: list[str],
+        capabilities: "LLMCapabilities | None" = None,
     ) -> dict:
         return {
             "uuid": uuid,
             "engine": self._spec.name,
             "model": model if self._spec.model_flag else None,
             "command": render_exec_command(
-                self._spec, order_path=order_path, prompt=prompt, model=model
+                self._spec, order_path=order_path, prompt=prompt, model=model,
+                capabilities=capabilities,
             ),
             "depends": depends,
             "result_path": result_path,
@@ -85,47 +90,3 @@ def get_adapter(name: str) -> EngineAdapter:
     if name in _CUSTOM_ADAPTERS:
         return _CUSTOM_ADAPTERS[name]
     raise AdapterNotFoundError(f"Unknown engine: {name!r}. Available: {sorted(ENGINE_SPECS)}")
-
-
-# ---------------------------------------------------------------------------
-# Deprecated aliases — 0.24.0 で削除予定
-# ---------------------------------------------------------------------------
-
-def ClaudeAdapter() -> _GenericAdapter:
-    warnings.warn(
-        "ClaudeAdapter is deprecated and will be removed in 0.24.0. "
-        "Use get_adapter('claude') instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return _GenericAdapter(ENGINE_SPECS["claude"])
-
-
-def GeminiAdapter() -> _GenericAdapter:
-    warnings.warn(
-        "GeminiAdapter is deprecated and will be removed in 0.24.0. "
-        "Use get_adapter('gemini') instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return _GenericAdapter(ENGINE_SPECS["gemini"])
-
-
-def CursorAdapter() -> _GenericAdapter:
-    warnings.warn(
-        "CursorAdapter is deprecated and will be removed in 0.24.0. "
-        "Use get_adapter('cursor') instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return _GenericAdapter(ENGINE_SPECS["cursor"])
-
-
-def ShellAdapter() -> _GenericAdapter:
-    warnings.warn(
-        "ShellAdapter is deprecated and will be removed in 0.24.0. "
-        "Use get_adapter('shell') instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return _GenericAdapter(ENGINE_SPECS["shell"])

@@ -1,24 +1,17 @@
-"""Tests for ghdag.workflow.engine — _GenericAdapter, deprecated aliases, get_adapter."""
+"""Tests for ghdag.workflow.engine — _GenericAdapter, get_adapter."""
 
 from __future__ import annotations
 
-import warnings
-
 import pytest
 
+from ghdag.llm.spec import ENGINE_SPECS
 from ghdag.workflow.engine import (
-    AdapterNotFoundError,
-    ClaudeAdapter,
-    CursorAdapter,
-    GeminiAdapter,
-    ShellAdapter,
     _CUSTOM_ADAPTERS,
+    AdapterNotFoundError,
     _GenericAdapter,
     get_adapter,
     register_adapter,
 )
-from ghdag.llm.spec import ENGINE_SPECS
-
 
 # ---------------------------------------------------------------------------
 # _GenericAdapter — AC3 統合テスト
@@ -92,126 +85,36 @@ class TestGenericAdapter:
 
 
 # ---------------------------------------------------------------------------
-# Deprecated aliases — AC6
+# Removed deprecated aliases
 # ---------------------------------------------------------------------------
 
-class TestDeprecatedAliases:
-    def test_claude_adapter_emits_deprecation_warning(self):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            adapter = ClaudeAdapter()
-        assert any(issubclass(warning.category, DeprecationWarning) for warning in w)
-        assert adapter.name == "claude"
-
-    def test_gemini_adapter_emits_deprecation_warning(self):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            adapter = GeminiAdapter()
-        assert any(issubclass(warning.category, DeprecationWarning) for warning in w)
-        assert adapter.name == "gemini"
-
-    def test_cursor_adapter_emits_deprecation_warning(self):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            adapter = CursorAdapter()
-        assert any(issubclass(warning.category, DeprecationWarning) for warning in w)
-        assert adapter.name == "cursor"
-
-    def test_shell_adapter_emits_deprecation_warning(self):
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            adapter = ShellAdapter()
-        assert any(issubclass(warning.category, DeprecationWarning) for warning in w)
-        assert adapter.name == "shell"
-
-    def test_deprecated_aliases_return_generic_adapter(self):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            for factory in (ClaudeAdapter, GeminiAdapter, CursorAdapter, ShellAdapter):
-                assert isinstance(factory(), _GenericAdapter)
-
-    def test_deprecated_adapters_still_functional(self):
-        """deprecated alias 経由で build_exec_record が動作する"""
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            adapter = ClaudeAdapter()
-            record = adapter.build_exec_record(
-                uuid="x",
-                order_path="q/o.md",
-                result_path="q/r.md",
-                prompt="hello",
-                model=None,
-                depends=[],
-            )
-            assert record["engine"] == "claude"
+class TestRemovedDeprecatedAliases:
+    @pytest.mark.parametrize(
+        "import_stmt",
+        [
+            "from ghdag.workflow.engine import ClaudeAdapter",
+            "from ghdag.workflow.engine import GeminiAdapter",
+            "from ghdag.workflow.engine import CursorAdapter",
+            "from ghdag.workflow.engine import ShellAdapter",
+        ],
+    )
+    def test_deprecated_alias_import_raises(self, import_stmt: str):
+        with pytest.raises(ImportError):
+            exec(import_stmt, {})  # noqa: S102
 
 
 # ---------------------------------------------------------------------------
-# 旧 ClaudeAdapter テスト群（deprecated alias 経由で動作確認）
+# shell adapter via get_adapter
 # ---------------------------------------------------------------------------
 
-class TestClaudeAdapter:
+class TestShellAdapterViaGetAdapter:
     def setup_method(self):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            self.adapter = ClaudeAdapter()
-        self.base_kwargs = dict(
-            order_path="queue/ts-claude-order-abc123.md",
-            result_path="queue/ts-claude-result-abc123.md",
-            prompt="受け取った内容を実行して",
-        )
-
-    def test_name(self):
-        assert self.adapter.name == "claude"
-
-
-# ---------------------------------------------------------------------------
-# 旧 GeminiAdapter テスト群（deprecated alias 経由で動作確認）
-# ---------------------------------------------------------------------------
-
-class TestGeminiAdapter:
-    def setup_method(self):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            self.adapter = GeminiAdapter()
-        self.base_kwargs = dict(
-            order_path="queue/ts-gemini-order-abc123.md",
-            result_path="queue/ts-gemini-result-abc123.md",
-            prompt="受け取った内容を実行して",
-        )
-
-    def test_name(self):
-        assert self.adapter.name == "gemini"
-
-
-class TestCursorAdapter:
-    def setup_method(self):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            self.adapter = CursorAdapter()
-        self.base_kwargs = dict(
-            order_path="queue/ts-cursor-order-abc123.md",
-            result_path="queue/ts-cursor-result-abc123.md",
-            prompt="受け取った内容を実行して",
-        )
-
-    def test_name(self):
-        assert self.adapter.name == "cursor"
-
-
-class TestShellAdapter:
-    def setup_method(self):
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            self.adapter = ShellAdapter()
+        self.adapter = get_adapter("shell")
         self.base_kwargs = dict(
             order_path="queue/ts-shell-order-abc123.md",
             result_path="queue/ts-shell-result-abc123.md",
             prompt="受け取った内容を実行して",
         )
-
-    def test_name(self):
-        assert self.adapter.name == "shell"
 
     def test_build_exec_record(self):
         result = self.adapter.build_exec_record(
@@ -358,6 +261,7 @@ class TestPipelineLayerIndependence:
     def test_llm_pipeline_does_not_import_workflow_engine(self):
         """AC1: llm_pipeline.py のソースに workflow.engine への import がない"""
         import inspect
+
         import ghdag.pipeline.llm_pipeline as mod
 
         source = inspect.getsource(mod)
@@ -476,3 +380,51 @@ class TestBuildExecRecord:
             result = self._adapter(name).build_exec_record(**self.BASE_KWARGS, model=None)
             for key in ("uuid", "command", "depends", "result_path", "retry", "annotations"):
                 assert key in result, f"{name}: missing key {key!r}"
+
+
+# ---------------------------------------------------------------------------
+# _GenericAdapter.build_exec_record + capabilities (AC4, AC9)
+# ---------------------------------------------------------------------------
+
+class TestGenericAdapterCapabilities:
+    BASE_KWARGS = dict(
+        uuid="abc-123",
+        order_path="queue/order.md",
+        result_path="queue/result.md",
+        prompt="受け取った内容を実行して",
+        depends=[],
+        model="claude-sonnet-4-6",
+    )
+
+    def test_ac4_claude_text_only_command_contains_permission_mode(self):
+        """AC4: _GenericAdapter(claude) + capabilities=TEXT_ONLY → command に --permission-mode default"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        adapter = _GenericAdapter(ENGINE_SPECS["claude"])
+        record = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=TEXT_ONLY)
+        assert "--permission-mode" in record["command"]
+        assert "default" in record["command"]
+
+    def test_ac4_claude_text_only_no_dangerously(self):
+        """AC4: TEXT_ONLY → --dangerously-skip-permissions なし"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        adapter = _GenericAdapter(ENGINE_SPECS["claude"])
+        record = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=TEXT_ONLY)
+        assert "--dangerously-skip-permissions" not in record["command"]
+
+    def test_ac9_capabilities_none_default_behavior(self):
+        """AC9: capabilities 引数なし → 従来と同一の dict"""
+        adapter = _GenericAdapter(ENGINE_SPECS["claude"])
+        record_default = adapter.build_exec_record(**self.BASE_KWARGS)
+        record_none = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=None)
+        assert record_default == record_none
+        assert "--dangerously-skip-permissions" in record_default["command"]
+
+    def test_cursor_capabilities_text_only_no_force(self):
+        """cursor + capabilities=TEXT_ONLY → --force なし"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        adapter = _GenericAdapter(ENGINE_SPECS["cursor"])
+        record = adapter.build_exec_record(
+            uuid="u1", order_path="queue/order.md", result_path="queue/result.md",
+            prompt="", model="auto", depends=[], capabilities=TEXT_ONLY,
+        )
+        assert "--force" not in record["command"]
