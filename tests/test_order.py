@@ -8,13 +8,13 @@ from ghdag.pipeline.order import TemplateOrderBuilder
 
 
 class TestBuildOrderExceptionMessages:
-    def test_tc4_key_error_includes_template_path(self, tmp_path):
-        """TC-4: context にないキーを参照 → KeyError にパスが含まれる"""
+    def test_tc4_value_error_includes_template_path(self, tmp_path):
+        """TC-4: context にないキーを参照 → ValueError にパスが含まれる"""
         template = tmp_path / "brushup.md"
         template.write_text("Hello ${undefined_var}", encoding="utf-8")
 
         builder = TemplateOrderBuilder(tmp_path)
-        with pytest.raises(KeyError) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             builder.build_order("brushup", {})
 
         msg = str(exc_info.value)
@@ -53,12 +53,65 @@ class TestBuildOrderExceptionMessages:
         assert result == "Issue: 42"
 
     def test_exception_chaining_preserved(self, tmp_path):
-        """例外チェーニング（__cause__）が保持される"""
+        """ValueError の例外チェーニング（__cause__）が保持される"""
         template = tmp_path / "test.md"
-        template.write_text("${missing}", encoding="utf-8")
+        template.write_text("${}", encoding="utf-8")
 
         builder = TemplateOrderBuilder(tmp_path)
-        with pytest.raises(KeyError) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             builder.build_order("test", {})
 
         assert exc_info.value.__cause__ is not None
+
+    def test_t1_multiple_missing_vars_all_listed(self, tmp_path):
+        """T1: 複数変数不足時に全変数が ValueError メッセージに列挙される"""
+        template = tmp_path / "multi.md"
+        template.write_text("${a} ${b} ${c}", encoding="utf-8")
+
+        builder = TemplateOrderBuilder(tmp_path)
+        with pytest.raises(ValueError) as exc_info:
+            builder.build_order("multi", {"a": "1"})
+
+        msg = str(exc_info.value)
+        assert "b" in msg
+        assert "c" in msg
+        assert "a" in msg  # 利用可能キーに含まれる
+
+    def test_t2_empty_context_shows_empty_available_keys(self, tmp_path):
+        """T2: context 空のとき利用可能キーが空リストとして表示される"""
+        template = tmp_path / "empty.md"
+        template.write_text("${x}", encoding="utf-8")
+
+        builder = TemplateOrderBuilder(tmp_path)
+        with pytest.raises(ValueError) as exc_info:
+            builder.build_order("empty", {})
+
+        msg = str(exc_info.value)
+        assert "x" in msg
+        assert "[]" in msg  # 利用可能キーが空リスト
+
+    def test_t7_all_vars_missing_all_listed(self, tmp_path):
+        """T7: 全変数不足時に全変数が列挙される"""
+        template = tmp_path / "all_missing.md"
+        template.write_text("${a} ${b}", encoding="utf-8")
+
+        builder = TemplateOrderBuilder(tmp_path)
+        with pytest.raises(ValueError) as exc_info:
+            builder.build_order("all_missing", {})
+
+        msg = str(exc_info.value)
+        assert "a" in msg
+        assert "b" in msg
+
+    def test_value_error_message_includes_missing_and_available_keys(self, tmp_path):
+        """ValueError メッセージに未定義変数と利用可能キーが含まれる（AC-1, AC-2）"""
+        template = tmp_path / "test.md"
+        template.write_text("${name} ${age}", encoding="utf-8")
+
+        builder = TemplateOrderBuilder(tmp_path)
+        with pytest.raises(ValueError) as exc_info:
+            builder.build_order("test", {"name": "Alice"})
+
+        msg = str(exc_info.value)
+        assert "未定義変数: ['age']" in msg
+        assert "利用可能なキー: ['name']" in msg

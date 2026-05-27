@@ -31,15 +31,37 @@ class TestInlineOrderBuilder:
         result = builder.build_order("${a} and ${b}", {"a": "X", "b": "Y"})
         assert result == "X and Y"
 
-    def test_undefined_variable_raises_key_error(self):
+    def test_undefined_variable_raises_value_error(self):
         builder = InlineOrderBuilder()
-        with pytest.raises(KeyError):
+        with pytest.raises(ValueError) as exc_info:
             builder.build_order("${missing}", {})
+        assert "テンプレート展開エラー" in str(exc_info.value)
 
     def test_invalid_dollar_syntax_raises_value_error(self):
         builder = InlineOrderBuilder()
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError) as exc_info:
             builder.build_order("${}", {})
+        assert "テンプレート展開エラー" in str(exc_info.value)
+
+    def test_t4_missing_var_shows_available_keys(self):
+        """T4: 不足変数+利用可能キーが ValueError メッセージに含まれる"""
+        builder = InlineOrderBuilder()
+        with pytest.raises(ValueError) as exc_info:
+            builder.build_order("${p} ${q}", {"p": "1"})
+
+        msg = str(exc_info.value)
+        assert "q" in msg
+        assert "p" in msg  # 利用可能キーに含まれる
+
+    def test_t5_invalid_syntax_wrapped_as_value_error(self):
+        """T5: 不正 $ 構文が ValueError としてラッピングされる"""
+        builder = InlineOrderBuilder()
+        with pytest.raises(ValueError) as exc_info:
+            builder.build_order("${}", {})
+
+        msg = str(exc_info.value)
+        assert "テンプレート展開エラー" in msg
+        assert exc_info.value.__cause__ is not None
 
     def test_protocol_conformance_with_llm_pipeline_api(self, tmp_path):
         """InlineOrderBuilder を order_builders に渡して submit が成功する。"""

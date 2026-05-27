@@ -63,6 +63,7 @@ class MonitorTask:
     depends: set
     retry: int = 0
     result_path: str = ""
+    idempotency_key: str = ""
 
 
 @dataclass
@@ -229,7 +230,19 @@ def order_task_name(cmd: str, repo_root: Path) -> Optional[str]:
     return None
 
 
-def cmd_preview(cmd: str, n: int = 48, repo_root: Optional[Path] = None) -> str:
+_ISSUESMITH_KEY_RE = re.compile(r"^issuesmith:([^:]+):(\d+)$")
+
+
+def cmd_preview(cmd: str, n: int = 48, repo_root: Optional[Path] = None, *, idempotency_key: Optional[str] = "") -> str:
+    # 防御: idempotency_key は他の subsystem (submit/audit/hooks) では
+    # `str | None = None` 仕様で扱われるため、API 利用者が直接 None を
+    # 渡してくる可能性がある。`_ISSUESMITH_KEY_RE.match(None)` で
+    # TypeError にならないよう空文字に正規化する。
+    if not idempotency_key:
+        idempotency_key = ""
+    m = _ISSUESMITH_KEY_RE.match(idempotency_key)
+    if m:
+        return f"#{m.group(2)} \u00b7 {m.group(1)}"
     if repo_root is not None:
         name = order_task_name(cmd, repo_root)
         if name:
@@ -340,6 +353,13 @@ def _parse_exec_jsonl(path: str) -> tuple[dict[str, MonitorTask], list[str]]:
         depends = set(depends_raw) if isinstance(depends_raw, list) else set()
         retry = int(data.get("retry", 0))
         result_path = data.get("result_path") or ""
+        # `data.get(k, default)` の default は「キー欠落」時のみ適用される。
+        # 値が JSON null (= Python None) の場合は素通しで None が返るため、
+        # `or ""` で空文字に正規化しないと下流の `_ISSUESMITH_KEY_RE.match(None)`
+        # で TypeError になる。exec.jsonl には submit/audit/hooks 経路の
+        # `idempotency_key: str | None = None` 仕様により `"idempotency_key": null`
+        # が混入する。
+        idempotency_key = data.get("idempotency_key") or ""
         if uuid not in tasks:
             file_order.append(uuid)
         tasks[uuid] = MonitorTask(
@@ -348,6 +368,7 @@ def _parse_exec_jsonl(path: str) -> tuple[dict[str, MonitorTask], list[str]]:
             depends=depends,
             retry=retry,
             result_path=result_path,
+            idempotency_key=idempotency_key,
         )
 
     return tasks, file_order
@@ -389,7 +410,7 @@ def build_rows(
         pending[uuid] = Row(
             uuid=uuid,
             state=st,
-            cmd_preview=cmd_preview(task.command, n=cmd_preview_len, repo_root=repo_root),
+            cmd_preview=cmd_preview(task.command, n=cmd_preview_len, repo_root=repo_root, idempotency_key=task.idempotency_key),
             tree_ts="",
             engine_model=extract_engine_model(task.command),
             order_path=extract_order_path(task.command),

@@ -892,3 +892,78 @@ class TestRunMaxConcurrency:
         with pytest.raises(SystemExit) as exc:
             main(["run", str(exec_md), "--max-concurrency", "abc"])
         assert exc.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# ghdag llm --capabilities-preset / --permission-mode (AC6, AC7, AC11, AC13)
+# ---------------------------------------------------------------------------
+
+
+class TestLLMCapabilitiesArgs:
+    @staticmethod
+    def _make_result(returncode=0):
+        from ghdag.llm.engines import LLMResult
+        return LLMResult(stdout="ok", stderr="", returncode=returncode)
+
+    def test_ac6_capabilities_preset_text_only_passed_to_call(self):
+        """AC6: --capabilities-preset text_only → call() に TEXT_ONLY capabilities が渡される"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        mock_result = self._make_result()
+        with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
+            from ghdag.cli import main
+            with pytest.raises(SystemExit):
+                main(["llm", "hello", "--capabilities-preset", "text_only"])
+        mock_call.assert_called_once()
+        call_kwargs = mock_call.call_args[1]
+        assert call_kwargs["capabilities"] == TEXT_ONLY
+
+    def test_ac7_permission_mode_plan_passed_to_call(self):
+        """AC7: --permission-mode plan → call() に LLMCapabilities(permission_mode='plan') が渡される"""
+        mock_result = self._make_result()
+        with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
+            from ghdag.cli import main
+            with pytest.raises(SystemExit):
+                main(["llm", "hello", "--permission-mode", "plan"])
+        mock_call.assert_called_once()
+        call_kwargs = mock_call.call_args[1]
+        caps = call_kwargs["capabilities"]
+        assert caps.permission_mode == "plan"
+
+    def test_ac11_dangerously_skip_still_works(self):
+        """AC11: --dangerously-skip-permissions → 従来通り dangerously_skip_permissions=True"""
+        mock_result = self._make_result()
+        with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
+            from ghdag.cli import main
+            with pytest.raises(SystemExit):
+                main(["llm", "hello", "--dangerously-skip-permissions"])
+        mock_call.assert_called_once()
+        call_kwargs = mock_call.call_args[1]
+        assert call_kwargs["dangerously_skip_permissions"] is True
+
+    def test_ac13_invalid_capabilities_preset_exits_2(self, capsys):
+        """AC13: --capabilities-preset invalid → argparse エラーで exit"""
+        from ghdag.cli import main
+        with pytest.raises(SystemExit) as exc:
+            main(["llm", "hello", "--capabilities-preset", "invalid_preset"])
+        assert exc.value.code == 2
+
+    def test_permission_mode_invalid_exits_2(self, capsys):
+        """--permission-mode invalid → argparse エラーで exit"""
+        from ghdag.cli import main
+        with pytest.raises(SystemExit) as exc:
+            main(["llm", "hello", "--permission-mode", "invalid_mode"])
+        assert exc.value.code == 2
+
+    def test_both_preset_and_permission_mode_override(self):
+        """--capabilities-preset text_only + --permission-mode plan → preset ベースで permission_mode を上書き"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        mock_result = self._make_result()
+        with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
+            from ghdag.cli import main
+            with pytest.raises(SystemExit):
+                main(["llm", "hello", "--capabilities-preset", "text_only", "--permission-mode", "plan"])
+        mock_call.assert_called_once()
+        call_kwargs = mock_call.call_args[1]
+        caps = call_kwargs["capabilities"]
+        assert caps.permission_mode == "plan"
+        assert caps.disallowed_tools == TEXT_ONLY.disallowed_tools

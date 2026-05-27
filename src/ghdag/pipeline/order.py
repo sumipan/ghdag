@@ -11,10 +11,33 @@ from pathlib import Path
 from typing import Protocol
 
 
+class TemplateVariableError(ValueError, KeyError):
+    """テンプレート変数不足エラー。ValueError と KeyError 両方の subclass。"""
+
+    def __str__(self) -> str:
+        return self.args[0] if self.args else ""
+
+
 class OrderBuilder(Protocol):
     def build_order(self, step_id: str, context: dict[str, str]) -> str:
         """ステップ ID とコンテキストから order 本文を生成。"""
         ...
+
+
+def _check_missing_vars(
+    tmpl: string.Template,
+    context: dict[str, str],
+    source_label: str,
+) -> None:
+    required = set(tmpl.get_identifiers())
+    provided = set(context.keys())
+    missing = sorted(required - provided)
+    if missing:
+        raise TemplateVariableError(
+            f"テンプレート展開エラー ({source_label}): "
+            f"未定義変数: {missing}, "
+            f"利用可能なキー: {sorted(provided)}"
+        )
 
 
 class InlineOrderBuilder:
@@ -34,11 +57,16 @@ class InlineOrderBuilder:
         Returns:
             展開後の order 本文
         Raises:
-            KeyError: テンプレートに含まれる変数が context に不足
-            ValueError: 不正な $ 構文
+            ValueError: テンプレートに含まれる変数が context に不足、または不正な $ 構文
         """
         tmpl = string.Template(step_id)
-        return tmpl.substitute(context)
+        _check_missing_vars(tmpl, context, "inline")
+        try:
+            return tmpl.substitute(context)
+        except ValueError as e:
+            raise ValueError(
+                f"テンプレート展開エラー (inline): {e}"
+            ) from e
 
 
 class TemplateOrderBuilder:
@@ -61,7 +89,7 @@ class TemplateOrderBuilder:
             展開後の order 本文（文字列）
         Raises:
             FileNotFoundError: template_dir/{step_id}.md が存在しない
-            KeyError: テンプレートに含まれる変数が context に不足
+            ValueError: テンプレートに含まれる変数が context に不足、または不正な $ 構文
         """
         template_path = self._template_dir / f"{step_id}.md"
         if not template_path.exists():
@@ -69,9 +97,10 @@ class TemplateOrderBuilder:
                 f"テンプレートファイルが見つかりません: {template_path}"
             )
         tmpl = string.Template(template_path.read_text(encoding="utf-8"))
+        _check_missing_vars(tmpl, context, str(template_path))
         try:
             return tmpl.substitute(context)
-        except (KeyError, ValueError) as e:
-            raise type(e)(
+        except ValueError as e:
+            raise ValueError(
                 f"テンプレート展開エラー ({template_path}): {e}"
             ) from e
