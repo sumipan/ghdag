@@ -8,12 +8,14 @@ from dataclasses import dataclass
 
 import yaml
 
+from ghdag.exceptions import GhdagError
+
 logger = logging.getLogger(__name__)
 
 FANOUT_SEPARATOR = "--fo--"
 
 
-class FanoutError(ValueError):
+class FanoutError(GhdagError, ValueError):
     """Raised when a fan-out spec contains invalid entries."""
 
 

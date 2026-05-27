@@ -5,6 +5,7 @@ from __future__ import annotations
 import warnings
 from typing import Protocol
 
+from ghdag.exceptions import GhdagError
 from ghdag.llm.spec import ENGINE_SPECS, EngineSpec, render_exec_command
 
 
@@ -69,7 +70,7 @@ class _GenericAdapter:
 _CUSTOM_ADAPTERS: dict[str, EngineAdapter] = {}
 
 
-class AdapterNotFoundError(ValueError):
+class AdapterNotFoundError(GhdagError, ValueError):
     """Raised when an unregistered engine adapter is requested."""
 
 

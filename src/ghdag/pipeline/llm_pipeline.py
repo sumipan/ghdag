@@ -14,12 +14,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
+from ghdag.exceptions import GhdagError
 from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import PipelineState
 
 
-class DependencyError(ValueError):
+class DependencyError(GhdagError, ValueError):
     """Raised when step dependencies are invalid or circular."""
 
 if TYPE_CHECKING:

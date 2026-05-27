@@ -9,6 +9,7 @@ from pathlib import Path
 
 import yaml
 
+from ghdag.exceptions import GhdagError
 from ghdag.workflow.schema import (
     HandlerConfig,
     OnTriggerConfig,
@@ -20,7 +21,7 @@ from ghdag.workflow.schema import (
 logger = logging.getLogger(__name__)
 
 
-class ValidationError(ValueError):
+class ValidationError(GhdagError, ValueError):
     """Raised when workflow YAML fails validation."""
 
 

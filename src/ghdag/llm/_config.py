@@ -7,10 +7,11 @@ from pathlib import Path
 
 import yaml
 
+from ghdag.exceptions import GhdagError
 from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
 
 
-class ConfigLoadError(ValueError):
+class ConfigLoadError(GhdagError, ValueError):
     """Raised when the engine config file has an invalid structure."""
 
 

@@ -10,8 +10,10 @@ import shlex
 import sys
 from dataclasses import dataclass
 
+from ghdag.exceptions import GhdagError
 
-class ModelValidationError(Exception):
+
+class ModelValidationError(GhdagError):
     """Raised when an unauthorized model ID is specified."""
 
 

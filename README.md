@@ -328,6 +328,25 @@ engines:
 | `GHDAG_LLM_MODELS` | Path to a custom `llm-models.yml` file |
 | `GHDAG_AUDIT_PATH` | Path to the audit log file (used by `ghdag llm --audit-path`) |
 
+## Error Reference
+
+All custom exceptions inherit from `GhdagError` (`ghdag.exceptions`).
+
+| Exception | Module | Also inherits | Raised when |
+|-----------|--------|---------------|-------------|
+| `GhdagError` | `ghdag.exceptions` | — | Base class for all ghdag errors |
+| `ValidationError` | `ghdag.workflow.loader` | `ValueError` | Workflow YAML validation failure |
+| `AdapterNotFoundError` | `ghdag.workflow.engine` | `ValueError` | Unknown/unregistered engine adapter |
+| `ContextHookError` | `ghdag.workflow.dispatcher` | `ValueError` | context_hook output is not valid JSON |
+| `DependencyError` | `ghdag.pipeline.llm_pipeline` | `ValueError` | Invalid or circular step dependency |
+| `ModelValidationError` | `ghdag.pipeline.config` | — | Unauthorized model ID |
+| `ConfigLoadError` | `ghdag.llm._config` | `ValueError` | Engine config file structure invalid |
+| `LLMParseError` | `ghdag.llm.capabilities` | — | LLM response violates output_format |
+| `EngineModelError` | `ghdag.llm.engines` | — | Unknown engine or unauthorized model |
+| `FanoutError` | `ghdag.dag.fanout` | `ValueError` | Invalid fan-out spec |
+| `PathTraversalError` | `ghdag.files.models` | `ValueError` | File path escapes repository root |
+| `AppendRecoverError` | `ghdag.files.append` | `ValueError` | Partial write detected |
+
 ## License
 
 MIT

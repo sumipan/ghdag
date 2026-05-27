@@ -4,8 +4,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from ghdag.exceptions import GhdagError
 
-class PathTraversalError(ValueError):
+
+class PathTraversalError(GhdagError, ValueError):
     """Raised when a file path escapes the repository root."""
 
 
