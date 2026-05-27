@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from ghdag.exceptions import GhdagError
 
-class LLMParseError(Exception):
+
+class LLMParseError(GhdagError):
     """Raised when a response violates the output_format contract."""
     def __init__(self, raw: str, reason: str):
         self.raw = raw

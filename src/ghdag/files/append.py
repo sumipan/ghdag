@@ -5,12 +5,13 @@ import hashlib
 import re
 from pathlib import Path
 
+from ghdag.exceptions import GhdagError
 from ghdag.files.models import AppendResult, AppendStatus, PathTraversalError
 
 _NEXT_HEADING_RE = re.compile(r"^#{1,6}\s+")
 
 
-class AppendRecoverError(ValueError):
+class AppendRecoverError(GhdagError, ValueError):
     """Partial write detected (start marker present without completion marker)."""
 
 

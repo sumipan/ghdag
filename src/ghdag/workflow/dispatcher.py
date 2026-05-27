@@ -9,6 +9,7 @@ import subprocess
 import time
 from pathlib import Path
 
+from ghdag.exceptions import GhdagError
 from ghdag.pipeline.audit import AuditContext, write_rate_limit_audit
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.github import GitHubIssueClient
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 _RATE_LIMIT_THRESHOLD = 100
 
 
-class ContextHookError(ValueError):
+class ContextHookError(GhdagError, ValueError):
     """Raised when context_hook stdout is not valid JSON."""
 
 

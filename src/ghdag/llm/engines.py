@@ -12,12 +12,13 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from ghdag.exceptions import GhdagError
 from ghdag.llm._config import load_engine_models
 from ghdag.llm.capabilities import TEXT_ONLY, LLMCapabilities, LLMParseError
 from ghdag.llm.spec import ENGINE_SPECS
 
 
-class EngineModelError(Exception):
+class EngineModelError(GhdagError):
     """Raised when an unknown engine or unauthorized model is specified."""
 
 
