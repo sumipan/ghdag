@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -152,6 +153,7 @@ class LLMResult:
     stdout: str
     stderr: str
     returncode: int
+    latency_ms: float = 0.0
 
     @property
     def ok(self) -> bool:
@@ -252,6 +254,7 @@ def call(
         dangerously_skip_permissions=dangerously_skip_permissions,
     )
 
+    t0 = time.monotonic()
     result = subprocess.run(
         cmd,
         capture_output=True,
@@ -259,10 +262,12 @@ def call(
         input=stdin_text,
         timeout=timeout,
     )
+    latency_ms = (time.monotonic() - t0) * 1000
 
     llm_result = LLMResult(
         stdout=result.stdout,
         stderr=result.stderr,
         returncode=result.returncode,
+        latency_ms=latency_ms,
     )
     return llm_result.validate(capabilities)
