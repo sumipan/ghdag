@@ -12,7 +12,7 @@ import pytest
 
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import ContextHookError, WorkflowDispatcher
-from ghdag.workflow.github import GhCliGitHubClient
+from ghdag.workflow.github import GhCliGitHubClient, GitHubIssueClient, GitHubIssuePort
 from ghdag.workflow.loader import ValidationError, load_workflows
 from ghdag.workflow.schema import (
     DispatchResult,
@@ -257,7 +257,7 @@ def _make_issue(number: int, labels: list[str] | None = None) -> dict:
 
 
 def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tuple[WorkflowDispatcher, MagicMock, MagicMock, MagicMock]:
-    github_client = MagicMock(spec=GhCliGitHubClient)
+    github_client = MagicMock(spec=GitHubIssuePort)
     github_client.get_issue_comments.return_value = []
     pipeline_state = MagicMock()
     pipeline_state.check_idempotency.return_value = True

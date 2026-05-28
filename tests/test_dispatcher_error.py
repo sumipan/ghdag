@@ -5,9 +5,11 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock
 
+import pytest
+
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.workflow.github import GhCliGitHubClient
+from ghdag.workflow.github import GitHubIssuePort
 from ghdag.workflow.schema import (
     HandlerConfig,
     StepConfig,
@@ -40,7 +42,7 @@ def _make_issue(number: int) -> dict:
 
 
 def _make_dispatcher(workflow: WorkflowConfig) -> tuple[WorkflowDispatcher, MagicMock]:
-    github_client = MagicMock(spec=GhCliGitHubClient)
+    github_client = MagicMock(spec=GitHubIssuePort)
     github_client.get_rate_limit.return_value = None  # rate limit 観測をスキップ
     pipeline = MagicMock(spec=LLMPipelineAPI)
     dispatcher = WorkflowDispatcher(
@@ -157,3 +159,10 @@ class TestTC9NonIntIssueNumberSkipsComment:
 
         # add_comment は呼ばれない
         github_client.add_comment.assert_not_called()
+
+
+def test_github_issue_port_spec_restricts_unknown_methods():
+    github_client = MagicMock(spec=GitHubIssuePort)
+
+    with pytest.raises(AttributeError):
+        _ = github_client.non_port_method
