@@ -252,14 +252,32 @@ class LLMPipelineAPI:
                 f"Available: {sorted(PRESETS.keys())}"
             )
 
-        capabilities = PRESETS[permission] if permission is not None else None
+        safe_default_env: str | None = None
+        safe_default_applied = False
+        if permission is not None:
+            capabilities = PRESETS[permission]
+        else:
+            safe_default_env = os.environ.get("GHDAG_SAFE_DEFAULT_PERMISSION")
+            if safe_default_env:
+                if safe_default_env not in PRESETS:
+                    raise ValueError(
+                        f"Unknown GHDAG_SAFE_DEFAULT_PERMISSION: {safe_default_env!r}. "
+                        f"Available: {sorted(PRESETS.keys())}"
+                    )
+                capabilities = PRESETS[safe_default_env]
+                safe_default_applied = True
+            else:
+                capabilities = None
 
         spec = ENGINE_SPECS[engine]
-
-        annotations: dict = {}
-        if permission is None and spec.danger_flag:
-            annotations["default_permission_applied"] = True
-            annotations["injected_danger_flag"] = spec.danger_flag
+        annotations: dict[str, object] = {}
+        if permission is None:
+            if safe_default_applied:
+                annotations["safe_default_applied"] = True
+                annotations["safe_default_preset"] = safe_default_env
+            elif spec.danger_flag:
+                annotations["default_permission_applied"] = True
+                annotations["injected_danger_flag"] = spec.danger_flag
 
         return {
             "uuid": step_uuid,
