@@ -9,7 +9,6 @@ from typing import Protocol, runtime_checkable
 
 import requests
 
-
 logger = logging.getLogger(__name__)
 
 
