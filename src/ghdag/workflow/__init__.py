@@ -2,7 +2,7 @@
 
 from ghdag.workflow import engine as engine  # noqa: F401 — triggers adapter registration
 from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.workflow.github import GitHubIssueClient
+from ghdag.workflow.github import GhCliGitHubClient, GitHubIssueClient, create_github_client
 from ghdag.workflow.loader import load_workflows
 from ghdag.workflow.schema import (
     DispatchResult,
@@ -22,5 +22,7 @@ __all__ = [
     "DispatchResult",
     "load_workflows",
     "WorkflowDispatcher",
+    "GhCliGitHubClient",
     "GitHubIssueClient",
+    "create_github_client",
 ]

@@ -163,3 +163,14 @@ class TestFailureClass:
             started_at=now, finished_at=now + 1.0,
         )
         assert m.failure_class is None
+
+    def test_task_metrics_request_id_optional(self):
+        """TaskMetrics.request_id は optional（デフォルト None）。"""
+        now = time.time()
+        m = TaskMetrics(
+            uuid=UUID, engine=None, model=None,
+            wall_time_sec=1.0, token_count=None, status="success",
+            started_at=now, finished_at=now + 1.0,
+            request_id="req-1",
+        )
+        assert m.request_id == "req-1"

@@ -238,19 +238,20 @@ class TestWatchNormal:
 
         mock_load = MagicMock(return_value=[])
         mock_dispatcher_cls = MagicMock()
-        mock_github_cls = MagicMock()
+        mock_create_github_client = MagicMock()
         mock_state_cls = MagicMock()
         mock_builder_cls = MagicMock()
 
         with patch("ghdag.workflow.loader.load_workflows", mock_load), \
              patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.GitHubIssueClient", mock_github_cls), \
+             patch("ghdag.workflow.github.create_github_client", mock_create_github_client), \
              patch("ghdag.pipeline.state.PipelineState", mock_state_cls), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder", mock_builder_cls):
             from ghdag.cli import main
             main(["watch", str(workflows_dir)])
 
         mock_load.assert_called_once()
+        mock_create_github_client.assert_called_once_with("auto")
         mock_dispatcher_cls.return_value.run.assert_called_once()
 
     def test_watch_with_options(self, tmp_path):
@@ -260,13 +261,13 @@ class TestWatchNormal:
 
         mock_load = MagicMock(return_value=[])
         mock_dispatcher_cls = MagicMock()
-        mock_github_cls = MagicMock()
+        mock_create_github_client = MagicMock()
         mock_state_cls = MagicMock()
         mock_builder_cls = MagicMock()
 
         with patch("ghdag.workflow.loader.load_workflows", mock_load), \
              patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.GitHubIssueClient", mock_github_cls), \
+             patch("ghdag.workflow.github.create_github_client", mock_create_github_client), \
              patch("ghdag.pipeline.state.PipelineState", mock_state_cls), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder", mock_builder_cls):
             from ghdag.cli import main
@@ -274,13 +275,23 @@ class TestWatchNormal:
                 "watch", str(workflows_dir),
                 "--interval", "60",
                 "--exec-md", exec_jsonl_path,
+                "--github-backend", "token",
             ])
 
         mock_state_cls.assert_called_once_with(
             state_dir=".pipeline-state",
             exec_jsonl_path=exec_jsonl_path,
         )
+        mock_create_github_client.assert_called_once_with("token")
         mock_dispatcher_cls.return_value.run.assert_called_once()
+
+    def test_watch_invalid_github_backend_exits_2(self, tmp_path):
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        from ghdag.cli import main
+        with pytest.raises(SystemExit) as exc:
+            main(["watch", str(workflows_dir), "--github-backend", "invalid"])
+        assert exc.value.code == 2
 
 
 # ---------------------------------------------------------------------------
@@ -397,17 +408,18 @@ handlers:
         mock_dispatch_result.exec_lines = ["# idempotency: ...", "uuid: cat ..."]
         mock_dispatcher_cls = MagicMock()
         mock_dispatcher_cls.return_value.dispatch.return_value = mock_dispatch_result
-        mock_github_cls = MagicMock()
-        mock_github_cls.return_value.get_issue.return_value = {
+        mock_github_client = MagicMock()
+        mock_github_client.get_issue.return_value = {
             "number": 42,
             "title": "Test",
             "body": "body",
             "labels": [],
             "url": "https://example.com",
         }
+        mock_create_github_client = MagicMock(return_value=mock_github_client)
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.GitHubIssueClient", mock_github_cls), \
+             patch("ghdag.workflow.github.create_github_client", mock_create_github_client), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -416,8 +428,10 @@ handlers:
                 "--handler", "brushup",
                 "--workflows-dir", str(workflows_dir),
                 "--exec-md", str(exec_md),
+                "--github-backend", "gh",
             ])
 
+        mock_create_github_client.assert_called_once_with("gh")
         mock_dispatcher_cls.return_value.dispatch.assert_called_once()
         call_args = mock_dispatcher_cls.return_value.dispatch.call_args
         assert call_args[0][0]["number"] == 42
@@ -435,13 +449,14 @@ handlers:
         mock_dispatch_result.exec_lines = ["# idempotency: ..."]
         mock_dispatcher_cls = MagicMock()
         mock_dispatcher_cls.return_value.dispatch.return_value = mock_dispatch_result
-        mock_github_cls = MagicMock()
-        mock_github_cls.return_value.get_issue.return_value = {
+        mock_github_client = MagicMock()
+        mock_github_client.get_issue.return_value = {
             "number": 10, "title": "T", "body": "", "labels": [], "url": "",
         }
+        mock_create_github_client = MagicMock(return_value=mock_github_client)
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.GitHubIssueClient", mock_github_cls), \
+             patch("ghdag.workflow.github.create_github_client", mock_create_github_client), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -453,6 +468,7 @@ handlers:
                 "--exec-md", str(exec_md),
             ])
 
+        mock_create_github_client.assert_called_once_with("auto")
         mock_dispatcher_cls.return_value.dispatch.assert_called_once()
 
 
@@ -489,6 +505,16 @@ handlers:
         from ghdag.cli import main
         with pytest.raises(SystemExit) as exc:
             main(["trigger", "42"])
+        assert exc.value.code == 2
+
+    def test_trigger_invalid_github_backend_exits_2(self):
+        from ghdag.cli import main
+        with pytest.raises(SystemExit) as exc:
+            main([
+                "trigger", "42",
+                "--handler", "brushup",
+                "--github-backend", "invalid",
+            ])
         assert exc.value.code == 2
 
     def test_trigger_nonexistent_dir_exits_1(self, capsys):
@@ -547,13 +573,14 @@ handlers:
         mock_dispatch_result.exec_lines = []
         mock_dispatcher_cls = MagicMock()
         mock_dispatcher_cls.return_value.dispatch.return_value = mock_dispatch_result
-        mock_github_cls = MagicMock()
-        mock_github_cls.return_value.get_issue.return_value = {
+        mock_github_client = MagicMock()
+        mock_github_client.get_issue.return_value = {
             "number": 42, "title": "T", "body": "", "labels": [], "url": "",
         }
+        mock_create_github_client = MagicMock(return_value=mock_github_client)
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.GitHubIssueClient", mock_github_cls), \
+             patch("ghdag.workflow.github.create_github_client", mock_create_github_client), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -568,14 +595,14 @@ handlers:
 
 
 # ---------------------------------------------------------------------------
-# AC11: GitHubIssueClient.get_issue / dispatch_event
+# AC11: GhCliGitHubClient.get_issue / dispatch_event
 # ---------------------------------------------------------------------------
 
 
-class TestGitHubIssueClientExtended:
+class TestGhCliGitHubClient:
     def test_get_issue_calls_subprocess(self):
-        from ghdag.workflow.github import GitHubIssueClient
-        client = GitHubIssueClient()
+        from ghdag.workflow.github import GhCliGitHubClient
+        client = GhCliGitHubClient()
         mock_result = MagicMock()
         mock_result.stdout = json.dumps({
             "number": 42, "title": "Test", "body": "body",
@@ -590,8 +617,8 @@ class TestGitHubIssueClientExtended:
         assert result["number"] == 42
 
     def test_dispatch_event_calls_subprocess(self):
-        from ghdag.workflow.github import GitHubIssueClient
-        client = GitHubIssueClient()
+        from ghdag.workflow.github import GhCliGitHubClient
+        client = GhCliGitHubClient()
         with patch("subprocess.run") as mock_run:
             client.dispatch_event("pipeline-trigger", {"issue": 42})
         mock_run.assert_called_once()
@@ -600,8 +627,8 @@ class TestGitHubIssueClientExtended:
         assert call_args[1]["input"] is not None
 
     def test_dispatch_event_without_payload(self):
-        from ghdag.workflow.github import GitHubIssueClient
-        client = GitHubIssueClient()
+        from ghdag.workflow.github import GhCliGitHubClient
+        client = GhCliGitHubClient()
         with patch("subprocess.run") as mock_run:
             client.dispatch_event("simple-event")
         input_data = json.loads(mock_run.call_args[1]["input"])
@@ -789,6 +816,25 @@ class TestLlmAuditPath:
 
         assert flag_path.exists()
         assert not env_path.exists()
+
+    def test_ac_a6_request_id_flag(self, tmp_path):
+        """AC-A6: --request-id 指定時 → audit レコードの request_id がその値になる。"""
+        audit_path = tmp_path / "audit.jsonl"
+        mock_result = self._make_result(returncode=0)
+
+        with patch("ghdag.llm.engines.call", return_value=mock_result), \
+             patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
+            from ghdag.cli import main
+            with pytest.raises(SystemExit) as exc:
+                main([
+                    "llm", "hello",
+                    "--audit-path", str(audit_path),
+                    "--request-id", "ext-123",
+                ])
+        assert exc.value.code == 0
+        r = json.loads(audit_path.read_text().strip())
+        assert r["request_id"] == "ext-123"
+        assert r["schema_version"] == 3
 
     def test_ac5_timeout_recorded(self, tmp_path):
         """AC5: --timeout 指定時 → timeout_sec が記録される。"""
