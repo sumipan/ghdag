@@ -35,4 +35,3 @@ class TaskMetrics:
     finished_at: float
     correlation_id: str | None = None
     failure_class: FailureClass | None = None
-    request_id: str | None = None

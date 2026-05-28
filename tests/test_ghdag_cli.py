@@ -790,25 +790,6 @@ class TestLlmAuditPath:
         assert flag_path.exists()
         assert not env_path.exists()
 
-    def test_ac_a6_request_id_flag(self, tmp_path):
-        """AC-A6: --request-id 指定時 → audit レコードの request_id がその値になる。"""
-        audit_path = tmp_path / "audit.jsonl"
-        mock_result = self._make_result(returncode=0)
-
-        with patch("ghdag.llm.engines.call", return_value=mock_result), \
-             patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
-            from ghdag.cli import main
-            with pytest.raises(SystemExit) as exc:
-                main([
-                    "llm", "hello",
-                    "--audit-path", str(audit_path),
-                    "--request-id", "ext-123",
-                ])
-        assert exc.value.code == 0
-        r = json.loads(audit_path.read_text().strip())
-        assert r["request_id"] == "ext-123"
-        assert r["schema_version"] == 3
-
     def test_ac5_timeout_recorded(self, tmp_path):
         """AC5: --timeout 指定時 → timeout_sec が記録される。"""
         audit_path = tmp_path / "audit.jsonl"

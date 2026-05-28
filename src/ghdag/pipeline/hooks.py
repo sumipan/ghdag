@@ -34,7 +34,6 @@ class AuditHooks(DefaultHooks):
                 model=metrics.model, engine=metrics.engine,
                 correlation_id=metrics.correlation_id,
                 failure_class=metrics.failure_class,
-                request_id=metrics.request_id,
             )
 
     def on_task_failure(self, uuid: str, task: Task, returncode: int, stderr_text: str, metrics: TaskMetrics) -> None:
@@ -47,7 +46,6 @@ class AuditHooks(DefaultHooks):
                 model=metrics.model, engine=metrics.engine,
                 correlation_id=metrics.correlation_id,
                 failure_class=metrics.failure_class,
-                request_id=metrics.request_id,
             )
 
     def on_task_rejected(self, uuid: str, task: Task, retry_depth: int, is_final: bool, metrics: TaskMetrics) -> None:
@@ -60,7 +58,6 @@ class AuditHooks(DefaultHooks):
                 model=metrics.model, engine=metrics.engine,
                 correlation_id=metrics.correlation_id,
                 failure_class=metrics.failure_class,
-                request_id=metrics.request_id,
             )
 
     def on_task_dep_failed(self, uuid: str, task: Task, failed_dep: str) -> None:
@@ -83,5 +80,4 @@ class AuditHooks(DefaultHooks):
                 model=metrics.model, engine=metrics.engine,
                 correlation_id=metrics.correlation_id,
                 failure_class=metrics.failure_class,
-                request_id=metrics.request_id,
             )

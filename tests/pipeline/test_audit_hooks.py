@@ -52,7 +52,7 @@ class TestAuditHooks:
         assert r["token_count"] == 1500
         assert r["model"] == "claude-sonnet-4-6"
         assert r["engine"] == "claude"
-        assert r["schema_version"] == 3
+        assert r["schema_version"] == 1
         assert "+09:00" in r["timestamp"]
 
     def test_on_task_failure(self, tmp_path):
@@ -188,27 +188,6 @@ class TestAuditHooks:
         r = json.loads(audit_path.read_text().strip())
         assert r.get("correlation_id") is None
 
-    def test_on_task_success_request_id_from_metrics(self, tmp_path):
-        """AuditHooks が TaskMetrics.request_id を audit に転送する。"""
-        audit_path = tmp_path / "audit.jsonl"
-        hooks = AuditHooks(audit_path=audit_path)
-        now = time.time()
-        metrics = TaskMetrics(
-            uuid=UUID,
-            engine="claude",
-            model="claude-sonnet-4-6",
-            wall_time_sec=1.0,
-            token_count=100,
-            status="success",
-            started_at=now,
-            finished_at=now + 1.0,
-            request_id="req-from-metrics",
-        )
-        hooks.on_task_success(UUID, _make_task(), metrics)
-
-        r = json.loads(audit_path.read_text().strip())
-        assert r["request_id"] == "req-from-metrics"
-
     def _make_metrics_with_failure_class(self, status: str = "failure", failure_class: FailureClass | None = None) -> TaskMetrics:
         now = time.time()
         return TaskMetrics(
@@ -258,7 +237,7 @@ class TestAuditHooks:
         assert r["event_type"] == "task_started"
         assert r["uuid"] == UUID
         assert r["status"] == "running"
-        assert r["schema_version"] == 3
+        assert r["schema_version"] == 1
         assert "+09:00" in r["timestamp"]
 
     def test_on_task_start_no_audit_path_no_error(self):

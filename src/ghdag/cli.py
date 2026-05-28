@@ -206,12 +206,6 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="correlation_id",
         help="Correlation ID for audit log",
     )
-    llm_parser.add_argument(
-        "--request-id",
-        default=None,
-        dest="request_id",
-        help="Request ID for audit log (propagated from orchestrator)",
-    )
     llm_parser.set_defaults(func=_cmd_llm)
 
     # ghdag version
@@ -605,7 +599,6 @@ def _cmd_llm(args: argparse.Namespace) -> None:
             exit_code=result.returncode,
             correlation_id=args.correlation_id,
             timeout_sec=args.timeout,
-            request_id=args.request_id,
         )
         if result.latency_ms > 0:
             write_llm_inference_audit(
