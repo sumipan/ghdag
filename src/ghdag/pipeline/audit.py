@@ -36,6 +36,9 @@ class AuditContext:
     """enqueue 経路のメタデータ。"""
     source: str = "unknown"
     correlation_id: str | None = None
+    request_id: str | None = None
+    parent_correlation_id: str | None = None
+    orchestration_id: str | None = None
 
 
 def write_audit_log(
@@ -52,10 +55,14 @@ def write_audit_log(
 
     _maybe_rotate(audit_path)
     record = {
+        "schema_version": 3,
         "timestamp": datetime.now(JST).isoformat(),
         "task_uuids": task_uuids,
         "source": context.source,
         "correlation_id": context.correlation_id,
+        "request_id": context.request_id,
+        "parent_correlation_id": context.parent_correlation_id,
+        "orchestration_id": context.orchestration_id,
         "caller_stack": _capture_caller_stack(),
         "exec_lines_count": exec_lines_count,
         "idempotency_key": idempotency_key,
@@ -115,13 +122,15 @@ def write_llm_audit_log(
     exit_code: int,
     correlation_id: str | None = None,
     timeout_sec: int | None = None,
+    request_id: str | None = None,
 ) -> None:
     """llm サブコマンド用の監査ログを 1 行追記する。"""
     _maybe_rotate(audit_path)
     record = {
+        "schema_version": 3,
         "event": "llm_call",
         "timestamp": datetime.now(JST).isoformat(),
-        "request_id": str(uuid.uuid4()),
+        "request_id": request_id or str(uuid.uuid4()),
         "source": "llm_cli",
         "correlation_id": correlation_id,
         "engine": engine,
@@ -149,7 +158,10 @@ def write_task_exit_audit(
     engine: str | None = None,
     correlation_id: str | None = None,
     failure_class: FailureClass | None = None,
-    schema_version: int = 1,
+    schema_version: int = 3,
+    request_id: str | None = None,
+    parent_correlation_id: str | None = None,
+    orchestration_id: str | None = None,
 ) -> None:
     _maybe_rotate(audit_path)
     record = {
@@ -164,6 +176,9 @@ def write_task_exit_audit(
         "model": model,
         "engine": engine,
         "correlation_id": correlation_id,
+        "request_id": request_id,
+        "parent_correlation_id": parent_correlation_id,
+        "orchestration_id": orchestration_id,
     }
 
     try:

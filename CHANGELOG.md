@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.26.0 — 2026-05-28
+
+### BREAKING
+
+- 非推奨エンジンアダプタ alias（`ClaudeAdapter` 等）を物理削除 (diary #1267)
+
+### Added
+
+- CI: ruff lint、coverage 70% 閾値、import-linter レイヤ検証を追加 (diary #1266)
+- `GhdagError` 例外基底クラス導入。全カスタム例外を再親化。README に Error Reference セクション追加 (diary #1271)
+- mypy `ignore_errors = true` を 6 モジュールで解消 (diary #1272)
+- `llm.inference` audit イベント追加（`prompt_hash`・`latency_ms` フィールド） (diary #1275)
+
 ## 0.25.4 — 2026-05-26
 
 ### Fixed
