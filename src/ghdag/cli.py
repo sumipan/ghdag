@@ -206,6 +206,12 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="correlation_id",
         help="Correlation ID for audit log",
     )
+    llm_parser.add_argument(
+        "--request-id",
+        default=None,
+        dest="request_id",
+        help="Request ID for audit log (propagated from orchestrator)",
+    )
     llm_parser.set_defaults(func=_cmd_llm)
 
     # ghdag version
@@ -344,7 +350,7 @@ def _cmd_trigger(args: argparse.Namespace) -> None:
     from ghdag.pipeline.order import TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
-    from ghdag.workflow.github import GitHubIssueClient
+    from ghdag.workflow.github import GhCliGitHubClient
     from ghdag.workflow.loader import load_workflows
 
     workflows_path = Path(args.workflows_dir)
@@ -396,7 +402,7 @@ def _cmd_trigger(args: argparse.Namespace) -> None:
             trigger_rank = rank
             break
 
-    github_client = GitHubIssueClient()
+    github_client = GhCliGitHubClient()
     exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
     queue_dir = str(exec_jsonl_resolved.parent)
     pipeline_state = PipelineState(
@@ -442,7 +448,7 @@ def _cmd_watch(args: argparse.Namespace) -> None:
     from ghdag.pipeline.order import OrderBuilder, TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
-    from ghdag.workflow.github import GitHubIssueClient
+    from ghdag.workflow.github import GhCliGitHubClient
     from ghdag.workflow.loader import load_workflows
 
     workflows_path = Path(args.workflows_dir)
@@ -454,7 +460,7 @@ def _cmd_watch(args: argparse.Namespace) -> None:
     for wf in workflows:
         wf.polling_interval = args.interval
 
-    github_client = GitHubIssueClient()
+    github_client = GhCliGitHubClient()
     exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
     queue_dir = str(exec_jsonl_resolved.parent)
     pipeline_state = PipelineState(
@@ -599,6 +605,7 @@ def _cmd_llm(args: argparse.Namespace) -> None:
             exit_code=result.returncode,
             correlation_id=args.correlation_id,
             timeout_sec=args.timeout,
+            request_id=args.request_id,
         )
         if result.latency_ms > 0:
             write_llm_inference_audit(

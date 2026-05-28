@@ -275,6 +275,9 @@ class LLMPipelineAPI:
             if safe_default_applied:
                 annotations["safe_default_applied"] = True
                 annotations["safe_default_preset"] = safe_default_env
+            elif spec.danger_flag:
+                annotations["default_permission_applied"] = True
+                annotations["injected_danger_flag"] = spec.danger_flag
 
         return {
             "uuid": step_uuid,

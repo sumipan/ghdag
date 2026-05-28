@@ -12,7 +12,7 @@ from pathlib import Path
 from ghdag.exceptions import GhdagError
 from ghdag.pipeline.audit import AuditContext, write_rate_limit_audit
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-from ghdag.workflow.github import GitHubIssueClient
+from ghdag.workflow.github import GitHubIssuePort
 from ghdag.workflow.schema import (
     DispatchResult,
     HandlerConfig,
@@ -37,7 +37,7 @@ class WorkflowDispatcher:
     def __init__(
         self,
         workflows: list[WorkflowConfig],
-        github_client: GitHubIssueClient,
+        github_client: GitHubIssuePort,
         pipeline: LLMPipelineAPI,
         queue_dir: str = "queue",
     ):
