@@ -23,6 +23,9 @@ from ghdag.workflow.schema import (
     WorkflowConfig,
 )
 
+GitHubIssuePort = GitHubIssueClient
+
+
 # ---------------------------------------------------------------------------
 # TC-1: YAML パース（正常系）
 # ---------------------------------------------------------------------------
@@ -257,7 +260,7 @@ def _make_issue(number: int, labels: list[str] | None = None) -> dict:
 
 
 def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tuple[WorkflowDispatcher, MagicMock, MagicMock, MagicMock]:
-    github_client = MagicMock(spec=GitHubIssueClient)
+    github_client = MagicMock(spec=GitHubIssuePort)
     github_client.get_issue_comments.return_value = []
     pipeline_state = MagicMock()
     pipeline_state.check_idempotency.return_value = True

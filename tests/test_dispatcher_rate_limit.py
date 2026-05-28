@@ -22,6 +22,9 @@ from ghdag.workflow.schema import (
 )
 
 
+GitHubIssuePort = GitHubIssueClient
+
+
 def _make_workflow(name: str = "wf") -> WorkflowConfig:
     return WorkflowConfig(
         name=name,
@@ -36,7 +39,7 @@ def _make_workflow(name: str = "wf") -> WorkflowConfig:
 
 
 def _make_dispatcher(tmp_path: Path) -> tuple[WorkflowDispatcher, MagicMock]:
-    github_client = MagicMock(spec=GitHubIssueClient)
+    github_client = MagicMock(spec=GitHubIssuePort)
     github_client.list_issues.return_value = []
     pipeline = MagicMock(spec=LLMPipelineAPI)
     dispatcher = WorkflowDispatcher(
