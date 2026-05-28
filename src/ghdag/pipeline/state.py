@@ -131,6 +131,10 @@ class PipelineState:
         audit_context: AuditContext | None = None,
     ) -> None:
         """exec.jsonl に records を JSONL 形式で追記。fcntl 排他ロック付き。"""
+        if audit_context and audit_context.request_id:
+            for rec in records:
+                rec.setdefault("annotations", {})["_request_id"] = audit_context.request_id
+
         lines = [json.dumps(r, ensure_ascii=False) for r in records]
         with open(self._exec_jsonl_path, "a", encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_EX)

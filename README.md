@@ -180,12 +180,19 @@ LLM pipeline state and order management.
 | `order.py` | `TemplateOrderBuilder` |
 | `result.py` | Result parsing |
 | `state.py` | `PipelineState` |
-| `audit.py` | Audit log writing |
+| `audit.py` | Audit log writing (`write_llm_inference_audit`, `compute_prompt_hash`, `write_rate_limit_audit`) |
 | `audit_query.py` | Audit log querying |
 | `config.py` | Pipeline configuration |
 | `status.py` | Task status helpers |
 | `wait.py` | Completion waiting |
 | `hooks.py` | `AuditHooks` — `DefaultHooks` subclass that writes audit.jsonl |
+
+### `exceptions.py`
+Shared exception base definitions.
+
+| Symbol | Description |
+|---|---|
+| `GhdagError` | Base class for all ghdag custom exceptions |
 
 ### `llm/`
 Engine specs and model configuration.
@@ -207,6 +214,7 @@ Repository `.md` file operations (see [Files API](#files-api)).
 | `writer.py` | `md_write()` |
 | `append.py` | `md_append()` |
 | `promote.py` | `md_promote()` |
+| `_rotate.py` | Shared size-based audit log rotation |
 | `models.py` | `MdFile`, `AppendResult`, `WriteResult`, `PromoteResult` |
 
 ### `metrics/`
@@ -227,6 +235,18 @@ Web UI dashboard.
 
 ### `cleanup.py`
 Queue archiving logic (`cleanup_queue()`).
+
+### Public API
+
+`ghdag.__init__.__all__` exports the following symbols:
+
+- `GhdagError`
+- `QueueTask`
+- `QueueTaskStore`
+- `LLMPipelineAPI`
+- `PipelineState`
+- `DagEngine`
+- `WorkflowDispatcher`
 
 ## Engine Adapters
 
@@ -321,17 +341,17 @@ All custom exceptions inherit from `GhdagError` (`ghdag.exceptions`).
 | Exception | Module | Also inherits | Raised when |
 |-----------|--------|---------------|-------------|
 | `GhdagError` | `ghdag.exceptions` | — | Base class for all ghdag errors |
-| `ValidationError` | `ghdag.workflow.loader` | `ValueError` | Workflow YAML validation failure |
-| `AdapterNotFoundError` | `ghdag.workflow.engine` | `ValueError` | Unknown/unregistered engine adapter |
-| `ContextHookError` | `ghdag.workflow.dispatcher` | `ValueError` | context_hook output is not valid JSON |
-| `DependencyError` | `ghdag.pipeline.llm_pipeline` | `ValueError` | Invalid or circular step dependency |
-| `ModelValidationError` | `ghdag.pipeline.config` | — | Unauthorized model ID |
-| `ConfigLoadError` | `ghdag.llm._config` | `ValueError` | Engine config file structure invalid |
-| `LLMParseError` | `ghdag.llm.capabilities` | — | LLM response violates output_format |
-| `EngineModelError` | `ghdag.llm.engines` | — | Unknown engine or unauthorized model |
-| `FanoutError` | `ghdag.dag.fanout` | `ValueError` | Invalid fan-out spec |
-| `PathTraversalError` | `ghdag.files.models` | `ValueError` | File path escapes repository root |
-| `AppendRecoverError` | `ghdag.files.append` | `ValueError` | Partial write detected |
+| `ValidationError` | `ghdag.workflow.loader` | `GhdagError`, `ValueError` | Workflow YAML validation failure |
+| `AdapterNotFoundError` | `ghdag.workflow.engine` | `GhdagError`, `ValueError` | Unknown/unregistered engine adapter |
+| `ContextHookError` | `ghdag.workflow.dispatcher` | `GhdagError`, `ValueError` | context_hook output is not valid JSON |
+| `DependencyError` | `ghdag.pipeline.llm_pipeline` | `GhdagError`, `ValueError` | Invalid or circular step dependency |
+| `ModelValidationError` | `ghdag.pipeline.config` | `GhdagError` | Unauthorized model ID |
+| `ConfigLoadError` | `ghdag.llm._config` | `GhdagError`, `ValueError` | Engine config file structure invalid |
+| `LLMParseError` | `ghdag.llm.capabilities` | `GhdagError` | LLM response violates output_format |
+| `EngineModelError` | `ghdag.llm.engines` | `GhdagError` | Unknown engine or unauthorized model |
+| `FanoutError` | `ghdag.dag.fanout` | `GhdagError`, `ValueError` | Invalid fan-out spec |
+| `PathTraversalError` | `ghdag.files.models` | `GhdagError`, `ValueError` | File path escapes repository root |
+| `AppendRecoverError` | `ghdag.files.append` | `GhdagError`, `ValueError` | Partial write detected |
 
 ## License
 
