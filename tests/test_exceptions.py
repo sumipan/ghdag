@@ -4,7 +4,16 @@ import pytest
 
 from ghdag import GhdagError
 from ghdag.dag.fanout import FanoutError
-from ghdag.exceptions import GhdagError as GhdagErrorFromModule
+from ghdag.exceptions import (
+    AuthError,
+    GitHubApiError,
+    NetworkError,
+    PermissionDeniedError,
+    RateLimitError,
+)
+from ghdag.exceptions import (
+    GhdagError as GhdagErrorFromModule,
+)
 from ghdag.files.append import AppendRecoverError
 from ghdag.files.models import PathTraversalError
 from ghdag.llm._config import ConfigLoadError
@@ -75,14 +84,6 @@ def test_llm_parse_error_preserves_attributes():
 
 
 # --- GitHub API exception hierarchy (issue #1289) ---
-
-from ghdag.exceptions import (
-    AuthError,
-    GitHubApiError,
-    NetworkError,
-    PermissionDeniedError,
-    RateLimitError,
-)
 
 
 def test_github_api_error_status_code_explicit():
