@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from typing import Protocol, runtime_checkable
 
 
 class GitHubIssueClient:
@@ -166,3 +167,22 @@ class GitHubIssueClient:
             text=True,
             check=True,
         )
+
+
+@runtime_checkable
+class GitHubIssuePort(Protocol):
+    def get_issue(self, number: int) -> dict: ...
+
+    def list_issues(self, label: str, state: str = "open") -> list[dict]: ...
+
+    def get_issue_comments(self, number: int) -> list[dict]: ...
+
+    def update_label(self, number: int, remove: str, add: str) -> None: ...
+
+    def add_comment(self, number: int, body: str) -> None: ...
+
+    def remove_label(self, number: int, label: str) -> None: ...
+
+    def dispatch_event(self, event_type: str, payload: dict | None = None) -> None: ...
+
+    def get_rate_limit(self) -> dict | None: ...

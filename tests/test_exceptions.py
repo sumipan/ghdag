@@ -72,3 +72,37 @@ def test_llm_parse_error_preserves_attributes():
     err = LLMParseError("raw output", "invalid json")
     assert err.raw == "raw output"
     assert err.reason == "invalid json"
+
+
+# --- GitHub API exception hierarchy (issue #1289) ---
+
+from ghdag.exceptions import (
+    AuthError,
+    GitHubApiError,
+    NetworkError,
+    PermissionDeniedError,
+    RateLimitError,
+)
+
+
+def test_github_api_error_status_code_explicit():
+    assert GitHubApiError("msg", status_code=401).status_code == 401
+
+
+def test_github_api_error_status_code_omitted():
+    assert GitHubApiError("msg").status_code is None
+
+
+def test_auth_error_inheritance():
+    err = AuthError("x", 401)
+    assert isinstance(err, GitHubApiError)
+    assert isinstance(err, GhdagError)
+
+
+@pytest.mark.parametrize(
+    "exc_cls",
+    [AuthError, RateLimitError, PermissionDeniedError, NetworkError],
+)
+def test_github_api_subclasses_inherit_from_github_api_error(exc_cls):
+    assert issubclass(exc_cls, GitHubApiError)
+    assert issubclass(exc_cls, GhdagError)
