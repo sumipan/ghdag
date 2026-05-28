@@ -48,6 +48,7 @@ def write_audit_log(
     exec_lines_count: int,
     context: AuditContext,
     idempotency_key: str | None = None,
+    default_permission_uuids: list[str] | None = None,
 ) -> None:
     if exec_lines_count == 0:
         return
@@ -66,6 +67,8 @@ def write_audit_log(
         "exec_lines_count": exec_lines_count,
         "idempotency_key": idempotency_key,
     }
+    if default_permission_uuids:
+        record["default_permission_uuids"] = default_permission_uuids
 
     try:
         with open(audit_path, "a", encoding="utf-8") as f:

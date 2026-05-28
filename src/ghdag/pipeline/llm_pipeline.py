@@ -255,6 +255,12 @@ class LLMPipelineAPI:
         capabilities = PRESETS[permission] if permission is not None else None
 
         spec = ENGINE_SPECS[engine]
+
+        annotations: dict = {}
+        if permission is None and spec.danger_flag:
+            annotations["default_permission_applied"] = True
+            annotations["injected_danger_flag"] = spec.danger_flag
+
         return {
             "uuid": step_uuid,
             "engine": spec.name,
@@ -269,5 +275,5 @@ class LLMPipelineAPI:
             "depends": depends,
             "result_path": f"{self._queue_dir}/{result_filename}",
             "retry": 0,
-            "annotations": {},
+            "annotations": annotations,
         }

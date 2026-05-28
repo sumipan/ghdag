@@ -146,11 +146,16 @@ class PipelineState:
         ctx = audit_context or AuditContext()
         audit_path = self._exec_jsonl_path.parent / "audit.jsonl"
         uuids = [r["uuid"] for r in records if "uuid" in r]
+        dp_uuids = [
+            r["uuid"] for r in records
+            if r.get("annotations", {}).get("default_permission_applied")
+        ]
         write_audit_log(
             audit_path,
             task_uuids=uuids,
             exec_lines_count=len(records),
             context=ctx,
+            default_permission_uuids=dp_uuids or None,
         )
 
     def write_order_file(
