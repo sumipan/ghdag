@@ -27,7 +27,6 @@ from ghdag.llm import (
 from ghdag.llm.spec import render_exec_command
 from ghdag.workflow.engine import get_adapter
 
-
 # ---------------------------------------------------------------------------
 # ホワイトリスト・検証
 # ---------------------------------------------------------------------------
