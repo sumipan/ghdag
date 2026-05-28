@@ -9,16 +9,13 @@ import pytest
 
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.workflow.github import GitHubIssueClient
+from ghdag.workflow.github import GitHubIssuePort
 from ghdag.workflow.schema import (
     HandlerConfig,
     StepConfig,
     TriggerConfig,
     WorkflowConfig,
 )
-
-
-GitHubIssuePort = GitHubIssueClient
 
 
 def _make_workflow() -> WorkflowConfig:

@@ -12,7 +12,7 @@ import pytest
 
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import ContextHookError, WorkflowDispatcher
-from ghdag.workflow.github import GitHubIssueClient
+from ghdag.workflow.github import GitHubIssueClient, GitHubIssuePort
 from ghdag.workflow.loader import ValidationError, load_workflows
 from ghdag.workflow.schema import (
     DispatchResult,
@@ -22,9 +22,6 @@ from ghdag.workflow.schema import (
     TriggerConfig,
     WorkflowConfig,
 )
-
-GitHubIssuePort = GitHubIssueClient
-
 
 # ---------------------------------------------------------------------------
 # TC-1: YAML パース（正常系）
