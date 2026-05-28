@@ -216,7 +216,7 @@ class TokenGitHubClient:
 
     def update_label(self, number: int, remove: str, add: str) -> None:
         issue = self.get_issue(number)
-        labels = [l.get("name", "") for l in issue.get("labels", []) if isinstance(l, dict)]
+        labels = [lbl.get("name", "") for lbl in issue.get("labels", []) if isinstance(lbl, dict)]
         labels = [label for label in labels if label and label != remove]
         if add not in labels:
             labels.append(add)
@@ -247,7 +247,7 @@ class TokenGitHubClient:
 
     def remove_label(self, number: int, label: str) -> None:
         issue = self.get_issue(number)
-        labels = [l.get("name", "") for l in issue.get("labels", []) if isinstance(l, dict)]
+        labels = [lbl.get("name", "") for lbl in issue.get("labels", []) if isinstance(lbl, dict)]
         labels = [name for name in labels if name and name != label]
         self._request("PATCH", f"/issues/{number}", body={"labels": labels})
 
