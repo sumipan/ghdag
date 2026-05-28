@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import sys
@@ -64,6 +65,43 @@ def write_audit_log(
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except OSError as e:
         print(f"[audit] warning: failed to write audit log: {e}", file=sys.stderr)
+
+
+def compute_prompt_hash(prompt: str) -> str:
+    """プロンプト文字列の SHA-256 ハッシュ先頭16文字を返す。"""
+    return hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
+
+
+def write_llm_inference_audit(
+    audit_path: Path,
+    *,
+    prompt_hash: str,
+    latency_ms: float,
+    engine: str,
+    model: str,
+    correlation_id: str | None = None,
+) -> None:
+    """LLM 推論イベントを audit.jsonl に 1 行追記する。"""
+    _maybe_rotate(audit_path)
+    record = {
+        "schema_version": 1,
+        "event_type": "llm.inference",
+        "timestamp": datetime.now(JST).isoformat(),
+        "uuid": str(uuid.uuid4()),
+        "prompt_hash": prompt_hash,
+        "latency_ms": round(latency_ms, 1),
+        "engine": engine,
+        "model": model,
+        "correlation_id": correlation_id,
+    }
+    try:
+        with open(audit_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except OSError as e:
+        print(
+            f"[audit] warning: failed to write llm inference audit: {e}",
+            file=sys.stderr,
+        )
 
 
 def write_llm_audit_log(

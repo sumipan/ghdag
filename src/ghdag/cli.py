@@ -586,15 +586,29 @@ def _cmd_llm(args: argparse.Namespace) -> None:
     audit_path = args.audit_path or os.environ.get("GHDAG_AUDIT_PATH")
     if audit_path and result.ok:
         from ghdag.llm.engines import validate_engine_model
-        from ghdag.pipeline.audit import write_llm_audit_log
+        from ghdag.pipeline.audit import (
+            compute_prompt_hash,
+            write_llm_audit_log,
+            write_llm_inference_audit,
+        )
+        resolved_model = validate_engine_model(args.engine, args.model)
         write_llm_audit_log(
             Path(audit_path),
             engine=args.engine,
-            model=validate_engine_model(args.engine, args.model),
+            model=resolved_model,
             exit_code=result.returncode,
             correlation_id=args.correlation_id,
             timeout_sec=args.timeout,
         )
+        if result.latency_ms > 0:
+            write_llm_inference_audit(
+                Path(audit_path),
+                prompt_hash=compute_prompt_hash(prompt),
+                latency_ms=result.latency_ms,
+                engine=args.engine,
+                model=resolved_model,
+                correlation_id=args.correlation_id,
+            )
 
     sys.exit(result.returncode)
 
