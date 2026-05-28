@@ -840,3 +840,201 @@ class TestDefaultPermissionAuditAnnotations:
         record = _json.loads(exec_lines[0])
         assert record["annotations"]["default_permission_applied"] is True
         assert record["annotations"]["injected_danger_flag"] == "--force"
+
+
+# ---------------------------------------------------------------------------
+# metadata 引数 — submit() の annotations 反映 (Issue #1295)
+# ---------------------------------------------------------------------------
+
+
+class TestMetadataInAnnotations:
+    def test_metadata_reflected_in_record_annotations(self):
+        """submit(metadata={"k": "v"}) で annotations に {"k": "v"} が含まれる。"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata={"k": "v"})
+
+        record = _json.loads(exec_lines[0])
+        assert record["annotations"].get("k") == "v"
+
+    def test_metadata_channel_and_thread_ts(self):
+        """channel_id と thread_ts を metadata で渡すと annotations に格納される。"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        metadata = {"channel_id": "C123", "thread_ts": "1234567890.000"}
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=metadata)
+
+        record = _json.loads(exec_lines[0])
+        assert record["annotations"]["channel_id"] == "C123"
+        assert record["annotations"]["thread_ts"] == "1234567890.000"
+
+    def test_submit_with_metadata_completes_without_error(self):
+        """submit(metadata=...) が正常に完了する（例外なし）。"""
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        result = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata={"foo": "bar"})
+        assert len(result) == 1
+
+
+class TestMetadataMultipleSteps:
+    def test_all_steps_get_same_annotations(self):
+        """複数ステップ投入時、全レコードに同一の annotations が付与される。"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [
+            StepConfig(id="s1", template="t1", model="m1"),
+            StepConfig(id="s2", template="t2", model="m2", depends=["s1"]),
+            StepConfig(id="s3", template="t3", model="m3", depends=["s2"]),
+        ]
+        metadata = {"channel_id": "C999", "thread_ts": "9999.000"}
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=metadata)
+
+        assert len(exec_lines) == 3
+        for line in exec_lines:
+            record = _json.loads(line)
+            assert record["annotations"]["channel_id"] == "C999"
+            assert record["annotations"]["thread_ts"] == "9999.000"
+
+    def test_two_steps_both_have_annotations(self):
+        """2 ステップ（依存なし・依存あり）どちらにも annotations が付与される。"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [
+            StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
+            StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
+        ]
+        metadata = {"k": "v"}
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=metadata)
+
+        for line in exec_lines:
+            record = _json.loads(line)
+            assert record["annotations"].get("k") == "v"
+
+
+class TestMetadataRoundTrip:
+    def test_roundtrip_via_parse_jsonl(self):
+        """submit() で metadata を渡し、exec.jsonl → parse_jsonl() → Task.annotations が一致する。"""
+        import json as _json
+
+        from ghdag.dag.parser import parse_jsonl
+
+        api, pipeline_state, _ = _make_api()
+        captured_records: list[dict] = []
+
+        def capture_records(records, **kwargs):
+            captured_records.extend(records)
+
+        pipeline_state.append_exec_records.side_effect = capture_records
+
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        metadata = {"channel_id": "C123", "thread_ts": "1234567890.000"}
+        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=metadata)
+
+        assert len(captured_records) == 1
+        jsonl_content = _json.dumps(captured_records[0], ensure_ascii=False)
+        tasks = parse_jsonl(jsonl_content)
+
+        assert len(tasks) == 1
+        assert tasks[0].annotations["channel_id"] == "C123"
+        assert tasks[0].annotations["thread_ts"] == "1234567890.000"
+
+    def test_roundtrip_multiple_steps(self):
+        """複数ステップのラウンドトリップ: 全 Task.annotations が metadata と一致する。"""
+        import json as _json
+
+        from ghdag.dag.parser import parse_jsonl
+
+        api, pipeline_state, _ = _make_api()
+        captured_records: list[dict] = []
+
+        def capture_records(records, **kwargs):
+            captured_records.extend(records)
+
+        pipeline_state.append_exec_records.side_effect = capture_records
+
+        steps = [
+            StepConfig(id="p1", template="p1", model="m"),
+            StepConfig(id="p2", template="p2", model="m", depends=["p1"]),
+        ]
+        metadata = {"slack_channel_id": "C001", "slack_thread_ts": "111.222"}
+        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=metadata)
+
+        assert len(captured_records) == 2
+        jsonl_text = "\n".join(
+            _json.dumps(r, ensure_ascii=False) for r in captured_records
+        )
+        tasks = parse_jsonl(jsonl_text)
+
+        assert len(tasks) == 2
+        for task in tasks:
+            assert task.annotations["slack_channel_id"] == "C001"
+            assert task.annotations["slack_thread_ts"] == "111.222"
+
+
+class TestMetadataBackwardCompat:
+    def test_no_metadata_annotations_empty(self):
+        """metadata を省略した場合、gemini は annotations が {} のまま。"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert record.get("annotations") == {}
+
+    def test_no_metadata_does_not_break_existing_behavior(self):
+        """metadata なしで既存のテスト項目（uuid, command, result_path）が正常。"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "uuid" in record
+        assert "command" in record
+        assert "result_path" in record
+
+
+class TestMetadataWithIdempotencyKey:
+    def test_idempotency_key_and_metadata_together(self):
+        """idempotency_key と metadata を同時に指定できる。"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        exec_lines = api.submit(
+            steps,
+            {},
+            idempotency_key="workflow:handler:42",
+            audit_context=_TEST_AUDIT_CTX,
+            metadata={"channel_id": "C123"},
+        )
+
+        record = _json.loads(exec_lines[0])
+        assert record["idempotency_key"] == "workflow:handler:42"
+        assert record["annotations"]["channel_id"] == "C123"
+
+
+class TestMetadataEmptyDict:
+    def test_empty_metadata_dict_annotations_stays_empty(self):
+        """metadata={} を渡した場合、gemini は annotations が {} のまま。"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata={})
+
+        record = _json.loads(exec_lines[0])
+        assert record.get("annotations") == {}
+
+
+class TestMetadataExplicitNone:
+    def test_explicit_none_metadata_same_as_omitted(self):
+        """metadata=None を明示的に渡した場合、gemini は省略時と同一（annotations {}）。"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=None)
+
+        record = _json.loads(exec_lines[0])
+        assert record.get("annotations") == {}
