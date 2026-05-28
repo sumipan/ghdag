@@ -775,3 +775,68 @@ class TestStepConfigPermission:
         record = _json.loads(exec_lines[0])
         assert "--permission-mode" in record["command"]
         assert "bypassPermissions" in record["command"]
+
+
+# ---------------------------------------------------------------------------
+# S0-2 (#1295): default permission audit annotations (AC1–AC3, AC7)
+# ---------------------------------------------------------------------------
+
+
+class TestDefaultPermissionAuditAnnotations:
+    def test_ac1_permission_none_claude_annotations(self):
+        """AC1: permission=None → default_permission_applied + injected_danger_flag."""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert record["annotations"]["default_permission_applied"] is True
+        assert record["annotations"]["injected_danger_flag"] == "--dangerously-skip-permissions"
+
+    def test_ac2_permission_text_only_no_default_annotation(self):
+        """AC2: permission='text_only' → default_permission_applied キーなし。"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [
+            StepConfig(
+                template="brushup",
+                model="claude-sonnet-4-6",
+                permission="text_only",
+            )
+        ]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "default_permission_applied" not in record["annotations"]
+
+    def test_ac3_gemini_engine_no_default_annotation(self):
+        """AC3: gemini（danger_flag=None）→ default_permission_applied キーなし。"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "default_permission_applied" not in record["annotations"]
+
+    def test_ac3_shell_engine_no_default_annotation(self):
+        """AC3: shell（danger_flag=None）→ default_permission_applied キーなし。"""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="echo", engine="shell")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "default_permission_applied" not in record["annotations"]
+
+    def test_ac7_cursor_permission_none_injected_force(self):
+        """AC7: cursor + permission=None → injected_danger_flag == '--force'."""
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="impl", model="cursor", engine="cursor")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert record["annotations"]["default_permission_applied"] is True
+        assert record["annotations"]["injected_danger_flag"] == "--force"

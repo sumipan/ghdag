@@ -106,6 +106,51 @@ class TestWriteAuditLog:
         assert r["source"] == "unknown"
         assert r["correlation_id"] is None
 
+    def test_default_permission_uuids_recorded(self, tmp_path):
+        """default_permission_uuids が渡された場合、ログに反映される。"""
+        audit_path = tmp_path / "audit.jsonl"
+
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1, UUID2],
+            exec_lines_count=2,
+            context=AuditContext(source="issuesmith"),
+            default_permission_uuids=[UUID1, UUID2],
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["default_permission_uuids"] == [UUID1, UUID2]
+
+    def test_default_permission_uuids_omitted_when_none(self, tmp_path):
+        """default_permission_uuids=None → フィールドを出力しない。"""
+        audit_path = tmp_path / "audit.jsonl"
+
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1],
+            exec_lines_count=1,
+            context=AuditContext(),
+            default_permission_uuids=None,
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert "default_permission_uuids" not in r
+
+    def test_default_permission_uuids_omitted_when_empty(self, tmp_path):
+        """default_permission_uuids=[] → フィールドを出力しない。"""
+        audit_path = tmp_path / "audit.jsonl"
+
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1],
+            exec_lines_count=1,
+            context=AuditContext(),
+            default_permission_uuids=[],
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert "default_permission_uuids" not in r
+
     def test_idempotency_key_recorded(self, tmp_path):
         """idempotency_key が渡された場合、ログに反映される。"""
         audit_path = tmp_path / "audit.jsonl"
@@ -204,6 +249,57 @@ class TestAppendExecRecordsAudit:
         audit_path = tmp_path / "audit.jsonl"
         r = json.loads(audit_path.read_text().strip())
         assert r["task_uuids"] == []
+
+    def test_ac4_default_permission_uuids_from_annotations(self, tmp_path):
+        """AC4: default_permission_applied 付き UUID のみ audit に記録。"""
+        from ghdag.pipeline.state import PipelineState
+
+        exec_path = tmp_path / "exec.jsonl"
+        state = PipelineState(state_dir=tmp_path / ".state", exec_jsonl_path=exec_path)
+        records = [
+            {
+                "uuid": UUID1,
+                "command": "cmd1",
+                "annotations": {
+                    "default_permission_applied": True,
+                    "injected_danger_flag": "--dangerously-skip-permissions",
+                },
+            },
+            {
+                "uuid": UUID2,
+                "command": "cmd2",
+                "annotations": {
+                    "default_permission_applied": True,
+                    "injected_danger_flag": "--force",
+                },
+            },
+            {
+                "uuid": "33333333-3333-3333-3333-333333333333",
+                "command": "cmd3",
+                "annotations": {},
+            },
+        ]
+
+        state.append_exec_records(records, audit_context=AuditContext(source="test"))
+
+        r = json.loads((tmp_path / "audit.jsonl").read_text().strip())
+        assert r["default_permission_uuids"] == [UUID1, UUID2]
+        assert len(r["task_uuids"]) == 3
+
+    def test_ac5_no_default_permission_uuids_when_all_specified(self, tmp_path):
+        """AC5: 全レコードが permission 指定相当（annotations 空）→ フィールドなし。"""
+        from ghdag.pipeline.state import PipelineState
+
+        exec_path = tmp_path / "exec.jsonl"
+        state = PipelineState(state_dir=tmp_path / ".state", exec_jsonl_path=exec_path)
+        records = [
+            {"uuid": UUID1, "command": "cmd1", "annotations": {}},
+        ]
+
+        state.append_exec_records(records, audit_context=AuditContext())
+
+        r = json.loads((tmp_path / "audit.jsonl").read_text().strip())
+        assert "default_permission_uuids" not in r
 
 
 _UUID4_RE = re.compile(

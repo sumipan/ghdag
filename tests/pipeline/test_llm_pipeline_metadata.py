@@ -185,9 +185,9 @@ class TestMetadataRoundTrip:
 
 class TestMetadataBackwardCompat:
     def test_no_metadata_annotations_empty(self):
-        """metadata を省略した場合、exec.jsonl の annotations は {} のまま。"""
+        """metadata を省略した場合、gemini は annotations が {} のまま。"""
         api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
         exec_lines = api.submit(steps, {}, audit_context=_AUDIT)
 
         record = _json.loads(exec_lines[0])
@@ -235,9 +235,9 @@ class TestMetadataWithIdempotencyKey:
 
 class TestMetadataEmptyDict:
     def test_empty_metadata_dict_annotations_stays_empty(self):
-        """metadata={} を渡した場合、annotations は {} のまま。"""
+        """metadata={} を渡した場合、gemini は annotations が {} のまま。"""
         api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
         exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata={})
 
         record = _json.loads(exec_lines[0])
@@ -251,11 +251,10 @@ class TestMetadataEmptyDict:
 
 class TestMetadataExplicitNone:
     def test_explicit_none_metadata_same_as_omitted(self):
-        """metadata=None を明示的に渡した場合、省略時と同一の動作になる。"""
+        """metadata=None を明示的に渡した場合、gemini は省略時と同一（annotations {}）。"""
         api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
         exec_lines = api.submit(steps, {}, audit_context=_AUDIT, metadata=None)
 
         record = _json.loads(exec_lines[0])
-        # annotations は {} のまま（metadata なし相当）
         assert record.get("annotations") == {}
