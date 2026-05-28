@@ -38,6 +38,7 @@ def wait_for_result(
         raw = read_done_content(exec_done_dir, uuid)
         if raw is not None:
             status = interpret_done(raw)
+            assert status is not None  # raw is not None => interpret_done never returns None
             lines = raw.strip().splitlines()
             first_line = lines[0].strip() if lines else ""
             return (status, first_line)

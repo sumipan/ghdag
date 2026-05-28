@@ -7,6 +7,10 @@ import logging
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ghdag.dag.hooks import DagHooks
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -280,7 +284,7 @@ def _cmd_run(args: argparse.Namespace) -> None:
         max_concurrency=args.max_concurrency,
     )
     if args.hooks:
-        hooks = _load_hooks(args.hooks)
+        hooks: DagHooks = _load_hooks(args.hooks)
     else:
         from ghdag.pipeline.hooks import AuditHooks
         audit_path = Path(args.exec_jsonl).resolve().parent.parent / "audit.jsonl"
@@ -291,7 +295,7 @@ def _cmd_run(args: argparse.Namespace) -> None:
     engine.run()
 
 
-def _load_hooks(module_path: str) -> object:
+def _load_hooks(module_path: str) -> DagHooks:
     """モジュールパスから DagHooks 実装クラスをインスタンス化して返す。
 
     クラスの探索順:
@@ -303,6 +307,9 @@ def _load_hooks(module_path: str) -> object:
     """
     import importlib
     import inspect
+    from typing import cast
+
+    from ghdag.dag.hooks import DagHooks
 
     cwd = os.getcwd()
     if cwd not in sys.path:
@@ -316,11 +323,11 @@ def _load_hooks(module_path: str) -> object:
 
     if hasattr(module, "HOOKS_CLASS"):
         cls = module.HOOKS_CLASS
-        return cls()
+        return cast(DagHooks, cls())
 
     for _, obj in inspect.getmembers(module, inspect.isclass):
         if obj.__module__ == module.__name__ and hasattr(obj, "on_task_success"):
-            return obj()
+            return cast(DagHooks, obj())
 
     print(
         f"error: no DagHooks-compatible class found in module '{module_path}'",
@@ -429,9 +436,10 @@ def _cmd_trigger(args: argparse.Namespace) -> None:
 def _cmd_watch(args: argparse.Namespace) -> None:
     """WorkflowDispatcher を構築し run() を呼ぶ薄いラッパー。"""
     from pathlib import Path
+    from typing import cast
 
     from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-    from ghdag.pipeline.order import TemplateOrderBuilder
+    from ghdag.pipeline.order import OrderBuilder, TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
     from ghdag.workflow.github import GitHubIssueClient
@@ -472,7 +480,7 @@ def _cmd_watch(args: argparse.Namespace) -> None:
         pipeline_state=pipeline_state,
         order_builder=default_order_builder,
         queue_dir=queue_dir,
-        order_builders=order_builders,
+        order_builders=cast(dict[str, OrderBuilder], order_builders),
     )
     dispatcher = WorkflowDispatcher(
         workflows=workflows,
@@ -602,7 +610,7 @@ def _cmd_cleanup(args: argparse.Namespace) -> None:
         queue_dir=repo_root / "jobs",
         archive_dir=repo_root / "jobs" / "archive",
         done_dir=repo_root / "jobs" / "done",
-        exec_jsonl=repo_root / "jobs" / "exec.jsonl",
+        exec_md=repo_root / "jobs" / "exec.jsonl",
         cutoff_days=args.cutoff_days,
         orphan_days=args.orphan_days,
         dry_run=args.dry_run,

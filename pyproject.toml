@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghdag"
-version = "0.25.4"
+version = "0.25.5"
 description = "Generic DAG execution engine extracted from graph-watcher"
 readme = "README.md"
 license = "MIT"
@@ -24,6 +24,7 @@ dev = [
   "mypy>=1.10.0",
   "ruff>=0.4.0",
   "import-linter>=2.0",
+  "types-PyYAML>=6.0",
 ]
 
 [project.scripts]
@@ -89,21 +90,15 @@ forbidden_modules = [
 [[tool.mypy.overrides]]
 module = [
   "ghdag.cleanup",
-  "ghdag.cli",
   "ghdag.dag._util",
   "ghdag.dag.engine",
-  "ghdag.dag.fanout",
   "ghdag.dag.watcher",
-  "ghdag.files.reader",
   "ghdag.llm._config",
   "ghdag.llm.engines",
   "ghdag.metrics.models",
   "ghdag.pipeline.state",
-  "ghdag.pipeline.wait",
   "ghdag.ui.monitor",
   "ghdag.ui.server",
-  "ghdag.workflow.dispatcher",
   "ghdag.workflow.github",
-  "ghdag.workflow.loader",
 ]
 ignore_errors = true

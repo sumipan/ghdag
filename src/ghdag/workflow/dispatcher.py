@@ -129,6 +129,8 @@ class WorkflowDispatcher:
 
         # 2. reset ハンドラー
         if handler.type == "reset":
+            if trigger is None:
+                return DispatchResult(status="skipped", reason="no trigger for reset")
             self._handle_reset(issue, workflow, trigger)
             return DispatchResult(status="reset", reason="reset handler")
 
