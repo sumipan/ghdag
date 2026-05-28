@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.workflow.github import GitHubIssueClient
+from ghdag.workflow.github import GhCliGitHubClient
 from ghdag.workflow.schema import (
     HandlerConfig,
     StepConfig,
@@ -36,7 +36,7 @@ def _make_workflow(name: str = "wf") -> WorkflowConfig:
 
 
 def _make_dispatcher(tmp_path: Path) -> tuple[WorkflowDispatcher, MagicMock]:
-    github_client = MagicMock(spec=GitHubIssueClient)
+    github_client = MagicMock(spec=GhCliGitHubClient)
     github_client.list_issues.return_value = []
     pipeline = MagicMock(spec=LLMPipelineAPI)
     dispatcher = WorkflowDispatcher(

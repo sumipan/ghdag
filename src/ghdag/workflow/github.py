@@ -1,4 +1,4 @@
-"""workflow/github.py — GitHubIssueClient: gh CLI ラッパー"""
+"""workflow/github.py — GhCliGitHubClient: gh CLI ラッパー"""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import subprocess
 from typing import Protocol, runtime_checkable
 
 
-class GitHubIssueClient:
+class GhCliGitHubClient:
     """gh CLI ラッパー。gh CLI が認証済みであることを前提とする。"""
 
     def get_issue(self, number: int) -> dict:
@@ -186,3 +186,6 @@ class GitHubIssuePort(Protocol):
     def dispatch_event(self, event_type: str, payload: dict | None = None) -> None: ...
 
     def get_rate_limit(self) -> dict | None: ...
+
+
+GitHubIssueClient = GhCliGitHubClient

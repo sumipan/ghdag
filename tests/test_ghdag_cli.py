@@ -244,7 +244,7 @@ class TestWatchNormal:
 
         with patch("ghdag.workflow.loader.load_workflows", mock_load), \
              patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.GitHubIssueClient", mock_github_cls), \
+             patch("ghdag.workflow.github.GhCliGitHubClient", mock_github_cls), \
              patch("ghdag.pipeline.state.PipelineState", mock_state_cls), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder", mock_builder_cls):
             from ghdag.cli import main
@@ -266,7 +266,7 @@ class TestWatchNormal:
 
         with patch("ghdag.workflow.loader.load_workflows", mock_load), \
              patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.GitHubIssueClient", mock_github_cls), \
+             patch("ghdag.workflow.github.GhCliGitHubClient", mock_github_cls), \
              patch("ghdag.pipeline.state.PipelineState", mock_state_cls), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder", mock_builder_cls):
             from ghdag.cli import main
@@ -407,7 +407,7 @@ handlers:
         }
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.GitHubIssueClient", mock_github_cls), \
+             patch("ghdag.workflow.github.GhCliGitHubClient", mock_github_cls), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -441,7 +441,7 @@ handlers:
         }
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.GitHubIssueClient", mock_github_cls), \
+             patch("ghdag.workflow.github.GhCliGitHubClient", mock_github_cls), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -553,7 +553,7 @@ handlers:
         }
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.GitHubIssueClient", mock_github_cls), \
+             patch("ghdag.workflow.github.GhCliGitHubClient", mock_github_cls), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -568,14 +568,14 @@ handlers:
 
 
 # ---------------------------------------------------------------------------
-# AC11: GitHubIssueClient.get_issue / dispatch_event
+# AC11: GhCliGitHubClient.get_issue / dispatch_event
 # ---------------------------------------------------------------------------
 
 
-class TestGitHubIssueClientExtended:
+class TestGhCliGitHubClient:
     def test_get_issue_calls_subprocess(self):
-        from ghdag.workflow.github import GitHubIssueClient
-        client = GitHubIssueClient()
+        from ghdag.workflow.github import GhCliGitHubClient
+        client = GhCliGitHubClient()
         mock_result = MagicMock()
         mock_result.stdout = json.dumps({
             "number": 42, "title": "Test", "body": "body",
@@ -590,8 +590,8 @@ class TestGitHubIssueClientExtended:
         assert result["number"] == 42
 
     def test_dispatch_event_calls_subprocess(self):
-        from ghdag.workflow.github import GitHubIssueClient
-        client = GitHubIssueClient()
+        from ghdag.workflow.github import GhCliGitHubClient
+        client = GhCliGitHubClient()
         with patch("subprocess.run") as mock_run:
             client.dispatch_event("pipeline-trigger", {"issue": 42})
         mock_run.assert_called_once()
@@ -600,8 +600,8 @@ class TestGitHubIssueClientExtended:
         assert call_args[1]["input"] is not None
 
     def test_dispatch_event_without_payload(self):
-        from ghdag.workflow.github import GitHubIssueClient
-        client = GitHubIssueClient()
+        from ghdag.workflow.github import GhCliGitHubClient
+        client = GhCliGitHubClient()
         with patch("subprocess.run") as mock_run:
             client.dispatch_event("simple-event")
         input_data = json.loads(mock_run.call_args[1]["input"])
