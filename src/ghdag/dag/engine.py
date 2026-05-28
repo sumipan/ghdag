@@ -34,6 +34,10 @@ logger = logging.getLogger(__name__)
 _STDIN_REDIR_RE = re.compile(r"(?<!<)<\s+(\S+)")
 
 
+def _task_request_id(task: Task) -> str | None:
+    return task.annotations.get("_request_id")
+
+
 class DagEngine:
     def __init__(self, config: DagConfig, hooks: DagHooks | None = None) -> None:
         self._config = config
@@ -279,6 +283,7 @@ class DagEngine:
                         started_at=rt.started_at, finished_at=finished_at,
                         correlation_id=task.idempotency_key,
                         failure_class=FailureClass.TIMEOUT,
+                        request_id=_task_request_id(task),
                     )
                     timeout_msg = f"TIMEOUT: task exceeded task_timeout={self._config.task_timeout}s"
                     self._hooks.on_task_failure(uuid, task, returncode, timeout_msg, metrics)
@@ -313,6 +318,7 @@ class DagEngine:
                             started_at=rt.started_at, finished_at=finished_at,
                             correlation_id=task.idempotency_key,
                             failure_class=FailureClass.REJECTED,
+                            request_id=_task_request_id(task),
                         )
                         self._hooks.on_task_rejected(uuid, task, retry_depth, is_final, metrics)
 
@@ -326,6 +332,7 @@ class DagEngine:
                             started_at=rt.started_at, finished_at=finished_at,
                             correlation_id=task.idempotency_key,
                             failure_class=FailureClass.PIPELINE_FAILED,
+                            request_id=_task_request_id(task),
                         )
                         self._hooks.on_task_failure(uuid, task, 0, f"PIPELINE_FAILED:{pipeline_status}", metrics)
 
@@ -339,6 +346,7 @@ class DagEngine:
                             started_at=rt.started_at, finished_at=finished_at,
                             correlation_id=task.idempotency_key,
                             failure_class=FailureClass.EMPTY_RESULT,
+                            request_id=_task_request_id(task),
                         )
                         self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
 
@@ -349,6 +357,7 @@ class DagEngine:
                             token_count=token_count, status="success",
                             started_at=rt.started_at, finished_at=finished_at,
                             correlation_id=task.idempotency_key,
+                            request_id=_task_request_id(task),
                         )
                         try:
                             fanout_spec = parse_fanout_spec(effective_result_path)
@@ -361,6 +370,7 @@ class DagEngine:
                                 started_at=rt.started_at, finished_at=finished_at,
                                 correlation_id=task.idempotency_key,
                                 failure_class=FailureClass.FANOUT_PARSE_FAILED,
+                                request_id=_task_request_id(task),
                             )
                             state_mark_done(self._config.exec_done_dir, uuid, "FANOUT_PARSE_FAILED")
                             self._hooks.on_task_failure(uuid, task, 0, str(exc), failure_metrics)
@@ -381,6 +391,7 @@ class DagEngine:
                         started_at=rt.started_at, finished_at=finished_at,
                         correlation_id=task.idempotency_key,
                         failure_class=FailureClass.PROCESS_ERROR,
+                        request_id=_task_request_id(task),
                     )
                     self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
 
@@ -394,6 +405,7 @@ class DagEngine:
                     started_at=rt.started_at, finished_at=finished_at,
                     correlation_id=task.idempotency_key,
                     failure_class=FailureClass.UNKNOWN_FAILURE,
+                    request_id=_task_request_id(task),
                 )
                 self._hooks.on_task_failure(uuid, task, -1, str(exc), metrics)
 
@@ -435,6 +447,7 @@ class DagEngine:
                     finished_at=parent_metrics.finished_at,
                     correlation_id=parent_metrics.correlation_id,
                     failure_class=FailureClass.FANOUT_CHILD_FAILED,
+                    request_id=parent_metrics.request_id,
                 )
                 self._hooks.on_task_failure(
                     parent_uuid, parent_task, 0, "FANOUT_CHILD_FAILED", failure_metrics
