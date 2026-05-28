@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 from typing import Protocol, runtime_checkable
 
@@ -40,15 +41,6 @@ class GhCliGitHubClient:
     """gh CLI ラッパー。gh CLI が認証済みであることを前提とする。"""
 
     def get_issue(self, number: int) -> dict:
-        """gh issue view {number} --json ... を実行し Issue dict を返す。
-
-        Args:
-            number: Issue 番号
-        Returns:
-            Issue dict (number, title, body, labels, url)
-        Raises:
-            subprocess.CalledProcessError: gh CLI 失敗時
-        """
         result = subprocess.run(
             [
                 "gh", "issue", "view", str(number),
@@ -61,14 +53,6 @@ class GhCliGitHubClient:
         return json.loads(result.stdout)
 
     def dispatch_event(self, event_type: str, payload: dict | None = None) -> None:
-        """repository_dispatch イベントを発火する。
-
-        Args:
-            event_type: イベントタイプ文字列
-            payload: client_payload として送信する dict
-        Raises:
-            subprocess.CalledProcessError: gh CLI 失敗時
-        """
         body: dict = {"event_type": event_type}
         if payload:
             body["client_payload"] = payload
@@ -85,16 +69,6 @@ class GhCliGitHubClient:
         )
 
     def list_issues(self, label: str, state: str = "open") -> list[dict]:
-        """gh issue list --label <label> --json number,title,body,labels,url を実行。
-
-        Args:
-            label: フィルタラベル
-            state: "open" or "closed"
-        Returns:
-            Issue dict のリスト
-        Raises:
-            subprocess.CalledProcessError: gh CLI 失敗時
-        """
         result = subprocess.run(
             [
                 "gh", "issue", "list",
@@ -110,13 +84,6 @@ class GhCliGitHubClient:
         return json.loads(result.stdout)
 
     def get_issue_comments(self, number: int) -> list[dict]:
-        """gh api repos/:owner/:repo/issues/{number}/comments を実行。
-
-        Returns:
-            [{author, created_at, body}, ...]
-        Raises:
-            subprocess.CalledProcessError: gh CLI 失敗時
-        """
         result = subprocess.run(
             ["gh", "api", f"repos/:owner/:repo/issues/{number}/comments"],
             capture_output=True,
@@ -134,11 +101,6 @@ class GhCliGitHubClient:
         ]
 
     def update_label(self, number: int, remove: str, add: str) -> None:
-        """gh issue edit {number} --remove-label {remove} --add-label {add}。
-
-        Raises:
-            subprocess.CalledProcessError: gh CLI 失敗時
-        """
         subprocess.run(
             [
                 "gh", "issue", "edit", str(number),
@@ -151,11 +113,6 @@ class GhCliGitHubClient:
         )
 
     def add_comment(self, number: int, body: str) -> None:
-        """gh issue comment {number} --body {body}。
-
-        Raises:
-            subprocess.CalledProcessError: gh CLI 失敗時
-        """
         subprocess.run(
             ["gh", "issue", "comment", str(number), "--body", body],
             capture_output=True,
@@ -163,13 +120,7 @@ class GhCliGitHubClient:
             check=True,
         )
 
-
     def get_rate_limit(self) -> dict | None:
-        """gh api rate_limit を実行し、core rate limit 情報を返す。
-
-        Returns:
-            {"limit": int, "remaining": int, "reset": int} or None（取得失敗時）
-        """
         try:
             result = subprocess.run(
                 ["gh", "api", "rate_limit", "--jq", ".rate"],
@@ -182,11 +133,6 @@ class GhCliGitHubClient:
             return None
 
     def remove_label(self, number: int, label: str) -> None:
-        """gh issue edit {number} --remove-label {label}。
-
-        Raises:
-            subprocess.CalledProcessError: gh CLI 失敗時
-        """
         subprocess.run(
             [
                 "gh", "issue", "edit", str(number),
@@ -268,6 +214,59 @@ class TokenGitHubClient:
 
     def get_rate_limit(self) -> dict | None:
         return self._request("GET", "/rate_limit").json()
+
+
+def _resolve_repo() -> tuple[str, str]:
+    env_repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
+    if env_repo and "/" in env_repo:
+        owner, repo = env_repo.split("/", 1)
+        if owner and repo:
+            return owner, repo
+    try:
+        result = subprocess.run(
+            ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise ValueError("owner/repo を特定できませんでした") from exc
+    repo_full_name = result.stdout.strip()
+    if "/" not in repo_full_name:
+        raise ValueError("owner/repo を特定できませんでした")
+    owner, repo = repo_full_name.split("/", 1)
+    if not owner or not repo:
+        raise ValueError("owner/repo を特定できませんでした")
+    return owner, repo
+
+
+def create_github_client(
+    backend: str = "auto",
+    *,
+    token: str | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+) -> GitHubIssuePort:
+    token_value = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if backend == "gh":
+        return GhCliGitHubClient()
+    if backend == "token":
+        if not token_value:
+            raise AuthError("GitHub token is required for token backend")
+        if owner and repo:
+            resolved_owner, resolved_repo = owner, repo
+        else:
+            resolved_owner, resolved_repo = _resolve_repo()
+        return TokenGitHubClient(token_value, resolved_owner, resolved_repo)
+    if backend == "auto":
+        if token_value:
+            if owner and repo:
+                resolved_owner, resolved_repo = owner, repo
+            else:
+                resolved_owner, resolved_repo = _resolve_repo()
+            return TokenGitHubClient(token_value, resolved_owner, resolved_repo)
+        return GhCliGitHubClient()
+    raise ValueError(f"Unsupported backend: {backend}")
 
 
 @runtime_checkable
