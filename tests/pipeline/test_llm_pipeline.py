@@ -775,3 +775,76 @@ class TestStepConfigPermission:
         record = _json.loads(exec_lines[0])
         assert "--permission-mode" in record["command"]
         assert "bypassPermissions" in record["command"]
+
+    def test_safe_default_permission_applied_when_env_set_and_permission_none(self, monkeypatch):
+        """AC2: env 指定 + permission=None で safe default が適用される。"""
+        import json as _json
+
+        monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "text_only")
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6", permission=None)]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "--permission-mode default" in record["command"]
+        assert "--disallowed-tools" in record["command"]
+        assert "--dangerously-skip-permissions" not in record["command"]
+        assert record["annotations"].get("safe_default_applied") is True
+        assert record["annotations"].get("safe_default_preset") == "text_only"
+        assert "default_permission_applied" not in record["annotations"]
+
+    def test_explicit_permission_wins_over_safe_default_env(self, monkeypatch):
+        """AC3: permission 明示時は env より permission が優先される。"""
+        import json as _json
+
+        monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "text_only")
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6", permission="dangerous_full_access")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "--permission-mode bypassPermissions" in record["command"]
+        assert "safe_default_applied" not in record["annotations"]
+        assert "safe_default_preset" not in record["annotations"]
+
+    def test_cursor_dangerous_full_access_includes_force(self):
+        """AC4: cursor + dangerous_full_access で --force が付与される。"""
+        import json as _json
+
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="skill", model="auto", engine="cursor", permission="dangerous_full_access")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "--force" in record["command"]
+
+    def test_cursor_text_only_does_not_include_force(self):
+        """AC5: cursor + text_only では --force が付与されない。"""
+        import json as _json
+
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="skill", model="auto", engine="cursor", permission="text_only")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "--force" not in record["command"]
+
+    def test_invalid_safe_default_permission_raises_value_error(self, monkeypatch):
+        """AC6: 不正な GHDAG_SAFE_DEFAULT_PERMISSION は ValueError。"""
+        monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "invalid_preset")
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6", permission=None)]
+        with pytest.raises(ValueError, match="GHDAG_SAFE_DEFAULT_PERMISSION"):
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+    def test_shell_engine_command_unchanged_when_safe_default_env_set(self, monkeypatch):
+        """AC7: shell エンジンは safe default env の影響を受けない。"""
+        import json as _json
+
+        monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "text_only")
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="cp1-gate", model="bash", engine="shell", permission=None)]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert record["command"] == "bash -o pipefail queue/ts-claude-order-uuid.md"

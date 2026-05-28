@@ -136,7 +136,7 @@ def _build_claude_flags(
 def _build_cursor_flags(
     capabilities: LLMCapabilities, dangerously_skip_permissions: bool
 ) -> list[str]:
-    if dangerously_skip_permissions:
+    if dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions":
         return ["--force"]
     return []
 
