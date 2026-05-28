@@ -28,7 +28,7 @@ class TestWriteTaskExitAudit:
         records = [json.loads(line) for line in audit_path.read_text().splitlines()]
         assert len(records) == 1
         r = records[0]
-        assert r["schema_version"] == 1
+        assert r["schema_version"] == 3
         assert r["event_type"] == "task_complete"
         assert r["uuid"] == UUID
         assert r["status"] == "success"
@@ -122,11 +122,44 @@ class TestWriteTaskExitAudit:
         lines = audit_path.read_text().strip().splitlines()
         assert len(lines) == 2
 
-    def test_schema_version_default_1(self, tmp_path):
+    def test_schema_version_default_3(self, tmp_path):
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(audit_path, event_type="task_complete", uuid=UUID, status="success")
         r = json.loads(audit_path.read_text().strip())
-        assert r["schema_version"] == 1
+        assert r["schema_version"] == 3
+
+    def test_ac_a2_v3_propagation_fields(self, tmp_path):
+        """AC-A2: write_task_exit_audit に v3 伝播フィールドが含まれる。"""
+        audit_path = tmp_path / "audit.jsonl"
+        write_task_exit_audit(
+            audit_path,
+            event_type="task_complete",
+            uuid=UUID,
+            status="success",
+            request_id="req-1",
+            parent_correlation_id="parent-1",
+            orchestration_id="orch-1",
+        )
+        r = json.loads(audit_path.read_text().strip())
+        assert r["request_id"] == "req-1"
+        assert r["parent_correlation_id"] == "parent-1"
+        assert r["orchestration_id"] == "orch-1"
+
+    def test_ac_a7_null_propagation_fields_backward_compat(self, tmp_path):
+        """AC-A7: 伝播フィールド未指定時は null（v1 相当の情報量）。"""
+        audit_path = tmp_path / "audit.jsonl"
+        write_task_exit_audit(
+            audit_path,
+            event_type="task_complete",
+            uuid=UUID,
+            status="success",
+            correlation_id="corr-only",
+        )
+        r = json.loads(audit_path.read_text().strip())
+        assert r["correlation_id"] == "corr-only"
+        assert r["request_id"] is None
+        assert r["parent_correlation_id"] is None
+        assert r["orchestration_id"] is None
 
     def test_ac10_coexists_with_enqueue_record(self, tmp_path):
         """AC-10: enqueue レコード（write_audit_log）と exit レコードが同一ファイルに共存できる。"""

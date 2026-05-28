@@ -16,11 +16,27 @@ class TestAuditContext:
         ctx = AuditContext()
         assert ctx.source == "unknown"
         assert ctx.correlation_id is None
+        assert ctx.request_id is None
+        assert ctx.parent_correlation_id is None
+        assert ctx.orchestration_id is None
 
     def test_custom_values(self):
         ctx = AuditContext(source="issuesmith", correlation_id="issue:756")
         assert ctx.source == "issuesmith"
         assert ctx.correlation_id == "issue:756"
+
+    def test_ac_a1_extended_fields_no_type_error(self):
+        """AC-A1: request_id / parent_correlation_id / orchestration_id を渡しても TypeError にならない。"""
+        ctx = AuditContext(
+            source="x",
+            correlation_id="y",
+            request_id="r",
+            parent_correlation_id="p",
+            orchestration_id="o",
+        )
+        assert ctx.request_id == "r"
+        assert ctx.parent_correlation_id == "p"
+        assert ctx.orchestration_id == "o"
 
 
 class TestWriteAuditLog:
@@ -43,6 +59,10 @@ class TestWriteAuditLog:
         assert r["task_uuids"] == [UUID1]
         assert r["exec_lines_count"] == 1
         assert r["source"] == "issuesmith"
+        assert r["schema_version"] == 3
+        assert r["request_id"] is None
+        assert r["parent_correlation_id"] is None
+        assert r["orchestration_id"] is None
         assert "+09:00" in r["timestamp"]
         assert isinstance(r["caller_stack"], list)
 
@@ -105,6 +125,51 @@ class TestWriteAuditLog:
         r = json.loads(audit_path.read_text().strip())
         assert r["source"] == "unknown"
         assert r["correlation_id"] is None
+
+    def test_default_permission_uuids_recorded(self, tmp_path):
+        """default_permission_uuids が渡された場合、ログに反映される。"""
+        audit_path = tmp_path / "audit.jsonl"
+
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1, UUID2],
+            exec_lines_count=2,
+            context=AuditContext(source="issuesmith"),
+            default_permission_uuids=[UUID1, UUID2],
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["default_permission_uuids"] == [UUID1, UUID2]
+
+    def test_default_permission_uuids_omitted_when_none(self, tmp_path):
+        """default_permission_uuids=None → フィールドを出力しない。"""
+        audit_path = tmp_path / "audit.jsonl"
+
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1],
+            exec_lines_count=1,
+            context=AuditContext(),
+            default_permission_uuids=None,
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert "default_permission_uuids" not in r
+
+    def test_default_permission_uuids_omitted_when_empty(self, tmp_path):
+        """default_permission_uuids=[] → フィールドを出力しない。"""
+        audit_path = tmp_path / "audit.jsonl"
+
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1],
+            exec_lines_count=1,
+            context=AuditContext(),
+            default_permission_uuids=[],
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert "default_permission_uuids" not in r
 
     def test_idempotency_key_recorded(self, tmp_path):
         """idempotency_key が渡された場合、ログに反映される。"""
@@ -205,6 +270,94 @@ class TestAppendExecRecordsAudit:
         r = json.loads(audit_path.read_text().strip())
         assert r["task_uuids"] == []
 
+    def test_ac_a4_enqueue_v3_fields(self, tmp_path):
+        """AC-A4: write_audit_log に v3 フィールドが含まれる。"""
+        audit_path = tmp_path / "audit.jsonl"
+        ctx = AuditContext(
+            source="mltgnt-scheduler",
+            correlation_id="corr-1",
+            request_id="req-1",
+            parent_correlation_id="parent-1",
+            orchestration_id="orch-1",
+        )
+        write_audit_log(
+            audit_path,
+            task_uuids=[UUID1],
+            exec_lines_count=1,
+            context=ctx,
+        )
+        r = json.loads(audit_path.read_text().strip())
+        assert r["schema_version"] == 3
+        assert r["request_id"] == "req-1"
+        assert r["parent_correlation_id"] == "parent-1"
+        assert r["orchestration_id"] == "orch-1"
+
+    def test_ac_a5_request_id_in_exec_annotations(self, tmp_path):
+        """AC-A5: append_exec_records が annotations._request_id に request_id を注入する。"""
+        from ghdag.pipeline.state import PipelineState
+
+        exec_path = tmp_path / "exec.jsonl"
+        state = PipelineState(state_dir=tmp_path / ".state", exec_jsonl_path=exec_path)
+        records = [{"uuid": UUID1, "command": "echo hi"}]
+        ctx = AuditContext(source="mltgnt-scheduler", request_id="req-abc")
+
+        state.append_exec_records(records, audit_context=ctx)
+
+        line = exec_path.read_text().strip()
+        rec = json.loads(line)
+        assert rec["annotations"]["_request_id"] == "req-abc"
+
+    def test_ac4_default_permission_uuids_from_annotations(self, tmp_path):
+        """AC4: default_permission_applied 付き UUID のみ audit に記録。"""
+        from ghdag.pipeline.state import PipelineState
+
+        exec_path = tmp_path / "exec.jsonl"
+        state = PipelineState(state_dir=tmp_path / ".state", exec_jsonl_path=exec_path)
+        records = [
+            {
+                "uuid": UUID1,
+                "command": "cmd1",
+                "annotations": {
+                    "default_permission_applied": True,
+                    "injected_danger_flag": "--dangerously-skip-permissions",
+                },
+            },
+            {
+                "uuid": UUID2,
+                "command": "cmd2",
+                "annotations": {
+                    "default_permission_applied": True,
+                    "injected_danger_flag": "--force",
+                },
+            },
+            {
+                "uuid": "33333333-3333-3333-3333-333333333333",
+                "command": "cmd3",
+                "annotations": {},
+            },
+        ]
+
+        state.append_exec_records(records, audit_context=AuditContext(source="test"))
+
+        r = json.loads((tmp_path / "audit.jsonl").read_text().strip())
+        assert r["default_permission_uuids"] == [UUID1, UUID2]
+        assert len(r["task_uuids"]) == 3
+
+    def test_ac5_no_default_permission_uuids_when_all_specified(self, tmp_path):
+        """AC5: 全レコードが permission 指定相当（annotations 空）→ フィールドなし。"""
+        from ghdag.pipeline.state import PipelineState
+
+        exec_path = tmp_path / "exec.jsonl"
+        state = PipelineState(state_dir=tmp_path / ".state", exec_jsonl_path=exec_path)
+        records = [
+            {"uuid": UUID1, "command": "cmd1", "annotations": {}},
+        ]
+
+        state.append_exec_records(records, audit_context=AuditContext())
+
+        r = json.loads((tmp_path / "audit.jsonl").read_text().strip())
+        assert "default_permission_uuids" not in r
+
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
@@ -239,8 +392,24 @@ class TestWriteLlmAuditLog:
         assert r["exit_code"] == 0
         assert r["correlation_id"] == "slack:1234"
         assert r["timeout_sec"] == 120
+        assert r["schema_version"] == 3
         assert "+09:00" in r["timestamp"]
         assert _UUID4_RE.match(r["request_id"])
+
+    def test_ac_a3_external_request_id(self, tmp_path):
+        """AC-A3: request_id 指定時はその値が使われる。"""
+        from ghdag.pipeline.audit import write_llm_audit_log
+
+        audit_path = tmp_path / "audit.jsonl"
+        write_llm_audit_log(
+            audit_path,
+            engine="claude",
+            model="claude-sonnet-4-6",
+            exit_code=0,
+            request_id="ext-123",
+        )
+        r = json.loads(audit_path.read_text().strip())
+        assert r["request_id"] == "ext-123"
 
     def test_ac2_correlation_id_none(self, tmp_path):
         """AC2: correlation_id 未指定 → null。"""
