@@ -1,27 +1,40 @@
-"""workflow/github.py — GitHub クライアント実装とファクトリ。"""
+"""workflow/github.py — GitHub API/CLI clients."""
 
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
-from typing import Protocol
-from urllib import error, request
+from typing import Protocol, runtime_checkable
+
+import requests
+
+logger = logging.getLogger(__name__)
 
 
-class AuthError(ValueError):
-    """認証情報が不足していることを示すエラー。"""
+class GitHubClientError(Exception):
+    """Base exception for GitHub client errors."""
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
-class GitHubIssuePort(Protocol):
-    def get_issue(self, number: int) -> dict: ...
-    def dispatch_event(self, event_type: str, payload: dict | None = None) -> None: ...
-    def list_issues(self, label: str, state: str = "open") -> list[dict]: ...
-    def get_issue_comments(self, number: int) -> list[dict]: ...
-    def update_label(self, number: int, remove: str, add: str) -> None: ...
-    def add_comment(self, number: int, body: str) -> None: ...
-    def get_rate_limit(self) -> dict | None: ...
-    def remove_label(self, number: int, label: str) -> None: ...
+class AuthError(GitHubClientError):
+    """Authentication failed."""
+
+
+class RateLimitError(GitHubClientError):
+    """Rate limit exceeded."""
+
+
+class PermissionDeniedError(GitHubClientError):
+    """Permission denied."""
+
+
+class NetworkError(GitHubClientError):
+    """Network-level request error."""
 
 
 class GhCliGitHubClient:
@@ -132,124 +145,75 @@ class GhCliGitHubClient:
 
 
 class TokenGitHubClient:
-    """GitHub REST API を token で直接呼び出すクライアント。"""
+    """GitHub REST API client backed by requests.Session."""
+
+    BASE_URL = "https://api.github.com"
 
     def __init__(self, token: str, owner: str, repo: str) -> None:
-        self.token = token
-        self.owner = owner
-        self.repo = repo
-        self._base_url = f"https://api.github.com/repos/{owner}/{repo}"
-
-    def _request(self, method: str, path: str, body: dict | None = None) -> object:
-        url = f"{self._base_url}{path}"
-        payload = None if body is None else json.dumps(body).encode("utf-8")
-        req = request.Request(
-            url,
-            method=method,
-            data=payload,
-            headers={
+        self._owner = owner
+        self._repo = repo
+        self._session = requests.Session()
+        self._session.headers.update(
+            {
+                "Authorization": f"Bearer {token}",
                 "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {self.token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "ghdag",
-            },
+            }
         )
+
+    def _request(self, method: str, path: str, **kwargs) -> requests.Response:
+        url = f"{self.BASE_URL}{path}"
         try:
-            with request.urlopen(req) as resp:
-                data = resp.read().decode("utf-8")
-        except error.HTTPError as exc:
-            msg = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"GitHub API error ({exc.code}): {msg}") from exc
-        except error.URLError as exc:
-            raise RuntimeError(f"GitHub API request failed: {exc}") from exc
-        if not data:
-            return {}
-        return json.loads(data)
+            response = self._session.request(method, url, **kwargs)
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            raise NetworkError(f"Network error while calling {method} {url}") from exc
+
+        remaining = response.headers.get("X-RateLimit-Remaining")
+        reset = response.headers.get("X-RateLimit-Reset")
+        logger.debug("GitHub rate limit: remaining=%s reset=%s", remaining, reset)
+
+        if response.status_code == 401:
+            raise AuthError("GitHub authentication failed", status_code=401)
+        if response.status_code == 403 and remaining == "0":
+            raise RateLimitError("GitHub API rate limit exceeded", status_code=403)
+        if response.status_code == 403:
+            raise PermissionDeniedError("GitHub API permission denied", status_code=403)
+        response.raise_for_status()
+        return response
 
     def get_issue(self, number: int) -> dict:
-        raw = self._request("GET", f"/issues/{number}")
-        if not isinstance(raw, dict):
-            raise RuntimeError("Unexpected issue response format")
-        return {
-            "number": raw.get("number"),
-            "title": raw.get("title", ""),
-            "body": raw.get("body", ""),
-            "labels": raw.get("labels", []),
-            "url": raw.get("html_url", ""),
-        }
-
-    def dispatch_event(self, event_type: str, payload: dict | None = None) -> None:
-        body: dict = {"event_type": event_type}
-        if payload:
-            body["client_payload"] = payload
-        self._request("POST", "/dispatches", body=body)
+        path = f"/repos/{self._owner}/{self._repo}/issues/{number}"
+        return self._request("GET", path).json()
 
     def list_issues(self, label: str, state: str = "open") -> list[dict]:
-        raw = self._request("GET", f"/issues?labels={label}&state={state}&per_page=100")
-        if not isinstance(raw, list):
-            raise RuntimeError("Unexpected issues response format")
-        return [
-            {
-                "number": issue.get("number"),
-                "title": issue.get("title", ""),
-                "body": issue.get("body", ""),
-                "labels": issue.get("labels", []),
-                "url": issue.get("html_url", ""),
-            }
-            for issue in raw
-            if isinstance(issue, dict)
-        ]
+        path = f"/repos/{self._owner}/{self._repo}/issues"
+        params = {"labels": label, "state": state, "per_page": 100}
+        return self._request("GET", path, params=params).json()
 
     def get_issue_comments(self, number: int) -> list[dict]:
-        raw = self._request("GET", f"/issues/{number}/comments")
-        if not isinstance(raw, list):
-            raise RuntimeError("Unexpected comments response format")
-        return [
-            {
-                "author": c.get("user", {}).get("login", ""),
-                "created_at": c.get("created_at", ""),
-                "body": c.get("body", ""),
-            }
-            for c in raw
-            if isinstance(c, dict)
-        ]
+        path = f"/repos/{self._owner}/{self._repo}/issues/{number}/comments"
+        return self._request("GET", path, params={"per_page": 100}).json()
 
     def update_label(self, number: int, remove: str, add: str) -> None:
-        issue = self.get_issue(number)
-        labels = [lbl.get("name", "") for lbl in issue.get("labels", []) if isinstance(lbl, dict)]
-        labels = [label for label in labels if label and label != remove]
-        if add not in labels:
-            labels.append(add)
-        self._request("PATCH", f"/issues/{number}", body={"labels": labels})
+        delete_path = f"/repos/{self._owner}/{self._repo}/issues/{number}/labels/{remove}"
+        add_path = f"/repos/{self._owner}/{self._repo}/issues/{number}/labels"
+        self._request("DELETE", delete_path)
+        self._request("POST", add_path, json=[add])
 
     def add_comment(self, number: int, body: str) -> None:
-        self._request("POST", f"/issues/{number}/comments", body={"body": body})
-
-    def get_rate_limit(self) -> dict | None:
-        req = request.Request(
-            "https://api.github.com/rate_limit",
-            headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {self.token}",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "ghdag",
-            },
-        )
-        try:
-            with request.urlopen(req) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except (error.HTTPError, error.URLError, json.JSONDecodeError):
-            return None
-        rate = data.get("rate", {})
-        if not isinstance(rate, dict):
-            return None
-        return rate
+        path = f"/repos/{self._owner}/{self._repo}/issues/{number}/comments"
+        self._request("POST", path, json={"body": body})
 
     def remove_label(self, number: int, label: str) -> None:
-        issue = self.get_issue(number)
-        labels = [lbl.get("name", "") for lbl in issue.get("labels", []) if isinstance(lbl, dict)]
-        labels = [name for name in labels if name and name != label]
-        self._request("PATCH", f"/issues/{number}", body={"labels": labels})
+        path = f"/repos/{self._owner}/{self._repo}/issues/{number}/labels/{label}"
+        self._request("DELETE", path)
+
+    def dispatch_event(self, event_type: str, payload: dict | None = None) -> None:
+        path = f"/repos/{self._owner}/{self._repo}/dispatches"
+        body: dict[str, object] = {"event_type": event_type, "client_payload": payload or {}}
+        self._request("POST", path, json=body)
+
+    def get_rate_limit(self) -> dict | None:
+        return self._request("GET", "/rate_limit").json()
 
 
 def _resolve_repo() -> tuple[str, str]:
@@ -303,6 +267,25 @@ def create_github_client(
             return TokenGitHubClient(token_value, resolved_owner, resolved_repo)
         return GhCliGitHubClient()
     raise ValueError(f"Unsupported backend: {backend}")
+
+
+@runtime_checkable
+class GitHubIssuePort(Protocol):
+    def get_issue(self, number: int) -> dict: ...
+
+    def list_issues(self, label: str, state: str = "open") -> list[dict]: ...
+
+    def get_issue_comments(self, number: int) -> list[dict]: ...
+
+    def update_label(self, number: int, remove: str, add: str) -> None: ...
+
+    def add_comment(self, number: int, body: str) -> None: ...
+
+    def remove_label(self, number: int, label: str) -> None: ...
+
+    def dispatch_event(self, event_type: str, payload: dict | None = None) -> None: ...
+
+    def get_rate_limit(self) -> dict | None: ...
 
 
 GitHubIssueClient = GhCliGitHubClient

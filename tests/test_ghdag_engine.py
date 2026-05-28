@@ -691,6 +691,25 @@ class TestEngineModelFromStructuredFields:
         assert metrics.engine == "claude"
         assert metrics.model == "claude-opus-4-6"
 
+    def test_request_id_from_annotations(self, tmp_path):
+        """AC-A5: annotations._request_id が TaskMetrics.request_id に読み出される。"""
+        jsonl = json.dumps({
+            "uuid": "uuid-d",
+            "command": "echo hello",
+            "depends": [],
+            "annotations": {"_request_id": "req-from-annotations"},
+        })
+        config = self._make_jsonl_config(tmp_path, jsonl + "\n")
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        engine = DagEngine(config, hooks)
+
+        _run_engine_with_timeout(engine, timeout=3.0)
+
+        hooks.on_task_success.assert_called_once()
+        metrics = hooks.on_task_success.call_args[0][2]
+        assert metrics.request_id == "req-from-annotations"
+
 
 class TestReaderThreadJoin:
     """スレッド回収テスト — 受け入れ条件: 正常系"""

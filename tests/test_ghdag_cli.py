@@ -595,14 +595,14 @@ handlers:
 
 
 # ---------------------------------------------------------------------------
-# AC11: GitHubIssueClient.get_issue / dispatch_event
+# AC11: GhCliGitHubClient.get_issue / dispatch_event
 # ---------------------------------------------------------------------------
 
 
-class TestGitHubIssueClientExtended:
+class TestGhCliGitHubClient:
     def test_get_issue_calls_subprocess(self):
-        from ghdag.workflow.github import GitHubIssueClient
-        client = GitHubIssueClient()
+        from ghdag.workflow.github import GhCliGitHubClient
+        client = GhCliGitHubClient()
         mock_result = MagicMock()
         mock_result.stdout = json.dumps({
             "number": 42, "title": "Test", "body": "body",
@@ -617,8 +617,8 @@ class TestGitHubIssueClientExtended:
         assert result["number"] == 42
 
     def test_dispatch_event_calls_subprocess(self):
-        from ghdag.workflow.github import GitHubIssueClient
-        client = GitHubIssueClient()
+        from ghdag.workflow.github import GhCliGitHubClient
+        client = GhCliGitHubClient()
         with patch("subprocess.run") as mock_run:
             client.dispatch_event("pipeline-trigger", {"issue": 42})
         mock_run.assert_called_once()
@@ -627,8 +627,8 @@ class TestGitHubIssueClientExtended:
         assert call_args[1]["input"] is not None
 
     def test_dispatch_event_without_payload(self):
-        from ghdag.workflow.github import GitHubIssueClient
-        client = GitHubIssueClient()
+        from ghdag.workflow.github import GhCliGitHubClient
+        client = GhCliGitHubClient()
         with patch("subprocess.run") as mock_run:
             client.dispatch_event("simple-event")
         input_data = json.loads(mock_run.call_args[1]["input"])
@@ -816,6 +816,25 @@ class TestLlmAuditPath:
 
         assert flag_path.exists()
         assert not env_path.exists()
+
+    def test_ac_a6_request_id_flag(self, tmp_path):
+        """AC-A6: --request-id 指定時 → audit レコードの request_id がその値になる。"""
+        audit_path = tmp_path / "audit.jsonl"
+        mock_result = self._make_result(returncode=0)
+
+        with patch("ghdag.llm.engines.call", return_value=mock_result), \
+             patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
+            from ghdag.cli import main
+            with pytest.raises(SystemExit) as exc:
+                main([
+                    "llm", "hello",
+                    "--audit-path", str(audit_path),
+                    "--request-id", "ext-123",
+                ])
+        assert exc.value.code == 0
+        r = json.loads(audit_path.read_text().strip())
+        assert r["request_id"] == "ext-123"
+        assert r["schema_version"] == 3
 
     def test_ac5_timeout_recorded(self, tmp_path):
         """AC5: --timeout 指定時 → timeout_sec が記録される。"""

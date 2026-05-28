@@ -29,8 +29,8 @@ def test_create_github_client_token_raises_without_token(monkeypatch):
 def test_create_github_client_token_returns_token_client():
     client = create_github_client("token", token="xxx", owner="o", repo="r")
     assert isinstance(client, TokenGitHubClient)
-    assert client.owner == "o"
-    assert client.repo == "r"
+    assert client._owner == "o"
+    assert client._repo == "r"
 
 
 def test_create_github_client_auto_uses_github_token(monkeypatch):
@@ -38,7 +38,7 @@ def test_create_github_client_auto_uses_github_token(monkeypatch):
     monkeypatch.setenv("GH_TOKEN", "gh-token")
     client = create_github_client("auto", owner="o", repo="r")
     assert isinstance(client, TokenGitHubClient)
-    assert client.token == "g-token"
+    assert client._session.headers.get("Authorization") == "Bearer g-token"
 
 
 def test_create_github_client_auto_uses_gh_token_when_github_token_missing(monkeypatch):
@@ -46,7 +46,7 @@ def test_create_github_client_auto_uses_gh_token_when_github_token_missing(monke
     monkeypatch.setenv("GH_TOKEN", "gh-token")
     client = create_github_client("auto", owner="o", repo="r")
     assert isinstance(client, TokenGitHubClient)
-    assert client.token == "gh-token"
+    assert client._session.headers.get("Authorization") == "Bearer gh-token"
 
 
 def test_create_github_client_auto_falls_back_to_gh_client_without_token(monkeypatch):
@@ -61,8 +61,8 @@ def test_token_repo_resolution_prefers_explicit_owner_repo(monkeypatch):
     with patch("subprocess.run") as mock_run:
         client = create_github_client("token", token="x", owner="arg-owner", repo="arg-repo")
     assert isinstance(client, TokenGitHubClient)
-    assert client.owner == "arg-owner"
-    assert client.repo == "arg-repo"
+    assert client._owner == "arg-owner"
+    assert client._repo == "arg-repo"
     mock_run.assert_not_called()
 
 
@@ -70,8 +70,8 @@ def test_token_repo_resolution_uses_github_repository(monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORY", "env-owner/env-repo")
     client = create_github_client("token", token="x")
     assert isinstance(client, TokenGitHubClient)
-    assert client.owner == "env-owner"
-    assert client.repo == "env-repo"
+    assert client._owner == "env-owner"
+    assert client._repo == "env-repo"
 
 
 def test_token_repo_resolution_uses_gh_repo_view(monkeypatch):
@@ -81,8 +81,8 @@ def test_token_repo_resolution_uses_gh_repo_view(monkeypatch):
     with patch("subprocess.run", return_value=mock_result) as mock_run:
         client = create_github_client("token", token="x")
     assert isinstance(client, TokenGitHubClient)
-    assert client.owner == "cli-owner"
-    assert client.repo == "cli-repo"
+    assert client._owner == "cli-owner"
+    assert client._repo == "cli-repo"
     mock_run.assert_called_once()
 
 
