@@ -59,7 +59,7 @@ def md_write(
             fcntl.flock(f, fcntl.LOCK_UN)
 
     audit_path = resolved.parent / "audit.jsonl"
-    audit_kwargs: dict[str, object] = {}
+    audit_kwargs: dict[str, str] = {}
     if source is not None:
         audit_kwargs["source"] = source
     if correlation_id is not None:
