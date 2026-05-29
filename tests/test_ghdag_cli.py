@@ -238,20 +238,20 @@ class TestWatchNormal:
 
         mock_load = MagicMock(return_value=[])
         mock_dispatcher_cls = MagicMock()
-        mock_create_github_client = MagicMock()
+        mock_create_github_clients = MagicMock(return_value=[])
         mock_state_cls = MagicMock()
         mock_builder_cls = MagicMock()
 
         with patch("ghdag.workflow.loader.load_workflows", mock_load), \
              patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.create_github_client", mock_create_github_client), \
+             patch("ghdag.workflow.github.create_github_clients", mock_create_github_clients), \
              patch("ghdag.pipeline.state.PipelineState", mock_state_cls), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder", mock_builder_cls):
             from ghdag.cli import main
             main(["watch", str(workflows_dir)])
 
         mock_load.assert_called_once()
-        mock_create_github_client.assert_called_once_with()
+        mock_create_github_clients.assert_called_once_with()
         mock_dispatcher_cls.return_value.run.assert_called_once()
 
     def test_watch_with_options(self, tmp_path):
@@ -261,13 +261,13 @@ class TestWatchNormal:
 
         mock_load = MagicMock(return_value=[])
         mock_dispatcher_cls = MagicMock()
-        mock_create_github_client = MagicMock()
+        mock_create_github_clients = MagicMock(return_value=[])
         mock_state_cls = MagicMock()
         mock_builder_cls = MagicMock()
 
         with patch("ghdag.workflow.loader.load_workflows", mock_load), \
              patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.create_github_client", mock_create_github_client), \
+             patch("ghdag.workflow.github.create_github_clients", mock_create_github_clients), \
              patch("ghdag.pipeline.state.PipelineState", mock_state_cls), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder", mock_builder_cls):
             from ghdag.cli import main
@@ -281,7 +281,7 @@ class TestWatchNormal:
             state_dir=".pipeline-state",
             exec_jsonl_path=exec_jsonl_path,
         )
-        mock_create_github_client.assert_called_once_with()
+        mock_create_github_clients.assert_called_once_with()
         mock_dispatcher_cls.return_value.run.assert_called_once()
 
 

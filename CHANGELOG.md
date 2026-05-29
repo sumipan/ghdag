@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.28.0 — 2026-05-29
+
+### BREAKING
+
+- `watch` のリポジトリ解決を単数 `GITHUB_REPOSITORY` から複数 `GITHUB_REPOSITORIES`（カンマ区切り `owner/repo` リスト）へ移行。`GITHUB_REPOSITORY` は廃止 (diary #1322 関連)
+
+### Added
+
+- `create_github_clients()`: `GITHUB_REPOSITORIES` の各リポジトリに対するトークンクライアントのリストを生成（全クライアントで同一 PAT を共有）
+- `WorkflowDispatcher` が複数クライアントを受け付け、`poll_once` が全リポを横断して Issue を収集。`dispatch`・ラベル遷移・エラーコメント・rate limit 観測を Issue 取得元クライアントへルーティング
+- `WorkflowDispatcher(github_client=...)` は単一クライアントとクライアントのリストの両方を受け付ける（後方互換）
+
+### Notes
+
+- `gh` CLI には依存しない（トークン運用を維持）。`gh` フォールバックは追加しない
+- ワークフローのラベルは実質的に単一リポにスコープされる運用のため、複数リポで同一 Issue 番号かつ同一ワークフローの衝突（design.md ファイル名・冪等キー）は本変更の対象外
+
 ## 0.26.0 — 2026-05-28
 
 ### BREAKING
