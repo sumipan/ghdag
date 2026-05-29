@@ -12,7 +12,7 @@ import pytest
 
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import ContextHookError, WorkflowDispatcher
-from ghdag.workflow.github import GhCliGitHubClient, GitHubIssueClient, GitHubIssuePort
+from ghdag.workflow.github import GhCliGitHubClient, GitHubIssuePort
 from ghdag.workflow.loader import ValidationError, load_workflows
 from ghdag.workflow.schema import (
     DispatchResult,
