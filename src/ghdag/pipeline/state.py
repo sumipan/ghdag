@@ -14,6 +14,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 import yaml
@@ -165,6 +166,7 @@ class PipelineState:
         content: str,
         queue_dir: str,
         engine: str = "claude",
+        order_footer_fn: Callable[[str, str, str], str] | None = None,
     ) -> str:
         """queue_dir/{ts}-{engine}-order-{order_uuid}.md に content を書き出し。
 
@@ -174,6 +176,7 @@ class PipelineState:
             content: order ファイル本文
             queue_dir: 書き込み先ディレクトリパス
             engine: engine prefix（"claude", "cursor", "gemini" 等）。デフォルト "claude"。
+            order_footer_fn: 指定時、content 末尾にフッター文字列を付与してから書き込む。
 
         Returns:
             書き出したファイル名（ディレクトリ含まず）
@@ -183,6 +186,8 @@ class PipelineState:
         """
         if not engine:
             raise ValueError("engine must not be empty")
+        if order_footer_fn is not None:
+            content = content + order_footer_fn(ts, order_uuid, engine)
         filename = f"{ts}-{engine}-order-{order_uuid}.md"
         path = os.path.join(queue_dir, filename)
         with open(path, "a+", encoding="utf-8") as f:

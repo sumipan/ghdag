@@ -38,6 +38,8 @@ def md_write(
     content: str,
     *,
     repo_root: Path | None = None,
+    source: str | None = None,
+    correlation_id: str | None = None,
 ) -> WriteResult:
     root = repo_root if repo_root is not None else Path.cwd()
     resolved = (root / path).resolve()
@@ -57,8 +59,18 @@ def md_write(
             fcntl.flock(f, fcntl.LOCK_UN)
 
     audit_path = resolved.parent / "audit.jsonl"
+    audit_kwargs: dict[str, str] = {}
+    if source is not None:
+        audit_kwargs["source"] = source
+    if correlation_id is not None:
+        audit_kwargs["correlation_id"] = correlation_id
     try:
-        write_md_write_audit(audit_path, path=path, bytes_written=bytes_written)
+        write_md_write_audit(
+            audit_path,
+            path=path,
+            bytes_written=bytes_written,
+            **audit_kwargs,
+        )
     except OSError as e:
         print(f"[md_write] warning: failed to write audit log: {e}", file=sys.stderr)
 

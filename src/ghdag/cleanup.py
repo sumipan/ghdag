@@ -8,6 +8,10 @@ import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from uuid import uuid4
+
+from ghdag.files.links.obsidian import rewrite_links
+from ghdag.files.writer import md_write
 
 # queue/[ts]-[tool]-order/result/stderr-[UUID].md
 QUEUE_FILE_RE = re.compile(
@@ -56,11 +60,16 @@ def _archive_files(
     archive_dir: Path,
     orphan: bool,
     dry_run: bool,
-) -> None:
-    """entry に含まれるファイルをアーカイブディレクトリへ移動する。"""
+) -> list[tuple[Path, Path]]:
+    """entry に含まれるファイルをアーカイブディレクトリへ移動する。
+
+    Returns:
+        移動した (旧パス, 新パス) のリスト（dry_run 時は空）
+    """
     ts = entry["ts"]
     dest_dir = _archive_month_dir(archive_dir, ts, orphan=orphan)
     label = "orphan" if orphan else "done"
+    moved: list[tuple[Path, Path]] = []
     for kind in ("order", "result", "stderr"):
         p: Path | None = entry.get(kind)
         if p and p.exists():
@@ -70,6 +79,50 @@ def _archive_files(
             else:
                 p.rename(dest)
                 print(f"archive {label}: {p.name} → {dest}")
+                moved.append((p, dest))
+    return moved
+
+
+def _rewrite_links_after_archive(
+    queue_dir: Path,
+    all_moved: list[tuple[Path, Path]],
+    *,
+    dry_run: bool,
+) -> None:
+    """アーカイブ移動後にウィキリンクを path_map に基づき書き換える（生 read / md_write write）。"""
+    if dry_run or not all_moved:
+        return
+
+    repo_root = queue_dir.parent
+    cleanup_correlation_id = str(uuid4())
+    path_map: dict[str, str] = {}
+    for old_path, new_path in all_moved:
+        old_rel = f"jobs/{old_path.name}"
+        new_rel = str(new_path.relative_to(repo_root))
+        path_map[old_rel] = new_rel
+
+    def _maybe_rewrite(path: Path) -> None:
+        if path.suffix != ".md":
+            return
+        content = path.read_text(encoding="utf-8")
+        new_content = rewrite_links(content, path_map)
+        if new_content == content:
+            return
+        rel = str(path.relative_to(repo_root))
+        md_write(
+            rel,
+            new_content,
+            repo_root=repo_root,
+            source="cleanup_link_rewrite",
+            correlation_id=cleanup_correlation_id,
+        )
+
+    for _old_path, new_path in all_moved:
+        _maybe_rewrite(new_path)
+
+    for path in queue_dir.iterdir():
+        if path.is_file() and path.suffix == ".md":
+            _maybe_rewrite(path)
 
 
 def cleanup_queue(
@@ -155,6 +208,7 @@ def cleanup_queue(
     archived_orphan = 0
     detected_orphan = 0
     detected_dead = 0
+    all_moved: list[tuple[Path, Path]] = []
     prune_uuids: set[str] = set()
     detected_uuids: set[str] = set()  # auto_repair=False で検出のみした UUID（Phase 3 除外用）
     # done マーカーの削除は exec prune 後に行う（削除順序の保証）
@@ -176,7 +230,9 @@ def cleanup_queue(
                 mtime = file_timestamp(ref_path)
                 if mtime <= cutoff_ts:
                     # Case A: old → archive + prune
-                    _archive_files(entry, archive_dir, orphan=False, dry_run=dry_run)
+                    all_moved.extend(
+                        _archive_files(entry, archive_dir, orphan=False, dry_run=dry_run)
+                    )
                     deferred_done_deletes.add(uuid)
                     prune_uuids.add(uuid)
                     archived_done += 1
@@ -203,7 +259,9 @@ def cleanup_queue(
                             flag.write_text("ORPHAN_ARCHIVED", encoding="utf-8")
                         else:
                             print(f"[dry] create done marker (orphan): {uuid}")
-                        _archive_files(entry, archive_dir, orphan=True, dry_run=dry_run)
+                        all_moved.extend(
+                            _archive_files(entry, archive_dir, orphan=True, dry_run=dry_run)
+                        )
                         prune_uuids.add(uuid)
                         archived_orphan += 1
                     else:
@@ -275,7 +333,9 @@ def cleanup_queue(
         mtime = file_timestamp(ref_path)
 
         if uuid in done_uuids and mtime <= cutoff_ts:
-            _archive_files(entry, archive_dir, orphan=False, dry_run=dry_run)
+            all_moved.extend(
+                _archive_files(entry, archive_dir, orphan=False, dry_run=dry_run)
+            )
             archived_done += 1
             # Phase 2 では exec.jsonl 更新済みなので done マーカーを即時削除
             flag = done_dir / uuid
@@ -291,7 +351,9 @@ def cleanup_queue(
                 flag.write_text("ORPHAN_ARCHIVED", encoding="utf-8")
             else:
                 print(f"[dry] create done marker (orphan): {uuid}")
-            _archive_files(entry, archive_dir, orphan=True, dry_run=dry_run)
+            all_moved.extend(
+                _archive_files(entry, archive_dir, orphan=True, dry_run=dry_run)
+            )
             archived_orphan += 1
 
     # ── Phase 3: catch-all sweep — QUEUE_FILE_RE 不一致ファイルの一括アーカイブ ──
@@ -322,6 +384,8 @@ def cleanup_queue(
             path.rename(dest_dir / path.name)
             print(f"sweep extras: {path.name} → {dest_dir / path.name}")
         swept_extras += 1
+
+    _rewrite_links_after_archive(queue_dir, all_moved, dry_run=dry_run)
 
     return CleanupResult(
         archived_done=archived_done,
