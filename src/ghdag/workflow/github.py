@@ -205,7 +205,15 @@ class TokenGitHubClient:
 
     def get_issue_comments(self, number: int) -> list[dict]:
         path = f"/repos/{self._owner}/{self._repo}/issues/{number}/comments"
-        return self._request("GET", path, params={"per_page": 100}).json()
+        data = self._request("GET", path, params={"per_page": 100}).json()
+        return [
+            {
+                "author": (c.get("user") or {}).get("login", ""),
+                "created_at": c.get("created_at", ""),
+                "body": c.get("body", ""),
+            }
+            for c in data
+        ]
 
     def update_label(self, number: int, remove: str, add: str) -> None:
         delete_path = f"/repos/{self._owner}/{self._repo}/issues/{number}/labels/{remove}"
@@ -281,25 +289,6 @@ def create_github_client(
             return TokenGitHubClient(token_value, resolved_owner, resolved_repo)
         return GhCliGitHubClient()
     raise ValueError(f"Unsupported backend: {backend}")
-
-
-@runtime_checkable
-class GitHubIssuePort(Protocol):
-    def get_issue(self, number: int) -> dict: ...
-
-    def list_issues(self, label: str, state: str = "open") -> list[dict]: ...
-
-    def get_issue_comments(self, number: int) -> list[dict]: ...
-
-    def update_label(self, number: int, remove: str, add: str) -> None: ...
-
-    def add_comment(self, number: int, body: str) -> None: ...
-
-    def remove_label(self, number: int, label: str) -> None: ...
-
-    def dispatch_event(self, event_type: str, payload: dict | None = None) -> None: ...
-
-    def get_rate_limit(self) -> dict | None: ...
 
 
 GitHubIssueClient = GhCliGitHubClient
