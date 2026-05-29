@@ -91,3 +91,36 @@ class TestMdWriteBasic:
         final = f.read_text(encoding="utf-8")
         valid = {f"content-{i}" for i in range(10)}
         assert final in valid
+
+
+class TestMdWriteProvenance:
+    def test_ac14_source_and_correlation_id_recorded(self, repo_root: Path) -> None:
+        """AC14: source / correlation_id が audit に記録される"""
+        f = repo_root / "result" / "bar.md"
+        write_file(f, "old")
+
+        md_write(
+            "result/bar.md",
+            "new",
+            repo_root=repo_root,
+            source="cleanup_link_rewrite",
+            correlation_id="xyz",
+        )
+
+        audit_path = repo_root / "result" / "audit.jsonl"
+        record = json.loads(audit_path.read_text(encoding="utf-8").strip())
+        assert record["source"] == "cleanup_link_rewrite"
+        assert record["correlation_id"] == "xyz"
+
+    def test_ac14_default_audit_unchanged(self, repo_root: Path) -> None:
+        """AC14: デフォルト None では従来どおり source=md_write"""
+        f = repo_root / "result" / "bar.md"
+        write_file(f, "old")
+
+        md_write("result/bar.md", "done", repo_root=repo_root)
+
+        record = json.loads(
+            (repo_root / "result" / "audit.jsonl").read_text(encoding="utf-8").strip()
+        )
+        assert record["source"] == "md_write"
+        assert record.get("correlation_id") is None
