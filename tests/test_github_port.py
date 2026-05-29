@@ -3,23 +3,18 @@
 from __future__ import annotations
 
 from ghdag.workflow.github import (
-    GhCliGitHubClient,
     GitHubIssueClient,
     GitHubIssuePort,
     TokenGitHubClient,
 )
 
 
-def test_gh_cli_github_client_satisfies_github_issue_port():
-    assert isinstance(GhCliGitHubClient(), GitHubIssuePort)
-
-
 def test_github_issue_client_alias_satisfies_github_issue_port():
-    assert isinstance(GitHubIssueClient(), GitHubIssuePort)
+    assert isinstance(GitHubIssueClient("token", "owner", "repo"), GitHubIssuePort)
 
 
-def test_github_issue_client_alias_is_gh_cli_github_client():
-    assert GitHubIssueClient is GhCliGitHubClient
+def test_github_issue_client_alias_is_token_github_client():
+    assert GitHubIssueClient is TokenGitHubClient
 
 
 def test_token_github_client_satisfies_github_issue_port() -> None:

@@ -12,7 +12,7 @@ import pytest
 
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import ContextHookError, WorkflowDispatcher
-from ghdag.workflow.github import GhCliGitHubClient, GitHubIssuePort
+from ghdag.workflow.github import GitHubIssuePort, TokenGitHubClient
 from ghdag.workflow.loader import ValidationError, load_workflows
 from ghdag.workflow.schema import (
     DispatchResult,
@@ -611,7 +611,7 @@ class TestTC7Compatibility:
         assert WorkflowDispatcher is not None
 
     def test_github_import(self):
-        assert GhCliGitHubClient is not None
+        assert TokenGitHubClient is not None
 
     def test_poll_once_returns_match(self):
         workflow = _make_extended_workflow()
@@ -825,79 +825,6 @@ handlers:
             result = dispatcher._run_context_hook("echo test", 10)
 
         assert result == {}
-
-
-# ---------------------------------------------------------------------------
-# GhCliGitHubClient tests
-# ---------------------------------------------------------------------------
-
-
-class TestGhCliGitHubClient:
-    def test_list_issues_calls_subprocess(self):
-        client = GhCliGitHubClient()
-        mock_result = MagicMock()
-        mock_result.stdout = json.dumps([{"number": 1}])
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
-            result = client.list_issues("pipeline:draft-ready")
-        mock_run.assert_called_once_with(
-            [
-                "gh", "issue", "list",
-                "--label", "pipeline:draft-ready",
-                "--json", "number,title,body,labels,url",
-                "--limit", "100",
-                "--state", "open",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        assert result == [{"number": 1}]
-
-    def test_update_label_calls_subprocess(self):
-        client = GhCliGitHubClient()
-        with patch("subprocess.run") as mock_run:
-            client.update_label(42, "pipeline:draft-ready", "pipeline:draft-running")
-        mock_run.assert_called_once_with(
-            [
-                "gh", "issue", "edit", "42",
-                "--remove-label", "pipeline:draft-ready",
-                "--add-label", "pipeline:draft-running",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-    def test_remove_label_calls_subprocess(self):
-        client = GhCliGitHubClient()
-        with patch("subprocess.run") as mock_run:
-            client.remove_label(42, "pipeline:develop-running")
-        mock_run.assert_called_once_with(
-            [
-                "gh", "issue", "edit", "42",
-                "--remove-label", "pipeline:develop-running",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-    def test_add_comment_calls_subprocess(self):
-        client = GhCliGitHubClient()
-        with patch("subprocess.run") as mock_run:
-            client.add_comment(42, "test body")
-        mock_run.assert_called_once_with(
-            ["gh", "issue", "comment", "42", "--body", "test body"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-    def test_gh_cli_failure_raises_called_process_error(self):
-        client = GhCliGitHubClient()
-        with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "gh")):
-            with pytest.raises(subprocess.CalledProcessError):
-                client.list_issues("pipeline:draft-ready")
 
 
 # ---------------------------------------------------------------------------
