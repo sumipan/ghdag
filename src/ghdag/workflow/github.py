@@ -129,13 +129,34 @@ class TokenGitHubClient:
         return self._request("GET", "/rate_limit").json()
 
 
-def _resolve_repo() -> tuple[str, str]:
-    env_repo = os.environ.get("GITHUB_REPOSITORY", "").strip()
-    if env_repo and "/" in env_repo:
-        owner, repo = env_repo.split("/", 1)
+def _resolve_repos() -> list[tuple[str, str]]:
+    """GITHUB_REPOSITORIES（カンマ区切り owner/repo リスト）を解決する。
+
+    PAT は複数リポジトリにまたがれるため、watch は単一リポ固定ではなく
+    リポジトリのリストを polling できる。空白・不正形式のエントリは無視する。
+    """
+    raw = os.environ.get("GITHUB_REPOSITORIES", "")
+    repos: list[tuple[str, str]] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part or "/" not in part:
+            continue
+        owner, repo = (s.strip() for s in part.split("/", 1))
         if owner and repo:
-            return owner, repo
-    raise EnvironmentError("GITHUB_REPOSITORY environment variable is required")
+            repos.append((owner, repo))
+    if not repos:
+        raise EnvironmentError(
+            "GITHUB_REPOSITORIES environment variable is required "
+            "(comma-separated 'owner/repo' list)"
+        )
+    return repos
+
+
+def _resolve_token(token: str | None = None) -> str:
+    token_value = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if not token_value:
+        raise AuthError("GitHub token is required")
+    return token_value
 
 
 def create_github_client(
@@ -144,14 +165,28 @@ def create_github_client(
     owner: str | None = None,
     repo: str | None = None,
 ) -> GitHubIssuePort:
-    token_value = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if not token_value:
-        raise AuthError("GitHub token is required")
+    """単一リポジトリ用クライアントを生成する。
+
+    owner/repo を明示しない場合は GITHUB_REPOSITORIES の先頭エントリを使う。
+    """
+    token_value = _resolve_token(token)
     if owner and repo:
         resolved_owner, resolved_repo = owner, repo
     else:
-        resolved_owner, resolved_repo = _resolve_repo()
+        resolved_owner, resolved_repo = _resolve_repos()[0]
     return TokenGitHubClient(token_value, resolved_owner, resolved_repo)
+
+
+def create_github_clients(*, token: str | None = None) -> list[GitHubIssuePort]:
+    """GITHUB_REPOSITORIES の各リポジトリに対するクライアントのリストを生成する。
+
+    全クライアントで同一トークンを共有する（PAT は複数リポに到達可能）。
+    """
+    token_value = _resolve_token(token)
+    return [
+        TokenGitHubClient(token_value, owner, repo)
+        for owner, repo in _resolve_repos()
+    ]
 
 
 GitHubIssueClient = TokenGitHubClient

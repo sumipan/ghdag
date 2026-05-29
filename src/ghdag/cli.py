@@ -448,7 +448,7 @@ def _cmd_watch(args: argparse.Namespace) -> None:
     from ghdag.pipeline.order import OrderBuilder, TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
-    from ghdag.workflow.github import create_github_client
+    from ghdag.workflow.github import create_github_clients
     from ghdag.workflow.loader import load_workflows
 
     workflows_path = Path(args.workflows_dir)
@@ -460,7 +460,7 @@ def _cmd_watch(args: argparse.Namespace) -> None:
     for wf in workflows:
         wf.polling_interval = args.interval
 
-    github_client = create_github_client()
+    github_clients = create_github_clients()
     exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
     queue_dir = str(exec_jsonl_resolved.parent)
     pipeline_state = PipelineState(
@@ -490,7 +490,7 @@ def _cmd_watch(args: argparse.Namespace) -> None:
     )
     dispatcher = WorkflowDispatcher(
         workflows=workflows,
-        github_client=github_client,
+        github_client=github_clients,
         pipeline=pipeline,
         queue_dir=queue_dir,
     )
