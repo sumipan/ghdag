@@ -91,13 +91,6 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Poll once and exit (one-shot mode for event-driven triggers)",
     )
-    watch_parser.add_argument(
-        "--github-backend",
-        default="auto",
-        choices=["auto", "token", "gh"],
-        dest="github_backend",
-        help="GitHub client backend: auto (default), token, gh",
-    )
     watch_parser.set_defaults(func=_cmd_watch)
 
     # ghdag ui
@@ -265,13 +258,6 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="NAME",
         help="Workflow name (auto-detected if only one workflow exists)",
     )
-    trigger_parser.add_argument(
-        "--github-backend",
-        default="auto",
-        choices=["auto", "token", "gh"],
-        dest="github_backend",
-        help="GitHub client backend: auto (default), token, gh",
-    )
     trigger_parser.set_defaults(func=_cmd_trigger)
 
     return parser
@@ -416,7 +402,7 @@ def _cmd_trigger(args: argparse.Namespace) -> None:
             trigger_rank = rank
             break
 
-    github_client = create_github_client(args.github_backend)
+    github_client = create_github_client()
     exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
     queue_dir = str(exec_jsonl_resolved.parent)
     pipeline_state = PipelineState(
@@ -474,7 +460,7 @@ def _cmd_watch(args: argparse.Namespace) -> None:
     for wf in workflows:
         wf.polling_interval = args.interval
 
-    github_client = create_github_client(args.github_backend)
+    github_client = create_github_client()
     exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
     queue_dir = str(exec_jsonl_resolved.parent)
     pipeline_state = PipelineState(

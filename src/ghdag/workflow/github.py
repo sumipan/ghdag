@@ -1,11 +1,9 @@
-"""workflow/github.py — GitHubIssuePort Protocol + GitHubIssueClient: gh CLI ラッパー"""
+"""workflow/github.py — GitHubIssuePort Protocol + TokenGitHubClient"""
 
 from __future__ import annotations
 
-import json
 import logging
 import os
-import subprocess
 from typing import Protocol, runtime_checkable
 
 import requests
@@ -49,113 +47,6 @@ class PermissionDeniedError(GitHubClientError):
 
 class NetworkError(GitHubClientError):
     """Network-level request error."""
-
-
-class GhCliGitHubClient:
-    """gh CLI ラッパー。gh CLI が認証済みであることを前提とする。"""
-
-    def get_issue(self, number: int) -> dict:
-        result = subprocess.run(
-            [
-                "gh", "issue", "view", str(number),
-                "--json", "number,title,body,labels,url",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return json.loads(result.stdout)
-
-    def dispatch_event(self, event_type: str, payload: dict | None = None) -> None:
-        body: dict = {"event_type": event_type}
-        if payload:
-            body["client_payload"] = payload
-        subprocess.run(
-            [
-                "gh", "api", "repos/:owner/:repo/dispatches",
-                "--method", "POST",
-                "--input", "-",
-            ],
-            input=json.dumps(body),
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-    def list_issues(self, label: str, state: str = "open") -> list[dict]:
-        result = subprocess.run(
-            [
-                "gh", "issue", "list",
-                "--label", label,
-                "--json", "number,title,body,labels,url",
-                "--limit", "100",
-                "--state", state,
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return json.loads(result.stdout)
-
-    def get_issue_comments(self, number: int) -> list[dict]:
-        result = subprocess.run(
-            ["gh", "api", f"repos/:owner/:repo/issues/{number}/comments"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        raw = json.loads(result.stdout)
-        return [
-            {
-                "author": c.get("user", {}).get("login", ""),
-                "created_at": c.get("created_at", ""),
-                "body": c.get("body", ""),
-            }
-            for c in raw
-        ]
-
-    def update_label(self, number: int, remove: str, add: str) -> None:
-        subprocess.run(
-            [
-                "gh", "issue", "edit", str(number),
-                "--remove-label", remove,
-                "--add-label", add,
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-    def add_comment(self, number: int, body: str) -> None:
-        subprocess.run(
-            ["gh", "issue", "comment", str(number), "--body", body],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-    def get_rate_limit(self) -> dict | None:
-        try:
-            result = subprocess.run(
-                ["gh", "api", "rate_limit", "--jq", ".rate"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-            return json.loads(result.stdout)
-        except (subprocess.CalledProcessError, json.JSONDecodeError):
-            return None
-
-    def remove_label(self, number: int, label: str) -> None:
-        subprocess.run(
-            [
-                "gh", "issue", "edit", str(number),
-                "--remove-label", label,
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
 
 
 class TokenGitHubClient:
@@ -205,14 +96,14 @@ class TokenGitHubClient:
 
     def get_issue_comments(self, number: int) -> list[dict]:
         path = f"/repos/{self._owner}/{self._repo}/issues/{number}/comments"
-        data = self._request("GET", path, params={"per_page": 100}).json()
+        raw = self._request("GET", path, params={"per_page": 100}).json()
         return [
             {
                 "author": (c.get("user") or {}).get("login", ""),
                 "created_at": c.get("created_at", ""),
                 "body": c.get("body", ""),
             }
-            for c in data
+            for c in raw
         ]
 
     def update_label(self, number: int, remove: str, add: str) -> None:
@@ -244,51 +135,23 @@ def _resolve_repo() -> tuple[str, str]:
         owner, repo = env_repo.split("/", 1)
         if owner and repo:
             return owner, repo
-    try:
-        result = subprocess.run(
-            ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        raise ValueError("owner/repo を特定できませんでした") from exc
-    repo_full_name = result.stdout.strip()
-    if "/" not in repo_full_name:
-        raise ValueError("owner/repo を特定できませんでした")
-    owner, repo = repo_full_name.split("/", 1)
-    if not owner or not repo:
-        raise ValueError("owner/repo を特定できませんでした")
-    return owner, repo
+    raise EnvironmentError("GITHUB_REPOSITORY environment variable is required")
 
 
 def create_github_client(
-    backend: str = "auto",
     *,
     token: str | None = None,
     owner: str | None = None,
     repo: str | None = None,
 ) -> GitHubIssuePort:
     token_value = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if backend == "gh":
-        return GhCliGitHubClient()
-    if backend == "token":
-        if not token_value:
-            raise AuthError("GitHub token is required for token backend")
-        if owner and repo:
-            resolved_owner, resolved_repo = owner, repo
-        else:
-            resolved_owner, resolved_repo = _resolve_repo()
-        return TokenGitHubClient(token_value, resolved_owner, resolved_repo)
-    if backend == "auto":
-        if token_value:
-            if owner and repo:
-                resolved_owner, resolved_repo = owner, repo
-            else:
-                resolved_owner, resolved_repo = _resolve_repo()
-            return TokenGitHubClient(token_value, resolved_owner, resolved_repo)
-        return GhCliGitHubClient()
-    raise ValueError(f"Unsupported backend: {backend}")
+    if not token_value:
+        raise AuthError("GitHub token is required")
+    if owner and repo:
+        resolved_owner, resolved_repo = owner, repo
+    else:
+        resolved_owner, resolved_repo = _resolve_repo()
+    return TokenGitHubClient(token_value, resolved_owner, resolved_repo)
 
 
-GitHubIssueClient = GhCliGitHubClient
+GitHubIssueClient = TokenGitHubClient
