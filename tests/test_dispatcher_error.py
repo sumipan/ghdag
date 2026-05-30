@@ -1,4 +1,4 @@
-"""Tests for WorkflowDispatcher error handling — TC-7, TC-8, TC-9 (Issue #396)."""
+"""Tests for WorkflowDispatcher error handling — TC-7, TC-9 (Issue #396)."""
 
 from __future__ import annotations
 
@@ -54,37 +54,19 @@ def _make_dispatcher(workflow: WorkflowConfig) -> tuple[WorkflowDispatcher, Magi
     return dispatcher, github_client
 
 
-class TestTC7DispatchErrorPostsComment:
-    def test_error_comment_posted_on_dispatch_failure(self):
-        """TC-7: dispatch() が例外を出したとき Issue にエラーコメントが投稿される"""
+class TestTC7DispatchErrorLogsOnly:
+    def test_no_error_comment_on_dispatch_failure(self):
+        """TC-7: dispatch() が例外を出してもIssueにエラーコメントは投稿しない"""
         workflow = _make_workflow()
         dispatcher, github_client = _make_dispatcher(workflow)
         issue = _make_issue(42)
         github_client.list_issues.return_value = [issue]
 
-        # dispatch を失敗させる
         dispatcher.dispatch = MagicMock(side_effect=KeyError("テンプレート展開エラー (brushup.md): 'missing'"))
 
         dispatcher.run(max_iterations=1)
 
-        github_client.add_comment.assert_called_once()
-        args = github_client.add_comment.call_args
-        assert args[0][0] == 42  # issue_number
-        body = args[0][1]
-        assert "brushup" in body  # handler name
-
-    def test_error_comment_contains_traceback(self):
-        """TC-7: エラーコメントにスタックトレースが含まれる"""
-        workflow = _make_workflow()
-        dispatcher, github_client = _make_dispatcher(workflow)
-        issue = _make_issue(42)
-        github_client.list_issues.return_value = [issue]
-        dispatcher.dispatch = MagicMock(side_effect=KeyError("missing_key"))
-
-        dispatcher.run(max_iterations=1)
-
-        body = github_client.add_comment.call_args[0][1]
-        assert "KeyError" in body or "missing_key" in body
+        github_client.add_comment.assert_not_called()
 
     def test_error_log_includes_traceback(self, caplog):
         """TC-7: logger.exception が呼ばれる（スタックトレース付き）"""
@@ -100,45 +82,23 @@ class TestTC7DispatchErrorPostsComment:
         assert any("dispatch failed" in r.message for r in caplog.records)
         assert any("issue #42" in r.message for r in caplog.records)
 
-
-class TestTC8CommentPostFailureDoesNotCrash:
-    def test_run_continues_if_add_comment_fails(self):
-        """TC-8: コメント投稿が失敗しても run() はクラッシュしない"""
+    def test_run_continues_after_dispatch_failure(self):
+        """TC-7: dispatch() が例外を出しても run() はクラッシュしない"""
         workflow = _make_workflow()
         dispatcher, github_client = _make_dispatcher(workflow)
         issue = _make_issue(42)
         github_client.list_issues.return_value = [issue]
         dispatcher.dispatch = MagicMock(side_effect=RuntimeError("dispatch error"))
-        github_client.add_comment.side_effect = RuntimeError("comment error")
 
-        # クラッシュしないこと
         dispatcher.run(max_iterations=1)
-
-    def test_warning_logged_if_add_comment_fails(self, caplog):
-        """TC-8: コメント投稿失敗時に warning ログが出る"""
-        workflow = _make_workflow()
-        dispatcher, github_client = _make_dispatcher(workflow)
-        issue = _make_issue(42)
-        github_client.list_issues.return_value = [issue]
-        dispatcher.dispatch = MagicMock(side_effect=RuntimeError("dispatch error"))
-        github_client.add_comment.side_effect = RuntimeError("comment error")
-
-        with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
-            dispatcher.run(max_iterations=1)
-
-        assert any(
-            "post error comment" in r.message.lower() or "Failed to post" in r.message
-            for r in caplog.records
-        )
 
 
 class TestTC9NonIntIssueNumberSkipsComment:
     def test_no_comment_when_issue_number_not_int(self):
-        """TC-9: issue_number が int でない場合はコメント投稿をスキップ"""
+        """TC-9: issue_number が int でない場合もクラッシュしない"""
         workflow = _make_workflow()
         dispatcher, github_client = _make_dispatcher(workflow)
 
-        # _issue_data の number が str の壊れたデータ（poll_once が返す match を直接差し込む）
         handler = workflow.handlers["brushup"]
         trigger = workflow.triggers[0]
         broken_match = {
@@ -154,10 +114,8 @@ class TestTC9NonIntIssueNumberSkipsComment:
         dispatcher.poll_once = MagicMock(return_value=[broken_match])
         dispatcher.dispatch = MagicMock(side_effect=RuntimeError("error"))
 
-        # クラッシュしない
         dispatcher.run(max_iterations=1)
 
-        # add_comment は呼ばれない
         github_client.add_comment.assert_not_called()
 
 
