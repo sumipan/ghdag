@@ -13,6 +13,7 @@ class StepConfig:
     engine: str = "claude"  # LLM エンジン名（"claude", "gemini", "cursor" 等）
     depends: list[str] = field(default_factory=list)  # 依存ステップ ID リスト
     permission: str | None = None  # capabilities プリセット名（None = エンジンデフォルト）
+    skill_name: str | None = None  # このステップが呼び出すスキル名
 
 
 @dataclass
