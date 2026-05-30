@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.28.2 — 2026-05-30
+
+### Added
+
+- `StepConfig.skill_name`: ワークフローステップが呼び出すスキル名を宣言するオプションフィールド（後方互換、デフォルト `None`）
+- `typecheck_dag()`: スキル I/O 契約（`SkillIOSpec`）に基づく DAG 型検査。スキル存在・`content_type` 整合・`consumes` 充足警告を検出 (diary #1406)
+
 ## 0.28.0 — 2026-05-29
 
 ### BREAKING
