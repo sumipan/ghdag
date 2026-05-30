@@ -166,3 +166,45 @@ def test_raises_network_error_for_timeout() -> None:
     client._session.request = MagicMock(side_effect=requests.Timeout("timeout"))
     with pytest.raises(NetworkError):
         client.get_issue(1)
+
+
+def test_get_issue_comments_normalizes_api_response() -> None:
+    client = TokenGitHubClient("token", "owner", "repo")
+    raw = [
+        {
+            "user": {"login": "alice"},
+            "created_at": "2026-01-01T00:00:00Z",
+            "body": "hello",
+        }
+    ]
+    client._session.request = MagicMock(return_value=_response(payload=raw))
+    result = client.get_issue_comments(42)
+    client._session.request.assert_called_once_with(
+        "GET",
+        "https://api.github.com/repos/owner/repo/issues/42/comments",
+        params={"per_page": 100},
+    )
+    assert result == [
+        {
+            "author": "alice",
+            "created_at": "2026-01-01T00:00:00Z",
+            "body": "hello",
+        }
+    ]
+
+
+def test_get_issue_comments_null_user_yields_empty_author() -> None:
+    client = TokenGitHubClient("token", "owner", "repo")
+    raw = [{"user": None, "created_at": "2026-01-01T00:00:00Z", "body": "ghost"}]
+    client._session.request = MagicMock(return_value=_response(payload=raw))
+    result = client.get_issue_comments(1)
+    assert result == [
+        {"author": "", "created_at": "2026-01-01T00:00:00Z", "body": "ghost"}
+    ]
+
+
+def test_get_issue_comments_empty_list() -> None:
+    client = TokenGitHubClient("token", "owner", "repo")
+    client._session.request = MagicMock(return_value=_response(payload=[]))
+    result = client.get_issue_comments(99)
+    assert result == []

@@ -19,12 +19,16 @@ ghdag run jobs/exec.jsonl
 Watch a workflows directory and dispatch handlers on GitHub events:
 
 ```bash
-ghdag watch workflows/
+export GITHUB_REPOSITORIES="owner/repo"   # comma-separated for multiple repos
+export GITHUB_TOKEN="ghp_..."            # or GH_TOKEN
+ghdag watch workflows/ --exec-md jobs/exec.jsonl
 ```
 
 The `watch` command polls GitHub at a configurable interval and writes new
 execution entries to the path specified by `--exec-md` (default: `exec.md`).
-Use `--exec-md jobs/exec.jsonl` to write JSONL format instead.
+Use `--exec-md jobs/exec.jsonl` to write JSONL format instead. Token
+authentication is required (`GITHUB_TOKEN` or `GH_TOKEN`); the `gh` CLI backend
+is not supported.
 
 ## CLI Reference
 
@@ -54,6 +58,23 @@ ghdag run <exec-file> [--interval SEC] [--hooks MODULE] [--max-concurrency N]
 
 ```
 ghdag watch <workflows-dir> [--interval SEC] [--exec-md PATH] [--once]
+```
+
+Requires `GITHUB_REPOSITORIES` (comma-separated `owner/repo` list) and
+`GITHUB_TOKEN` or `GH_TOKEN`. The singular `GITHUB_REPOSITORY` variable is
+no longer supported.
+
+When multiple repositories are listed, each polling cycle collects matching
+issues across all of them. Label transitions, comments, and rate-limit
+observation are routed to the GitHub client for the repository where each
+issue was found.
+
+Example:
+
+```bash
+export GITHUB_REPOSITORIES="sumipan/ghdag,sumipan/diary"
+export GITHUB_TOKEN="ghp_..."
+ghdag watch workflows/ --interval 30 --exec-md jobs/exec.jsonl
 ```
 
 - `--once`: poll once and exit (event-driven / one-shot mode).
@@ -168,7 +189,7 @@ GitHub polling, YAML schema, and dispatching.
 | `dispatcher.py` | `WorkflowDispatcher` — polling loop and handler dispatch |
 | `schema.py` | `WorkflowConfig`, `HandlerConfig`, `TriggerConfig`, `DispatchResult` |
 | `loader.py` | YAML → `WorkflowConfig` loading |
-| `github.py` | `GitHubIssueClient` — GitHub API access |
+| `github.py` | `GitHubIssueClient` — GitHub API access via token; `create_github_client()` / `create_github_clients()` |
 | `engine.py` | `_GenericAdapter` — unified engine invocation |
 
 ### `pipeline/`
@@ -331,6 +352,8 @@ engines:
 
 | Variable | Description |
 |---|---|
+| `GITHUB_REPOSITORIES` | Comma-separated `owner/repo` list for `ghdag watch` (required) |
+| `GITHUB_TOKEN` / `GH_TOKEN` | GitHub personal access token (required for `watch`; shared across all repositories) |
 | `GHDAG_LLM_MODELS` | Path to a custom `llm-models.yml` file |
 | `GHDAG_AUDIT_PATH` | Path to the audit log file (used by `ghdag llm --audit-path`) |
 

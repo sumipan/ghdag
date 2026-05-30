@@ -180,6 +180,7 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
                     engine=s.get("engine", "claude"),
                     depends=s.get("depends", []),
                     permission=s.get("permission"),
+                    skill_name=s.get("skill_name"),
                 )
             )
 

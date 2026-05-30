@@ -37,12 +37,17 @@ class WorkflowDispatcher:
     def __init__(
         self,
         workflows: list[WorkflowConfig],
-        github_client: GitHubIssuePort,
+        github_client: GitHubIssuePort | list[GitHubIssuePort],
         pipeline: LLMPipelineAPI,
         queue_dir: str = "queue",
     ):
         self._workflows = workflows
-        self._github = github_client
+        # 単一クライアントとクライアントのリストの両方を受け付ける。
+        # 複数リポ watch 時はリポジトリごとのクライアントを渡す。
+        if isinstance(github_client, (list, tuple)):
+            self._githubs: list[GitHubIssuePort] = list(github_client)
+        else:
+            self._githubs = [github_client]
         self._pipeline = pipeline
         self._queue_dir = queue_dir
 
@@ -59,37 +64,39 @@ class WorkflowDispatcher:
             [{"issue": <number>, "workflow": <name>, "handler": <name>, ...}, ...]
         """
         results: list[dict] = []
-        for workflow in self._workflows:
-            for trigger_rank, trigger in enumerate(workflow.triggers):
-                handler_name = trigger.handler
-                if handler_name not in workflow.handlers:
-                    continue
-                try:
-                    issues = self._github.list_issues(trigger.label)
-                except Exception as exc:
-                    logger.warning(
-                        "poll_once: trigger label=%r in workflow=%r failed "
-                        "(%s: %s) — skipping this trigger and continuing with others",
-                        trigger.label,
-                        workflow.name,
-                        type(exc).__name__,
-                        exc,
-                    )
-                    continue
-                handler = workflow.handlers[handler_name]
-                for issue in issues:
-                    results.append(
-                        {
-                            "issue": issue["number"],
-                            "workflow": workflow.name,
-                            "handler": handler_name,
-                            "_issue_data": issue,
-                            "_workflow": workflow,
-                            "_handler": handler,
-                            "_trigger": trigger,
-                            "_trigger_rank": trigger_rank,
-                        }
-                    )
+        for github in self._githubs:
+            for workflow in self._workflows:
+                for trigger_rank, trigger in enumerate(workflow.triggers):
+                    handler_name = trigger.handler
+                    if handler_name not in workflow.handlers:
+                        continue
+                    try:
+                        issues = github.list_issues(trigger.label)
+                    except Exception as exc:
+                        logger.warning(
+                            "poll_once: trigger label=%r in workflow=%r failed "
+                            "(%s: %s) — skipping this trigger and continuing with others",
+                            trigger.label,
+                            workflow.name,
+                            type(exc).__name__,
+                            exc,
+                        )
+                        continue
+                    handler = workflow.handlers[handler_name]
+                    for issue in issues:
+                        results.append(
+                            {
+                                "issue": issue["number"],
+                                "workflow": workflow.name,
+                                "handler": handler_name,
+                                "_issue_data": issue,
+                                "_workflow": workflow,
+                                "_handler": handler,
+                                "_trigger": trigger,
+                                "_trigger_rank": trigger_rank,
+                                "_github": github,
+                            }
+                        )
         return results
 
     def dispatch(
@@ -99,6 +106,7 @@ class WorkflowDispatcher:
         handler: HandlerConfig,
         trigger: TriggerConfig | None = None,
         trigger_rank: int | None = None,
+        github: GitHubIssuePort | None = None,
     ) -> DispatchResult:
         """Issue に対してハンドラーを実行。
 
@@ -108,10 +116,12 @@ class WorkflowDispatcher:
             handler: HandlerConfig
             trigger: 対応する TriggerConfig（省略時は workflow から解決）
             trigger_rank: triggers リスト内の序列（省略時は workflow から解決）
+            github: この Issue を取得したクライアント（省略時は先頭クライアント）
 
         Returns:
             DispatchResult: status が "dispatched" | "skipped" | "reset"
         """
+        github = github if github is not None else self._githubs[0]
         issue_number = issue["number"] if isinstance(issue, dict) else issue
 
         # trigger / trigger_rank を解決
@@ -131,7 +141,7 @@ class WorkflowDispatcher:
         if handler.type == "reset":
             if trigger is None:
                 return DispatchResult(status="skipped", reason="no trigger for reset")
-            self._handle_reset(issue, workflow, trigger)
+            self._handle_reset(issue, workflow, trigger, github)
             return DispatchResult(status="reset", reason="reset handler")
 
         # 3. 冪等性チェック
@@ -142,7 +152,7 @@ class WorkflowDispatcher:
 
         # 4. Issue コンテキスト取得
         if handler.on_trigger and handler.on_trigger.issue_context:
-            self._write_design_md(issue)
+            self._write_design_md(issue, github)
 
         # 4b. context_hook 実行
         base_context: dict[str, str] = {
@@ -165,7 +175,7 @@ class WorkflowDispatcher:
         # 6. ラベル遷移（*-ready → *-running）
         if trigger and trigger.label.endswith("-ready"):
             running_label = trigger.label.replace("-ready", "-running")
-            self._github.update_label(issue_number, trigger.label, running_label)
+            github.update_label(issue_number, trigger.label, running_label)
 
         return DispatchResult(status="dispatched", exec_lines=exec_lines)
 
@@ -179,6 +189,7 @@ class WorkflowDispatcher:
             matches = self.poll_once()
             self._observe_rate_limit()
             for match in matches:
+                github = match.get("_github") or self._githubs[0]
                 try:
                     self.dispatch(
                         match["_issue_data"],
@@ -186,6 +197,7 @@ class WorkflowDispatcher:
                         match["_handler"],
                         trigger=match["_trigger"],
                         trigger_rank=match["_trigger_rank"],
+                        github=github,
                     )
                 except Exception:
                     issue_number = match["_issue_data"].get("number", "?")
@@ -200,28 +212,29 @@ class WorkflowDispatcher:
                 time.sleep(polling_interval)
 
     def _observe_rate_limit(self) -> None:
-        """GitHub API rate limit を取得し、audit.jsonl に記録する。"""
-        rate = self._github.get_rate_limit()
-        if rate is None:
-            return
-        remaining = rate.get("remaining")
-        limit = rate.get("limit")
-        reset = rate.get("reset")
-        if remaining is None or limit is None or reset is None:
-            return
+        """各クライアントの GitHub API rate limit を取得し、audit.jsonl に記録する。"""
+        for github in self._githubs:
+            rate = github.get_rate_limit()
+            if rate is None:
+                continue
+            remaining = rate.get("remaining")
+            limit = rate.get("limit")
+            reset = rate.get("reset")
+            if remaining is None or limit is None or reset is None:
+                continue
 
-        audit_path = Path(self._queue_dir) / "audit.jsonl"
-        write_rate_limit_audit(
-            audit_path,
-            remaining=remaining,
-            limit=limit,
-            reset=reset,
-        )
-        if remaining <= _RATE_LIMIT_THRESHOLD:
-            logger.warning(
-                "GitHub API rate limit low: %d/%d remaining (resets at %d)",
-                remaining, limit, reset,
+            audit_path = Path(self._queue_dir) / "audit.jsonl"
+            write_rate_limit_audit(
+                audit_path,
+                remaining=remaining,
+                limit=limit,
+                reset=reset,
             )
+            if remaining <= _RATE_LIMIT_THRESHOLD:
+                logger.warning(
+                    "GitHub API rate limit low: %d/%d remaining (resets at %d)",
+                    remaining, limit, reset,
+                )
 
     # --- internal helpers ---
 
@@ -250,10 +263,10 @@ class WorkflowDispatcher:
 
         return max_rank
 
-    def _write_design_md(self, issue: dict) -> None:
+    def _write_design_md(self, issue: dict, github: GitHubIssuePort) -> None:
         """Issue body + comments を queue/issue-{N}-design.md に書き出す。"""
         issue_number = issue["number"]
-        comments = self._github.get_issue_comments(issue_number)
+        comments = github.get_issue_comments(issue_number)
 
         lines = [f"# Issue #{issue_number}: {issue.get('title', '')}", ""]
         body = issue.get("body") or ""
@@ -270,7 +283,11 @@ class WorkflowDispatcher:
         design_path.write_text("\n".join(lines), encoding="utf-8")
 
     def _handle_reset(
-        self, issue: dict, workflow: WorkflowConfig, trigger: TriggerConfig
+        self,
+        issue: dict,
+        workflow: WorkflowConfig,
+        trigger: TriggerConfig,
+        github: GitHubIssuePort,
     ) -> None:
         """冪等キー削除 + トリガーラベルと同プレフィックスのラベルをすべてクリア。"""
         issue_number = issue["number"]
@@ -286,7 +303,7 @@ class WorkflowDispatcher:
             issue_label_names = [lb["name"] for lb in issue.get("labels", [])]
             for label in issue_label_names:
                 if label.startswith(prefix):
-                    self._github.remove_label(issue_number, label)
+                    github.remove_label(issue_number, label)
 
     def _run_context_hook(
         self, hook_cmd: str, issue_number: int, *, timeout: int = 30

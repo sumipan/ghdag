@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from ghdag.files.links.obsidian import job_footer
 from ghdag.pipeline.state import PipelineState
 
 UUID1 = "38d6b791-1072-42f0-838d-45c7d10748ff"
@@ -25,6 +26,44 @@ def pipeline_jsonl(tmp_path):
     exec_jsonl = tmp_path / "exec.jsonl"
     exec_jsonl.write_text("", encoding="utf-8")
     return PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
+
+
+class TestWriteOrderFileFooter:
+    def test_ac7_order_footer_fn_appends_dag_section(self, tmp_path) -> None:
+        queue_dir = tmp_path / "jobs"
+        queue_dir.mkdir()
+        state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=tmp_path / "exec.jsonl")
+        order_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        ts = "20260509120000"
+
+        filename = state.write_order_file(
+            ts,
+            order_uuid,
+            "order body",
+            str(queue_dir),
+            engine="cursor",
+            order_footer_fn=job_footer,
+        )
+
+        content = (queue_dir / filename).read_text(encoding="utf-8")
+        assert "## DAG（Obsidian）" in content
+        assert "[[jobs/done/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee]]" in content
+
+    def test_ac8_default_no_dag_section(self, tmp_path) -> None:
+        queue_dir = tmp_path / "jobs"
+        queue_dir.mkdir()
+        state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=tmp_path / "exec.jsonl")
+
+        filename = state.write_order_file(
+            "20260509120000",
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "order body",
+            str(queue_dir),
+            engine="cursor",
+        )
+
+        content = (queue_dir / filename).read_text(encoding="utf-8")
+        assert "## DAG（Obsidian）" not in content
 
 
 class TestSubmitWithoutAuditContext:

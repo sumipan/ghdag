@@ -238,20 +238,20 @@ class TestWatchNormal:
 
         mock_load = MagicMock(return_value=[])
         mock_dispatcher_cls = MagicMock()
-        mock_create_github_client = MagicMock()
+        mock_create_github_clients = MagicMock(return_value=[])
         mock_state_cls = MagicMock()
         mock_builder_cls = MagicMock()
 
         with patch("ghdag.workflow.loader.load_workflows", mock_load), \
              patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.create_github_client", mock_create_github_client), \
+             patch("ghdag.workflow.github.create_github_clients", mock_create_github_clients), \
              patch("ghdag.pipeline.state.PipelineState", mock_state_cls), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder", mock_builder_cls):
             from ghdag.cli import main
             main(["watch", str(workflows_dir)])
 
         mock_load.assert_called_once()
-        mock_create_github_client.assert_called_once_with("auto")
+        mock_create_github_clients.assert_called_once_with()
         mock_dispatcher_cls.return_value.run.assert_called_once()
 
     def test_watch_with_options(self, tmp_path):
@@ -261,13 +261,13 @@ class TestWatchNormal:
 
         mock_load = MagicMock(return_value=[])
         mock_dispatcher_cls = MagicMock()
-        mock_create_github_client = MagicMock()
+        mock_create_github_clients = MagicMock(return_value=[])
         mock_state_cls = MagicMock()
         mock_builder_cls = MagicMock()
 
         with patch("ghdag.workflow.loader.load_workflows", mock_load), \
              patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.create_github_client", mock_create_github_client), \
+             patch("ghdag.workflow.github.create_github_clients", mock_create_github_clients), \
              patch("ghdag.pipeline.state.PipelineState", mock_state_cls), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder", mock_builder_cls):
             from ghdag.cli import main
@@ -275,23 +275,14 @@ class TestWatchNormal:
                 "watch", str(workflows_dir),
                 "--interval", "60",
                 "--exec-md", exec_jsonl_path,
-                "--github-backend", "token",
             ])
 
         mock_state_cls.assert_called_once_with(
             state_dir=".pipeline-state",
             exec_jsonl_path=exec_jsonl_path,
         )
-        mock_create_github_client.assert_called_once_with("token")
+        mock_create_github_clients.assert_called_once_with()
         mock_dispatcher_cls.return_value.run.assert_called_once()
-
-    def test_watch_invalid_github_backend_exits_2(self, tmp_path):
-        workflows_dir = tmp_path / "workflows"
-        workflows_dir.mkdir()
-        from ghdag.cli import main
-        with pytest.raises(SystemExit) as exc:
-            main(["watch", str(workflows_dir), "--github-backend", "invalid"])
-        assert exc.value.code == 2
 
 
 # ---------------------------------------------------------------------------
@@ -428,10 +419,9 @@ handlers:
                 "--handler", "brushup",
                 "--workflows-dir", str(workflows_dir),
                 "--exec-md", str(exec_md),
-                "--github-backend", "gh",
             ])
 
-        mock_create_github_client.assert_called_once_with("gh")
+        mock_create_github_client.assert_called_once_with()
         mock_dispatcher_cls.return_value.dispatch.assert_called_once()
         call_args = mock_dispatcher_cls.return_value.dispatch.call_args
         assert call_args[0][0]["number"] == 42
@@ -468,7 +458,7 @@ handlers:
                 "--exec-md", str(exec_md),
             ])
 
-        mock_create_github_client.assert_called_once_with("auto")
+        mock_create_github_client.assert_called_once_with()
         mock_dispatcher_cls.return_value.dispatch.assert_called_once()
 
 
@@ -505,16 +495,6 @@ handlers:
         from ghdag.cli import main
         with pytest.raises(SystemExit) as exc:
             main(["trigger", "42"])
-        assert exc.value.code == 2
-
-    def test_trigger_invalid_github_backend_exits_2(self):
-        from ghdag.cli import main
-        with pytest.raises(SystemExit) as exc:
-            main([
-                "trigger", "42",
-                "--handler", "brushup",
-                "--github-backend", "invalid",
-            ])
         assert exc.value.code == 2
 
     def test_trigger_nonexistent_dir_exits_1(self, capsys):
@@ -592,48 +572,6 @@ handlers:
                     "--exec-md", str(exec_md),
                 ])
             assert exc.value.code == 1
-
-
-# ---------------------------------------------------------------------------
-# AC11: GhCliGitHubClient.get_issue / dispatch_event
-# ---------------------------------------------------------------------------
-
-
-class TestGhCliGitHubClient:
-    def test_get_issue_calls_subprocess(self):
-        from ghdag.workflow.github import GhCliGitHubClient
-        client = GhCliGitHubClient()
-        mock_result = MagicMock()
-        mock_result.stdout = json.dumps({
-            "number": 42, "title": "Test", "body": "body",
-            "labels": [{"name": "bug"}], "url": "https://example.com",
-        })
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
-            result = client.get_issue(42)
-        mock_run.assert_called_once_with(
-            ["gh", "issue", "view", "42", "--json", "number,title,body,labels,url"],
-            capture_output=True, text=True, check=True,
-        )
-        assert result["number"] == 42
-
-    def test_dispatch_event_calls_subprocess(self):
-        from ghdag.workflow.github import GhCliGitHubClient
-        client = GhCliGitHubClient()
-        with patch("subprocess.run") as mock_run:
-            client.dispatch_event("pipeline-trigger", {"issue": 42})
-        mock_run.assert_called_once()
-        call_args = mock_run.call_args
-        assert "repos/:owner/:repo/dispatches" in call_args[0][0]
-        assert call_args[1]["input"] is not None
-
-    def test_dispatch_event_without_payload(self):
-        from ghdag.workflow.github import GhCliGitHubClient
-        client = GhCliGitHubClient()
-        with patch("subprocess.run") as mock_run:
-            client.dispatch_event("simple-event")
-        input_data = json.loads(mock_run.call_args[1]["input"])
-        assert input_data["event_type"] == "simple-event"
-        assert "client_payload" not in input_data
 
 
 # ---------------------------------------------------------------------------
