@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import InlineOrderBuilder
@@ -30,37 +28,47 @@ class TestInlineOrderBuilder:
         result = builder.build_order("${a} and ${b}", {"a": "X", "b": "Y"})
         assert result == "X and Y"
 
-    def test_undefined_variable_raises_value_error(self):
+    def test_undefined_variable_passes_through(self):
+        """未定義変数は ${var} のまま残す（safe_substitute 挙動）。
+
+        scheduler の動的プロンプト（mltgnt skill action 等）で LLM 向けの
+        ${ENV_VAR} 表記が含まれた場合に scheduler が死なないよう、未定義変数を
+        raise せずそのまま通す仕様。
+        """
         builder = InlineOrderBuilder()
-        with pytest.raises(ValueError) as exc_info:
-            builder.build_order("${missing}", {})
-        assert "テンプレート展開エラー" in str(exc_info.value)
+        result = builder.build_order("${missing}", {})
+        assert result == "${missing}"
 
-    def test_invalid_dollar_syntax_raises_value_error(self):
+    def test_partial_substitution(self):
+        """既知変数だけ展開し、未知は ${var} のまま残す。"""
         builder = InlineOrderBuilder()
-        with pytest.raises(ValueError) as exc_info:
-            builder.build_order("${}", {})
-        assert "テンプレート展開エラー" in str(exc_info.value)
+        result = builder.build_order("${p} ${q}", {"p": "1"})
+        assert result == "1 ${q}"
 
-    def test_t4_missing_var_shows_available_keys(self):
-        """T4: 不足変数+利用可能キーが ValueError メッセージに含まれる"""
+    def test_skill_prompt_with_env_var_notation(self):
+        """SKILL.md 風の ${ENV_VAR} 記法を含むプロンプトが落ちない。
+
+        mltgnt skill action 経由で `${NIKKI_ROOT}/日記/...` のような LLM 向け
+        環境変数表記が prompt に含まれても TemplateVariableError を raise しない
+        ことの回帰テスト。
+        """
         builder = InlineOrderBuilder()
-        with pytest.raises(ValueError) as exc_info:
-            builder.build_order("${p} ${q}", {"p": "1"})
+        prompt = "対象日記: ${NIKKI_ROOT}/日記/YYYY-MM-DD.md ($0)"
+        result = builder.build_order(prompt, {"workflow_name": "scheduler"})
+        # ${NIKKI_ROOT} と $0 が未定義でも raise されずに通る
+        assert "${NIKKI_ROOT}" in result
+        assert "$0" in result
 
-        msg = str(exc_info.value)
-        assert "q" in msg
-        assert "p" in msg  # 利用可能キーに含まれる
+    def test_malformed_placeholder_passes_through(self):
+        """malformed placeholder (${}) も safe_substitute では raise せず残る。
 
-    def test_t5_invalid_syntax_wrapped_as_value_error(self):
-        """T5: 不正 $ 構文が ValueError としてラッピングされる"""
+        従来は ValueError を raise していたが、scheduler の動的プロンプト経路で
+        scheduler スレッドが落ちるよりも、不正記法をそのまま LLM に渡したほうが
+        運用上安全（LLM が文脈で判断できる）。
+        """
         builder = InlineOrderBuilder()
-        with pytest.raises(ValueError) as exc_info:
-            builder.build_order("${}", {})
-
-        msg = str(exc_info.value)
-        assert "テンプレート展開エラー" in msg
-        assert exc_info.value.__cause__ is not None
+        result = builder.build_order("text ${} more", {})
+        assert result == "text ${} more"
 
     def test_protocol_conformance_with_llm_pipeline_api(self, tmp_path):
         """InlineOrderBuilder を order_builders に渡して submit が成功する。"""

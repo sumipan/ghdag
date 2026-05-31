@@ -44,6 +44,12 @@ class InlineOrderBuilder:
     """テンプレート文字列を直接受け取り string.Template で展開する OrderBuilder。
 
     ファイル I/O を行わないため、scheduler 等の動的プロンプト生成に使う。
+
+    動的プロンプト（mltgnt skill action 経由など）では prompt 本文に LLM 向けの
+    ``${ENV_VAR}`` 表記が含まれる可能性がある。これを strict 展開すると未定義変数として
+    エラーになり scheduler ジョブが死ぬため、未定義変数は ``${VAR}`` のまま残す
+    ``safe_substitute`` を使う。ファイルベースの :class:`TemplateOrderBuilder` は
+    テンプレ作者が意図的にプレースホルダを書く文脈なので strict を維持する。
     """
 
     def build_order(self, step_id: str, context: dict[str, str]) -> str:
@@ -55,18 +61,11 @@ class InlineOrderBuilder:
                      LLMPipelineAPI.submit が StepConfig.template をそのまま渡す。
             context: テンプレート変数の展開に使う dict
         Returns:
-            展開後の order 本文
-        Raises:
-            ValueError: テンプレートに含まれる変数が context に不足、または不正な $ 構文
+            展開後の order 本文。未定義変数や malformed placeholder (``${}`` 等) は
+            そのまま残る（``safe_substitute`` 挙動）。例外を投げない。
         """
         tmpl = string.Template(step_id)
-        _check_missing_vars(tmpl, context, "inline")
-        try:
-            return tmpl.substitute(context)
-        except ValueError as e:
-            raise ValueError(
-                f"テンプレート展開エラー (inline): {e}"
-            ) from e
+        return tmpl.safe_substitute(context)
 
 
 class TemplateOrderBuilder:
