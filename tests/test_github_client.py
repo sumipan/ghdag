@@ -5,10 +5,10 @@ from __future__ import annotations
 import io
 import json
 import os
+import urllib.error
 from unittest import mock
 
 import pytest
-import urllib.error
 
 from ghdag.github_client import (
     API_BASE,
