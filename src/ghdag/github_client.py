@@ -13,7 +13,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from typing import Any
+from typing import Any, cast
 
 API_BASE = "https://api.github.com"
 GRAPHQL_URL = "https://api.github.com/graphql"
@@ -150,7 +150,7 @@ class GitHubClient:
     def issue_get(self, number: int, fields: list[str] | None = None) -> dict:
         raw = self._request("GET", f"/repos/{self._owner}/{self._repo}/issues/{number}")
         if fields is None:
-            return raw
+            return cast(dict[str, Any], raw)
 
         out: dict[str, Any] = {}
         for field in fields:
@@ -220,10 +220,13 @@ class GitHubClient:
             )
 
     def issue_comment(self, number: int, body: str) -> dict:
-        return self._request(
-            "POST",
-            f"/repos/{self._owner}/{self._repo}/issues/{number}/comments",
-            body={"body": body},
+        return cast(
+            dict[str, Any],
+            self._request(
+                "POST",
+                f"/repos/{self._owner}/{self._repo}/issues/{number}/comments",
+                body={"body": body},
+            ),
         )
 
     def issue_close(self, number: int) -> None:
@@ -340,12 +343,15 @@ class GitHubClient:
 
     def pr_diff(self, number: int, *, repo: str | None = None) -> str:
         owner, repo_name = _resolve_repo(repo) if repo else (self._owner, self._repo)
-        return self._request(
-            "GET",
-            f"/repos/{owner}/{repo_name}/pulls/{number}",
-            accept="application/vnd.github.diff",
-            raw=True,
-            repo=repo,
+        return cast(
+            str,
+            self._request(
+                "GET",
+                f"/repos/{owner}/{repo_name}/pulls/{number}",
+                accept="application/vnd.github.diff",
+                raw=True,
+                repo=repo,
+            ),
         )
 
     def pr_create(
@@ -412,7 +418,7 @@ class GitHubClient:
             params={"per_page": "100"},
             repo=repo,
         )
-        return (checks or {}).get("check_runs", [])
+        return cast(list[dict[str, Any]], (checks or {}).get("check_runs", []))
 
     def pr_ready(self, number: int, *, repo: str | None = None) -> None:
         owner, repo_name = _resolve_repo(repo) if repo else (self._owner, self._repo)
@@ -446,10 +452,13 @@ class GitHubClient:
 
     def run_get(self, run_id: int, *, repo: str | None = None) -> dict:
         owner, repo_name = _resolve_repo(repo) if repo else (self._owner, self._repo)
-        return self._request(
-            "GET",
-            f"/repos/{owner}/{repo_name}/actions/runs/{run_id}",
-            repo=repo,
+        return cast(
+            dict[str, Any],
+            self._request(
+                "GET",
+                f"/repos/{owner}/{repo_name}/actions/runs/{run_id}",
+                repo=repo,
+            ),
         )
 
     def run_logs_failed(self, run_id: int, *, repo: str | None = None) -> str:
