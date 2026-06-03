@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.28.4 — 2026-06-03
+
+### Added
+
+- `github_cli.py`: `gh` CLI ラッパーモジュールを issuesmith から移植（`issue view/create/comment/close/edit`, `pr view/create/merge/checks`, `label_state_machine transition` 等）
+- `ghdag.markdown.body_editor`: Markdown セクション操作ヘルパー（`upsert_section`, `get_section`, `count_heading` 等）を issuesmith から移植
+- `ghdag.workflow.label_state_machine`: ラベル状態遷移バリデーター（`validate_transition`）を issuesmith から移植
+- `ghdag.workflow.conditional_step`: 変数置換ヘルパー（`substitute_vars`）を issuesmith から移植
+- `ghdag.workflow.gates`: `GateRule` Protocol / `GATE_REGISTRY` dict / `strip_code_regions` ヘルパー / preflight CLI（`python -m ghdag.workflow.gates`）を issuesmith から移植
+- `InlineOrderBuilder`: 動的プロンプトで `safe_substitute` を使用するよう変更
+
+### Fixed
+
+- `github_client.py`: mypy `no-any-return` エラーを解消
+- `dispatcher`: エラー時の Issue コメント投稿を廃止しログのみに変更
+
 ## 0.28.2 — 2026-05-30
 
 ### Added
