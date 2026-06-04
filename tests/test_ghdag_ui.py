@@ -140,10 +140,10 @@ class TestMonitor:
 
         assert cmd_preview("echo hello", idempotency_key="") == "echo hello"
 
-    def test_cmd_preview_non_issuesmith_key_fallback(self):
+    def test_cmd_preview_generic_workflow_key(self):
         from ghdag.ui.monitor import cmd_preview
 
-        assert cmd_preview("echo hello", idempotency_key="scheduler:daily:99") == "echo hello"
+        assert cmd_preview("echo hello", idempotency_key="scheduler:daily:99") == "#99 \u00b7 daily"
 
     def test_cmd_preview_malformed_key_fallback(self):
         from ghdag.ui.monitor import cmd_preview
