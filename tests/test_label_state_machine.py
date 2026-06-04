@@ -1,119 +1,119 @@
 from __future__ import annotations
 
-from ghdag.workflow.label_state_machine import (
-    get_current_phase,
-    validate_transition,
-)
+import importlib
+import subprocess
+import sys
+import warnings
 
-# --- get_current_phase ---
+import pytest
 
-def test_get_current_phase_running():
-    assert get_current_phase(["issuesmith:draft-running", "bug"]) == "issuesmith:draft-running"
-
-
-def test_get_current_phase_none_when_no_phase():
-    assert get_current_phase(["bug", "enhancement"]) is None
+from ghdag.workflow import label_state_machine
+from ghdag.workflow.label_state_machine import TRANSITIONS
 
 
-def test_get_current_phase_draft_done_is_phase():
-    assert get_current_phase(["issuesmith:draft-done"]) == "issuesmith:draft-done"
+def _ignore_deprecation():
+    warnings.simplefilter("ignore", category=RuntimeWarning)
 
 
-def test_get_current_phase_returns_first_match():
-    labels = ["issuesmith:develop-running", "issuesmith:merge-running"]
-    phase = get_current_phase(labels)
-    assert phase in ("issuesmith:develop-running", "issuesmith:merge-running")
+def test_from_import_emits_runtime_warning_on_call():
+    importlib.reload(label_state_machine)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        from ghdag.workflow.label_state_machine import validate_transition
+
+        validate_transition(["issuesmith:draft-running"], "issuesmith:draft-done")
+
+    deprecation = [
+        w for w in caught
+        if issubclass(w.category, RuntimeWarning)
+        and "非推奨" in str(w.message)
+    ]
+    assert len(deprecation) >= 1
 
 
-# --- validate_transition 正常系 ---
+def test_validate_transition_emits_runtime_warning():
+    importlib.reload(label_state_machine)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        from ghdag.workflow.label_state_machine import validate_transition
 
-def test_draft_running_to_draft_done():
-    ok, msg = validate_transition(["issuesmith:draft-running"], "issuesmith:draft-done")
+        ok, _ = validate_transition(
+            ["issuesmith:draft-running"], "issuesmith:draft-done"
+        )
+
+    assert ok is True
+    deprecation = [
+        w for w in caught
+        if issubclass(w.category, RuntimeWarning)
+        and "非推奨" in str(w.message)
+    ]
+    assert len(deprecation) == 1
+
+
+def test_wrapper_validate_transition_uses_hardcoded_transitions():
+    from ghdag.workflow.label_state_machine import validate_transition
+
+    with warnings.catch_warnings():
+        _ignore_deprecation()
+        ok, msg = validate_transition(
+            ["issuesmith:draft-running"], "issuesmith:draft-done"
+        )
     assert ok is True
     assert "issuesmith:draft-running" in msg
     assert "issuesmith:draft-done" in msg
 
 
-def test_draft_running_to_develop_ready():
-    ok, msg = validate_transition(["issuesmith:draft-running"], "issuesmith:develop-ready")
-    assert ok is True
+def test_wrapper_rejects_undefined_transition():
+    from ghdag.workflow.label_state_machine import validate_transition
 
-
-def test_develop_running_to_merge_ready():
-    ok, msg = validate_transition(["issuesmith:develop-running"], "issuesmith:merge-ready")
-    assert ok is True
-
-
-def test_merge_running_to_migrate_ready():
-    ok, msg = validate_transition(["issuesmith:merge-running"], "issuesmith:migrate-ready")
-    assert ok is True
-
-
-def test_migrate_running_to_merge_ready():
-    ok, msg = validate_transition(["issuesmith:migrate-running"], "issuesmith:merge-ready")
-    assert ok is True
-
-
-def test_develop_running_to_develop_done():
-    ok, _ = validate_transition(["issuesmith:develop-running"], "issuesmith:develop-done")
-    assert ok is True
-
-
-def test_merge_running_to_merge_done():
-    ok, _ = validate_transition(["issuesmith:merge-running"], "issuesmith:merge-done")
-    assert ok is True
-
-
-def test_draft_done_to_develop_ready():
-    ok, _ = validate_transition(["issuesmith:draft-done"], "issuesmith:develop-ready")
-    assert ok is True
-
-
-# --- validate_transition 異常系 ---
-
-def test_draft_running_to_merge_done_rejected():
-    ok, msg = validate_transition(["issuesmith:draft-running"], "issuesmith:merge-done")
-    assert ok is False
-    assert msg
-
-
-def test_no_phase_label_rejected():
-    ok, msg = validate_transition([], "issuesmith:draft-done")
+    with warnings.catch_warnings():
+        _ignore_deprecation()
+        ok, _ = validate_transition(
+            ["issuesmith:draft-running"], "issuesmith:merge-done"
+        )
     assert ok is False
 
 
-def test_no_phase_label_with_other_labels_rejected():
-    ok, msg = validate_transition(["bug", "enhancement"], "issuesmith:draft-done")
-    assert ok is False
+def test_wrapper_reset_from_any_phase():
+    from ghdag.workflow.label_state_machine import validate_transition
 
-
-def test_merge_done_as_source_rejected():
-    ok, msg = validate_transition(["issuesmith:merge-done"], "issuesmith:develop-ready")
-    assert ok is False
-
-
-def test_develop_running_to_draft_done_rejected():
-    ok, _ = validate_transition(["issuesmith:develop-running"], "issuesmith:draft-done")
-    assert ok is False
-
-
-# --- validate_transition reset ---
-
-def test_reset_from_merge_running():
-    ok, _ = validate_transition(["issuesmith:merge-running"], "issuesmith:reset")
+    with warnings.catch_warnings():
+        _ignore_deprecation()
+        ok, _ = validate_transition([], "issuesmith:reset")
     assert ok is True
 
 
-def test_reset_from_no_phase():
-    ok, _ = validate_transition([], "issuesmith:reset")
-    assert ok is True
+@pytest.mark.parametrize("source,target", [
+    (src, dst)
+    for src, dsts in TRANSITIONS.items()
+    for dst in dsts
+    if dst != "issuesmith:reset"
+])
+def test_all_defined_transitions_valid(source: str, target: str):
+    from ghdag.workflow.label_state_machine import validate_transition
+
+    with warnings.catch_warnings():
+        _ignore_deprecation()
+        ok, _ = validate_transition([source], target)
+    assert ok is True, f"{source} -> {target} should be valid"
 
 
-def test_reset_from_any_phase():
-    for phase in [
-        "issuesmith:draft-running",
-        "issuesmith:develop-running",
-        "issuesmith:migrate-running",
-    ]:
-        ok, _ = validate_transition([phase], "issuesmith:reset")
-        assert ok is True, f"reset from {phase} should be valid"
+def test_cli_emits_runtime_warning_to_stderr():
+    worktree_root = __import__("os").path.dirname(
+        __import__("os").path.dirname(__import__("os").path.abspath(__file__))
+    )
+    result = subprocess.run(
+        [
+            sys.executable, "-W", "always::RuntimeWarning",
+            "-m", "ghdag.workflow.label_state_machine",
+            "transition", "999999", "issuesmith:draft-done",
+        ],
+        capture_output=True,
+        text=True,
+        env={
+            **__import__("os").environ,
+            "PYTHONPATH": f"{worktree_root}/src",
+        },
+        cwd=worktree_root,
+    )
+    assert "非推奨" in result.stderr
