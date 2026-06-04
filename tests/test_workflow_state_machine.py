@@ -6,7 +6,6 @@ from ghdag.workflow.state_machine import (
     validate_transition,
 )
 
-
 # --- WorkflowConfig パース ---
 
 def test_workflow_config_with_label_fields():
