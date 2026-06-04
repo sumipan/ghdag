@@ -271,7 +271,7 @@ class GitHubClient:
         owner, repo_name = _resolve_repo(repo) if repo else (self._owner, self._repo)
         params: dict[str, str] = {"per_page": str(min(limit, 100)), "state": state or "open"}
         if head:
-            if "/" in head:
+            if ":" in head:
                 params["head"] = head
             else:
                 params["head"] = f"{owner}:{head}"
@@ -364,7 +364,7 @@ class GitHubClient:
         repo: str | None = None,
     ) -> str:
         owner, repo_name = _resolve_repo(repo) if repo else (self._owner, self._repo)
-        if ":" not in head and "/" not in head:
+        if ":" not in head:
             head = f"{owner}:{head}"
         result = self._request(
             "POST",

@@ -140,6 +140,57 @@ def test_pr_create_builds_owner_head_ref(monkeypatch: pytest.MonkeyPatch) -> Non
     }
 
 
+def test_pr_create_slash_branch_builds_owner_head_ref(monkeypatch: pytest.MonkeyPatch) -> None:
+    """feat/xxx ブランチ（/を含む）でも owner: prefix が付与されること。"""
+    client = GitHubClient(token="tok", repo="o/r")
+    captured: dict[str, object] = {}
+
+    def fake_request(method: str, path: str, **kwargs: object) -> dict:
+        captured["body"] = kwargs.get("body")
+        return {"html_url": "https://github.com/o/r/pull/2"}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    client.pr_create("main", "feat/issue-1759-abcd1234", "title", "body")
+    assert captured["body"] == {
+        "title": "title",
+        "body": "body",
+        "head": "o:feat/issue-1759-abcd1234",
+        "base": "main",
+    }
+
+
+def test_pr_list_slash_branch_passes_owner_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
+    """feat/xxx ブランチで pr_list を呼ぶと owner:branch 形式で API に渡ること。"""
+    client = GitHubClient(token="tok", repo="o/r")
+    captured: dict[str, object] = {}
+
+    def fake_request(method: str, path: str, **kwargs: object) -> list:
+        captured["params"] = kwargs.get("params")
+        return []
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    client.pr_list(head="feat/issue-1759-abcd1234")
+    params = captured["params"]
+    assert isinstance(params, dict)
+    assert params.get("head") == "o:feat/issue-1759-abcd1234"
+
+
+def test_pr_list_already_qualified_head_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """owner:branch 形式は二重に prefix されないこと。"""
+    client = GitHubClient(token="tok", repo="o/r")
+    captured: dict[str, object] = {}
+
+    def fake_request(method: str, path: str, **kwargs: object) -> list:
+        captured["params"] = kwargs.get("params")
+        return []
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    client.pr_list(head="o:feat/issue-1759-abcd1234")
+    params = captured["params"]
+    assert isinstance(params, dict)
+    assert params.get("head") == "o:feat/issue-1759-abcd1234"
+
+
 def test_pr_ready_sends_graphql_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
     client = GitHubClient(token="tok", repo="o/r")
 
