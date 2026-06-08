@@ -9,14 +9,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import (
-    WorkflowDispatcher,
     _BURST_COOLDOWN_SEC,
     _BURST_THRESHOLD,
-    _BURST_WINDOW_SEC,
+    WorkflowDispatcher,
 )
 from ghdag.workflow.github import GitHubIssuePort
 from ghdag.workflow.schema import (
