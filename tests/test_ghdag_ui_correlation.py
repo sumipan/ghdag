@@ -10,8 +10,6 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import pytest
-
 
 def _ts(offset_sec: float = 0.0) -> str:
     dt = datetime.fromtimestamp(time.time() - offset_sec, tz=timezone(timedelta(hours=9)))
