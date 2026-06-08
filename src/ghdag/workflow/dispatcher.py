@@ -169,7 +169,7 @@ class WorkflowDispatcher:
             base_context.update(self._run_context_hook(handler.context_hook, issue_number))
 
         # 5. パイプライン投入
-        audit_ctx = AuditContext(source="issuesmith", correlation_id=idempotency_key)
+        audit_ctx = AuditContext(source=workflow.name, correlation_id=idempotency_key)
         exec_lines = self._pipeline.submit(
             steps=handler.steps,
             base_context=base_context,
@@ -326,8 +326,13 @@ class WorkflowDispatcher:
         # 冪等キー削除
         self._pipeline.remove_idempotency_matching(workflow.name, issue_number)
 
-        # トリガーラベルからプレフィックスを抽出（例: "issuesmith:reset" → "issuesmith:"）
-        prefix = trigger.label.rsplit(":", 1)[0] + ":" if ":" in trigger.label else ""
+        # ラベルプレフィックス: label_namespace 優先、未設定時は trigger.label から抽出
+        if workflow.label_namespace:
+            prefix = workflow.label_namespace + ":"
+        elif ":" in trigger.label:
+            prefix = trigger.label.rsplit(":", 1)[0] + ":"
+        else:
+            prefix = ""
 
         # 同プレフィックスのラベルをすべて除去
         if prefix:

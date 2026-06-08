@@ -1,6 +1,6 @@
 """GitHub REST/GraphQL client — urllib-based Layer 1 API.
 
-Used by issuesmith and other tools that need gh-compatible GitHub access
+Used by workflow consumers and other tools that need gh-compatible GitHub access
 without the gh CLI. Uses stdlib urllib only (no requests).
 """
 
