@@ -15,6 +15,8 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, urlparse
 
+from ghdag.pipeline.audit_query import get_correlation_top_n
+
 from .monitor import (
     apply_default_monitor_filters,
     build_rows,
@@ -143,6 +145,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_sse()
         elif parsed_path == "/api/config":
             self._serve_config()
+        elif parsed_path == "/api/correlation-bursts":
+            self._serve_correlation_bursts()
         else:
             self.send_error(404)
 
@@ -222,6 +226,14 @@ class _Handler(BaseHTTPRequestHandler):
     def _serve_config(self):
         data = {"github_base_url": self.github_base_url}
         self._send_json_response(200, data)
+
+    def _serve_correlation_bursts(self) -> None:
+        qs = parse_qs(urlparse(self.path).query)
+        hours = float(qs.get("hours", ["1"])[0])
+        top_n = int(qs.get("top_n", ["20"])[0])
+        audit_path = Path(self.repo_root) / "jobs" / "audit.jsonl"
+        bursts = get_correlation_top_n(audit_path, since_sec=hours * 3600, top_n=top_n)
+        self._send_json_response(200, {"bursts": bursts})
 
     def _serve_html(self):
         body = _read_static("index.html")

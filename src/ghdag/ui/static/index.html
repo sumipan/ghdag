@@ -187,6 +187,13 @@ tbody tr:hover { background: var(--surface); }
 }
 .limit-select:focus { outline: none; border-color: var(--accent); }
 
+.tab-bar { display: flex; gap: 4px; margin-bottom: 12px; }
+.tab-btn {
+  background: var(--surface); color: var(--text-muted); border: 1px solid var(--border);
+  border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 0.8125rem;
+}
+.tab-btn.active { color: var(--accent); border-color: var(--accent); }
+
 @media (max-width: 768px) {
   .hide-mobile { display: none; }
   table { font-size: 0.75rem; min-width: 320px; }
@@ -216,26 +223,42 @@ tbody tr:hover { background: var(--surface); }
     <option value="100">100件</option>
   </select>
 </div>
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="tasks">タスク</button>
+  <button class="tab-btn" data-tab="bursts">バースト</button>
+</div>
 <div class="meta" id="meta">Connecting...</div>
 
-<div class="table-wrapper">
-  <table>
-    <thead>
-      <tr>
-        <th>時刻/ツリー</th>
-        <th>状態</th>
-        <th class="hide-mobile">エンジン/モデル</th>
-        <th class="hide-mobile">UUID</th>
-        <th>ラベル</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody id="tbody"></tbody>
-  </table>
+<div id="tasks-view">
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>時刻/ツリー</th>
+          <th>状態</th>
+          <th class="hide-mobile">エンジン/モデル</th>
+          <th class="hide-mobile">UUID</th>
+          <th>ラベル</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <div class="empty-msg" id="empty-msg" style="display:none">
+    タスクがありません
+  </div>
 </div>
 
-<div class="empty-msg" id="empty-msg" style="display:none">
-  タスクがありません
+<div id="bursts-view" style="display:none">
+  <table>
+    <thead>
+      <tr><th>correlation_id</th><th>件数</th><th>最終発生</th></tr>
+    </thead>
+    <tbody id="bursts-tbody"></tbody>
+  </table>
+  <div class="empty-msg" id="bursts-empty" style="display:none">バーストデータがありません</div>
 </div>
 
 <script>
@@ -452,6 +475,37 @@ tbody tr:hover { background: var(--surface); }
       .then(renderRows)
       .catch(function() {});
     connect();
+  });
+
+  function fetchBursts() {
+    fetch('/api/correlation-bursts?hours=1&top_n=20')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var tbody = document.getElementById('bursts-tbody');
+        var emptyMsg = document.getElementById('bursts-empty');
+        if (!data.bursts || data.bursts.length === 0) {
+          tbody.innerHTML = '';
+          emptyMsg.style.display = '';
+          return;
+        }
+        emptyMsg.style.display = 'none';
+        tbody.innerHTML = data.bursts.map(function(b) {
+          return '<tr><td>' + escapeHtml(b.correlation_id) + '</td>'
+            + '<td>' + b.count + '</td>'
+            + '<td>' + escapeHtml(b.latest_timestamp) + '</td></tr>';
+        }).join('');
+      });
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      var tab = btn.dataset.tab;
+      document.getElementById('tasks-view').style.display = tab === 'tasks' ? '' : 'none';
+      document.getElementById('bursts-view').style.display = tab === 'bursts' ? '' : 'none';
+      if (tab === 'bursts') fetchBursts();
+    });
   });
 
   // Initial fetch then switch to SSE
