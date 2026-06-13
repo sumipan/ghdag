@@ -5,15 +5,15 @@ Polls GitHub labels, dispatches workflow handlers, and runs `exec.jsonl` task qu
 
 ## Status
 
-![version](https://img.shields.io/badge/version-v0.29.1-blue)
+![version](https://img.shields.io/badge/version-v0.30.0-blue)
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
 
-**v0.29.1** — pre-1.0; public API may change until `1.0.0`.
+**v0.30.0** — pre-1.0; public API may change until `1.0.0`.
 
 ## Installation
 
 ```bash
-pip install git+https://github.com/sumipan/ghdag.git@v0.29.1
+pip install git+https://github.com/sumipan/ghdag.git@v0.30.0
 ```
 
 **Requirements**
@@ -50,25 +50,178 @@ ghdag watch workflows/ --exec-md jobs/exec.jsonl
 
 `watch` polls GitHub at `--interval` seconds (default: 30), matches workflow trigger labels, and appends new entries to `jobs/exec.jsonl`. Use `--once` for a single poll cycle.
 
-## CLI Reference / Public API
-
-### Subcommands
+## CLI Reference
 
 Global flags (all subcommands): `--verbose` / `-v` (DEBUG), `--quiet` / `-q` (WARNING+ only).
 
 | Subcommand | Description | Key arguments |
 |---|---|---|
-| `run` | Run `exec.jsonl` via `DagEngine` | `exec_jsonl` (positional), `--interval SEC`, `--hooks MODULE`, `--max-concurrency N` |
-| `watch` | Watch workflows directory and dispatch on GitHub events | `workflows_dir` (positional), `--interval SEC`, `--exec-md PATH`, `--once` |
+| `run` | Run `exec.jsonl` via `DagEngine` | `exec_jsonl`, `--interval SEC`, `--hooks MODULE`, `--max-concurrency N` |
+| `watch` | Watch workflows directory and dispatch on GitHub events | `workflows_dir`, `--interval SEC`, `--exec-md PATH`, `--once` |
+| `trigger` | One-shot handler dispatch for a specific issue | `issue_number`, `--handler NAME` (required), `--workflow NAME`, `--workflows-dir PATH`, `--exec-md PATH` |
+| `llm` | One-shot LLM call without a workflow | `prompt`, `--engine`, `--model`, `--timeout SEC`, `--stdin`, `--list-engines`, `--list-models`, `--audit-path PATH`, `--permission-mode MODE`, `--capabilities-preset NAME` |
 | `ui` | Launch Web UI dashboard | `--repo-root PATH`, `--host ADDR`, `--port N`, `--interval SEC`, `--max-visible N` |
-| `llm` | One-shot LLM call without a workflow | `prompt` (optional positional), `--engine`, `--model`, `--timeout SEC`, `--stdin`, `--list-engines`, `--list-models`, `--audit-path PATH` |
+| `cleanup` | Archive completed/orphaned queue tasks | `repo_root`, `--dry-run`, `--cutoff-days N`, `--orphan-days N`, `--auto-repair` |
 | `version` | Print package version | — |
-| `cleanup` | Archive completed/orphaned queue tasks | `repo_root` (positional), `--dry-run`, `--cutoff-days N`, `--orphan-days N`, `--auto-repair` |
-| `trigger` | One-shot handler dispatch for a specific issue | `issue_number` (positional), `--handler NAME` (required), `--workflow NAME`, `--workflows-dir PATH`, `--exec-md PATH` |
-| `audit-query` | Query `audit.jsonl` for correlation events or burst detection | `--correlation-id ID`, `--burst-detect`, `--since ISO8601`, `--audit-path PATH` |
+| `audit-query` | Query `audit.jsonl` for correlation events or burst detection | `--correlation-id ID`, `--burst-detect`, `--since ISO8601`, `--audit-path PATH`, `--window-sec SEC`, `--threshold N` |
 | `tools list` | List tool definitions from a directory | `--path DIR` (required), `--json` |
 
-### Public API (`ghdag.__all__`)
+### `ghdag run`
+
+```
+ghdag run <exec_jsonl> [--interval SEC] [--hooks MODULE] [--max-concurrency N]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `exec_jsonl` | — | Path to `exec.jsonl` (JSONL task queue) |
+| `--interval SEC` | `1.0` | Poll interval in seconds |
+| `--hooks MODULE` | — | Python module path for a `DagHooks` implementation (e.g. `scripts.diary_hooks`) |
+| `--max-concurrency N` | unlimited | Maximum concurrent tasks |
+
+### `ghdag watch`
+
+```
+ghdag watch <workflows_dir> [--interval SEC] [--exec-md PATH] [--once]
+```
+
+Requires `GITHUB_REPOSITORIES` and `GITHUB_TOKEN` or `GH_TOKEN`.
+
+| Option | Default | Description |
+|---|---|---|
+| `workflows_dir` | — | Path to workflow YAML directory |
+| `--interval SEC` | `30.0` | GitHub polling interval in seconds |
+| `--exec-md PATH` | `jobs/exec.jsonl` | Output path for dispatched exec entries |
+| `--once` | — | Poll once and exit |
+
+### `ghdag trigger`
+
+```
+ghdag trigger <issue_number> --handler NAME [--workflows-dir PATH] [--workflow NAME] [--exec-md PATH]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `issue_number` | — | GitHub Issue number |
+| `--handler NAME` | — | Handler name to execute (required) |
+| `--workflows-dir PATH` | `workflows` | Workflow YAML directory |
+| `--workflow NAME` | auto | Workflow name (required when multiple workflows exist) |
+| `--exec-md PATH` | `jobs/exec.jsonl` | Output path for exec entries |
+
+### `ghdag llm`
+
+```
+ghdag llm [prompt] [--engine NAME] [--model ID] [--timeout SEC] [--stdin]
+          [--dangerously-skip-permissions] [--permission-mode MODE]
+          [--capabilities-preset NAME] [--list-engines] [--list-models]
+          [--audit-path PATH] [--correlation-id ID] [--request-id ID]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `prompt` | stdin | Prompt text (reads from stdin when omitted) |
+| `--engine`, `-e` | `claude` | LLM engine name |
+| `--model`, `-m` | engine default | Model ID |
+| `--timeout SEC` | no limit | Subprocess timeout |
+| `--stdin` | — | Also pipe stdin content to the LLM process |
+| `--dangerously-skip-permissions` | — | Pass bypass flag to Claude CLI |
+| `--permission-mode MODE` | — | Claude permission mode: `default`, `plan`, `bypassPermissions` |
+| `--capabilities-preset NAME` | — | Preset: `text_only`, `json_only`, `web_research`, `dangerous_full_access` |
+| `--list-engines` | — | List available engines and exit |
+| `--list-models` | — | List models for `--engine` and exit |
+| `--audit-path PATH` | `GHDAG_AUDIT_PATH` | Audit log path |
+| `--correlation-id ID` | — | Correlation ID for audit log |
+| `--request-id ID` | — | Request ID for audit log |
+
+### `ghdag ui`
+
+```
+ghdag ui [--repo-root PATH] [--host ADDR] [--port N] [--interval SEC] [--max-visible N]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--repo-root PATH` | `.` | Repository root containing `jobs/exec.jsonl` |
+| `--host ADDR` | `127.0.0.1` | Bind address |
+| `--port N` | `8080` | Bind port |
+| `--interval SEC` | `3.0` | SSE poll interval in seconds |
+| `--max-visible N` | `30` | Maximum tasks displayed |
+
+### `ghdag cleanup`
+
+```
+ghdag cleanup <repo_root> [--dry-run] [--cutoff-days N] [--orphan-days N] [--auto-repair]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `repo_root` | — | Repository root path |
+| `--dry-run` | — | Show targets without making changes |
+| `--cutoff-days N` | `1` | Days before archiving completed tasks |
+| `--orphan-days N` | `7` | Days before archiving orphaned tasks |
+| `--auto-repair` | — | Auto-fix orphan and dead-entry issues (default: detect-only) |
+
+### `ghdag version`
+
+```
+ghdag version
+```
+
+Prints `ghdag.__version__` and exits.
+
+### `ghdag audit-query`
+
+```
+ghdag audit-query [--correlation-id ID | --burst-detect] [--since ISO8601]
+                  [--audit-path PATH] [--window-sec SEC] [--threshold N]
+```
+
+`--correlation-id` and `--burst-detect` are mutually exclusive; one is required.
+
+| Option | Default | Description |
+|---|---|---|
+| `--correlation-id ID` | — | Filter task-exit events by correlation ID |
+| `--burst-detect` | — | Detect correlation-ID bursts (exit code 1 if found) |
+| `--since ISO8601` | — | Datetime filter (`--correlation-id` mode only) |
+| `--audit-path PATH` | `jobs/audit.jsonl` | Path to audit log |
+| `--window-sec SEC` | `600.0` | Burst detection window in seconds |
+| `--threshold N` | `10` | Burst detection event count threshold |
+
+### `ghdag tools list`
+
+```
+ghdag tools list --path DIR [--json]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--path DIR` | — | Tool definition directory (required) |
+| `--json` | — | Output as JSON instead of text |
+
+## Architecture
+
+Modules and packages under `src/ghdag/`:
+
+| Module / package | Responsibility |
+|---|---|
+| `dag/` | Core DAG execution — `engine`, `parser`, `state`, `fanout`, `hooks`, `watcher`, `models`, `_util` |
+| `workflow/` | GitHub polling and dispatch — `dispatcher`, `engine`, `loader`, `schema`, `state_machine`, `conditional_step`, `github`, `typecheck`, `gates` |
+| `pipeline/` | LLM pipeline state — `llm_pipeline`, `order`, `result`, `state`, `status`, `audit`, `audit_query`, `config`, `hooks`, `submit`, `wait` |
+| `llm/` | LLM engine integration — `engines`, `capabilities`, `spec`, `_config`, `_constants` |
+| `files/` | Repository-scoped `.md` I/O — `reader`, `writer`, `append`, `promote`, `_rotate`, `models`, `links` |
+| `markdown/` | Markdown body editing (`body_editor`) |
+| `metrics/` | Task execution metrics — `recorder`, `parsers`, `models` |
+| `tool/` | Tool definition management — `registry`, `schema`, `cli`, `audit`, `exceptions` |
+| `ui/` | Web UI dashboard — `dashboard`, `monitor`, `server`, `static` |
+| `cleanup.py` | Archive completed and orphaned queue tasks under `jobs/` |
+| `github_cli.py` | Thin wrapper around `gh` CLI for issue operations |
+| `github_client.py` | GitHub REST API client (token auth) |
+| `maintenance.py` | Repository maintenance utilities |
+| `exceptions.py` | Shared exception hierarchy (`GhdagError`, `GitHubApiError`) |
+
+## Public API
+
+`ghdag.__init__.__all__` exports:
 
 | Symbol | Module | Description |
 |---|---|---|
@@ -80,28 +233,6 @@ Global flags (all subcommands): `--verbose` / `-v` (DEBUG), `--quiet` / `-q` (WA
 | `DagEngine` | `ghdag.dag.engine` | DAG execution loop over `exec.jsonl` |
 | `WorkflowDispatcher` | `ghdag.workflow.dispatcher` | GitHub polling and handler dispatch |
 
-## Architecture
-
-Top-level modules and packages under `src/ghdag/`:
-
-| Module / package | Responsibility |
-|---|---|
-| `cli.py` | CLI entry point (`argparse` subcommands) |
-| `exceptions.py` | Shared exception hierarchy (`GhdagError` and GitHub API errors) |
-| `github_cli.py` | Thin wrapper around `gh` CLI for issue operations |
-| `github_client.py` | GitHub REST API client (token auth) |
-| `cleanup.py` | Archive completed and orphaned queue tasks under `jobs/` |
-| `maintenance.py` | Repository maintenance utilities |
-| `dag/` | DAG execution engine — `engine`, `parser`, `state`, `fanout`, `hooks`, `watcher`, `models` |
-| `files/` | Repository-scoped `.md` I/O — `reader`, `writer`, `append`, `promote`, `_rotate`, `models` |
-| `llm/` | LLM engine integration — `engines`, `capabilities`, `spec`, `_config`, `_constants` |
-| `markdown/` | Markdown body editing (`body_editor`) |
-| `metrics/` | Task execution metrics — `recorder`, `parsers`, `models` |
-| `pipeline/` | Workflow pipeline — `llm_pipeline`, `order`, `result`, `state`, `status`, `audit`, `audit_query`, `config`, `hooks` |
-| `tool/` | Tool definition management — `registry`, `schema`, `cli`, `audit`, `exceptions` |
-| `ui/` | Web UI dashboard — `dashboard`, `monitor`, `server` |
-| `workflow/` | Workflow orchestration — `dispatcher`, `engine`, `loader`, `schema`, `state_machine`, `label_state_machine`, `conditional_step`, `github`, `typecheck`, `gates` |
-
 ## Configuration
 
 ### Environment variables
@@ -111,9 +242,7 @@ Top-level modules and packages under `src/ghdag/`:
 | `GITHUB_TOKEN` / `GH_TOKEN` | Either one required for `watch` / `trigger` | — | GitHub API authentication |
 | `GITHUB_REPOSITORIES` | Required for `watch` | — | Comma-separated `owner/repo` list to poll |
 | `GHDAG_LLM_MODELS` | Optional | `llm-models.yml` in cwd → built-in defaults | Path to LLM engine/model allowlist YAML |
-| `GHDAG_AUDIT_PATH` | Optional | `jobs/audit.jsonl` | Audit log file path (`ghdag llm`, `ghdag ui`, `ghdag audit-query`) |
-| `GHDAG_TOKEN_WARN_THRESHOLD` | Optional | `500000` | Token usage warning threshold in Web UI dashboard |
-| `GHDAG_SAFE_DEFAULT_PERMISSION` | Optional | `text_only` (hardcoded when unset) | Default capabilities preset for Claude engine pipeline steps |
+| `GHDAG_AUDIT_PATH` | Optional | `jobs/audit.jsonl` | Audit log file path (`ghdag llm`, `ghdag ui`) |
 
 ### `llm-models.yml`
 
@@ -136,16 +265,44 @@ engines:
 
 ## Error Reference
 
-All symbols below are defined in `src/ghdag/exceptions.py` and exported from the `ghdag.exceptions` module.
+### `GhdagError` hierarchy
 
-| Exception | Parent | When raised |
-|---|---|---|
-| `GhdagError` | `Exception` | Base class for all ghdag custom exceptions |
-| `GitHubApiError` | `GhdagError` | GitHub API operation failure (carries `status_code`, `message`) |
-| `AuthError` | `GitHubApiError` | Authentication failure (401, missing token) |
-| `RateLimitError` | `GitHubApiError` | Rate limit exceeded (403 with `X-RateLimit-Remaining: 0`) |
-| `PermissionDeniedError` | `GitHubApiError` | Insufficient permissions (403, 404 on private repos) |
-| `NetworkError` | `GitHubApiError` | Connection timeout, DNS failure, or other network errors |
+Exceptions inheriting from `GhdagError` (`ghdag.exceptions`). External code can use `except GhdagError` to catch all rows below except where noted.
+
+| Exception | Module | Also inherits | Raised when |
+|---|---|---|---|
+| `GhdagError` | `ghdag.exceptions` | — | Base class for all ghdag custom exceptions |
+| `GitHubApiError` | `ghdag.exceptions` | — | GitHub API operation failure (carries `status_code`, `message`) |
+| `AuthError` | `ghdag.exceptions` | `GitHubApiError` | Authentication failure (401, missing token) |
+| `RateLimitError` | `ghdag.exceptions` | `GitHubApiError` | Rate limit exceeded (403 with `X-RateLimit-Remaining: 0`) |
+| `PermissionDeniedError` | `ghdag.exceptions` | `GitHubApiError` | Insufficient permissions (403, 404 on private repos) |
+| `NetworkError` | `ghdag.exceptions` | `GitHubApiError` | Connection timeout, DNS failure, or other network errors |
+| `ModelValidationError` | `ghdag.pipeline.config` | — | Unauthorized model ID |
+| `DependencyError` | `ghdag.pipeline.llm_pipeline` | `ValueError` | Invalid or circular step dependency |
+| `EngineModelError` | `ghdag.llm.engines` | — | Unknown engine or unauthorized model |
+| `LLMParseError` | `ghdag.llm.capabilities` | — | LLM response violates output format |
+| `ConfigLoadError` | `ghdag.llm._config` | `ValueError` | Engine config file structure invalid |
+| `FanoutError` | `ghdag.dag.fanout` | `ValueError` | Invalid fan-out spec |
+| `ValidationError` | `ghdag.workflow.loader` | `ValueError` | Workflow YAML validation failure |
+| `AdapterNotFoundError` | `ghdag.workflow.engine` | `ValueError` | Unknown or unregistered engine adapter |
+| `ContextHookError` | `ghdag.workflow.dispatcher` | `ValueError` | `context_hook` output is not valid JSON |
+| `ToolRegistryError` | `ghdag.tool.exceptions` | — | Tool definition registry error |
+| `PathTraversalError` | `ghdag.files.models` | `ValueError` | File path escapes repository root |
+| `AppendRecoverError` | `ghdag.files.append` | `ValueError` | Partial write detected during append |
+
+### Outside `GhdagError` hierarchy
+
+These exceptions are **not** caught by `except GhdagError`:
+
+| Exception | Module | Base class | Notes |
+|---|---|---|---|
+| `TemplateVariableError` | `ghdag.pipeline.order` | `ValueError`, `KeyError` | Missing template variable in order rendering |
+| `TypeCheckError` | `ghdag.workflow.typecheck` | — (dataclass, not `Exception`) | Workflow type-check diagnostic |
+| `GitHubClientError` | `ghdag.workflow.github` | `Exception` | Legacy GitHub client errors |
+| `AuthError` | `ghdag.workflow.github` | `GitHubClientError` | Distinct from `ghdag.exceptions.AuthError` |
+| `RateLimitError` | `ghdag.workflow.github` | `GitHubClientError` | Distinct from `ghdag.exceptions.RateLimitError` |
+| `PermissionDeniedError` | `ghdag.workflow.github` | `GitHubClientError` | Distinct from `ghdag.exceptions.PermissionDeniedError` |
+| `NetworkError` | `ghdag.workflow.github` | `GitHubClientError` | Distinct from `ghdag.exceptions.NetworkError` |
 
 ## License
 
