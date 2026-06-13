@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.28.15 — 2026-06-13
+
+### Added
+
+- `LLMCapabilities.stream`: `stream=True` 時に claude エンジンで `--output-format stream-json --verbose` を生成し、JSONL ストリーム出力を `_extract_stream_result()` でパース (Issue #2084)
+
 ## 0.28.14 — 2026-06-13
 
 ### Added
