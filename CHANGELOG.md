@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.1 — 2026-06-14
+
+### Changed
+
+- `README.md`: OSS_QUALITY.md 第4章の必須9セクション構成で全面書き直し（CLI Reference・Public API・Architecture・Configuration・Error Reference を現行実装に同期）(Issue #2144)
+
 ## 0.28.16 — 2026-06-13
 
 ### Added
