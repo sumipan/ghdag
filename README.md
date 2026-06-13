@@ -356,6 +356,17 @@ engines:
 | `GITHUB_TOKEN` / `GH_TOKEN` | GitHub personal access token (required for `watch`; shared across all repositories) |
 | `GHDAG_LLM_MODELS` | Path to a custom `llm-models.yml` file |
 | `GHDAG_AUDIT_PATH` | Path to the audit log file (used by `ghdag llm --audit-path`) |
+| `GHDAG_SAFE_DEFAULT_PERMISSION` | Override the default permission preset when `permission` is omitted in workflow steps. Built-in default is `text_only` (safe). Set to `dangerous_full_access` to restore the legacy behavior (`--dangerously-skip-permissions` / `--force`). |
+
+#### Rolling back to dangerous default
+
+```bash
+# One-off (single command)
+GHDAG_SAFE_DEFAULT_PERMISSION=dangerous_full_access ghdag submit ...
+
+# Permanent (.env)
+echo 'GHDAG_SAFE_DEFAULT_PERMISSION=dangerous_full_access' >> .env
+```
 
 ## Error Reference
 
