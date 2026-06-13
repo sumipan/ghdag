@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+
+## 0.28.16 — 2026-06-13
+
+### Added
+
+- `TOOL_EXIT_CODES` 定数と `ToolDef.exit_codes` フィールド: Phase D exit_code 語彙（`success` / `failure` / `retry` / `skip`）のバリデーション (Issue #2091)
+- `write_tool_fallback_audit()`: fallback chain 発動時の audit.jsonl 出力 (`event: tool.fallback`) (Issue #2091)
+
 ## 0.28.15 — 2026-06-13
 
 ### Added
