@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.28.11 — 2026-06-13
+
+### Added
+
+- `DagEngine` サーキットブレーカー: 連続タスク失敗が `max_consecutive_failures` に達するとエンジンをシャットダウン。`DagConfig` に `max_consecutive_failures` / `failure_window_sec` を追加 (issuesmith #2082)
+- `ToolDef` / `FallbackEntry` dataclass と `ToolRegistry.discover()`: ディレクトリ walk による Tool 定義の discovery、ファイル名規約 lint、多重定義検出 (issuesmith #2087)
+
 ## 0.28.10 — 2026-06-13
 
 ### Added
