@@ -4,6 +4,54 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+
+## 0.28.16 — 2026-06-13
+
+### Added
+
+- `TOOL_EXIT_CODES` 定数と `ToolDef.exit_codes` フィールド: Phase D exit_code 語彙（`success` / `failure` / `retry` / `skip`）のバリデーション (Issue #2091)
+- `write_tool_fallback_audit()`: fallback chain 発動時の audit.jsonl 出力 (`event: tool.fallback`) (Issue #2091)
+
+## 0.28.15 — 2026-06-13
+
+### Added
+
+- `LLMCapabilities.stream`: `stream=True` 時に claude エンジンで `--output-format stream-json --verbose` を生成し、JSONL ストリーム出力を `_extract_stream_result()` でパース (Issue #2084)
+
+## 0.28.14 — 2026-06-13
+
+### Added
+
+- `DagConfig.serialize_mutating`: `annotations._mutates == "true"` のタスク同士を直列化する排他制御。`max_concurrency` とは独立して機能 (issuesmith #2079)
+
+## 0.28.13 — 2026-06-13
+
+### Added
+
+- `dashboard.py`: audit.jsonl のダッシュボード集計（タスク状態・correlation_id 別トークン消費・CB 発火頻度） (issuesmith #2083)
+- `/api/dashboard/status`, `/api/dashboard/tokens`, `/api/dashboard/cb-firing` エンドポイントを `server.py` に追加 (issuesmith #2083)
+
+## 0.28.11 — 2026-06-13
+
+### Added
+
+- `DagEngine` サーキットブレーカー: 連続タスク失敗が `max_consecutive_failures` に達するとエンジンをシャットダウン。`DagConfig` に `max_consecutive_failures` / `failure_window_sec` を追加 (issuesmith #2082)
+- `ToolDef` / `FallbackEntry` dataclass と `ToolRegistry.discover()`: ディレクトリ walk による Tool 定義の discovery、ファイル名規約 lint、多重定義検出 (issuesmith #2087)
+
+## 0.28.10 — 2026-06-13
+
+### Added
+
+- `conditional_step.run_with_template()`: LLM CLI 実行の診断ログ（開始・完了・経過時間）を stderr に出力 (issuesmith #2070)
+- `engine._check_completions()`: PROCESS_ERROR / TIMEOUT 時に stdout を `{result_path}.fail` へ永続化 (issuesmith #2070)
+
+## 0.28.7 — 2026-06-08
+
+### Added
+
+- `detect_correlation_bursts()` / `get_correlation_top_n()`: audit.jsonl の correlation_id バースト検出ヘルパー (issuesmith #2007)
+- `WorkflowDispatcher._observe_correlation_burst()`: ポーリングループ内で correlation バーストを検出し warning ログを出力。cooldown 機構で重複抑制 (issuesmith #2007)
+
 ## 0.28.2 — 2026-05-30
 
 ### Added

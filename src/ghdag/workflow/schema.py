@@ -49,3 +49,6 @@ class WorkflowConfig:
     handlers: dict[str, HandlerConfig]     # ハンドラー名 → HandlerConfig
     polling_interval: int = 30             # ポーリング間隔（秒）
     template_dir: str | None = None        # テンプレートディレクトリ（相対パスは workflow ファイル基準）
+    label_namespace: str | None = None     # ラベルプレフィックス（例: "issuesmith"）
+    transitions: dict[str, list[str]] | None = None  # 状態遷移マップ
+    reset_label: str | None = None         # 任意の状態から遷移可能な特殊ラベル
