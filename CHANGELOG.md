@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.28.14 — 2026-06-13
+
+### Added
+
+- `DagConfig.serialize_mutating`: `annotations._mutates == "true"` のタスク同士を直列化する排他制御。`max_concurrency` とは独立して機能 (issuesmith #2079)
+
 ## 0.28.13 — 2026-06-13
 
 ### Added
