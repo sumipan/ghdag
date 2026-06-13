@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.2 — 2026-06-14
+
+### Changed
+
+- `README.md`: v0.30.0 実装に合わせた OSS_QUALITY §4.1 準拠の全面書き直し（state_machine / tool/ / dashboard 追加、label_state_machine 削除、Error Reference 17+7 型）(Issue #2154)
+
 ## 0.30.1 — 2026-06-14
 
 ### Changed
