@@ -38,6 +38,12 @@ def _task_request_id(task: Task) -> str | None:
     return task.annotations.get("_request_id")
 
 
+def _persist_fail_stdout(result_path: str, stdout_buf: io.BytesIO | None) -> None:
+    stdout_data = stdout_buf.getvalue() if stdout_buf else b""
+    if stdout_data:
+        Path(result_path + ".fail").write_bytes(stdout_data)
+
+
 class DagEngine:
     def __init__(self, config: DagConfig, hooks: DagHooks | None = None) -> None:
         self._config = config
@@ -277,6 +283,9 @@ class DagEngine:
 
             try:
                 if was_timeout:
+                    if task.result_path is not None:
+                        _persist_fail_stdout(task.result_path, rt.stdout_buf)
+
                     state_mark_done(self._config.exec_done_dir, uuid, "TIMEOUT")
                     metrics = TaskMetrics(
                         uuid=uuid, engine=engine, model=model,
@@ -390,6 +399,9 @@ class DagEngine:
                             self._run_promote(effective_result_path)
 
                 else:
+                    if task.result_path is not None:
+                        _persist_fail_stdout(task.result_path, rt.stdout_buf)
+
                     state_mark_done(self._config.exec_done_dir, uuid, returncode)
                     metrics = TaskMetrics(
                         uuid=uuid, engine=engine, model=model,
