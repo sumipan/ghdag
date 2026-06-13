@@ -129,9 +129,8 @@ def aggregate_token_usage(
             "over_threshold": total > threshold,
             "task_count": task_counts[cid],
         }
-        for cid, total in totals.items()
+        for cid, total in sorted(totals.items(), key=lambda kv: kv[1], reverse=True)
     ]
-    by_correlation.sort(key=lambda x: x["total_tokens"], reverse=True)
 
     return {
         "by_correlation": by_correlation,
