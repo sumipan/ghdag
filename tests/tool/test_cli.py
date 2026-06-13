@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ghdag.tool.schema import FallbackEntry, ToolDef
+from ghdag.tool.schema import FallbackEntry
 
 
 def _write_tool(
