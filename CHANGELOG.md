@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.28.10 — 2026-06-13
+
+### Added
+
+- `conditional_step.run_with_template()`: LLM CLI 実行の診断ログ（開始・完了・経過時間）を stderr に出力 (issuesmith #2070)
+- `engine._check_completions()`: PROCESS_ERROR / TIMEOUT 時に stdout を `{result_path}.fail` へ永続化 (issuesmith #2070)
+
 ## 0.28.7 — 2026-06-08
 
 ### Added
