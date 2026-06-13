@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.28.13 — 2026-06-13
+
+### Added
+
+- `dashboard.py`: audit.jsonl のダッシュボード集計（タスク状態・correlation_id 別トークン消費・CB 発火頻度） (issuesmith #2083)
+- `/api/dashboard/status`, `/api/dashboard/tokens`, `/api/dashboard/cb-firing` エンドポイントを `server.py` に追加 (issuesmith #2083)
+
 ## 0.28.11 — 2026-06-13
 
 ### Added
