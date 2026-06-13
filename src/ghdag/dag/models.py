@@ -52,6 +52,8 @@ class DagConfig:
     kill_grace: float = 10.0
     max_concurrency: int | None = None
     serialize_mutating: bool = False
+    max_consecutive_failures: int = 5
+    failure_window_sec: float = 60.0
 
     def __post_init__(self) -> None:
         if self.lock_file is None:

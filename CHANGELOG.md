@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 0.28.11 — 2026-06-13
+
+### Added
+
+- `DagEngine` サーキットブレーカー: 連続タスク失敗が `max_consecutive_failures` に達するとエンジンをシャットダウン。`DagConfig` に `max_consecutive_failures` / `failure_window_sec` を追加 (issuesmith #2082)
+- `ToolDef` / `FallbackEntry` dataclass と `ToolRegistry.discover()`: ディレクトリ walk による Tool 定義の discovery、ファイル名規約 lint、多重定義検出 (issuesmith #2087)
+
+## 0.28.10 — 2026-06-13
+
+### Added
+
+- `conditional_step.run_with_template()`: LLM CLI 実行の診断ログ（開始・完了・経過時間）を stderr に出力 (issuesmith #2070)
+- `engine._check_completions()`: PROCESS_ERROR / TIMEOUT 時に stdout を `{result_path}.fail` へ永続化 (issuesmith #2070)
+
+## 0.28.7 — 2026-06-08
+
+### Added
+
+- `detect_correlation_bursts()` / `get_correlation_top_n()`: audit.jsonl の correlation_id バースト検出ヘルパー (issuesmith #2007)
+- `WorkflowDispatcher._observe_correlation_burst()`: ポーリングループ内で correlation バーストを検出し warning ログを出力。cooldown 機構で重複抑制 (issuesmith #2007)
+
 ## 0.28.2 — 2026-05-30
 
 ### Added

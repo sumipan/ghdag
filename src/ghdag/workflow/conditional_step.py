@@ -11,6 +11,7 @@ Substitutes ${KEY} placeholders in the template file and un-escapes $$ → $
 import argparse
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -49,11 +50,26 @@ def run_with_template(
     """Read template, substitute variables, and run the LLM CLI. Returns exit code."""
     content = Path(template_path).read_text()
     order = substitute_vars(content, variables)
+    cmd = _build_command(engine, model)
+
+    print(
+        f"[conditional_step] start engine={engine} model={model} template={template_path}",
+        file=sys.stderr,
+    )
+    t0 = time.monotonic()
+
     proc = subprocess.run(
-        _build_command(engine, model),
+        cmd,
         input=order,
         text=True,
     )
+
+    elapsed = time.monotonic() - t0
+    print(
+        f"[conditional_step] done exit_code={proc.returncode} elapsed={elapsed:.1f}s",
+        file=sys.stderr,
+    )
+
     return proc.returncode
 
 
