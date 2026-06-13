@@ -7,7 +7,6 @@ import pytest
 from ghdag.exceptions import GhdagError
 from ghdag.tool.exceptions import ToolRegistryError
 from ghdag.tool.registry import ToolRegistry
-from ghdag.tool.schema import ToolDef
 
 
 def _write_tool(path: Path, name: str, *, filename: str | None = None) -> Path:
