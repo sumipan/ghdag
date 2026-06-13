@@ -146,6 +146,15 @@ class DagEngine:
                 ):
                     continue
 
+                if self._config.serialize_mutating:
+                    task_is_mutating = task.annotations.get("_mutates") == "true"
+                    running_has_mutating = any(
+                        rt.task.annotations.get("_mutates") == "true"
+                        for rt in self._running.values()
+                    )
+                    if task_is_mutating and running_has_mutating:
+                        continue
+
                 if launched > 0:
                     time.sleep(self._config.launch_stagger)
 
