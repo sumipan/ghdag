@@ -303,6 +303,26 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     audit_query_parser.set_defaults(func=_cmd_audit_query)
 
+    # ghdag tools
+    from ghdag.tool.cli import cmd_tools_list
+
+    tools_parser = subparsers.add_parser("tools", help="Tool definition management")
+    tools_subparsers = tools_parser.add_subparsers(title="tools subcommands")
+
+    list_parser = tools_subparsers.add_parser("list", help="List tool definitions")
+    list_parser.add_argument(
+        "--path",
+        required=True,
+        help="Tool definition directory",
+    )
+    list_parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="output_json",
+        help="Output as JSON",
+    )
+    list_parser.set_defaults(func=cmd_tools_list)
+
     return parser
 
 
