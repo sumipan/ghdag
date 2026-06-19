@@ -13,7 +13,11 @@ from ghdag.exceptions import GhdagError
 from ghdag.pipeline.audit import AuditContext, write_rate_limit_audit
 from ghdag.pipeline.audit_query import detect_correlation_bursts
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-from ghdag.workflow.github import GitHubIssuePort
+from ghdag.workflow.github import (
+    GitHubClientError,
+    GitHubIssuePort,
+    NetworkError,
+)
 from ghdag.workflow.schema import (
     DispatchResult,
     HandlerConfig,
@@ -218,9 +222,24 @@ class WorkflowDispatcher:
                 time.sleep(polling_interval)
 
     def _observe_rate_limit(self) -> None:
-        """各クライアントの GitHub API rate limit を取得し、audit.jsonl に記録する。"""
+        """各クライアントの GitHub API rate limit を取得し、audit.jsonl に記録する。
+
+        ネットワーク一過性エラー（NetworkError）や認証 / 権限 / 自身のレート上限
+        到達といった GitHubClientError は run() ループを巻き込んで落とさない
+        ように、ここで握り潰して次のクライアント / 次のポーリング iteration に
+        任せる。_observe_correlation_burst() と同じ「観測は best-effort、本来の
+        polling を止めない」設計。
+        """
         for github in self._githubs:
-            rate = github.get_rate_limit()
+            try:
+                rate = github.get_rate_limit()
+            except NetworkError as exc:
+                logger.warning("rate limit fetch skipped (network error): %s", exc)
+                continue
+            except GitHubClientError as exc:
+                # AuthError / PermissionDeniedError / RateLimitError 等
+                logger.warning("rate limit fetch skipped: %s", exc)
+                continue
             if rate is None:
                 continue
             remaining = rate.get("remaining")

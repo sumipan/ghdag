@@ -9,11 +9,17 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.workflow.github import GitHubIssuePort
+from ghdag.workflow.github import (
+    AuthError,
+    GitHubIssuePort,
+    NetworkError,
+    PermissionDeniedError,
+    RateLimitError,
+)
 from ghdag.workflow.schema import (
     HandlerConfig,
     StepConfig,
@@ -154,3 +160,106 @@ class TestRateLimitAudit:
         github_client.list_issues.return_value = []
         matches = dispatcher.poll_once()
         assert matches == []
+
+
+class TestObserveRateLimitResilience:
+    """get_rate_limit() が例外を投げた場合に run() ループを巻き込んで落とさない。
+
+    Mac のスリープ復帰直後など、ネットワーク復旧前の数秒で `requests` が
+    `ConnectionError` を起こすと `_request` が `NetworkError` に変換して
+    再送する。`_observe_rate_limit` がこれを握らないと、`dispatcher.run()`
+    → `_cmd_watch` → プロセス終了になり、Procfile の `while true; sleep 5`
+    で再起動するが、5 秒の dead window とノイジーなトレースを毎回出していた。
+    """
+
+    def test_network_error_does_not_propagate(self, tmp_path, caplog):
+        dispatcher, github_client = _make_dispatcher(tmp_path)
+        github_client.get_rate_limit.side_effect = NetworkError(
+            "Network error while calling GET https://api.github.com/rate_limit"
+        )
+
+        with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
+            dispatcher._observe_rate_limit()  # must not raise
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "network error" in warnings[0].message.lower()
+
+    def test_auth_error_does_not_propagate(self, tmp_path, caplog):
+        dispatcher, github_client = _make_dispatcher(tmp_path)
+        github_client.get_rate_limit.side_effect = AuthError("token expired")
+
+        with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
+            dispatcher._observe_rate_limit()
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        assert "rate limit fetch skipped" in warnings[0].message
+
+    def test_permission_denied_does_not_propagate(self, tmp_path, caplog):
+        dispatcher, github_client = _make_dispatcher(tmp_path)
+        github_client.get_rate_limit.side_effect = PermissionDeniedError("denied")
+
+        with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
+            dispatcher._observe_rate_limit()
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+
+    def test_rate_limit_error_does_not_propagate(self, tmp_path, caplog):
+        dispatcher, github_client = _make_dispatcher(tmp_path)
+        github_client.get_rate_limit.side_effect = RateLimitError("exhausted")
+
+        with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
+            dispatcher._observe_rate_limit()
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+
+    def test_per_client_isolation(self, tmp_path, caplog):
+        """複数 github client 構成: 1 つで NetworkError でも、もう 1 つは観測継続する。"""
+        bad_client = MagicMock(spec=GitHubIssuePort)
+        bad_client.get_rate_limit.side_effect = NetworkError("transient")
+        good_client = MagicMock(spec=GitHubIssuePort)
+        good_client.get_rate_limit.return_value = {
+            "remaining": 5000,
+            "limit": 5000,
+            "reset": 1700000000,
+        }
+        pipeline = MagicMock(spec=LLMPipelineAPI)
+        dispatcher = WorkflowDispatcher(
+            workflows=[_make_workflow()],
+            github_client=[bad_client, good_client],
+            pipeline=pipeline,
+            queue_dir=str(tmp_path),
+        )
+
+        with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
+            dispatcher._observe_rate_limit()
+
+        # bad_client の warning は出るが、good_client の get_rate_limit は呼ばれる
+        bad_client.get_rate_limit.assert_called_once()
+        good_client.get_rate_limit.assert_called_once()
+        warnings = [
+            r for r in caplog.records
+            if r.levelno == logging.WARNING and "network" in r.message.lower()
+        ]
+        assert len(warnings) == 1
+        # good_client 側は audit にも記録される
+        audit_path = tmp_path / "audit.jsonl"
+        assert audit_path.exists()
+
+    def test_run_loop_continues_when_rate_limit_fails(self, tmp_path):
+        """run(max_iterations=2) のループが NetworkError で止まらないことを確認する。
+
+        これが本 PR の核心: watcher プロセスをクラッシュさせない。
+        """
+        dispatcher, github_client = _make_dispatcher(tmp_path)
+        github_client.get_rate_limit.side_effect = NetworkError("transient")
+
+        # ループの sleep を bypass
+        with patch("ghdag.workflow.dispatcher.time.sleep"):
+            dispatcher.run(max_iterations=2)  # must not raise
+
+        # 2 iteration まわって、各 iteration で get_rate_limit が呼ばれている
+        assert github_client.get_rate_limit.call_count == 2
