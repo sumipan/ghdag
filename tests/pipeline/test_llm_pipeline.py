@@ -77,12 +77,14 @@ class TestAC1SingleStep:
         assert "claude-opus-4-6" in exec_lines[0]
 
     def test_exec_record_contains_dangerously_skip_permissions(self):
-        """exec レコードの command に --dangerously-skip-permissions が含まれる（engine=claude）。"""
+        """exec レコードの command に --dangerously-skip-permissions が含まれない（TEXT_ONLY デフォルト）。"""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        assert "--dangerously-skip-permissions" in exec_lines[0]
+        assert "--dangerously-skip-permissions" not in exec_lines[0]
+        assert "--permission-mode default" in exec_lines[0]
+        assert "--disallowed-tools" in exec_lines[0]
 
 
 # ---------------------------------------------------------------------------
@@ -742,7 +744,7 @@ class TestStepConfigPermission:
         assert "--dangerously-skip-permissions" not in record["command"]
 
     def test_ac10_permission_none_default_behavior(self):
-        """AC10: permission=None（デフォルト）→ exec record が従来と同一（--dangerously-skip-permissions）"""
+        """AC10: permission=None（デフォルト）→ TEXT_ONLY（--permission-mode default --disallowed-tools）"""
         import json as _json
         api, _, _ = _make_api()
         steps_default = [StepConfig(template="brushup", model="claude-opus-4-6")]
@@ -753,10 +755,13 @@ class TestStepConfigPermission:
 
         rec_default = _json.loads(lines_default[0])
         rec_none = _json.loads(lines_none[0])
-        assert "--dangerously-skip-permissions" in rec_default["command"]
-        # uuidが異なるので命令部だけ比較
-        assert "--dangerously-skip-permissions" in rec_none["command"]
-        assert "--permission-mode" not in rec_none["command"]
+        for record in (rec_default, rec_none):
+            assert "--permission-mode default" in record["command"]
+            assert "--disallowed-tools" in record["command"]
+            assert "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch" in record["command"]
+            assert "--dangerously-skip-permissions" not in record["command"]
+            assert record["annotations"].get("safe_default_applied") is True
+            assert record["annotations"].get("safe_default_preset") == "text_only"
 
     def test_ac12_unknown_preset_raises_value_error(self):
         """AC12: permission='unknown_preset' → ValueError"""
@@ -792,6 +797,21 @@ class TestStepConfigPermission:
         assert record["annotations"].get("safe_default_applied") is True
         assert record["annotations"].get("safe_default_preset") == "text_only"
         assert "default_permission_applied" not in record["annotations"]
+
+    def test_safe_default_rollback_dangerous_full_access(self, monkeypatch):
+        """GHDAG_SAFE_DEFAULT_PERMISSION=dangerous_full_access で危険デフォルトにロールバック可能。"""
+        import json as _json
+
+        monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "dangerous_full_access")
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6", permission=None)]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "bypassPermissions" in record["command"]
+        assert "--disallowed-tools" not in record["command"]
+        assert record["annotations"].get("safe_default_applied") is True
+        assert record["annotations"].get("safe_default_preset") == "dangerous_full_access"
 
     def test_explicit_permission_wins_over_safe_default_env(self, monkeypatch):
         """AC3: permission 明示時は env より permission が優先される。"""
@@ -857,15 +877,17 @@ class TestStepConfigPermission:
 
 class TestDefaultPermissionAuditAnnotations:
     def test_ac1_permission_none_claude_annotations(self):
-        """AC1: permission=None → default_permission_applied + injected_danger_flag."""
+        """AC1: permission=None → safe_default_applied + safe_default_preset=text_only."""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         record = _json.loads(exec_lines[0])
-        assert record["annotations"]["default_permission_applied"] is True
-        assert record["annotations"]["injected_danger_flag"] == "--dangerously-skip-permissions"
+        assert record["annotations"]["safe_default_applied"] is True
+        assert record["annotations"]["safe_default_preset"] == "text_only"
+        assert "default_permission_applied" not in record["annotations"]
+        assert "injected_danger_flag" not in record["annotations"]
 
     def test_ac2_permission_text_only_no_default_annotation(self):
         """AC2: permission='text_only' → default_permission_applied キーなし。"""
@@ -904,15 +926,17 @@ class TestDefaultPermissionAuditAnnotations:
         assert "default_permission_applied" not in record["annotations"]
 
     def test_ac7_cursor_permission_none_injected_force(self):
-        """AC7: cursor + permission=None → injected_danger_flag == '--force'."""
+        """AC7: cursor + permission=None → TEXT_ONLY デフォルト（--force なし）。"""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="impl", model="cursor", engine="cursor")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         record = _json.loads(exec_lines[0])
-        assert record["annotations"]["default_permission_applied"] is True
-        assert record["annotations"]["injected_danger_flag"] == "--force"
+        assert record["annotations"]["safe_default_applied"] is True
+        assert record["annotations"]["safe_default_preset"] == "text_only"
+        assert "--force" not in record["command"]
+        assert "default_permission_applied" not in record["annotations"]
 
 
 # ---------------------------------------------------------------------------
@@ -1048,14 +1072,17 @@ class TestMetadataRoundTrip:
 
 class TestMetadataBackwardCompat:
     def test_no_metadata_annotations_empty(self):
-        """metadata を省略した場合、gemini は annotations が {} のまま。"""
+        """metadata を省略した場合、gemini は metadata 由来の annotation キーなし（safe default のみ）。"""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         record = _json.loads(exec_lines[0])
-        assert record.get("annotations") == {}
+        annotations = record.get("annotations", {})
+        assert annotations.get("safe_default_applied") is True
+        assert annotations.get("safe_default_preset") == "text_only"
+        assert len(annotations) == 2
 
     def test_no_metadata_does_not_break_existing_behavior(self):
         """metadata なしで既存のテスト項目（uuid, command, result_path）が正常。"""
@@ -1091,23 +1118,29 @@ class TestMetadataWithIdempotencyKey:
 
 class TestMetadataEmptyDict:
     def test_empty_metadata_dict_annotations_stays_empty(self):
-        """metadata={} を渡した場合、gemini は annotations が {} のまま。"""
+        """metadata={} を渡した場合、gemini は metadata 由来の annotation キーなし（safe default のみ）。"""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata={})
 
         record = _json.loads(exec_lines[0])
-        assert record.get("annotations") == {}
+        annotations = record.get("annotations", {})
+        assert annotations.get("safe_default_applied") is True
+        assert annotations.get("safe_default_preset") == "text_only"
+        assert len(annotations) == 2
 
 
 class TestMetadataExplicitNone:
     def test_explicit_none_metadata_same_as_omitted(self):
-        """metadata=None を明示的に渡した場合、gemini は省略時と同一（annotations {}）。"""
+        """metadata=None を明示的に渡した場合、gemini は省略時と同一（safe default のみ）。"""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=None)
 
         record = _json.loads(exec_lines[0])
-        assert record.get("annotations") == {}
+        annotations = record.get("annotations", {})
+        assert annotations.get("safe_default_applied") is True
+        assert annotations.get("safe_default_preset") == "text_only"
+        assert len(annotations) == 2

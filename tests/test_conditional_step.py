@@ -1,5 +1,7 @@
+import re
 from unittest.mock import MagicMock, patch
 
+from ghdag.metrics.parsers import parse_token_count
 from ghdag.workflow.conditional_step import run_with_template, substitute_vars
 
 
@@ -124,3 +126,36 @@ def test_run_with_template_default_engine_is_claude(tmp_path):
 
     cmd = mock_run.call_args[0][0]
     assert cmd[0] == "claude"
+
+
+def test_run_with_template_emits_diagnostic_logs(tmp_path, capsys):
+    template_file = tmp_path / "order.md"
+    template_file.write_text("order")
+
+    with patch("ghdag.workflow.conditional_step.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=1)
+        run_with_template(
+            str(template_file),
+            {},
+            model="claude-opus-4-6",
+            engine="claude",
+        )
+
+    stderr = capsys.readouterr().err
+    assert re.search(
+        rf"\[conditional_step\] start engine=claude model=claude-opus-4-6 template={re.escape(str(template_file))}",
+        stderr,
+    )
+    assert re.search(
+        r"\[conditional_step\] done exit_code=1 elapsed=\d+\.\d+s",
+        stderr,
+    )
+
+
+def test_diagnostic_logs_do_not_interfere_with_parse_token_count():
+    stderr = (
+        "[conditional_step] start engine=claude model=claude-sonnet-4-6 template=/tmp/order.md\n"
+        "Total tokens: 5678\n"
+        "[conditional_step] done exit_code=0 elapsed=12.3s\n"
+    )
+    assert parse_token_count("claude", stderr) == 5678

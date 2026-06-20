@@ -22,6 +22,7 @@ class LLMCapabilities:
     output_format: str = "text"  # "text" | "json"
     allowed_tools: tuple[str, ...] = ()  # 空 = 指定なし（CLI に渡さない）
     disallowed_tools: tuple[str, ...] = ()  # 空 = 指定なし（CLI に渡さない）
+    stream: bool = False  # True 時 --output-format stream-json（output_format を上書き）
 
 
 TEXT_ONLY = LLMCapabilities(

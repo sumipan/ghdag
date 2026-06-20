@@ -1,6 +1,6 @@
 """GitHub REST/GraphQL client — urllib-based Layer 1 API.
 
-Used by issuesmith and other tools that need gh-compatible GitHub access
+Used by workflow consumers and other tools that need gh-compatible GitHub access
 without the gh CLI. Uses stdlib urllib only (no requests).
 """
 
@@ -13,18 +13,59 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from typing import Any, cast
+from typing import Any, Protocol, cast, runtime_checkable
+
+from ghdag.exceptions import (
+    AuthError,
+    GitHubApiError,
+    NetworkError,
+    PermissionDeniedError,
+    RateLimitError,
+)
 
 API_BASE = "https://api.github.com"
 GRAPHQL_URL = "https://api.github.com/graphql"
 DEFAULT_REPO = "sumipan/nexus"
 
 
+@runtime_checkable
+class GitHubIssuePort(Protocol):
+    """GitHub Issues 操作の抽象インタフェース。dispatcher はこの Protocol にのみ依存する。"""
+
+    def get_issue(self, number: int) -> dict: ...
+    def list_issues(self, label: str, state: str = "open") -> list[dict]: ...
+    def get_issue_comments(self, number: int) -> list[dict]: ...
+    def update_label(self, number: int, remove: str, add: str) -> None: ...
+    def add_comment(self, number: int, body: str) -> None: ...
+    def remove_label(self, number: int, label: str) -> None: ...
+    def dispatch_event(self, event_type: str, payload: dict | None = None) -> None: ...
+    def get_rate_limit(self) -> dict | None: ...
+
+
 def _resolve_token(token: str | None = None) -> str:
     value = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     if not value:
-        raise ValueError("GITHUB_TOKEN is not set")
+        raise AuthError("GITHUB_TOKEN is not set")
     return value
+
+
+def _resolve_repos() -> list[tuple[str, str]]:
+    """GITHUB_REPOSITORIES（カンマ区切り owner/repo リスト）を解決する。"""
+    raw = os.environ.get("GITHUB_REPOSITORIES", "")
+    repos: list[tuple[str, str]] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part or "/" not in part:
+            continue
+        owner, repo = (s.strip() for s in part.split("/", 1))
+        if owner and repo:
+            repos.append((owner, repo))
+    if not repos:
+        raise EnvironmentError(
+            "GITHUB_REPOSITORIES environment variable is required "
+            "(comma-separated 'owner/repo' list)"
+        )
+    return repos
 
 
 def _resolve_repo(repo: str | None = None) -> tuple[str, str]:
@@ -122,9 +163,17 @@ class GitHubClient:
                 detail = json.loads(msg).get("message", msg)
             except json.JSONDecodeError:
                 detail = msg or exc.reason
-            raise RuntimeError(
-                f"GitHub API {method} {url} failed ({exc.code}): {detail}"
-            ) from exc
+            error_msg = f"GitHub API {method} {url} failed ({exc.code}): {detail}"
+            if exc.code == 401:
+                raise AuthError(error_msg, status_code=401) from exc
+            if exc.code == 403:
+                remaining = exc.headers.get("X-RateLimit-Remaining") if exc.headers else None
+                if remaining == "0":
+                    raise RateLimitError(error_msg, status_code=403) from exc
+                raise PermissionDeniedError(error_msg, status_code=403) from exc
+            raise GitHubApiError(error_msg, status_code=exc.code) from exc
+        except urllib.error.URLError as exc:
+            raise NetworkError(f"Network error: {exc.reason}") from exc
 
         if raw:
             return payload.decode("utf-8", errors="replace")
@@ -401,7 +450,7 @@ class GitHubClient:
                         f"/repos/{owner}/{repo_name}/git/refs/heads/{ref}",
                         repo=repo,
                     )
-                except RuntimeError:
+                except GitHubApiError:
                     pass
 
     def pr_checks(self, number: int, *, repo: str | None = None) -> list[dict]:
@@ -513,7 +562,7 @@ class GitHubClient:
         try:
             self._request("GET", f"/repos/{owner}/{repo_name}", repo=repo)
             return True
-        except RuntimeError:
+        except GitHubApiError:
             return False
 
     def api_request(
@@ -531,3 +580,81 @@ class GitHubClient:
             return self._paginate(api_path)
         body = dict(fields) if fields else None
         return self._request(method, api_path, body=body, repo=repo)
+
+    # --- GitHubIssuePort compatible methods ---
+
+    def get_issue(self, number: int) -> dict:
+        return cast(dict[str, Any], self.issue_get(number))
+
+    def list_issues(self, label: str, state: str = "open") -> list[dict]:
+        return cast(
+            list[dict[str, Any]],
+            self._request(
+                "GET",
+                f"/repos/{self._owner}/{self._repo}/issues",
+                params={"labels": label, "state": state, "per_page": "100"},
+            ) or [],
+        )
+
+    def get_issue_comments(self, number: int) -> list[dict]:
+        raw = self._request(
+            "GET",
+            f"/repos/{self._owner}/{self._repo}/issues/{number}/comments",
+            params={"per_page": "100"},
+        ) or []
+        return [
+            {
+                "author": (c.get("user") or {}).get("login", ""),
+                "created_at": c.get("created_at", ""),
+                "body": c.get("body", ""),
+            }
+            for c in raw
+        ]
+
+    def update_label(self, number: int, remove: str, add: str) -> None:
+        self.issue_update(number, labels_remove=[remove], labels_add=[add])
+
+    def add_comment(self, number: int, body: str) -> None:
+        self.issue_comment(number, body)
+
+    def remove_label(self, number: int, label: str) -> None:
+        self.issue_update(number, labels_remove=[label])
+
+    def dispatch_event(self, event_type: str, payload: dict | None = None) -> None:
+        self._request(
+            "POST",
+            f"/repos/{self._owner}/{self._repo}/dispatches",
+            body={"event_type": event_type, "client_payload": payload or {}},
+        )
+
+    def get_rate_limit(self) -> dict | None:
+        return cast(dict[str, Any], self._request("GET", "/rate_limit"))
+
+
+def create_github_client(
+    *,
+    token: str | None = None,
+    owner: str | None = None,
+    repo: str | None = None,
+) -> GitHubIssuePort:
+    """単一リポジトリ用クライアントを生成する。
+
+    owner/repo を明示しない場合は GITHUB_REPOSITORIES の先頭エントリを使う。
+    """
+    token_value = _resolve_token(token)
+    if owner and repo:
+        return GitHubClient(token=token_value, repo=f"{owner}/{repo}")
+    resolved_owner, resolved_repo = _resolve_repos()[0]
+    return GitHubClient(token=token_value, repo=f"{resolved_owner}/{resolved_repo}")
+
+
+def create_github_clients(*, token: str | None = None) -> list[GitHubIssuePort]:
+    """GITHUB_REPOSITORIES の各リポジトリに対するクライアントのリストを生成する。"""
+    token_value = _resolve_token(token)
+    return [
+        GitHubClient(token=token_value, repo=f"{owner}/{repo}")
+        for owner, repo in _resolve_repos()
+    ]
+
+
+GitHubIssueClient = GitHubClient

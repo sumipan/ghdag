@@ -19,6 +19,7 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def _build_parser() -> argparse.ArgumentParser:
+    from ghdag.cli.commands.audit_query import cmd_audit_query
     from ghdag.cli.commands.cleanup import cmd_cleanup
     from ghdag.cli.commands.llm import cmd_llm
     from ghdag.cli.commands.run import cmd_run
@@ -260,6 +261,69 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Workflow name (auto-detected if only one workflow exists)",
     )
     trigger_parser.set_defaults(func=cmd_trigger)
+
+    # ghdag audit-query
+    audit_query_parser = subparsers.add_parser(
+        "audit-query",
+        help="Query audit.jsonl for correlation events or burst detection",
+    )
+    audit_query_parser.add_argument(
+        "--correlation-id",
+        default=None,
+        dest="correlation_id",
+        help="Filter events by correlation ID",
+    )
+    audit_query_parser.add_argument(
+        "--burst-detect",
+        action="store_true",
+        dest="burst_detect",
+        help="Detect correlation ID bursts (exit code 1 if found)",
+    )
+    audit_query_parser.add_argument(
+        "--since",
+        default=None,
+        help="ISO 8601 datetime filter (correlation-id mode only)",
+    )
+    audit_query_parser.add_argument(
+        "--audit-path",
+        default="jobs/audit.jsonl",
+        dest="audit_path",
+        help="Path to audit.jsonl (default: jobs/audit.jsonl)",
+    )
+    audit_query_parser.add_argument(
+        "--window-sec",
+        type=float,
+        default=600.0,
+        dest="window_sec",
+        help="Burst detection window in seconds (default: 600)",
+    )
+    audit_query_parser.add_argument(
+        "--threshold",
+        type=int,
+        default=10,
+        help="Burst detection threshold (default: 10)",
+    )
+    audit_query_parser.set_defaults(func=cmd_audit_query)
+
+    # ghdag tools
+    from ghdag.tool.cli import cmd_tools_list
+
+    tools_parser = subparsers.add_parser("tools", help="Tool definition management")
+    tools_subparsers = tools_parser.add_subparsers(title="tools subcommands")
+
+    list_parser = tools_subparsers.add_parser("list", help="List tool definitions")
+    list_parser.add_argument(
+        "--path",
+        required=True,
+        help="Tool definition directory",
+    )
+    list_parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="output_json",
+        help="Output as JSON",
+    )
+    list_parser.set_defaults(func=cmd_tools_list)
 
     return parser
 
