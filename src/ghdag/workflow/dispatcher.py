@@ -10,10 +10,10 @@ import time
 from pathlib import Path
 
 from ghdag.exceptions import GhdagError
+from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.audit import AuditContext, write_rate_limit_audit
 from ghdag.pipeline.audit_query import detect_correlation_bursts
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-from ghdag.workflow.github import GitHubIssuePort
 from ghdag.workflow.schema import (
     DispatchResult,
     HandlerConfig,

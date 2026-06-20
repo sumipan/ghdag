@@ -409,11 +409,11 @@ def _cmd_trigger(args: argparse.Namespace) -> None:
     """ghdag trigger: Issue に対してワンショットでハンドラーを実行する。"""
     from pathlib import Path
 
+    from ghdag.github_client import create_github_client
     from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
     from ghdag.pipeline.order import TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
-    from ghdag.workflow.github import create_github_client
     from ghdag.workflow.loader import load_workflows
 
     workflows_path = Path(args.workflows_dir)
@@ -507,11 +507,11 @@ def _cmd_watch(args: argparse.Namespace) -> None:
     from pathlib import Path
     from typing import cast
 
+    from ghdag.github_client import create_github_clients
     from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
     from ghdag.pipeline.order import OrderBuilder, TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
-    from ghdag.workflow.github import create_github_clients
     from ghdag.workflow.loader import load_workflows
 
     workflows_path = Path(args.workflows_dir)

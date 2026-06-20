@@ -8,9 +8,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ghdag.github_client import GitHubClient as TokenGitHubClient
+from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import ContextHookError, WorkflowDispatcher
-from ghdag.workflow.github import GitHubIssuePort, TokenGitHubClient
 from ghdag.workflow.loader import ValidationError, load_workflows
 from ghdag.workflow.schema import (
     DispatchResult,
