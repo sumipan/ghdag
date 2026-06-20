@@ -15,6 +15,14 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, urlparse
 
+from ghdag.pipeline.audit_query import get_correlation_top_n
+
+from .dashboard import (
+    aggregate_cb_firing,
+    aggregate_task_status,
+    aggregate_token_usage,
+    resolve_audit_path,
+)
 from .monitor import (
     apply_default_monitor_filters,
     build_rows,
@@ -133,6 +141,26 @@ class _Handler(BaseHTTPRequestHandler):
                 pass
         return self.max_visible
 
+    def _parse_query_float(self, name: str, default: float) -> float:
+        qs = parse_qs(urlparse(self.path).query)
+        vals = qs.get(name, [])
+        if vals:
+            try:
+                return float(vals[0])
+            except ValueError:
+                pass
+        return default
+
+    def _parse_query_int(self, name: str, default: int | None = None) -> int | None:
+        qs = parse_qs(urlparse(self.path).query)
+        vals = qs.get(name, [])
+        if vals:
+            try:
+                return int(vals[0])
+            except ValueError:
+                pass
+        return default
+
     def do_GET(self):
         parsed_path = urlparse(self.path).path
         if parsed_path == "/" or parsed_path == "/index.html":
@@ -143,6 +171,14 @@ class _Handler(BaseHTTPRequestHandler):
             self._serve_sse()
         elif parsed_path == "/api/config":
             self._serve_config()
+        elif parsed_path == "/api/dashboard/status":
+            self._serve_dashboard_status()
+        elif parsed_path == "/api/dashboard/tokens":
+            self._serve_dashboard_tokens()
+        elif parsed_path == "/api/dashboard/cb-firing":
+            self._serve_dashboard_cb_firing()
+        elif parsed_path == "/api/correlation-bursts":
+            self._serve_correlation_bursts()
         else:
             self.send_error(404)
 
@@ -222,6 +258,42 @@ class _Handler(BaseHTTPRequestHandler):
     def _serve_config(self):
         data = {"github_base_url": self.github_base_url}
         self._send_json_response(200, data)
+
+    def _serve_dashboard_status(self):
+        audit_path = resolve_audit_path(self.repo_root)
+        since_sec = self._parse_query_float("since", 86400.0)
+        data = aggregate_task_status(audit_path, since_sec=since_sec)
+        self._send_json_response(200, data)
+
+    def _serve_dashboard_tokens(self):
+        audit_path = resolve_audit_path(self.repo_root)
+        since_sec = self._parse_query_float("since", 86400.0)
+        threshold = self._parse_query_int("threshold")
+        data = aggregate_token_usage(
+            audit_path,
+            since_sec=since_sec,
+            warn_threshold=threshold,
+        )
+        self._send_json_response(200, data)
+
+    def _serve_dashboard_cb_firing(self):
+        audit_path = resolve_audit_path(self.repo_root)
+        since_sec = self._parse_query_float("since", 86400.0)
+        window = self._parse_query_int("window", 60)
+        data = aggregate_cb_firing(
+            audit_path,
+            since_sec=since_sec,
+            window_minutes=window if window is not None else 60,
+        )
+        self._send_json_response(200, data)
+
+    def _serve_correlation_bursts(self) -> None:
+        qs = parse_qs(urlparse(self.path).query)
+        hours = float(qs.get("hours", ["1"])[0])
+        top_n = int(qs.get("top_n", ["20"])[0])
+        audit_path = Path(self.repo_root) / "jobs" / "audit.jsonl"
+        bursts = get_correlation_top_n(audit_path, since_sec=hours * 3600, top_n=top_n)
+        self._send_json_response(200, {"bursts": bursts})
 
     def _serve_html(self):
         body = _read_static("index.html")
