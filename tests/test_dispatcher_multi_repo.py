@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.github_client import GitHubIssuePort
 from ghdag.workflow.schema import (
     HandlerConfig,
     StepConfig,
