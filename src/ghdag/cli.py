@@ -350,7 +350,7 @@ def _cmd_trigger(args: argparse.Namespace) -> None:
     from ghdag.pipeline.order import TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
-    from ghdag.workflow.github import create_github_client
+    from ghdag.github_client import create_github_client
     from ghdag.workflow.loader import load_workflows
 
     workflows_path = Path(args.workflows_dir)
@@ -448,7 +448,7 @@ def _cmd_watch(args: argparse.Namespace) -> None:
     from ghdag.pipeline.order import OrderBuilder, TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
-    from ghdag.workflow.github import create_github_clients
+    from ghdag.github_client import create_github_clients
     from ghdag.workflow.loader import load_workflows
 
     workflows_path = Path(args.workflows_dir)
