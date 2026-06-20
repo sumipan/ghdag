@@ -15,7 +15,7 @@ from ghdag.workflow.dispatcher import (
     _BURST_THRESHOLD,
     WorkflowDispatcher,
 )
-from ghdag.workflow.github import GitHubIssuePort
+from ghdag.github_client import GitHubIssuePort
 from ghdag.workflow.schema import (
     HandlerConfig,
     StepConfig,
