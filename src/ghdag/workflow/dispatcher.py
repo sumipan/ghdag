@@ -10,8 +10,6 @@ import subprocess
 import time
 from pathlib import Path
 
-_READY_LABEL_RE = re.compile(r"^(.+)([-:])ready$")
-
 from ghdag.exceptions import GhdagError
 from ghdag.pipeline.audit import AuditContext, write_rate_limit_audit
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
@@ -22,6 +20,8 @@ from ghdag.workflow.schema import (
     TriggerConfig,
     WorkflowConfig,
 )
+
+_READY_LABEL_RE = re.compile(r"^(.+)([-:])ready$")
 
 logger = logging.getLogger(__name__)
 
