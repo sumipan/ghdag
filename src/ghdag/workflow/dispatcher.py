@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shlex
 import subprocess
 import time
@@ -20,6 +21,8 @@ from ghdag.workflow.schema import (
     TriggerConfig,
     WorkflowConfig,
 )
+
+_READY_LABEL_RE = re.compile(r"^(.+)([-:])ready$")
 
 logger = logging.getLogger(__name__)
 
@@ -177,10 +180,12 @@ class WorkflowDispatcher:
             audit_context=audit_ctx,
         )
 
-        # 6. ラベル遷移（*-ready → *-running）
-        if trigger and trigger.label.endswith("-ready"):
-            running_label = trigger.label.replace("-ready", "-running")
-            github.update_label(issue_number, trigger.label, running_label)
+        # 6. ラベル遷移（*-ready / *:ready → *-running / *:running）
+        if trigger:
+            m = _READY_LABEL_RE.match(trigger.label)
+            if m:
+                running_label = f"{m.group(1)}{m.group(2)}running"
+                github.update_label(issue_number, trigger.label, running_label)
 
         return DispatchResult(status="dispatched", exec_lines=exec_lines)
 
@@ -285,9 +290,10 @@ class WorkflowDispatcher:
         max_rank: int | None = None
 
         for rank, trigger in enumerate(workflow.triggers):
-            if not trigger.label.endswith("-ready"):
+            m = _READY_LABEL_RE.match(trigger.label)
+            if not m:
                 continue
-            running_label = trigger.label.replace("-ready", "-running")
+            running_label = f"{m.group(1)}{m.group(2)}running"
             if running_label in issue_label_names:
                 if max_rank is None or rank > max_rank:
                     max_rank = rank

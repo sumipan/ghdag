@@ -393,3 +393,85 @@ class TestRemoveIdempotencyMatchingJsonl:
         assert "" in remaining.splitlines()
         assert "handler_a" not in remaining
         assert UUID2 in remaining
+
+
+# ---------------------------------------------------------------------------
+# JSONL モード: remove_idempotency_for_handler (Issue #2258)
+# ---------------------------------------------------------------------------
+
+
+class TestRemoveIdempotencyForHandler:
+    @pytest.fixture
+    def state(self, tmp_path):
+        exec_jsonl = tmp_path / "exec.jsonl"
+        exec_jsonl.write_text("", encoding="utf-8")
+        return PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
+
+    def test_removes_only_matched_handler(self, state):
+        """pipeline_retry のみ削除、pipeline は残存。"""
+        state._exec_jsonl_path.write_text(
+            json.dumps({"uuid": UUID1, "idempotency_key": "research:pipeline_retry:42"}) + "\n"
+            + json.dumps({"uuid": UUID2, "idempotency_key": "research:pipeline:42"}) + "\n",
+            encoding="utf-8",
+        )
+        removed = state.remove_idempotency_for_handler("research", "pipeline_retry", 42)
+        assert removed == 1
+        content = state._exec_jsonl_path.read_text()
+        assert "pipeline_retry" not in content
+        assert "pipeline:42" in content
+
+    def test_returns_count_for_multiple_matches(self, state):
+        """同一キー 2 件 → 戻り値 2。"""
+        state._exec_jsonl_path.write_text(
+            json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:42"}) + "\n"
+            + json.dumps({"uuid": UUID2, "idempotency_key": "wf:handler_a:42"}) + "\n",
+            encoding="utf-8",
+        )
+        removed = state.remove_idempotency_for_handler("wf", "handler_a", 42)
+        assert removed == 2
+
+    def test_no_match_returns_zero_and_file_unchanged(self, state):
+        """マッチなし → 戻り値 0、ファイル内容不変。"""
+        original = json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_b:42"}) + "\n"
+        state._exec_jsonl_path.write_text(original, encoding="utf-8")
+        removed = state.remove_idempotency_for_handler("wf", "handler_a", 42)
+        assert removed == 0
+        assert state._exec_jsonl_path.read_text() == original
+
+    def test_remove_idempotency_matching_unchanged_after_refactor(self, state):
+        """既存 remove_idempotency_matching が wf:*:42 パターンの全件削除を継続（回帰防止）。"""
+        state._exec_jsonl_path.write_text(
+            json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:42"}) + "\n"
+            + json.dumps({"uuid": UUID2, "idempotency_key": "wf:handler_b:42"}) + "\n",
+            encoding="utf-8",
+        )
+        removed = state.remove_idempotency_matching("wf", 42)
+        assert removed == 2
+        content = state._exec_jsonl_path.read_text()
+        assert "handler_a" not in content
+        assert "handler_b" not in content
+
+    def test_concurrent_write_safe(self, state, tmp_path):
+        """2 スレッドから同時書き込みしても fcntl ロックにより排他実行される。"""
+        import threading
+
+        state._exec_jsonl_path.write_text(
+            json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:1"}) + "\n"
+            + json.dumps({"uuid": UUID2, "idempotency_key": "wf:handler_a:2"}) + "\n",
+            encoding="utf-8",
+        )
+        results = []
+
+        def remove(issue_num):
+            results.append(state.remove_idempotency_for_handler("wf", "handler_a", issue_num))
+
+        t1 = threading.Thread(target=remove, args=(1,))
+        t2 = threading.Thread(target=remove, args=(2,))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert sum(results) == 2
+        content = state._exec_jsonl_path.read_text()
+        assert "handler_a" not in content

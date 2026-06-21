@@ -58,11 +58,37 @@ class PipelineState:
         Returns:
             削除したレコード数
         """
-        if not self._exec_jsonl_path.exists():
-            return 0
-
         prefix = f"{workflow_name}:"
         suffix = f":{issue_number}"
+        return self._remove_by_predicate(
+            lambda rec: (k := rec.get("idempotency_key", "")) and k.startswith(prefix) and k.endswith(suffix)
+        )
+
+    def remove_idempotency_for_handler(
+        self,
+        workflow_name: str,
+        handler_name: str,
+        issue_number: int,
+    ) -> int:
+        """exec.jsonl から workflow_name:handler_name:issue_number に完全一致する冪等性記録を削除。
+
+        Returns:
+            削除したレコード数
+        """
+        target_key = f"{workflow_name}:{handler_name}:{issue_number}"
+        return self._remove_by_predicate(lambda rec: rec.get("idempotency_key") == target_key)
+
+    def _remove_by_predicate(self, predicate: Callable[[dict], bool]) -> int:
+        """exec.jsonl から predicate が True を返すレコードを削除する内部ヘルパー。
+
+        Args:
+            predicate: dict レコードを受け取り True なら削除対象とする関数
+
+        Returns:
+            削除したレコード数
+        """
+        if not self._exec_jsonl_path.exists():
+            return 0
 
         with open(self._exec_jsonl_path, encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_SH)
@@ -81,8 +107,7 @@ class PipelineState:
                 continue
             try:
                 data = json.loads(stripped)
-                key = data.get("idempotency_key", "")
-                if key and key.startswith(prefix) and key.endswith(suffix):
+                if predicate(data):
                     removed += 1
                     continue
             except json.JSONDecodeError:
