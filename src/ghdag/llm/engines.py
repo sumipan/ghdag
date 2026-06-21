@@ -89,8 +89,9 @@ def validate_engine_model(engine: str, model: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
-    "gemini": {"disallowed_tools", "allowed_tools", "permission_mode"},
-    "cursor": {"allowed_tools", "permission_mode"},
+    "gemini": {"disallowed_tools", "allowed_tools", "permission_mode", "stream"},
+    "cursor": {"allowed_tools", "permission_mode", "stream"},
+    "shell": {"stream"},
 }
 
 
@@ -108,6 +109,11 @@ def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities
                 raise NotImplementedError(
                     f"{engine} engine does not support {attr} != default (got {val!r})"
                 )
+        elif attr == "stream":
+            if val:
+                raise NotImplementedError(
+                    f"{engine} engine does not support {attr} (got {val!r})"
+                )
         elif val:
             raise NotImplementedError(
                 f"{engine} engine does not support {attr} (got {val!r})"
@@ -122,7 +128,9 @@ def _build_claude_flags(
     capabilities: LLMCapabilities, dangerously_skip_permissions: bool
 ) -> list[str]:
     flags = ["--permission-mode", capabilities.permission_mode]
-    if capabilities.output_format != "text":
+    if capabilities.stream:
+        flags += ["--output-format", "stream-json", "--verbose"]
+    elif capabilities.output_format != "text":
         flags += ["--output-format", capabilities.output_format]
     if capabilities.allowed_tools:
         flags += ["--allowed-tools", ",".join(capabilities.allowed_tools)]
@@ -163,6 +171,7 @@ class LLMResult:
         """output_format 契約を検証する。失敗時は LLMParseError を送出。
 
         returncode != 0 の場合は検証をスキップ（エラー出力を優先）。
+        stream=True の場合は JSONL から最終 result を抽出して stdout を置換する。
         Returns:
             self（チェーン呼び出し可能）
         Raises:
@@ -170,12 +179,35 @@ class LLMResult:
         """
         if not self.ok:
             return self
+        if capabilities.stream:
+            self.stdout = _extract_stream_result(self.stdout)
         if capabilities.output_format == "json":
             try:
                 json.loads(self.stdout)
             except json.JSONDecodeError as e:
                 raise LLMParseError(raw=self.stdout, reason=str(e)) from e
         return self
+
+
+def _extract_stream_result(stdout: str) -> str:
+    """stream-json JSONL 出力から最終 result テキストを抽出する。"""
+    last_result: str | None = None
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if obj.get("type") == "result":
+            result = obj.get("result", "")
+            last_result = result if isinstance(result, str) else json.dumps(result)
+    if last_result is None:
+        raise LLMParseError(
+            raw=stdout, reason="no result line in stream-json output"
+        )
+    return last_result
 
 
 def build_llm_cmd(

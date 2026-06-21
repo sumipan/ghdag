@@ -8,9 +8,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ghdag.github_client import GitHubClient as TokenGitHubClient
+from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import ContextHookError, WorkflowDispatcher
-from ghdag.workflow.github import GitHubIssuePort, TokenGitHubClient
 from ghdag.workflow.loader import ValidationError, load_workflows
 from ghdag.workflow.schema import (
     DispatchResult,
@@ -587,6 +588,32 @@ class TestTC6ResetHandler:
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
 
         github_client.remove_label.assert_called_once_with(99, "issuesmith:draft-running")
+
+    def test_reset_uses_label_namespace_when_set(self):
+        """label_namespace が設定されていれば trigger.label ではなくそれを prefix に使う。"""
+        workflow = WorkflowConfig(
+            name="custom-wf",
+            label_namespace="custom",
+            triggers=[
+                TriggerConfig(label="other:reset", handler="reset"),
+            ],
+            handlers={
+                "reset": HandlerConfig(steps=[], type="reset"),
+            },
+        )
+        dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow)
+        pipeline_state.remove_idempotency_matching.return_value = 1
+        issue = _make_issue(
+            10,
+            ["custom:draft-running", "custom:impl-running", "other:reset"],
+        )
+        handler = workflow.handlers["reset"]
+        trigger = workflow.triggers[0]
+        dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
+
+        removed = {c.args[1] for c in github_client.remove_label.call_args_list}
+        assert removed == {"custom:draft-running", "custom:impl-running"}
+        assert "other:reset" not in removed
 
 
 # ---------------------------------------------------------------------------

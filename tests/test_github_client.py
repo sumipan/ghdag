@@ -39,10 +39,12 @@ def test_user_agent_header() -> None:
 
 
 def test_resolve_token_missing() -> None:
+    from ghdag.exceptions import AuthError
+
     with mock.patch.dict(os.environ, {}, clear=True):
-        with pytest.raises(ValueError, match="GITHUB_TOKEN is not set"):
+        with pytest.raises(AuthError, match="GITHUB_TOKEN is not set"):
             _resolve_token()
-        with pytest.raises(ValueError, match="GITHUB_TOKEN is not set"):
+        with pytest.raises(AuthError, match="GITHUB_TOKEN is not set"):
             GitHubClient()
 
 
@@ -242,7 +244,9 @@ def test_api_request_expands_owner_repo_placeholder(
     assert seen == ["/repos/o/r/pulls/1"]
 
 
-def test_http_error_raises_runtime_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_http_error_raises_github_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ghdag.exceptions import GitHubApiError
+
     client = GitHubClient(token="tok", repo="o/r")
 
     def fake_urlopen(req: object, timeout: int = 120) -> None:
@@ -256,5 +260,89 @@ def test_http_error_raises_runtime_error(monkeypatch: pytest.MonkeyPatch) -> Non
         )
 
     monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    with pytest.raises(RuntimeError, match="404.*Not Found"):
+    with pytest.raises(GitHubApiError, match="404.*Not Found"):
         client._request("GET", "/repos/o/r/issues/1")
+
+
+def test_http_401_raises_auth_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ghdag.exceptions import AuthError, GhdagError
+
+    client = GitHubClient(token="tok", repo="o/r")
+
+    def fake_urlopen(req: object, timeout: int = 120) -> None:
+        body = json.dumps({"message": "Bad credentials"}).encode()
+        raise urllib.error.HTTPError(
+            url="https://api.github.com/x",
+            code=401,
+            msg="Unauthorized",
+            hdrs=mock.MagicMock(),
+            fp=io.BytesIO(body),
+        )
+
+    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
+    with pytest.raises(AuthError) as exc_info:
+        client._request("GET", "/repos/o/r/issues/1")
+    assert exc_info.value.status_code == 401
+    assert isinstance(exc_info.value, GhdagError)
+
+
+def test_http_403_rate_limit_raises_rate_limit_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ghdag.exceptions import GhdagError, RateLimitError
+
+    client = GitHubClient(token="tok", repo="o/r")
+
+    def fake_urlopen(req: object, timeout: int = 120) -> None:
+        body = json.dumps({"message": "rate limit exceeded"}).encode()
+        hdrs = mock.MagicMock()
+        hdrs.get = lambda k, d=None: {"X-RateLimit-Remaining": "0"}.get(k, d)
+        raise urllib.error.HTTPError(
+            url="https://api.github.com/x",
+            code=403,
+            msg="Forbidden",
+            hdrs=hdrs,
+            fp=io.BytesIO(body),
+        )
+
+    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
+    with pytest.raises(RateLimitError) as exc_info:
+        client._request("GET", "/repos/o/r/issues/1")
+    assert exc_info.value.status_code == 403
+    assert isinstance(exc_info.value, GhdagError)
+
+
+def test_http_403_permission_raises_permission_denied_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ghdag.exceptions import GhdagError, PermissionDeniedError
+
+    client = GitHubClient(token="tok", repo="o/r")
+
+    def fake_urlopen(req: object, timeout: int = 120) -> None:
+        body = json.dumps({"message": "Forbidden"}).encode()
+        hdrs = mock.MagicMock()
+        hdrs.get = lambda k, d=None: {"X-RateLimit-Remaining": "100"}.get(k, d)
+        raise urllib.error.HTTPError(
+            url="https://api.github.com/x",
+            code=403,
+            msg="Forbidden",
+            hdrs=hdrs,
+            fp=io.BytesIO(body),
+        )
+
+    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
+    with pytest.raises(PermissionDeniedError) as exc_info:
+        client._request("GET", "/repos/o/r/issues/1")
+    assert exc_info.value.status_code == 403
+    assert isinstance(exc_info.value, GhdagError)
+
+
+def test_url_error_raises_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ghdag.exceptions import GhdagError, NetworkError
+
+    client = GitHubClient(token="tok", repo="o/r")
+
+    def fake_urlopen(req: object, timeout: int = 120) -> None:
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
+    with pytest.raises(NetworkError) as exc_info:
+        client._request("GET", "/repos/o/r/issues/1")
+    assert isinstance(exc_info.value, GhdagError)

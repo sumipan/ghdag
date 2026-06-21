@@ -11,9 +11,10 @@ import time
 from pathlib import Path
 
 from ghdag.exceptions import GhdagError
+from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.audit import AuditContext, write_rate_limit_audit
+from ghdag.pipeline.audit_query import detect_correlation_bursts
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-from ghdag.workflow.github import GitHubIssuePort
 from ghdag.workflow.schema import (
     DispatchResult,
     HandlerConfig,
@@ -26,6 +27,9 @@ _READY_LABEL_RE = re.compile(r"^(.+)([-:])ready$")
 logger = logging.getLogger(__name__)
 
 _RATE_LIMIT_THRESHOLD = 100
+_BURST_WINDOW_SEC = 600
+_BURST_THRESHOLD = 10
+_BURST_COOLDOWN_SEC = 3600
 
 
 class ContextHookError(GhdagError, ValueError):
@@ -53,6 +57,7 @@ class WorkflowDispatcher:
             self._githubs = [github_client]
         self._pipeline = pipeline
         self._queue_dir = queue_dir
+        self._burst_warned: dict[str, float] = {}
 
     def poll_once(self) -> list[dict]:
         """1回のポーリングを実行。マッチした Issue とアクションのリストを返す。
@@ -167,7 +172,7 @@ class WorkflowDispatcher:
             base_context.update(self._run_context_hook(handler.context_hook, issue_number))
 
         # 5. パイプライン投入
-        audit_ctx = AuditContext(source="issuesmith", correlation_id=idempotency_key)
+        audit_ctx = AuditContext(source=workflow.name, correlation_id=idempotency_key)
         exec_lines = self._pipeline.submit(
             steps=handler.steps,
             base_context=base_context,
@@ -193,6 +198,7 @@ class WorkflowDispatcher:
         while max_iterations is None or count < max_iterations:
             matches = self.poll_once()
             self._observe_rate_limit()
+            self._observe_correlation_burst()
             for match in matches:
                 github = match.get("_github") or self._githubs[0]
                 try:
@@ -240,6 +246,31 @@ class WorkflowDispatcher:
                     "GitHub API rate limit low: %d/%d remaining (resets at %d)",
                     remaining, limit, reset,
                 )
+
+    def _observe_correlation_burst(self) -> None:
+        """audit.jsonl から correlation_id バーストを検出し warning を出力する。"""
+        try:
+            audit_path = Path(self._queue_dir) / "audit.jsonl"
+            bursts = detect_correlation_bursts(
+                audit_path,
+                window_sec=_BURST_WINDOW_SEC,
+                threshold=_BURST_THRESHOLD,
+            )
+            now = time.time()
+            for burst in bursts:
+                cid = burst["correlation_id"]
+                if now - self._burst_warned.get(cid, 0) <= _BURST_COOLDOWN_SEC:
+                    continue
+                logger.warning(
+                    "Correlation burst detected: %s (%d events in %ds, latest=%s)",
+                    cid,
+                    burst["count"],
+                    _BURST_WINDOW_SEC,
+                    burst["latest_timestamp"],
+                )
+                self._burst_warned[cid] = now
+        except Exception:
+            logger.debug("correlation burst observation failed", exc_info=True)
 
     # --- internal helpers ---
 
@@ -301,8 +332,13 @@ class WorkflowDispatcher:
         # 冪等キー削除
         self._pipeline.remove_idempotency_matching(workflow.name, issue_number)
 
-        # トリガーラベルからプレフィックスを抽出（例: "issuesmith:reset" → "issuesmith:"）
-        prefix = trigger.label.rsplit(":", 1)[0] + ":" if ":" in trigger.label else ""
+        # ラベルプレフィックス: label_namespace 優先、未設定時は trigger.label から抽出
+        if workflow.label_namespace:
+            prefix = workflow.label_namespace + ":"
+        elif ":" in trigger.label:
+            prefix = trigger.label.rsplit(":", 1)[0] + ":"
+        else:
+            prefix = ""
 
         # 同プレフィックスのラベルをすべて除去
         if prefix:

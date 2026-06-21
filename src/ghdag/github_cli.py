@@ -407,9 +407,12 @@ def cli_main(argv: list[str] | None = None) -> int:
 
     try:
         client = GitHubClient()
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
+    except Exception as exc:
+        from ghdag.exceptions import GhdagError
+        if isinstance(exc, (GhdagError, ValueError)):
+            print(str(exc), file=sys.stderr)
+            return 1
+        raise
 
     cmd = argv[0]
     rest = argv[1:]
@@ -453,7 +456,10 @@ def cli_main(argv: list[str] | None = None) -> int:
     except KeyError as exc:
         print(f"Unknown subcommand: {exc}", file=sys.stderr)
         return 1
-    except (RuntimeError, ValueError) as exc:
+    except Exception as exc:
+        from ghdag.exceptions import GhdagError
+        if not isinstance(exc, (GhdagError, RuntimeError, ValueError, KeyError)):
+            raise
         print(str(exc), file=sys.stderr)
         return 1
 

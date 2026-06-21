@@ -12,8 +12,9 @@ from ghdag.github_client import GitHubClient, _resolve_token
 
 
 def test_resolve_token_missing():
+    from ghdag.exceptions import AuthError
     with mock.patch.dict(os.environ, {}, clear=True):
-        with pytest.raises(ValueError, match="GITHUB_TOKEN is not set"):
+        with pytest.raises(AuthError, match="GITHUB_TOKEN is not set"):
             _resolve_token()
 
 
