@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.3 — 2026-06-21
+
+### Added
+
+- `dispatcher.py`: `_READY_LABEL_RE` 正規表現でハイフン・コロン両対応のラベル区切り文字を受け入れる（`research:ready` / `research-ready` 両形式を正しく `*:running` / `*-running` に遷移）(Issue #2258)
+- `state.py`: `_remove_by_predicate` ヘルパーと `remove_idempotency_for_handler(workflow, handler, issue)` — ハンドラ単位の冪等キー削除（他ハンドラの冪等記録を保持しつつ特定ハンドラのみリトライ可能）(Issue #2258)
+- `LLMPipelineAPI`: `remove_idempotency_for_handler` の委譲メソッドを追加 (Issue #2258)
+
 ## 0.30.2 — 2026-06-14
 
 ### Changed
