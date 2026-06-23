@@ -400,8 +400,8 @@ class TestBoundaryValues:
         fixed_ts = 1_700_000_000.0  # 固定値
         fake_now = datetime.fromtimestamp(fixed_ts + 86400, tz=timezone.utc)
 
-        with patch("ghdag.cleanup.datetime") as mock_dt, \
-             patch("ghdag.cleanup.file_timestamp", return_value=fixed_ts):
+        with patch("ghdag.cleanup.orchestrator.datetime") as mock_dt, \
+             patch("ghdag.cleanup.orchestrator.file_timestamp", return_value=fixed_ts):
             mock_dt.now.return_value = fake_now
             mock_dt.fromtimestamp = datetime.fromtimestamp
 
