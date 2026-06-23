@@ -249,9 +249,9 @@ class TestDagHooksIntegration:
             stderr_buf=io.BytesIO(b""), retry_depth=0,
             stdout_buf=io.BytesIO(b"promoted content\n"),
         )
-        engine._running["t1"] = rt
+        engine._launcher._running["t1"] = rt
 
-        with patch("ghdag.dag.engine.state_mark_done"):
+        with patch("ghdag.dag.task_launcher.state_mark_done"):
             with patch("ghdag.files.promote.md_append") as mock_append:
                 from ghdag.files.models import AppendResult, AppendStatus
                 mock_append.return_value = AppendResult(
@@ -259,7 +259,7 @@ class TestDagHooksIntegration:
                     section="Promoted", body_hash="abc123",
                 )
                 with patch("ghdag.files.promote._write_promote_audit"):
-                    engine._check_completions()
+                    engine._launcher.check_completions()
 
         hooks.check_promote_target.assert_called_once()
 
@@ -301,11 +301,11 @@ class TestDagHooksIntegration:
             stderr_buf=io.BytesIO(b""), retry_depth=0,
             stdout_buf=io.BytesIO(b"content\n"),
         )
-        engine._running["t2"] = rt
+        engine._launcher._running["t2"] = rt
 
-        with patch("ghdag.dag.engine.state_mark_done"):
+        with patch("ghdag.dag.task_launcher.state_mark_done"):
             with patch("ghdag.files.md_promote") as mock_promote:
-                engine._check_completions()
+                engine._launcher.check_completions()
 
         mock_promote.assert_not_called()
 
@@ -347,10 +347,10 @@ class TestDagHooksIntegration:
             stderr_buf=io.BytesIO(b""), retry_depth=0,
             stdout_buf=io.BytesIO(b"content\n"),
         )
-        engine._running["t3"] = rt
+        engine._launcher._running["t3"] = rt
 
-        with patch("ghdag.dag.engine.state_mark_done"):
+        with patch("ghdag.dag.task_launcher.state_mark_done"):
             with patch("ghdag.files.md_promote", side_effect=RuntimeError("boom")):
-                engine._check_completions()
+                engine._launcher.check_completions()
 
         hooks.on_task_success.assert_called_once()

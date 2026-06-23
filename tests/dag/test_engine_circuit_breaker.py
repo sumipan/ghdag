@@ -1,4 +1,4 @@
-"""Circuit breaker tests for DagEngine consecutive failure handling."""
+"""Tests for CircuitBreakerPolicy and TaskLauncher integration."""
 
 from __future__ import annotations
 
@@ -6,180 +6,212 @@ import io
 import time
 from unittest.mock import MagicMock, patch
 
+from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DagHooks
 from ghdag.dag.models import DagConfig, RunningTask, Task
 
 
-def _make_config(tmp_path, **overrides) -> DagConfig:
-    defaults = dict(
+def _make_config(tmp_path):
+    return DagConfig(
         exec_jsonl_path=str(tmp_path / "exec.jsonl"),
         exec_done_dir=str(tmp_path / "done"),
-        max_consecutive_failures=3,
-        failure_window_sec=60.0,
     )
-    defaults.update(overrides)
-    return DagConfig(**defaults)
 
 
-def _make_engine(tmp_path, **config_overrides) -> tuple[DagEngine, MagicMock]:
-    hooks = MagicMock(spec=DagHooks)
-    hooks.check_rejected.return_value = False
-    hooks.check_pipeline_status.return_value = None
-    engine = DagEngine(_make_config(tmp_path, **config_overrides), hooks)
-    return engine, hooks
-
-
-def _make_running_task(
-    uuid: str = "test-uuid",
-    command: str = "echo hello",
-    returncode: int = 0,
-    retry: int = 0,
-) -> RunningTask:
+def _make_running_task(uuid="cb-uuid", returncode=1, stderr=b""):
     proc = MagicMock()
     proc.poll.return_value = returncode
     proc.returncode = returncode
-    task = Task(uuid=uuid, command=command, retry=retry)
+    task = Task(uuid=uuid, command="echo test")
     return RunningTask(
         uuid=uuid,
         task=task,
         proc=proc,
         started_at=time.time() - 0.1,
         started_at_mono=time.monotonic() - 0.1,
-        stderr_buf=io.BytesIO(b""),
-        retry_depth=retry,
+        stderr_buf=io.BytesIO(stderr),
+        retry_depth=0,
     )
 
 
-@patch("ghdag.dag.engine.state_mark_done")
-@patch("ghdag.dag.engine._extract_tee_target", return_value=None)
-def test_shutdown_after_max_consecutive_failures(mock_tee, mock_mark_done, tmp_path):
-    """max_consecutive_failures=3 で 3 回連続失敗すると _shutdown が True になる。"""
-    engine, _hooks = _make_engine(tmp_path, max_consecutive_failures=3)
-
-    for i in range(3):
-        rt = _make_running_task(uuid=f"fail-{i}", returncode=1)
-        engine._running[rt.uuid] = rt
-        engine._check_completions()
-
-    assert engine._consecutive_failures == 3
-    assert engine._shutdown is True
+def _make_engine(tmp_path):
+    hooks = MagicMock(spec=DagHooks)
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = None
+    engine = DagEngine(_make_config(tmp_path), hooks)
+    return engine, hooks
 
 
-@patch("ghdag.dag.engine.state_mark_done")
-@patch("ghdag.dag.engine._extract_tee_target", return_value=None)
-def test_success_resets_consecutive_failures(mock_tee, mock_mark_done, tmp_path):
-    """連続失敗中に 1 回成功が挟まるとカウンタが 0 にリセットされる。"""
-    engine, _hooks = _make_engine(tmp_path, max_consecutive_failures=3)
+# --- CircuitBreakerPolicy unit tests ---
 
-    for i in range(2):
-        rt = _make_running_task(uuid=f"fail-{i}", returncode=1)
-        engine._running[rt.uuid] = rt
-        engine._check_completions()
+class TestCircuitBreakerPolicy:
+    def test_trips_after_max_consecutive_failures(self):
+        cb = CircuitBreakerPolicy(failure_window_sec=float("inf"), max_consecutive_failures=3)
+        assert not cb.tripped
+        cb.record_failure()
+        assert not cb.tripped
+        cb.record_failure()
+        assert not cb.tripped
+        cb.record_failure()
+        assert cb.tripped
 
-    assert engine._consecutive_failures == 2
-    assert engine._shutdown is False
+    def test_reset_clears_counter(self):
+        cb = CircuitBreakerPolicy(failure_window_sec=float("inf"), max_consecutive_failures=2)
+        cb.record_failure()
+        cb.reset()
+        cb.record_failure()
+        assert not cb.tripped
 
-    ok = _make_running_task(uuid="ok-1", returncode=0)
-    engine._running[ok.uuid] = ok
-    engine._check_completions()
+    def test_failure_outside_window_resets_counter(self):
+        cb = CircuitBreakerPolicy(failure_window_sec=0.0, max_consecutive_failures=2)
+        cb.record_failure()
+        # Artificially age the last failure time past the window
+        cb._last_failure_time = time.monotonic() - 1.0
+        cb.record_failure()
+        assert not cb.tripped
 
-    assert engine._consecutive_failures == 0
-    assert engine._shutdown is False
+    def test_record_failure_returns_true_on_trip(self):
+        cb = CircuitBreakerPolicy(failure_window_sec=float("inf"), max_consecutive_failures=1)
+        tripped = cb.record_failure()
+        assert tripped is True
 
-    rt = _make_running_task(uuid="fail-after-ok", returncode=1)
-    engine._running[rt.uuid] = rt
-    engine._check_completions()
-
-    assert engine._consecutive_failures == 1
-    assert engine._shutdown is False
-
-
-@patch("ghdag.dag.engine.state_mark_done")
-@patch("ghdag.dag.engine._extract_tee_target", return_value=None)
-def test_failure_window_resets_counter(mock_tee, mock_mark_done, tmp_path):
-    """failure_window_sec 以上経過後の失敗は 1 回目としてカウントされる。"""
-    engine, _hooks = _make_engine(tmp_path, max_consecutive_failures=3, failure_window_sec=60.0)
-
-    rt1 = _make_running_task(uuid="fail-1", returncode=1)
-    engine._running[rt1.uuid] = rt1
-
-    base_time = 1000.0
-    with patch("ghdag.dag.engine.time.time", return_value=base_time):
-        engine._check_completions()
-
-    assert engine._consecutive_failures == 1
-
-    rt2 = _make_running_task(uuid="fail-2", returncode=1)
-    engine._running[rt2.uuid] = rt2
-
-    with patch("ghdag.dag.engine.time.time", return_value=base_time + 61.0):
-        engine._check_completions()
-
-    assert engine._consecutive_failures == 1
-    assert engine._shutdown is False
+    def test_record_failure_returns_false_before_trip(self):
+        cb = CircuitBreakerPolicy(failure_window_sec=float("inf"), max_consecutive_failures=3)
+        assert cb.record_failure() is False
+        assert cb.record_failure() is False
 
 
-@patch("ghdag.dag.engine.state_mark_done")
-def test_timeout_records_failure(mock_mark_done, tmp_path):
-    """TIMEOUT 失敗も連続失敗カウンタに含まれる。"""
-    engine, _hooks = _make_engine(tmp_path, max_consecutive_failures=1)
+# --- TaskLauncher.check_completions circuit breaker integration tests ---
 
-    rt = _make_running_task()
-    rt.term_sent_at = time.monotonic() - 1.0
-    engine._running[rt.uuid] = rt
-    engine._check_completions()
+class TestTaskLauncherCircuitBreakerIntegration:
+    @patch("ghdag.dag.task_launcher.state_mark_done")
+    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
+    def test_failure_increments_circuit_breaker(self, mock_tee, mock_mark_done, tmp_path):
+        engine, hooks = _make_engine(tmp_path)
+        rt = _make_running_task(returncode=1)
+        engine._launcher._running[rt.uuid] = rt
 
-    assert engine._consecutive_failures == 1
-    assert engine._shutdown is True
+        engine._launcher.check_completions()
 
+        assert engine._circuit_breaker._consecutive_failures == 1
 
-@patch("ghdag.dag.engine.state_mark_done")
-@patch("ghdag.dag.engine._extract_tee_target")
-def test_rejected_final_records_failure(mock_tee, mock_mark_done, tmp_path):
-    """REJECTED (final) 失敗も連続失敗カウンタに含まれる。"""
-    engine, hooks = _make_engine(tmp_path, max_consecutive_failures=1, max_retry=0)
-    hooks.check_rejected.return_value = True
-    mock_tee.return_value = str(tmp_path / "result.md")
-    (tmp_path / "result.md").write_text("REJECTED")
+    @patch("ghdag.dag.task_launcher.state_mark_done")
+    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
+    def test_success_resets_circuit_breaker(self, mock_tee, mock_mark_done, tmp_path):
+        engine, hooks = _make_engine(tmp_path)
+        engine._circuit_breaker._consecutive_failures = 2
+        rt = _make_running_task(returncode=0)
+        engine._launcher._running[rt.uuid] = rt
 
-    rt = _make_running_task(retry=0)
-    engine._running[rt.uuid] = rt
-    engine._check_completions()
+        engine._launcher.check_completions()
 
-    assert engine._consecutive_failures == 1
-    assert engine._shutdown is True
+        assert engine._circuit_breaker._consecutive_failures == 0
 
+    @patch("ghdag.dag.task_launcher.state_mark_done")
+    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
+    def test_timeout_increments_circuit_breaker(self, mock_tee, mock_mark_done, tmp_path):
+        engine, hooks = _make_engine(tmp_path)
+        rt = _make_running_task(returncode=-15)
+        rt.term_sent_at = time.monotonic() - 1.0
+        engine._launcher._running[rt.uuid] = rt
 
-@patch("ghdag.dag.engine.state_mark_done")
-@patch("ghdag.dag.engine._extract_tee_target")
-def test_pipeline_failed_records_failure(mock_tee, mock_mark_done, tmp_path):
-    """PIPELINE_FAILED 失敗も連続失敗カウンタに含まれる。"""
-    engine, hooks = _make_engine(tmp_path, max_consecutive_failures=1)
-    hooks.check_pipeline_status.return_value = "IMPL_FAILED"
-    mock_tee.return_value = str(tmp_path / "result.md")
-    (tmp_path / "result.md").write_text("PIPELINE_STATUS: IMPL_FAILED")
+        engine._launcher.check_completions()
 
-    rt = _make_running_task()
-    engine._running[rt.uuid] = rt
-    engine._check_completions()
+        assert engine._circuit_breaker._consecutive_failures == 1
 
-    assert engine._consecutive_failures == 1
-    assert engine._shutdown is True
+    @patch("ghdag.dag.task_launcher.state_mark_done")
+    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value="result.md")
+    def test_pipeline_failed_increments_circuit_breaker(self, mock_tee, mock_mark_done, tmp_path):
+        engine, hooks = _make_engine(tmp_path)
+        hooks.check_rejected.return_value = False
+        hooks.check_pipeline_status.return_value = "IMPL_FAILED"
+        rt = _make_running_task(returncode=0)
+        engine._launcher._running[rt.uuid] = rt
 
+        engine._launcher.check_completions()
 
-@patch("ghdag.dag.engine.state_mark_done")
-@patch("ghdag.dag.engine._extract_tee_target")
-def test_empty_result_records_failure(mock_tee, mock_mark_done, tmp_path):
-    """EMPTY_RESULT 失敗も連続失敗カウンタに含まれる。"""
-    engine, _hooks = _make_engine(tmp_path, max_consecutive_failures=1)
-    result_file = tmp_path / "result.md"
-    result_file.write_text("")
-    mock_tee.return_value = str(result_file)
+        assert engine._circuit_breaker._consecutive_failures == 1
 
-    rt = _make_running_task()
-    engine._running[rt.uuid] = rt
-    engine._check_completions()
+    @patch("ghdag.dag.task_launcher.state_mark_done")
+    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
+    def test_multiple_failures_trip_breaker(self, mock_tee, mock_mark_done, tmp_path):
+        engine, hooks = _make_engine(tmp_path)
+        engine._circuit_breaker._max_consecutive_failures = 3
 
-    assert engine._consecutive_failures == 1
-    assert engine._shutdown is True
+        for i in range(3):
+            rt = _make_running_task(uuid=f"fail-{i}", returncode=1)
+            engine._launcher._running[rt.uuid] = rt
+
+        engine._launcher.check_completions()
+
+        assert engine._circuit_breaker.tripped
+
+    @patch("ghdag.dag.task_launcher.state_mark_done")
+    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
+    def test_rejected_does_not_increment_circuit_breaker(self, mock_tee, mock_mark_done, tmp_path):
+        engine, hooks = _make_engine(tmp_path)
+        hooks.check_rejected.return_value = True
+        rt = _make_running_task(returncode=0)
+        engine._launcher._running[rt.uuid] = rt
+
+        engine._launcher.check_completions()
+
+        assert engine._circuit_breaker._consecutive_failures == 0
+
+    @patch("ghdag.dag.task_launcher.state_mark_done")
+    def test_empty_result_does_not_increment_circuit_breaker(self, mock_mark_done, tmp_path):
+        engine, hooks = _make_engine(tmp_path)
+        result_file = tmp_path / "result.md"
+        result_file.write_text("")
+        rt = _make_running_task(returncode=0)
+        engine._launcher._running[rt.uuid] = rt
+
+        with patch("ghdag.dag.task_launcher._extract_tee_target", return_value=str(result_file)):
+            engine._launcher.check_completions()
+
+        assert engine._circuit_breaker._consecutive_failures == 0
+
+    @patch("ghdag.dag.task_launcher.state_mark_done")
+    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
+    def test_tripped_breaker_does_not_reset_on_further_failure(self, mock_tee, mock_mark_done, tmp_path):
+        engine, hooks = _make_engine(tmp_path)
+        engine._circuit_breaker._tripped = True
+
+        rt = _make_running_task(returncode=0)
+        engine._launcher._running[rt.uuid] = rt
+        engine._launcher.check_completions()
+
+        assert engine._circuit_breaker.tripped
+
+    @patch("ghdag.dag.task_launcher.state_mark_done")
+    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
+    def test_infinite_threshold_circuit_breaker_never_trips(self, mock_tee, mock_mark_done, tmp_path):
+        engine, hooks = _make_engine(tmp_path)
+        engine._circuit_breaker._max_consecutive_failures = 2**31
+
+        for i in range(100):
+            rt = _make_running_task(uuid=f"fail-{i}", returncode=1)
+            engine._launcher._running[rt.uuid] = rt
+
+        engine._launcher.check_completions()
+
+        assert not engine._circuit_breaker.tripped
+
+    @patch("ghdag.dag.task_launcher.state_mark_done")
+    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
+    def test_failure_and_success_cycle_resets(self, mock_tee, mock_mark_done, tmp_path):
+        engine, hooks = _make_engine(tmp_path)
+        engine._circuit_breaker._max_consecutive_failures = 3
+
+        for i in range(2):
+            rt = _make_running_task(uuid=f"fail-{i}", returncode=1)
+            engine._launcher._running[rt.uuid] = rt
+        engine._launcher.check_completions()
+        assert engine._circuit_breaker._consecutive_failures == 2
+
+        rt_ok = _make_running_task(uuid="ok-task", returncode=0)
+        engine._launcher._running[rt_ok.uuid] = rt_ok
+        engine._launcher.check_completions()
+        assert engine._circuit_breaker._consecutive_failures == 0
+        assert not engine._circuit_breaker.tripped
