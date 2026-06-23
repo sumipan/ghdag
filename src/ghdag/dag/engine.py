@@ -13,8 +13,9 @@ import threading
 import time
 from pathlib import Path
 
+from ghdag.llm.adapters import get_output_adapter
 from ghdag.metrics.models import FailureClass, TaskMetrics
-from ghdag.metrics.parsers import parse_engine_model, parse_token_count
+from ghdag.metrics.parsers import parse_engine_model
 
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .fanout import FanOutSpec, build_child_jsonl_record, parse_fanout_spec
@@ -280,7 +281,9 @@ class DagEngine:
             finished_at = time.time()
             del self._running[uuid]
             self._join_reader_threads(rt)
-            stderr_text = rt.stderr_buf.getvalue().decode("utf-8", errors="replace").strip()
+            stderr_bytes = rt.stderr_buf.getvalue()
+            stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
+            stdout_bytes = rt.stdout_buf.getvalue() if rt.stdout_buf is not None else b""
             returncode = rt.proc.returncode
 
             task = rt.task
@@ -288,7 +291,12 @@ class DagEngine:
             model = task.model
             if engine is None:
                 engine, model = parse_engine_model(task.command)
-            token_count = parse_token_count(engine, stderr_text)
+            adapter = get_output_adapter(engine)
+            token_usage = adapter.extract_token_usage(stdout_bytes, stderr_bytes)
+            token_count = token_usage.token_count if token_usage is not None else None
+            cost_usd = token_usage.cost_usd if token_usage is not None else None
+            cache_read_tokens = token_usage.cache_read_tokens if token_usage is not None else None
+            cache_creation_tokens = token_usage.cache_creation_tokens if token_usage is not None else None
 
             try:
                 if was_timeout:
@@ -304,6 +312,9 @@ class DagEngine:
                         correlation_id=task.idempotency_key,
                         failure_class=FailureClass.TIMEOUT,
                         request_id=_task_request_id(task),
+                        cost_usd=cost_usd,
+                        cache_read_tokens=cache_read_tokens,
+                        cache_creation_tokens=cache_creation_tokens,
                     )
                     timeout_msg = f"TIMEOUT: task exceeded task_timeout={self._config.task_timeout}s"
                     self._hooks.on_task_failure(uuid, task, returncode, timeout_msg, metrics)
@@ -312,11 +323,10 @@ class DagEngine:
 
                 if returncode == 0:
                     if task.result_path is not None:
-                        stdout_data = rt.stdout_buf.getvalue() if rt.stdout_buf else b""
                         rp = Path(task.result_path)
                         policy = task.result_finalize or "preserve_nonempty"
                         if policy == "stdout_only" or not (rp.exists() and rp.stat().st_size > 0):
-                            rp.write_bytes(stdout_data)
+                            rp.write_bytes(adapter.extract_result_text(stdout_bytes, stderr_bytes))
                         effective_result_path: str | None = task.result_path
                     else:
                         effective_result_path = _extract_tee_target(task.command)
@@ -340,6 +350,9 @@ class DagEngine:
                             correlation_id=task.idempotency_key,
                             failure_class=FailureClass.REJECTED,
                             request_id=_task_request_id(task),
+                            cost_usd=cost_usd,
+                            cache_read_tokens=cache_read_tokens,
+                            cache_creation_tokens=cache_creation_tokens,
                         )
                         self._hooks.on_task_rejected(uuid, task, retry_depth, is_final, metrics)
                         self._record_failure()
@@ -355,6 +368,9 @@ class DagEngine:
                             correlation_id=task.idempotency_key,
                             failure_class=FailureClass.PIPELINE_FAILED,
                             request_id=_task_request_id(task),
+                            cost_usd=cost_usd,
+                            cache_read_tokens=cache_read_tokens,
+                            cache_creation_tokens=cache_creation_tokens,
                         )
                         self._hooks.on_task_failure(uuid, task, 0, f"PIPELINE_FAILED:{pipeline_status}", metrics)
                         self._record_failure()
@@ -370,6 +386,9 @@ class DagEngine:
                             correlation_id=task.idempotency_key,
                             failure_class=FailureClass.EMPTY_RESULT,
                             request_id=_task_request_id(task),
+                            cost_usd=cost_usd,
+                            cache_read_tokens=cache_read_tokens,
+                            cache_creation_tokens=cache_creation_tokens,
                         )
                         self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
                         self._record_failure()
@@ -382,6 +401,9 @@ class DagEngine:
                             started_at=rt.started_at, finished_at=finished_at,
                             correlation_id=task.idempotency_key,
                             request_id=_task_request_id(task),
+                            cost_usd=cost_usd,
+                            cache_read_tokens=cache_read_tokens,
+                            cache_creation_tokens=cache_creation_tokens,
                         )
                         try:
                             fanout_spec = parse_fanout_spec(effective_result_path)
@@ -395,6 +417,9 @@ class DagEngine:
                                 correlation_id=task.idempotency_key,
                                 failure_class=FailureClass.FANOUT_PARSE_FAILED,
                                 request_id=_task_request_id(task),
+                                cost_usd=cost_usd,
+                                cache_read_tokens=cache_read_tokens,
+                                cache_creation_tokens=cache_creation_tokens,
                             )
                             state_mark_done(self._config.exec_done_dir, uuid, "FANOUT_PARSE_FAILED")
                             self._hooks.on_task_failure(uuid, task, 0, str(exc), failure_metrics)
@@ -420,6 +445,9 @@ class DagEngine:
                         correlation_id=task.idempotency_key,
                         failure_class=FailureClass.PROCESS_ERROR,
                         request_id=_task_request_id(task),
+                        cost_usd=cost_usd,
+                        cache_read_tokens=cache_read_tokens,
+                        cache_creation_tokens=cache_creation_tokens,
                     )
                     self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
                     self._record_failure()
@@ -435,6 +463,9 @@ class DagEngine:
                     correlation_id=task.idempotency_key,
                     failure_class=FailureClass.UNKNOWN_FAILURE,
                     request_id=_task_request_id(task),
+                    cost_usd=cost_usd,
+                    cache_read_tokens=cache_read_tokens,
+                    cache_creation_tokens=cache_creation_tokens,
                 )
                 self._hooks.on_task_failure(uuid, task, -1, str(exc), metrics)
                 self._record_failure()

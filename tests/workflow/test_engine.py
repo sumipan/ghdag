@@ -59,6 +59,7 @@ class TestGenericAdapter:
                 "cat queue/order.md"
                 " | claude -p '受け取った内容を実行して'"
                 " --model 'claude-sonnet-4-6'"
+                " --output-format json"
                 " --dangerously-skip-permissions"
             ),
             "depends": ["dep-456"],
@@ -297,6 +298,7 @@ class TestBuildExecRecord:
                 "cat queue/order.md"
                 " | claude -p '受け取った内容を実行して'"
                 " --model 'claude-sonnet-4-6'"
+                " --output-format json"
                 " --dangerously-skip-permissions"
             ),
             "depends": ["dep-456"],

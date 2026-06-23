@@ -644,12 +644,12 @@ class TestRenderExecCommand:
     def test_claude_with_model(self):
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(spec, order_path="queue/order.md", prompt="hello", model="claude-opus-4-6")
-        assert cmd == "cat queue/order.md | claude -p 'hello' --model 'claude-opus-4-6' --dangerously-skip-permissions"
+        assert cmd == "cat queue/order.md | claude -p 'hello' --model 'claude-opus-4-6' --output-format json --dangerously-skip-permissions"
 
     def test_claude_without_model(self):
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(spec, order_path="queue/order.md", prompt="hello", model=None)
-        assert cmd == "cat queue/order.md | claude -p 'hello' --dangerously-skip-permissions"
+        assert cmd == "cat queue/order.md | claude -p 'hello' --output-format json --dangerously-skip-permissions"
 
     def test_gemini_with_model(self):
         spec = ENGINE_SPECS["gemini"]
@@ -702,7 +702,7 @@ class TestAdapterOutputs:
         )
         assert record["uuid"] == "u1"
         cmd = record["command"]
-        assert "cat queue/order.md | claude -p 'hello' --model 'claude-sonnet-4-6' --dangerously-skip-permissions" == cmd
+        assert "cat queue/order.md | claude -p 'hello' --model 'claude-sonnet-4-6' --output-format json --dangerously-skip-permissions" == cmd
 
     def test_gemini_adapter_uses_double_dash_model(self):
         """get_adapter('gemini') が -m ではなく --model を使う"""

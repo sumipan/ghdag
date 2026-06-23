@@ -43,6 +43,9 @@ class MetricsRecorder:
             "started_at": metrics.started_at,
             "finished_at": metrics.finished_at,
             "timestamp": timestamp,
+            "cost_usd": metrics.cost_usd,
+            "cache_read_tokens": metrics.cache_read_tokens,
+            "cache_creation_tokens": metrics.cache_creation_tokens,
         }
         line = json.dumps(record, ensure_ascii=False) + "\n"
         with open(self._output_path, "a", encoding="utf-8") as f:
