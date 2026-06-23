@@ -48,8 +48,8 @@ def cleanup_queue(
             continue
         ts, tool, kind, uuid_raw = m.groups()
         uuid = uuid_raw.lower()
-        entry = by_uuid.setdefault(uuid, {"ts": ts, "tool": tool})
-        entry[kind] = path
+        _rec = by_uuid.setdefault(uuid, {"ts": ts, "tool": tool})
+        _rec[kind] = path
 
     archiver = QueueArchiver(archive_dir, dry_run)
     pruner = ExecJsonlPruner(exec_md, dry_run)
@@ -77,6 +77,7 @@ def cleanup_queue(
         if is_done:
             if entry is not None:
                 ref_path = entry.get("order") or entry.get("result") or entry.get("stderr")
+                assert ref_path is not None
                 mtime = file_timestamp(ref_path)
                 if mtime <= cutoff_ts:
                     # Case A: old → archive + prune
@@ -93,6 +94,7 @@ def cleanup_queue(
         else:
             if entry is not None:
                 ref_path = entry.get("order") or entry.get("result") or entry.get("stderr")
+                assert ref_path is not None
                 mtime = file_timestamp(ref_path)
                 if mtime <= orphan_ts:
                     # Case D: old orphan

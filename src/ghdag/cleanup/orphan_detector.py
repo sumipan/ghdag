@@ -46,6 +46,7 @@ class OrphanDetector:
                 continue
 
             ref_path = entry.get("order") or entry.get("result") or entry.get("stderr")
+            assert ref_path is not None
             mtime = file_timestamp(ref_path)
 
             if uuid in done_uuids and mtime <= self._cutoff_ts:
