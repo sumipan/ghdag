@@ -12,7 +12,6 @@ from ghdag.llm.adapters.claude_text import ClaudeTextAdapter
 from ghdag.llm.adapters.cursor import CursorAdapter
 from ghdag.metrics.models import TokenUsage
 
-
 # ---------------------------------------------------------------------------
 # ClaudeJsonAdapter
 # ---------------------------------------------------------------------------
