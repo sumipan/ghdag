@@ -8,11 +8,11 @@ from pathlib import Path
 
 def cmd_trigger(args) -> None:
     """ghdag trigger: Issue に対してワンショットでハンドラーを実行する。"""
+    from ghdag.github_client import create_github_client
     from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
     from ghdag.pipeline.order import TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
-    from ghdag.github_client import create_github_client
     from ghdag.workflow.loader import load_workflows
 
     workflows_path = Path(args.workflows_dir)

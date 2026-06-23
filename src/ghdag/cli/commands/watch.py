@@ -9,11 +9,11 @@ from typing import cast
 
 def cmd_watch(args) -> None:
     """WorkflowDispatcher を構築し run() を呼ぶ薄いラッパー。"""
+    from ghdag.github_client import create_github_clients
     from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
     from ghdag.pipeline.order import OrderBuilder, TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
-    from ghdag.github_client import create_github_clients
     from ghdag.workflow.loader import load_workflows
 
     workflows_path = Path(args.workflows_dir)
