@@ -38,8 +38,8 @@ class DagEngine:
         self._lock_fh = None
 
         self._circuit_breaker = CircuitBreakerPolicy(
-            failure_window_sec=getattr(config, "failure_window_sec", float("inf")),
-            max_consecutive_failures=getattr(config, "max_consecutive_failures", 2**31),
+            failure_window_sec=config.failure_window_sec,
+            max_consecutive_failures=config.max_consecutive_failures,
         )
         self._fanout_manager = FanOutManager(
             config, self._hooks, self.append_task, self._run_promote
@@ -132,6 +132,15 @@ class DagEngine:
                 ):
                     continue
 
+                if self._config.serialize_mutating:
+                    task_is_mutating = task.annotations.get("_mutates") == "true"
+                    running_has_mutating = any(
+                        rt.task.annotations.get("_mutates") == "true"
+                        for rt in self._running.values()
+                    )
+                    if task_is_mutating and running_has_mutating:
+                        continue
+
                 if launched > 0:
                     time.sleep(self._config.launch_stagger)
 
@@ -155,6 +164,10 @@ class DagEngine:
     def mark_done(self, uuid: str, status: str | int) -> None:
         """Delegate to state.mark_done."""
         state_mark_done(self._config.exec_done_dir, uuid, status)
+
+    @property
+    def _running(self):
+        return self._launcher._running
 
     # --- Internal ---
 

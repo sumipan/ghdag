@@ -186,8 +186,9 @@ class TestTaskLauncherCircuitBreakerIntegration:
 
     @patch("ghdag.dag.task_launcher.state_mark_done")
     @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-    def test_default_engine_circuit_breaker_never_trips(self, mock_tee, mock_mark_done, tmp_path):
+    def test_infinite_threshold_circuit_breaker_never_trips(self, mock_tee, mock_mark_done, tmp_path):
         engine, hooks = _make_engine(tmp_path)
+        engine._circuit_breaker._max_consecutive_failures = 2**31
 
         for i in range(100):
             rt = _make_running_task(uuid=f"fail-{i}", returncode=1)

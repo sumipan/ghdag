@@ -24,6 +24,14 @@ class FailureClass(Enum):
 
 
 @dataclass(frozen=True)
+class TokenUsage:
+    token_count: int | None = None
+    cost_usd: float | None = None
+    cache_read_tokens: int | None = None
+    cache_creation_tokens: int | None = None
+
+
+@dataclass(frozen=True)
 class TaskMetrics:
     uuid: str
     engine: str | None
@@ -36,3 +44,6 @@ class TaskMetrics:
     correlation_id: str | None = None
     failure_class: FailureClass | None = None
     request_id: str | None = None
+    cost_usd: float | None = None
+    cache_read_tokens: int | None = None
+    cache_creation_tokens: int | None = None
