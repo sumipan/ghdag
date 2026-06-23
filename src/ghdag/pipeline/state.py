@@ -27,7 +27,7 @@ class PipelineState:
         """
         Args:
             state_dir: JSON 状態ファイルの保存先ディレクトリ（例: .pipeline-state/）
-            exec_jsonl_path: exec.md のパス（冪等性キーの読み書き先）
+            exec_jsonl_path: exec.jsonl のパス（冪等性キーの読み書き先）
         """
         self._state_dir = Path(state_dir)
         self._exec_jsonl_path = Path(exec_jsonl_path)
