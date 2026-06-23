@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.4 — 2026-06-23
+
+### Added
+
+- `llm/adapters/`: `EngineOutputAdapter` Protocol と `get_output_adapter()` レジストリを新設。claude エンジンの `--output-format json` stdout から `result` テキストと `TokenUsage`（`token_count` / `cost_usd` / `cache_read_tokens` / `cache_creation_tokens`）を抽出するアダプタ層を実装 (Issue #2266)
+- `metrics/models.py`: `TaskMetrics` に `cost_usd`・`cache_read_tokens`・`cache_creation_tokens` フィールドを追加 (Issue #2266)
+
+### Fixed
+
+- `dag/_state.py`: `_remove_by_predicate` で LOCK_SH/LOCK_EX を分離していた競合（TOCTOU）を単一 LOCK_EX で修正 (Issue #2266)
+- `metrics/parsers.py`: `parse_token_usage_json` を追加し、claude JSON stdout から usage を正確に取得。従来の stderr 経路はフォールバックとして温存 (Issue #2266)
+
 ## 0.30.3 — 2026-06-21
 
 ### Added
