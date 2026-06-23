@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.5 — 2026-06-23
+
+### Changed
+
+- `cleanup/`: `cleanup.py` を `cleanup/` パッケージに変換。モジュール分割で保守性向上 (Issue #2244)
+- `dag/`: `TaskLauncher`・`FanOutManager`・`CircuitBreakerPolicy` を `DagEngine` から分離抽出 (Issue #2243)
+
+### Fixed
+
+- `dag/task_launcher.py`: `fanout_manager` の型アノテーションを `FanOutManager` に修正 (mypy)
+- `dag/task_launcher.py`: dead code `_persist_fail_stdout` を除去
+- 複数モジュール: unused imports 除去 (ruff lint)
+
 ## 0.30.4 — 2026-06-23
 
 ### Added
