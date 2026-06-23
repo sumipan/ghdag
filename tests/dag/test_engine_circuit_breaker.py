@@ -6,13 +6,10 @@ import io
 import time
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DagHooks
 from ghdag.dag.models import DagConfig, RunningTask, Task
-from ghdag.metrics.models import FailureClass
 
 
 def _make_config(tmp_path):

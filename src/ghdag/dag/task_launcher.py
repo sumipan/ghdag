@@ -17,7 +17,7 @@ from ghdag.metrics.parsers import parse_engine_model, parse_token_count
 
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .circuit_breaker import CircuitBreakerPolicy
-from .fanout import FanOutSpec, parse_fanout_spec
+from .fanout import parse_fanout_spec
 from .hooks import DagHooks
 from .models import DagConfig, RunningTask, Task
 from .state import mark_done as state_mark_done

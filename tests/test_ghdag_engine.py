@@ -971,14 +971,12 @@ class TestTaskLauncherUnit:
     """TaskLauncher unit tests: launch() starts a process, check_completions() detects done."""
 
     def test_launch_registers_running_task(self, tmp_path):
-        import subprocess
-        import io
         from unittest.mock import MagicMock
+
         from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
-        from ghdag.dag.fanout_manager import FanOutManager
-        from ghdag.dag.task_launcher import TaskLauncher
-        from ghdag.dag.models import Task
         from ghdag.dag.hooks import DagHooks
+        from ghdag.dag.models import Task
+        from ghdag.dag.task_launcher import TaskLauncher
 
         config = _make_config(tmp_path, "")
         hooks = MagicMock(spec=DagHooks)
@@ -1001,13 +999,14 @@ class TestTaskLauncherUnit:
         assert launcher.running_count == 0
 
     def test_check_completions_detects_completed_process(self, tmp_path):
-        import subprocess
         import io
+        import subprocess
         from unittest.mock import MagicMock
+
         from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
-        from ghdag.dag.task_launcher import TaskLauncher
-        from ghdag.dag.models import Task, RunningTask
         from ghdag.dag.hooks import DagHooks
+        from ghdag.dag.models import RunningTask, Task
+        from ghdag.dag.task_launcher import TaskLauncher
 
         config = _make_config(tmp_path, "")
         hooks = MagicMock(spec=DagHooks)
@@ -1049,6 +1048,7 @@ class TestCircuitBreakerPolicyUnit:
 
     def test_failure_window_resets_counter(self):
         import time
+
         from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
         cb = CircuitBreakerPolicy(failure_window_sec=0.001, max_consecutive_failures=2)
         cb.record_failure()
@@ -1061,13 +1061,14 @@ class TestFanOutManagerUnit:
     """FanOutManager unit tests (acceptance criteria)."""
 
     def test_spawn_calls_append_task_fn_and_registers_pending(self, tmp_path):
-        from ghdag.dag.fanout_manager import FanOutManager
-        from ghdag.dag.fanout import FanOutItem, FanOutSpec
-        from ghdag.dag.models import Task
-        from ghdag.dag.hooks import DagHooks
-        from ghdag.metrics.models import TaskMetrics
         import time
         from unittest.mock import MagicMock
+
+        from ghdag.dag.fanout import FanOutItem, FanOutSpec
+        from ghdag.dag.fanout_manager import FanOutManager
+        from ghdag.dag.hooks import DagHooks
+        from ghdag.dag.models import Task
+        from ghdag.metrics.models import TaskMetrics
 
         config = _make_config(tmp_path, "")
         hooks = MagicMock(spec=DagHooks)
@@ -1092,12 +1093,13 @@ class TestFanOutManagerUnit:
         assert fm.is_pending(parent_uuid)
 
     def test_check_completions_marks_parent_done_when_all_children_complete(self, tmp_path):
-        from ghdag.dag.fanout_manager import FanOutManager
-        from ghdag.dag.models import Task
-        from ghdag.dag.hooks import DagHooks
-        from ghdag.metrics.models import TaskMetrics
         import time
         from unittest.mock import MagicMock
+
+        from ghdag.dag.fanout_manager import FanOutManager
+        from ghdag.dag.hooks import DagHooks
+        from ghdag.dag.models import Task
+        from ghdag.metrics.models import TaskMetrics
 
         config = _make_config(tmp_path, "")
         # Create done dir so state.mark_done can write there

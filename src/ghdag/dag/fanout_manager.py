@@ -10,7 +10,7 @@ from ghdag.metrics.models import FailureClass, TaskMetrics
 from .fanout import FanOutSpec, build_child_jsonl_record
 from .hooks import DagHooks
 from .models import DagConfig, Task
-from .state import load_done_from_dir, mark_done as state_mark_done
+from .state import mark_done as state_mark_done
 
 logger = logging.getLogger(__name__)
 
