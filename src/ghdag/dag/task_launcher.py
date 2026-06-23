@@ -31,10 +31,6 @@ def _task_request_id(task: Task) -> str | None:
     return task.annotations.get("_request_id")
 
 
-def _persist_fail_stdout(task: Task, stdout_buf: io.BytesIO | None) -> None:
-    pass
-
-
 class TaskLauncher:
     """Manage subprocess launch and completion detection for DAG tasks."""
 
