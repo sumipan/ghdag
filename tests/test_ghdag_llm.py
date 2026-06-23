@@ -251,6 +251,32 @@ class TestLLMResultValidate:
         result = r.validate(TEXT_ONLY)  # should not raise
         assert result is r
 
+    def test_stream_extracts_result_from_jsonl(self):
+        """stream=True → JSONL から最終 result を抽出"""
+        jsonl = (
+            '{"type":"system","subtype":"init"}\n'
+            '{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}\n'
+            '{"type":"result","subtype":"success","result":"final answer"}\n'
+        )
+        r = LLMResult(stdout=jsonl, stderr="", returncode=0)
+        result = r.validate(LLMCapabilities(stream=True))
+        assert result.stdout == "final answer"
+
+    def test_stream_json_output_validated_after_extraction(self):
+        """stream=True + output_format=json → 抽出後に JSON 検証"""
+        jsonl = (
+            '{"type":"result","subtype":"success","result":"{\\"k\\": \\"v\\"}"}\n'
+        )
+        r = LLMResult(stdout=jsonl, stderr="", returncode=0)
+        result = r.validate(LLMCapabilities(stream=True, output_format="json"))
+        assert result.stdout == '{"k": "v"}'
+
+    def test_stream_no_result_line_raises(self):
+        """stream JSONL に result 行がない → LLMParseError"""
+        r = LLMResult(stdout='{"type":"system"}\n', stderr="", returncode=0)
+        with pytest.raises(LLMParseError, match="no result line"):
+            r.validate(LLMCapabilities(stream=True))
+
 
 # ---------------------------------------------------------------------------
 # build_llm_cmd with capabilities (new API)
@@ -312,6 +338,23 @@ class TestBuildLLMCmdCapabilities:
         assert "--permission-mode" not in cmd
         assert "--disallowed-tools" not in cmd
 
+    def test_stream_true_adds_stream_json(self):
+        """stream=True → --output-format stream-json --verbose（output_format を上書き）"""
+        caps = LLMCapabilities(stream=True)
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=caps)
+        assert "--output-format" in cmd
+        fmt_idx = cmd.index("--output-format")
+        assert cmd[fmt_idx + 1] == "stream-json"
+        assert "--verbose" in cmd
+
+    def test_stream_true_overrides_json_output_format(self):
+        """stream=True 時は output_format=json より stream-json が優先される"""
+        caps = LLMCapabilities(output_format="json", stream=True)
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=caps)
+        fmt_idx = cmd.index("--output-format")
+        assert cmd[fmt_idx + 1] == "stream-json"
+        assert cmd.count("--output-format") == 1
+
 
 # ---------------------------------------------------------------------------
 # _validate_capabilities_for_engine
@@ -345,6 +388,16 @@ class TestValidateCapabilitiesForEngine:
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         result = call("hello", engine="claude", capabilities=TEXT_ONLY)
         assert result.ok
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_gemini_with_stream_raises(self, mock_run):
+        with pytest.raises(NotImplementedError, match="stream"):
+            call("hello", engine="gemini", capabilities=LLMCapabilities(stream=True))
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_cursor_with_stream_raises(self, mock_run):
+        with pytest.raises(NotImplementedError, match="stream"):
+            call("hello", engine="cursor", capabilities=LLMCapabilities(stream=True))
 
 
 # ---------------------------------------------------------------------------
@@ -762,3 +815,15 @@ class TestRenderExecCommandCapabilities:
         cmd_no_caps = render_exec_command(spec, order_path="queue/order.sh", prompt="", model=None)
         cmd_with_caps = render_exec_command(spec, order_path="queue/order.sh", prompt="", model=None, capabilities=TEXT_ONLY)
         assert cmd_no_caps == cmd_with_caps
+
+    def test_claude_stream_capabilities(self):
+        """stream=True → render_exec_command に stream-json フラグが含まれる"""
+        caps = LLMCapabilities(stream=True)
+        spec = ENGINE_SPECS["claude"]
+        cmd = render_exec_command(
+            spec, order_path="queue/order.md", prompt="hello", model="claude-opus-4-6",
+            capabilities=caps,
+        )
+        assert "--output-format" in cmd
+        assert "stream-json" in cmd
+        assert "--verbose" in cmd

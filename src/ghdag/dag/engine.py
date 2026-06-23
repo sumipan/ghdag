@@ -39,6 +39,12 @@ def _task_request_id(task: Task) -> str | None:
     return task.annotations.get("_request_id")
 
 
+def _persist_fail_stdout(result_path: str, stdout_buf: io.BytesIO | None) -> None:
+    stdout_data = stdout_buf.getvalue() if stdout_buf else b""
+    if stdout_data:
+        Path(result_path + ".fail").write_bytes(stdout_data)
+
+
 class DagEngine:
     def __init__(self, config: DagConfig, hooks: DagHooks | None = None) -> None:
         self._config = config
@@ -53,6 +59,8 @@ class DagEngine:
         self._fanout_pending: dict[str, set[str]] = {}
         self._fanout_tasks: dict[str, Task] = {}
         self._fanout_metrics: dict[str, TaskMetrics] = {}
+        self._consecutive_failures: int = 0
+        self._last_failure_time: float | None = None
 
     def run(self) -> None:
         """Main loop (blocking). Graceful shutdown on SIGINT/SIGTERM."""
@@ -138,6 +146,15 @@ class DagEngine:
                     and len(self._running) >= self._config.max_concurrency
                 ):
                     continue
+
+                if self._config.serialize_mutating:
+                    task_is_mutating = task.annotations.get("_mutates") == "true"
+                    running_has_mutating = any(
+                        rt.task.annotations.get("_mutates") == "true"
+                        for rt in self._running.values()
+                    )
+                    if task_is_mutating and running_has_mutating:
+                        continue
 
                 if launched > 0:
                     time.sleep(self._config.launch_stagger)
@@ -283,6 +300,9 @@ class DagEngine:
 
             try:
                 if was_timeout:
+                    if task.result_path is not None:
+                        _persist_fail_stdout(task.result_path, rt.stdout_buf)
+
                     state_mark_done(self._config.exec_done_dir, uuid, "TIMEOUT")
                     metrics = TaskMetrics(
                         uuid=uuid, engine=engine, model=model,
@@ -298,6 +318,7 @@ class DagEngine:
                     )
                     timeout_msg = f"TIMEOUT: task exceeded task_timeout={self._config.task_timeout}s"
                     self._hooks.on_task_failure(uuid, task, returncode, timeout_msg, metrics)
+                    self._record_failure()
                     continue
 
                 if returncode == 0:
@@ -334,6 +355,7 @@ class DagEngine:
                             cache_creation_tokens=cache_creation_tokens,
                         )
                         self._hooks.on_task_rejected(uuid, task, retry_depth, is_final, metrics)
+                        self._record_failure()
 
                     # Check PIPELINE_STATUS: *_FAILED
                     elif effective_result_path and (pipeline_status := self._hooks.check_pipeline_status(effective_result_path)) and pipeline_status.endswith("_FAILED"):
@@ -351,6 +373,7 @@ class DagEngine:
                             cache_creation_tokens=cache_creation_tokens,
                         )
                         self._hooks.on_task_failure(uuid, task, 0, f"PIPELINE_FAILED:{pipeline_status}", metrics)
+                        self._record_failure()
 
                     # Check empty result
                     elif effective_result_path and os.path.exists(effective_result_path) and os.path.getsize(effective_result_path) == 0:
@@ -368,6 +391,7 @@ class DagEngine:
                             cache_creation_tokens=cache_creation_tokens,
                         )
                         self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
+                        self._record_failure()
 
                     else:
                         metrics = TaskMetrics(
@@ -405,9 +429,13 @@ class DagEngine:
                         else:
                             state_mark_done(self._config.exec_done_dir, uuid, 0)
                             self._hooks.on_task_success(uuid, task, metrics)
+                            self._reset_consecutive_failures()
                             self._run_promote(effective_result_path)
 
                 else:
+                    if task.result_path is not None:
+                        _persist_fail_stdout(task.result_path, rt.stdout_buf)
+
                     state_mark_done(self._config.exec_done_dir, uuid, returncode)
                     metrics = TaskMetrics(
                         uuid=uuid, engine=engine, model=model,
@@ -422,6 +450,7 @@ class DagEngine:
                         cache_creation_tokens=cache_creation_tokens,
                     )
                     self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
+                    self._record_failure()
 
             except Exception as exc:
                 logger.exception("Unexpected error handling completion for task [%s]: %s", uuid, exc)
@@ -439,6 +468,27 @@ class DagEngine:
                     cache_creation_tokens=cache_creation_tokens,
                 )
                 self._hooks.on_task_failure(uuid, task, -1, str(exc), metrics)
+                self._record_failure()
+
+    def _reset_consecutive_failures(self) -> None:
+        self._consecutive_failures = 0
+
+    def _record_failure(self) -> None:
+        now = time.time()
+        if (
+            self._last_failure_time is not None
+            and (now - self._last_failure_time) >= self._config.failure_window_sec
+        ):
+            self._consecutive_failures = 0
+        self._consecutive_failures += 1
+        self._last_failure_time = now
+        if self._consecutive_failures >= self._config.max_consecutive_failures:
+            logger.error(
+                "Circuit breaker tripped: %d consecutive failures (threshold=%d)",
+                self._consecutive_failures,
+                self._config.max_consecutive_failures,
+            )
+            self._shutdown = True
 
     def _spawn_fanout(self, parent_uuid: str, parent_task: Task,
                       spec: FanOutSpec, metrics: TaskMetrics) -> None:

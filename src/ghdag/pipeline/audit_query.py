@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import time
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 
@@ -80,3 +82,52 @@ def get_latest_status(audit_path: Path, correlation_id: str) -> str | None:
     if not events:
         return None
     return events[-1].get("status")
+
+
+def _aggregate_correlation_counts(events: list[dict]) -> list[dict]:
+    """correlation_id ごとの件数と最新 timestamp を集計し count 降順で返す。"""
+    counts: Counter[str] = Counter()
+    latest_ts: dict[str, str] = {}
+    for ev in events:
+        cid = ev.get("correlation_id")
+        if cid is None:
+            continue
+        counts[cid] += 1
+        ts = ev.get("timestamp")
+        if ts is not None:
+            latest_ts[cid] = ts
+
+    return [
+        {
+            "correlation_id": cid,
+            "count": count,
+            "latest_timestamp": latest_ts.get(cid, ""),
+        }
+        for cid, count in counts.most_common()
+    ]
+
+
+def detect_correlation_bursts(
+    audit_path: Path,
+    *,
+    window_sec: float = 600.0,
+    threshold: int = 10,
+) -> list[dict]:
+    """直近 window_sec 内の correlation_id バーストを検出する。"""
+    since = time.time() - window_sec
+    events = read_task_exit_events(audit_path, since=since)
+    aggregated = _aggregate_correlation_counts(events)
+    return [entry for entry in aggregated if entry["count"] >= threshold]
+
+
+def get_correlation_top_n(
+    audit_path: Path,
+    *,
+    since_sec: float,
+    top_n: int = 20,
+) -> list[dict]:
+    """直近 since_sec 内の correlation_id を count 降順で上位 top_n 件返す。"""
+    since = time.time() - since_sec
+    events = read_task_exit_events(audit_path, since=since)
+    aggregated = _aggregate_correlation_counts(events)
+    return aggregated[:top_n]

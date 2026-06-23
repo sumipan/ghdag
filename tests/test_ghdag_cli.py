@@ -244,7 +244,7 @@ class TestWatchNormal:
 
         with patch("ghdag.workflow.loader.load_workflows", mock_load), \
              patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.create_github_clients", mock_create_github_clients), \
+             patch("ghdag.github_client.create_github_clients", mock_create_github_clients), \
              patch("ghdag.pipeline.state.PipelineState", mock_state_cls), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder", mock_builder_cls):
             from ghdag.cli import main
@@ -267,7 +267,7 @@ class TestWatchNormal:
 
         with patch("ghdag.workflow.loader.load_workflows", mock_load), \
              patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.create_github_clients", mock_create_github_clients), \
+             patch("ghdag.github_client.create_github_clients", mock_create_github_clients), \
              patch("ghdag.pipeline.state.PipelineState", mock_state_cls), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder", mock_builder_cls):
             from ghdag.cli import main
@@ -410,7 +410,7 @@ handlers:
         mock_create_github_client = MagicMock(return_value=mock_github_client)
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.create_github_client", mock_create_github_client), \
+             patch("ghdag.github_client.create_github_client", mock_create_github_client), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -446,7 +446,7 @@ handlers:
         mock_create_github_client = MagicMock(return_value=mock_github_client)
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.create_github_client", mock_create_github_client), \
+             patch("ghdag.github_client.create_github_client", mock_create_github_client), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -560,7 +560,7 @@ handlers:
         mock_create_github_client = MagicMock(return_value=mock_github_client)
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.workflow.github.create_github_client", mock_create_github_client), \
+             patch("ghdag.github_client.create_github_client", mock_create_github_client), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main

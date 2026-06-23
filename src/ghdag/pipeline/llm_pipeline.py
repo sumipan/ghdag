@@ -118,6 +118,12 @@ class LLMPipelineAPI:
         """冪等キー削除を PipelineState に委譲する。"""
         self._state.remove_idempotency_matching(workflow_name, issue_number)
 
+    def remove_idempotency_for_handler(
+        self, workflow_name: str, handler_name: str, issue_number: int
+    ) -> int:
+        """handler 単位の冪等キー削除を PipelineState に委譲する。"""
+        return self._state.remove_idempotency_for_handler(workflow_name, handler_name, issue_number)
+
     def submit(
         self,
         steps: list[StepConfig],
@@ -267,7 +273,9 @@ class LLMPipelineAPI:
                 capabilities = PRESETS[safe_default_env]
                 safe_default_applied = True
             else:
-                capabilities = None
+                safe_default_env = "text_only"  # 安全デフォルト（hardcoded）
+                capabilities = PRESETS["text_only"]
+                safe_default_applied = True
 
         spec = ENGINE_SPECS[engine]
         annotations: dict[str, object] = {}
