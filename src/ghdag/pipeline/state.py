@@ -90,37 +90,31 @@ class PipelineState:
         if not self._exec_jsonl_path.exists():
             return 0
 
-        with open(self._exec_jsonl_path, encoding="utf-8") as f:
-            fcntl.flock(f, fcntl.LOCK_SH)
+        with open(self._exec_jsonl_path, "r+", encoding="utf-8") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
             try:
                 lines = f.readlines()
+                new_lines = []
+                removed = 0
+                for line in lines:
+                    stripped = line.strip()
+                    if not stripped:
+                        new_lines.append(line)
+                        continue
+                    try:
+                        data = json.loads(stripped)
+                        if predicate(data):
+                            removed += 1
+                            continue
+                    except json.JSONDecodeError:
+                        pass
+                    new_lines.append(line)
+                if removed > 0:
+                    f.seek(0)
+                    f.writelines(new_lines)
+                    f.truncate()
             finally:
                 fcntl.flock(f, fcntl.LOCK_UN)
-
-        new_lines = []
-        removed = 0
-
-        for line in lines:
-            stripped = line.strip()
-            if not stripped:
-                new_lines.append(line)
-                continue
-            try:
-                data = json.loads(stripped)
-                if predicate(data):
-                    removed += 1
-                    continue
-            except json.JSONDecodeError:
-                pass
-            new_lines.append(line)
-
-        if removed > 0:
-            with open(self._exec_jsonl_path, "w", encoding="utf-8") as f:
-                fcntl.flock(f, fcntl.LOCK_EX)
-                try:
-                    f.writelines(new_lines)
-                finally:
-                    fcntl.flock(f, fcntl.LOCK_UN)
 
         return removed
 
