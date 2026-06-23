@@ -79,7 +79,6 @@ def _make_completed_running_task(uuid: str, task: Task, returncode: int = 0,
                                   stdout_content: bytes = b"") -> RunningTask:
     proc = subprocess.Popen(["true"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     proc.wait()
-    # Override returncode for testing (inject non-zero by using false if needed)
     stdout_buf = io.BytesIO(stdout_content) if stdout_content else None
     if task.result_path is not None and stdout_buf is None:
         stdout_buf = io.BytesIO(b"")
@@ -120,7 +119,7 @@ class TestAC1FanoutSpawnChildren:
             FanOutItem(id="item-002", command="echo 2"),
             FanOutItem(id="item-003", command="echo 3"),
         ])
-        engine._spawn_fanout(parent_uuid, task, spec, _base_metrics(parent_uuid))
+        engine._fanout_manager.spawn(parent_uuid, task, spec, _base_metrics(parent_uuid))
 
         lines = [line for line in exec_file.read_text().splitlines() if line.strip()]
         assert len(lines) == 3
@@ -135,15 +134,14 @@ class TestAC1FanoutSpawnChildren:
         result_file = tmp_path / "result.md"
         task = Task(uuid=parent_uuid, command="true", result_path=str(result_file))
         rt = _make_completed_running_task(parent_uuid, task, stdout_content=FANOUT_YAML)
-        engine._running[parent_uuid] = rt
+        engine._launcher._running[parent_uuid] = rt
 
-        engine._check_completions()
+        engine._launcher.check_completions()
 
-        assert parent_uuid in engine._fanout_pending
-        assert len(engine._fanout_pending[parent_uuid]) == 3
-        # All child UUIDs use the expected pattern
+        assert parent_uuid in engine._fanout_manager._pending
+        assert len(engine._fanout_manager._pending[parent_uuid]) == 3
         for cid in ("item-001", "item-002", "item-003"):
-            assert f"{parent_uuid}--fo--{cid}" in engine._fanout_pending[parent_uuid]
+            assert f"{parent_uuid}--fo--{cid}" in engine._fanout_manager._pending[parent_uuid]
 
 
 class TestAC2ParentNotMarkedDone:
@@ -152,11 +150,11 @@ class TestAC2ParentNotMarkedDone:
         parent_uuid = "parent-nodelay"
         task = Task(uuid=parent_uuid, command="true")
         spec = FanOutSpec(children=[FanOutItem(id="c1", command="echo 1")])
-        engine._spawn_fanout(parent_uuid, task, spec, _base_metrics(parent_uuid))
+        engine._fanout_manager.spawn(parent_uuid, task, spec, _base_metrics(parent_uuid))
 
         done_dir = tmp_path / "done"
         assert not (done_dir / parent_uuid).exists()
-        assert parent_uuid in engine._fanout_pending
+        assert parent_uuid in engine._fanout_manager._pending
 
     def test_parent_not_done_after_check_completions(self, tmp_path):
         engine, hooks, exec_file = _make_engine(tmp_path)
@@ -164,9 +162,9 @@ class TestAC2ParentNotMarkedDone:
         result_file = tmp_path / "result2.md"
         task = Task(uuid=parent_uuid, command="true", result_path=str(result_file))
         rt = _make_completed_running_task(parent_uuid, task, stdout_content=FANOUT_YAML)
-        engine._running[parent_uuid] = rt
+        engine._launcher._running[parent_uuid] = rt
 
-        engine._check_completions()
+        engine._launcher.check_completions()
 
         assert not (tmp_path / "done" / parent_uuid).exists()
         assert not hooks.success
@@ -181,20 +179,20 @@ class TestAC3JoinAllChildrenSuccess:
         metrics = _base_metrics(parent_uuid)
         child_uuids = {f"{parent_uuid}--fo--c1", f"{parent_uuid}--fo--c2"}
 
-        engine._fanout_pending[parent_uuid] = set(child_uuids)
-        engine._fanout_tasks[parent_uuid] = task
-        engine._fanout_metrics[parent_uuid] = metrics
+        engine._fanout_manager._pending[parent_uuid] = set(child_uuids)
+        engine._fanout_manager._tasks[parent_uuid] = task
+        engine._fanout_manager._metrics[parent_uuid] = metrics
 
         known_done = set(child_uuids)
         known_succeeded = set(child_uuids)
-        engine._check_fanout_completions(known_done, known_succeeded)
+        engine._fanout_manager.check_completions(known_done, known_succeeded)
 
         assert parent_uuid in known_done
         assert parent_uuid in known_succeeded
         assert (tmp_path / "done" / parent_uuid).read_text() == "0"
         assert len(hooks.success) == 1
         assert hooks.success[0][0] == parent_uuid
-        assert parent_uuid not in engine._fanout_pending
+        assert parent_uuid not in engine._fanout_manager._pending
 
     def test_partial_done_does_not_trigger(self, tmp_path):
         engine, hooks, exec_file = _make_engine(tmp_path)
@@ -202,18 +200,17 @@ class TestAC3JoinAllChildrenSuccess:
         task = Task(uuid=parent_uuid, command="true")
         child_uuids = {f"{parent_uuid}--fo--c1", f"{parent_uuid}--fo--c2"}
 
-        engine._fanout_pending[parent_uuid] = set(child_uuids)
-        engine._fanout_tasks[parent_uuid] = task
-        engine._fanout_metrics[parent_uuid] = _base_metrics(parent_uuid)
+        engine._fanout_manager._pending[parent_uuid] = set(child_uuids)
+        engine._fanout_manager._tasks[parent_uuid] = task
+        engine._fanout_manager._metrics[parent_uuid] = _base_metrics(parent_uuid)
 
-        # Only one child done
         known_done = {f"{parent_uuid}--fo--c1"}
         known_succeeded = {f"{parent_uuid}--fo--c1"}
-        engine._check_fanout_completions(known_done, known_succeeded)
+        engine._fanout_manager.check_completions(known_done, known_succeeded)
 
         assert parent_uuid not in known_done
         assert not hooks.success
-        assert parent_uuid in engine._fanout_pending
+        assert parent_uuid in engine._fanout_manager._pending
 
 
 class TestAC4ChildFailurePropagates:
@@ -223,14 +220,13 @@ class TestAC4ChildFailurePropagates:
         task = Task(uuid=parent_uuid, command="true")
         child_uuids = {f"{parent_uuid}--fo--c1", f"{parent_uuid}--fo--c2"}
 
-        engine._fanout_pending[parent_uuid] = set(child_uuids)
-        engine._fanout_tasks[parent_uuid] = task
-        engine._fanout_metrics[parent_uuid] = _base_metrics(parent_uuid)
+        engine._fanout_manager._pending[parent_uuid] = set(child_uuids)
+        engine._fanout_manager._tasks[parent_uuid] = task
+        engine._fanout_manager._metrics[parent_uuid] = _base_metrics(parent_uuid)
 
         known_done = set(child_uuids)
-        # c2 succeeded, c1 failed (not in known_succeeded)
         known_succeeded = {f"{parent_uuid}--fo--c2"}
-        engine._check_fanout_completions(known_done, known_succeeded)
+        engine._fanout_manager.check_completions(known_done, known_succeeded)
 
         assert parent_uuid in known_done
         assert parent_uuid not in known_succeeded
@@ -240,21 +236,20 @@ class TestAC4ChildFailurePropagates:
         assert hooks.failure[0][0] == parent_uuid
         assert hooks.failure[0][3] == "FANOUT_CHILD_FAILED"
         assert hooks.failure[0][4].failure_class == FailureClass.FANOUT_CHILD_FAILED
-        assert parent_uuid not in engine._fanout_pending
+        assert parent_uuid not in engine._fanout_manager._pending
 
 
 class TestAC8NoFanoutNormalSuccess:
     def test_no_fanout_block_triggers_normal_success(self, tmp_path):
         engine, hooks, exec_file = _make_engine(tmp_path)
         uuid = "task-normal"
-        # Use command with no tee, no result_path → effective_result_path is None
         task = Task(uuid=uuid, command="true")
         rt = _make_completed_running_task(uuid, task)
-        engine._running[uuid] = rt
+        engine._launcher._running[uuid] = rt
 
-        engine._check_completions()
+        engine._launcher.check_completions()
 
-        assert uuid not in engine._fanout_pending
+        assert uuid not in engine._fanout_manager._pending
         assert len(hooks.success) == 1
         assert hooks.success[0][0] == uuid
 
@@ -264,11 +259,11 @@ class TestAC8NoFanoutNormalSuccess:
         result_file = tmp_path / "plain.md"
         task = Task(uuid=uuid, command="true", result_path=str(result_file))
         rt = _make_completed_running_task(uuid, task, stdout_content=b"Normal output only.\n")
-        engine._running[uuid] = rt
+        engine._launcher._running[uuid] = rt
 
-        engine._check_completions()
+        engine._launcher.check_completions()
 
-        assert uuid not in engine._fanout_pending
+        assert uuid not in engine._fanout_manager._pending
         assert len(hooks.success) == 1
         assert hooks.success[0][0] == uuid
 
@@ -284,10 +279,9 @@ class TestAC9ValidateDependencies:
         parent = Task(uuid="parent", command="echo parent")
 
         all_tasks = [parent, child1, child2, successor]
-        known_done: set[str] = {"parent"}  # parent is done after join
+        known_done: set[str] = {"parent"}
 
         invalid = validate_dependencies(all_tasks, known_done)
-        # successor depends on parent which is done, so no invalid tasks
         assert "successor" not in invalid
         assert "parent--fo--c1" not in invalid
         assert "parent--fo--c2" not in invalid
@@ -301,7 +295,6 @@ class TestAC2FanoutParseFailed:
         result_file = tmp_path / "result_pf.md"
         task = Task(uuid=uuid, command="true", result_path=str(result_file))
 
-        # Result file with invalid child id containing --fo--
         invalid_fanout = b"""\
 Some output.
 
@@ -312,48 +305,44 @@ ghdag_fanout:
       command: "echo 1"
 """
         rt = _make_completed_running_task(uuid, task, stdout_content=invalid_fanout)
-        engine._running[uuid] = rt
+        engine._launcher._running[uuid] = rt
 
-        engine._check_completions()
+        engine._launcher.check_completions()
 
-        # Parent should be marked done with FANOUT_PARSE_FAILED
         done_file = tmp_path / "done" / uuid
         assert done_file.exists()
         assert done_file.read_text() == "FANOUT_PARSE_FAILED"
 
-        # Failure hook should be called with FANOUT_PARSE_FAILED
         assert len(hooks.failure) == 1
         assert hooks.failure[0][0] == uuid
         assert "FANOUT_PARSE_FAILED" in hooks.failure[0][3] or "--fo--" in hooks.failure[0][3]
         assert hooks.failure[0][4].failure_class == FailureClass.FANOUT_PARSE_FAILED
 
-        # No children should be spawned
         lines = [ln for ln in exec_file.read_text().splitlines() if ln.strip()]
         assert len(lines) == 0
 
 
 class TestParentNotRelaunched:
     def test_parent_in_fanout_pending_is_skipped_in_launch_loop(self, tmp_path):
-        """Parent UUID in _fanout_pending must not be re-launched."""
+        """Parent UUID in _fanout_manager._pending must not be re-launched."""
         engine, hooks, exec_file = _make_engine(tmp_path)
         parent_uuid = "parent-skip"
         task = Task(uuid=parent_uuid, command="true")
         engine._tasks[parent_uuid] = task
 
-        # Simulate fanout pending state
-        engine._fanout_pending[parent_uuid] = {"parent-skip--fo--c1"}
-        engine._fanout_tasks[parent_uuid] = task
-        engine._fanout_metrics[parent_uuid] = _base_metrics(parent_uuid)
+        engine._fanout_manager._pending[parent_uuid] = {"parent-skip--fo--c1"}
+        engine._fanout_manager._tasks[parent_uuid] = task
+        engine._fanout_manager._metrics[parent_uuid] = _base_metrics(parent_uuid)
 
-        # The parent should not appear in _running after the loop logic
-        # (We test the guard condition: uuid in _fanout_pending)
-        assert parent_uuid in engine._fanout_pending
-        assert parent_uuid not in engine._running
-        # Verify the guard would skip it (would not call _launch_task)
-        # Done by checking _fanout_pending is the skip condition
+        assert engine._fanout_manager.is_pending(parent_uuid)
+        assert not engine._launcher.is_running(parent_uuid)
+
         done_set: set[str] = set()
         for uuid, t in engine._tasks.items():
-            if uuid in done_set or uuid in engine._running or uuid in engine._fanout_pending:
+            if (
+                uuid in done_set
+                or engine._launcher.is_running(uuid)
+                or engine._fanout_manager.is_pending(uuid)
+            ):
                 continue
-            # If we reach here, the task would be launched. Parent should not reach here.
             assert uuid != parent_uuid, "Parent should have been skipped"
