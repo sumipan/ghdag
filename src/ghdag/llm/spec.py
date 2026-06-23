@@ -33,6 +33,7 @@ ENGINE_SPECS: dict[str, EngineSpec] = {
         default_model="claude-sonnet-4-6",
         danger_flag="--dangerously-skip-permissions",
         danger_flag_position="trailing",
+        extra_args=("--output-format", "json"),
     ),
     "gemini": EngineSpec(
         name="gemini", cli="gemini",

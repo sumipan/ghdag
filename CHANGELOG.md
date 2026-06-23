@@ -4,6 +4,86 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+
+## 0.30.4 — 2026-06-23
+
+### Added
+
+- `llm/adapters/`: `EngineOutputAdapter` Protocol と `get_output_adapter()` レジストリを新設。claude エンジンの `--output-format json` stdout から `result` テキストと `TokenUsage`（`token_count` / `cost_usd` / `cache_read_tokens` / `cache_creation_tokens`）を抽出するアダプタ層を実装 (Issue #2266)
+- `metrics/models.py`: `TaskMetrics` に `cost_usd`・`cache_read_tokens`・`cache_creation_tokens` フィールドを追加 (Issue #2266)
+
+### Fixed
+
+- `dag/_state.py`: `_remove_by_predicate` で LOCK_SH/LOCK_EX を分離していた競合（TOCTOU）を単一 LOCK_EX で修正 (Issue #2266)
+- `metrics/parsers.py`: `parse_token_usage_json` を追加し、claude JSON stdout から usage を正確に取得。従来の stderr 経路はフォールバックとして温存 (Issue #2266)
+
+## 0.30.3 — 2026-06-21
+
+### Added
+
+- `dispatcher.py`: `_READY_LABEL_RE` 正規表現でハイフン・コロン両対応のラベル区切り文字を受け入れる（`research:ready` / `research-ready` 両形式を正しく `*:running` / `*-running` に遷移）(Issue #2258)
+- `state.py`: `_remove_by_predicate` ヘルパーと `remove_idempotency_for_handler(workflow, handler, issue)` — ハンドラ単位の冪等キー削除（他ハンドラの冪等記録を保持しつつ特定ハンドラのみリトライ可能）(Issue #2258)
+- `LLMPipelineAPI`: `remove_idempotency_for_handler` の委譲メソッドを追加 (Issue #2258)
+
+## 0.30.2 — 2026-06-14
+
+### Changed
+
+- `README.md`: v0.30.0 実装に合わせた OSS_QUALITY §4.1 準拠の全面書き直し（state_machine / tool/ / dashboard 追加、label_state_machine 削除、Error Reference 17+7 型）(Issue #2154)
+
+## 0.30.1 — 2026-06-14
+
+### Changed
+
+- `README.md`: OSS_QUALITY.md 第4章の必須9セクション構成で全面書き直し（CLI Reference・Public API・Architecture・Configuration・Error Reference を現行実装に同期）(Issue #2144)
+
+## 0.28.16 — 2026-06-13
+
+### Added
+
+- `TOOL_EXIT_CODES` 定数と `ToolDef.exit_codes` フィールド: Phase D exit_code 語彙（`success` / `failure` / `retry` / `skip`）のバリデーション (Issue #2091)
+- `write_tool_fallback_audit()`: fallback chain 発動時の audit.jsonl 出力 (`event: tool.fallback`) (Issue #2091)
+
+## 0.28.15 — 2026-06-13
+
+### Added
+
+- `LLMCapabilities.stream`: `stream=True` 時に claude エンジンで `--output-format stream-json --verbose` を生成し、JSONL ストリーム出力を `_extract_stream_result()` でパース (Issue #2084)
+
+## 0.28.14 — 2026-06-13
+
+### Added
+
+- `DagConfig.serialize_mutating`: `annotations._mutates == "true"` のタスク同士を直列化する排他制御。`max_concurrency` とは独立して機能 (issuesmith #2079)
+
+## 0.28.13 — 2026-06-13
+
+### Added
+
+- `dashboard.py`: audit.jsonl のダッシュボード集計（タスク状態・correlation_id 別トークン消費・CB 発火頻度） (issuesmith #2083)
+- `/api/dashboard/status`, `/api/dashboard/tokens`, `/api/dashboard/cb-firing` エンドポイントを `server.py` に追加 (issuesmith #2083)
+
+## 0.28.11 — 2026-06-13
+
+### Added
+
+- `DagEngine` サーキットブレーカー: 連続タスク失敗が `max_consecutive_failures` に達するとエンジンをシャットダウン。`DagConfig` に `max_consecutive_failures` / `failure_window_sec` を追加 (issuesmith #2082)
+- `ToolDef` / `FallbackEntry` dataclass と `ToolRegistry.discover()`: ディレクトリ walk による Tool 定義の discovery、ファイル名規約 lint、多重定義検出 (issuesmith #2087)
+
+## 0.28.10 — 2026-06-13
+
+### Added
+
+- `conditional_step.run_with_template()`: LLM CLI 実行の診断ログ（開始・完了・経過時間）を stderr に出力 (issuesmith #2070)
+- `engine._check_completions()`: PROCESS_ERROR / TIMEOUT 時に stdout を `{result_path}.fail` へ永続化 (issuesmith #2070)
+
+## 0.28.7 — 2026-06-08
+
+### Added
+
+- `detect_correlation_bursts()` / `get_correlation_top_n()`: audit.jsonl の correlation_id バースト検出ヘルパー (issuesmith #2007)
+- `WorkflowDispatcher._observe_correlation_burst()`: ポーリングループ内で correlation バーストを検出し warning ログを出力。cooldown 機構で重複抑制 (issuesmith #2007)
+
 ## 0.28.2 — 2026-05-30
 
 ### Added

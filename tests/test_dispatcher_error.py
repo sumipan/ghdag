@@ -7,9 +7,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.workflow.github import GitHubIssuePort
 from ghdag.workflow.schema import (
     HandlerConfig,
     StepConfig,

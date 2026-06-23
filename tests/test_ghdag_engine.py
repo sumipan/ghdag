@@ -103,8 +103,8 @@ class TestDependencyResolution:
 
         # uuid-a should be running, uuid-b should not have started
         assert not is_done(config.exec_done_dir, "uuid-b")
-        assert "uuid-a" in engine._running
-        assert "uuid-b" not in engine._running
+        assert "uuid-a" in engine._launcher._running
+        assert "uuid-b" not in engine._launcher._running
 
         engine._shutdown = True
         t.join(timeout=5.0)
@@ -723,8 +723,8 @@ class TestReaderThreadJoin:
         engine = DagEngine(config, hooks)
 
         def capture(uuid, task):
-            if uuid in engine._running:
-                captured_rt.append(engine._running[uuid])
+            if uuid in engine._launcher._running:
+                captured_rt.append(engine._launcher._running[uuid])
 
         hooks.on_task_start.side_effect = capture
         _run_engine_with_timeout(engine, timeout=3.0)
@@ -743,8 +743,8 @@ class TestReaderThreadJoin:
         engine = DagEngine(config, hooks)
 
         def capture(uuid, task):
-            if uuid in engine._running:
-                captured_rt.append(engine._running[uuid])
+            if uuid in engine._launcher._running:
+                captured_rt.append(engine._launcher._running[uuid])
 
         hooks.on_task_start.side_effect = capture
         _run_engine_with_timeout(engine, timeout=3.0)
@@ -765,8 +765,8 @@ class TestReaderThreadJoin:
         engine = DagEngine(config, hooks)
 
         def capture(uuid, task):
-            if uuid in engine._running:
-                captured_rt.append(engine._running[uuid])
+            if uuid in engine._launcher._running:
+                captured_rt.append(engine._launcher._running[uuid])
 
         hooks.on_task_start.side_effect = capture
         _run_engine_with_timeout(engine, timeout=5.0)
@@ -815,7 +815,7 @@ class TestMaxConcurrency:
 
         def sampler():
             for _ in range(30):
-                samples.append(len(engine._running))
+                samples.append(len(engine._launcher._running))
                 time.sleep(0.1)
 
         t_sampler = threading.Thread(target=sampler, daemon=True)
@@ -842,7 +842,7 @@ class TestMaxConcurrency:
         t.start()
         time.sleep(0.8)
 
-        running_count = len(engine._running)
+        running_count = len(engine._launcher._running)
         engine._shutdown = True
         t.join(timeout=5.0)
 
@@ -863,7 +863,7 @@ class TestMaxConcurrency:
 
         def sampler():
             for _ in range(20):
-                samples.append(len(engine._running))
+                samples.append(len(engine._launcher._running))
                 time.sleep(0.05)
 
         t_sampler = threading.Thread(target=sampler, daemon=True)
@@ -923,8 +923,8 @@ class TestTimeoutReaderJoin:
         engine = DagEngine(config, hooks)
 
         def capture(uuid, task):
-            if uuid in engine._running:
-                captured_rt.append(engine._running[uuid])
+            if uuid in engine._launcher._running:
+                captured_rt.append(engine._launcher._running[uuid])
 
         hooks.on_task_start.side_effect = capture
         _run_engine_with_timeout(engine, timeout=6.0)
@@ -952,8 +952,8 @@ class TestTimeoutReaderJoin:
                 stderr_thread = hanging_thread
                 stdout_thread = None
 
-            with caplog.at_level(logging.WARNING, logger="ghdag.dag.engine"):
-                engine._join_reader_threads(FakeRT())
+            with caplog.at_level(logging.WARNING, logger="ghdag.dag.task_launcher"):
+                engine._launcher._join_reader_threads(FakeRT())
 
             assert any(
                 "reader thread did not terminate within 2.0s" in r.message
@@ -963,3 +963,169 @@ class TestTimeoutReaderJoin:
         finally:
             stop_event.set()
             hanging_thread.join(timeout=1.0)
+
+
+# --- Unit tests for extracted classes (issue #2243) ---
+
+class TestTaskLauncherUnit:
+    """TaskLauncher unit tests: launch() starts a process, check_completions() detects done."""
+
+    def test_launch_registers_running_task(self, tmp_path):
+        from unittest.mock import MagicMock
+
+        from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
+        from ghdag.dag.hooks import DagHooks
+        from ghdag.dag.models import Task
+        from ghdag.dag.task_launcher import TaskLauncher
+
+        config = _make_config(tmp_path, "")
+        hooks = MagicMock(spec=DagHooks)
+        hooks.check_rejected.return_value = False
+        hooks.check_pipeline_status.return_value = None
+        cb = CircuitBreakerPolicy(float("inf"), 2**31)
+        fm = MagicMock()
+        launcher = TaskLauncher(config, hooks, cb, fm, lambda _: None)
+
+        task = Task(uuid="launch-test", command="true")
+        launcher.launch("launch-test", task)
+
+        assert launcher.is_running("launch-test")
+        assert launcher.running_count == 1
+
+        # wait for completion
+        launcher._running["launch-test"].proc.wait()
+        launcher.check_completions()
+        assert not launcher.is_running("launch-test")
+        assert launcher.running_count == 0
+
+    def test_check_completions_detects_completed_process(self, tmp_path):
+        import io
+        import subprocess
+        from unittest.mock import MagicMock
+
+        from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
+        from ghdag.dag.hooks import DagHooks
+        from ghdag.dag.models import RunningTask, Task
+        from ghdag.dag.task_launcher import TaskLauncher
+
+        config = _make_config(tmp_path, "")
+        hooks = MagicMock(spec=DagHooks)
+        hooks.check_rejected.return_value = False
+        hooks.check_pipeline_status.return_value = None
+        cb = CircuitBreakerPolicy(float("inf"), 2**31)
+        fm = MagicMock()
+        fm.spawn = MagicMock()
+        launcher = TaskLauncher(config, hooks, cb, fm, lambda _: None)
+
+        proc = subprocess.Popen(["true"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        proc.wait()
+        task = Task(uuid="done-test", command="true")
+        import time
+        rt = RunningTask(
+            uuid="done-test", task=task, proc=proc,
+            started_at=time.time(), started_at_mono=time.monotonic(),
+            stderr_buf=io.BytesIO(b""), retry_depth=0,
+        )
+        launcher._running["done-test"] = rt
+
+        launcher.check_completions()
+
+        hooks.on_task_success.assert_called_once()
+        assert not launcher.is_running("done-test")
+
+
+class TestCircuitBreakerPolicyUnit:
+    """CircuitBreakerPolicy unit tests (acceptance criteria)."""
+
+    def test_max_consecutive_failures_trips_breaker(self):
+        from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
+        cb = CircuitBreakerPolicy(failure_window_sec=float("inf"), max_consecutive_failures=3)
+        cb.record_failure()
+        cb.record_failure()
+        assert not cb.tripped
+        cb.record_failure()
+        assert cb.tripped
+
+    def test_failure_window_resets_counter(self):
+        import time
+
+        from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
+        cb = CircuitBreakerPolicy(failure_window_sec=0.001, max_consecutive_failures=2)
+        cb.record_failure()
+        cb._last_failure_time = time.monotonic() - 1.0
+        cb.record_failure()
+        assert not cb.tripped
+
+
+class TestFanOutManagerUnit:
+    """FanOutManager unit tests (acceptance criteria)."""
+
+    def test_spawn_calls_append_task_fn_and_registers_pending(self, tmp_path):
+        import time
+        from unittest.mock import MagicMock
+
+        from ghdag.dag.fanout import FanOutItem, FanOutSpec
+        from ghdag.dag.fanout_manager import FanOutManager
+        from ghdag.dag.hooks import DagHooks
+        from ghdag.dag.models import Task
+        from ghdag.metrics.models import TaskMetrics
+
+        config = _make_config(tmp_path, "")
+        hooks = MagicMock(spec=DagHooks)
+        appended: list[str] = []
+        fm = FanOutManager(config, hooks, appended.append, lambda _: None)
+
+        parent_uuid = "parent"
+        task = Task(uuid=parent_uuid, command="true")
+        spec = FanOutSpec(children=[
+            FanOutItem(id="c1", command="echo 1"),
+            FanOutItem(id="c2", command="echo 2"),
+        ])
+        t = time.time()
+        metrics = TaskMetrics(
+            uuid=parent_uuid, engine=None, model=None,
+            wall_time_sec=1.0, token_count=None, status="success",
+            started_at=t, finished_at=t,
+        )
+        fm.spawn(parent_uuid, task, spec, metrics)
+
+        assert len(appended) == 2
+        assert fm.is_pending(parent_uuid)
+
+    def test_check_completions_marks_parent_done_when_all_children_complete(self, tmp_path):
+        import time
+        from unittest.mock import MagicMock
+
+        from ghdag.dag.fanout_manager import FanOutManager
+        from ghdag.dag.hooks import DagHooks
+        from ghdag.dag.models import Task
+        from ghdag.metrics.models import TaskMetrics
+
+        config = _make_config(tmp_path, "")
+        # Create done dir so state.mark_done can write there
+        import os
+        os.makedirs(str(tmp_path / "jobs" / "done"), exist_ok=True)
+
+        hooks = MagicMock(spec=DagHooks)
+        fm = FanOutManager(config, hooks, lambda _: None, lambda _: None)
+
+        parent_uuid = "parent-fm"
+        child_uuids = {f"{parent_uuid}--fo--c1", f"{parent_uuid}--fo--c2"}
+        task = Task(uuid=parent_uuid, command="true")
+        t = time.time()
+        metrics = TaskMetrics(
+            uuid=parent_uuid, engine=None, model=None,
+            wall_time_sec=1.0, token_count=None, status="success",
+            started_at=t, finished_at=t,
+        )
+        fm._pending[parent_uuid] = set(child_uuids)
+        fm._tasks[parent_uuid] = task
+        fm._metrics[parent_uuid] = metrics
+
+        known_done = set(child_uuids)
+        known_succeeded = set(child_uuids)
+        fm.check_completions(known_done, known_succeeded)
+
+        assert parent_uuid in known_done
+        assert not fm.is_pending(parent_uuid)
+        hooks.on_task_success.assert_called_once()
