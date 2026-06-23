@@ -162,7 +162,7 @@ class TestCleanupLinkRewriteSkipUnchanged:
         _make_done_flag(done_dir, UUID_B)
         _make_exec_jsonl(exec_md, [UUID_A, UUID_B])
 
-        with patch("ghdag.cleanup.md_write") as mock_md_write:
+        with patch("ghdag.cleanup.link_rewriter.md_write") as mock_md_write:
             cleanup_queue(
                 queue_dir=queue_dir,
                 archive_dir=archive_dir,
