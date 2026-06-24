@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.7 — 2026-06-24
+
+### Fixed
+
+- `dag/task_launcher.py`: `get_output_adapter()` 配線を復旧。PR #2243 のリファクタで消失した adapter 呼び出しを再接続し、claude エンジンの stdout JSON を `adapter.extract_result_text()` 経由で変換して `result_path` に書き込む。`parse_token_count`（stderr grep）を廃止し adapter ベースの usage 抽出に統一 (Issue #2287)
+- `dag/task_launcher.py`: `TaskMetrics` 全 8 経路（TIMEOUT / REJECTED / PIPELINE_FAILED / EMPTY_RESULT / SUCCESS / FANOUT_PARSE_FAILED / PROCESS_ERROR / UNKNOWN_FAILURE）に `cost_usd` / `cache_read_tokens` / `cache_creation_tokens` を追加 (Issue #2287)
+
+### Added
+
+- `tests/dag/test_task_launcher_adapter_wiring.py`: adapter 配線の退行検査テスト。claude JSON stdout が `result_path` に漏れないこと・メトリクスが非 null になることを契約として固定 (Issue #2287)
+
+## 0.30.6 — 2026-06-23
+
+### Fixed
+
+- `dag/parser.py`, `pipeline/llm_pipeline.py`, `pipeline/state.py`: コード内コメント・docstring の `exec.md` 参照を `exec.jsonl` に修正 (Issue #2245)
+
 ## 0.30.5 — 2026-06-23
 
 ### Changed
