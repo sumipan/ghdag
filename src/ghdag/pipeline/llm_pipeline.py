@@ -1,5 +1,5 @@
 """
-pipeline/llm_pipeline.py — LLMPipelineAPI: order/result/exec.md 投入を一括で担う
+pipeline/llm_pipeline.py — LLMPipelineAPI: order/result/exec.jsonl 投入を一括で担う
 
 dispatcher は submit() を呼ぶだけで、ファイル命名規則や
 exec 行フォーマットを知る必要がない。
@@ -76,7 +76,7 @@ class SubmittedStep:
 
 
 class LLMPipelineAPI:
-    """order/result ファイル管理と exec.md 投入を一括で担う。
+    """order/result ファイル管理と exec.jsonl 投入を一括で担う。
 
     dispatcher は submit() を呼ぶだけで、ファイル命名規則や
     exec 行フォーマットを知る必要がない。

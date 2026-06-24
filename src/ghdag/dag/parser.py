@@ -77,7 +77,7 @@ def validate_dependencies(
 
     failed: dict[str, str] = {}
 
-    # Orphan dependency check: dep not in exec.md and not in done
+    # Orphan dependency check: dep not in exec.jsonl and not in done
     for task in tasks:
         for dep in task.depends:
             if dep not in all_known:
