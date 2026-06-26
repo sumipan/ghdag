@@ -37,7 +37,7 @@ def parse_engine_model(command: str) -> tuple[str | None, str | None]:
             if tokens[i] == spec.model_flag:
                 model = tokens[i + 1]
                 break
-    return spec.name, model
+    return spec.engine, model
 
 
 def parse_token_usage_json(stdout_json: dict) -> TokenUsage:

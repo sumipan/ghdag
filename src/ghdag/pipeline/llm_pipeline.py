@@ -289,7 +289,7 @@ class LLMPipelineAPI:
 
         return {
             "uuid": step_uuid,
-            "engine": spec.name,
+            "engine": spec.engine,
             "model": model if spec.model_flag else None,
             "command": render_exec_command(
                 spec,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ghdag.llm.spec import ENGINE_SPECS
+from ghdag.llm.spec import ENGINE_SPECS, InputMode, PromptFlag
 from ghdag.workflow.engine import (
     _CUSTOM_ADAPTERS,
     AdapterNotFoundError,
@@ -56,11 +56,11 @@ class TestGenericAdapter:
             "engine": "claude",
             "model": "claude-sonnet-4-6",
             "command": (
-                "cat queue/order.md"
-                " | claude -p '受け取った内容を実行して'"
+                "claude -p"
                 " --model 'claude-sonnet-4-6'"
                 " --output-format json"
                 " --dangerously-skip-permissions"
+                " < queue/order.md"
             ),
             "depends": ["dep-456"],
             "result_path": "queue/result.md",
@@ -208,10 +208,10 @@ class TestVirtualEngineRegistration:
         from ghdag.llm.spec import EngineSpec
 
         test_spec = EngineSpec(
-            name="_test_",
+            engine="_test_",
             cli="echo",
-            input_mode="cat_pipe",
-            prompt_flag="-p",
+            input_mode=InputMode.STDIN,
+            prompt_flag=PromptFlag.FLAG_ONLY,
             model_flag="--model",
             default_model=None,
             danger_flag=None,
@@ -295,11 +295,11 @@ class TestBuildExecRecord:
             "engine": "claude",
             "model": "claude-sonnet-4-6",
             "command": (
-                "cat queue/order.md"
-                " | claude -p '受け取った内容を実行して'"
+                "claude -p"
                 " --model 'claude-sonnet-4-6'"
                 " --output-format json"
                 " --dangerously-skip-permissions"
+                " < queue/order.md"
             ),
             "depends": ["dep-456"],
             "result_path": "queue/result.md",
@@ -430,3 +430,50 @@ class TestGenericAdapterCapabilities:
             prompt="", model="auto", depends=[], capabilities=TEXT_ONLY,
         )
         assert "--force" not in record["command"]
+
+
+# ---------------------------------------------------------------------------
+# 回帰テスト: FLAG_ONLY で prompt テキストが argv に混入しないことの検証
+# ---------------------------------------------------------------------------
+
+class TestFlagOnlyNoPromptTextInCommand:
+    """全エンジンで render_exec_command 出力に -p ' を含まない（FLAG_ONLY の保証）"""
+
+    def _adapter(self, name: str) -> _GenericAdapter:
+        return _GenericAdapter(ENGINE_SPECS[name])
+
+    def test_claude_no_prompt_text_in_command(self):
+        record = self._adapter("claude").build_exec_record(
+            uuid="u", order_path="q/o.md", result_path="q/r.md",
+            prompt="secret prompt text", model="claude-sonnet-4-6", depends=[],
+        )
+        assert "-p '" not in record["command"]
+        assert "secret prompt text" not in record["command"]
+
+    def test_gemini_no_prompt_text_in_command(self):
+        record = self._adapter("gemini").build_exec_record(
+            uuid="u", order_path="q/o.md", result_path="q/r.md",
+            prompt="secret prompt text", model="gemini-2.5-flash", depends=[],
+        )
+        assert "-p '" not in record["command"]
+        assert "secret prompt text" not in record["command"]
+
+    def test_cursor_no_prompt_text_in_command(self):
+        record = self._adapter("cursor").build_exec_record(
+            uuid="u", order_path="q/o.md", result_path="q/r.md",
+            prompt="secret prompt text", model="auto", depends=[],
+        )
+        assert "-p '" not in record["command"]
+        assert "secret prompt text" not in record["command"]
+
+    def test_all_stdin_engines_no_prompt_text(self):
+        """InputMode.STDIN の全エンジンでプロンプトテキストがコマンドに含まれない"""
+        from ghdag.llm.spec import InputMode
+        for name, spec in ENGINE_SPECS.items():
+            if spec.input_mode == InputMode.STDIN:
+                record = self._adapter(name).build_exec_record(
+                    uuid="u", order_path="q/o.md", result_path="q/r.md",
+                    prompt="do not include this", model=spec.default_model, depends=[],
+                )
+                assert "-p '" not in record["command"], f"{name}: found '-p ' in command"
+                assert "do not include this" not in record["command"], f"{name}: prompt text leaked into command"

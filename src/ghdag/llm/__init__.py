@@ -21,7 +21,7 @@ from ghdag.llm.engines import (
     list_models,
     validate_engine_model,
 )
-from ghdag.llm.spec import ENGINE_SPECS, EngineSpec
+from ghdag.llm.spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
 
 __all__ = [
     "_config",
@@ -31,9 +31,11 @@ __all__ = [
     "ENGINE_SPECS",
     "EngineModelError",
     "EngineSpec",
+    "InputMode",
     "LLMCapabilities",
     "LLMParseError",
     "LLMResult",
+    "PromptFlag",
     "TEXT_ONLY",
     "JSON_ONLY",
     "WEB_RESEARCH",

@@ -44,7 +44,7 @@ class _GenericAdapter:
 
     @property
     def name(self) -> str:
-        return self._spec.name
+        return self._spec.engine
 
     def build_exec_record(
         self,
@@ -59,7 +59,7 @@ class _GenericAdapter:
     ) -> dict:
         return {
             "uuid": uuid,
-            "engine": self._spec.name,
+            "engine": self._spec.engine,
             "model": model if self._spec.model_flag else None,
             "command": render_exec_command(
                 self._spec, order_path=order_path, prompt=prompt, model=model,

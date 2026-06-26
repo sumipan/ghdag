@@ -598,7 +598,7 @@ class TestEngineSpec:
         import dataclasses
         spec = ENGINE_SPECS["claude"]
         with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
-            spec.name = "other"  # type: ignore
+            spec.engine = "other"  # type: ignore
 
     def test_claude_spec_cli(self):
         assert ENGINE_SPECS["claude"].cli == "claude"
@@ -644,17 +644,17 @@ class TestRenderExecCommand:
     def test_claude_with_model(self):
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(spec, order_path="queue/order.md", prompt="hello", model="claude-opus-4-6")
-        assert cmd == "cat queue/order.md | claude -p 'hello' --model 'claude-opus-4-6' --output-format json --dangerously-skip-permissions"
+        assert cmd == "claude -p --model 'claude-opus-4-6' --output-format json --dangerously-skip-permissions < queue/order.md"
 
     def test_claude_without_model(self):
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(spec, order_path="queue/order.md", prompt="hello", model=None)
-        assert cmd == "cat queue/order.md | claude -p 'hello' --output-format json --dangerously-skip-permissions"
+        assert cmd == "claude -p --output-format json --dangerously-skip-permissions < queue/order.md"
 
     def test_gemini_with_model(self):
         spec = ENGINE_SPECS["gemini"]
         cmd = render_exec_command(spec, order_path="queue/order.md", prompt="hello", model="gemini-2.5-flash")
-        assert cmd == "cat queue/order.md | gemini -p 'hello' --model 'gemini-2.5-flash' --approval-mode yolo"
+        assert cmd == "gemini -p --model 'gemini-2.5-flash' --approval-mode yolo < queue/order.md"
 
     def test_gemini_no_dash_m(self):
         """gemini コマンドに -m を含まないこと（--model に統一）"""
@@ -702,7 +702,7 @@ class TestAdapterOutputs:
         )
         assert record["uuid"] == "u1"
         cmd = record["command"]
-        assert "cat queue/order.md | claude -p 'hello' --model 'claude-sonnet-4-6' --output-format json --dangerously-skip-permissions" == cmd
+        assert "claude -p --model 'claude-sonnet-4-6' --output-format json --dangerously-skip-permissions < queue/order.md" == cmd
 
     def test_gemini_adapter_uses_double_dash_model(self):
         """get_adapter('gemini') が -m ではなく --model を使う"""

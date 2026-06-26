@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from ghdag.exceptions import GhdagError
 from ghdag.llm._config import load_engine_models
 from ghdag.llm.capabilities import TEXT_ONLY, LLMCapabilities, LLMParseError
-from ghdag.llm.spec import ENGINE_SPECS
+from ghdag.llm.spec import ENGINE_SPECS, PromptFlag
 
 
 class EngineModelError(GhdagError):
@@ -238,8 +238,8 @@ def build_llm_cmd(
     else:
         if spec.model_flag:
             cmd += [spec.model_flag, model]
-        if spec.prompt_flag:
-            cmd += [spec.prompt_flag, prompt]
+        if spec.prompt_flag != PromptFlag.NONE:
+            cmd += [spec.prompt_flag.value, prompt]
 
     builder = _CAPABILITY_FLAG_BUILDERS.get(engine)
     if builder:
