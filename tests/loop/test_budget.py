@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
-from ghdag.loop import LoopBudget, BudgetExceededError, from_skill_meta
+from ghdag.loop import BudgetExceededError, LoopBudget, from_skill_meta
 
 
 class TestLoopBudgetCheck:
@@ -141,7 +140,6 @@ class TestLLMPipelineLoopBudget:
         order_builder = MagicMock()
         order_builder.build_order.return_value = "order content"
 
-        from ghdag.pipeline.audit import AuditContext
         api = LLMPipelineAPI(
             pipeline_state=state,
             order_builder=order_builder,
@@ -154,7 +152,6 @@ class TestLLMPipelineLoopBudget:
         from ghdag.pipeline.audit import AuditContext
         from ghdag.workflow.schema import StepConfig
 
-        api = self._make_api(tmp_path)
         budget = LoopBudget(steps=3)
         audit = AuditContext(source="test")
 
@@ -172,6 +169,7 @@ class TestLLMPipelineLoopBudget:
         order_builder = MagicMock()
         order_builder.build_order.return_value = "order content"
 
+        (tmp_path / "queue").mkdir(exist_ok=True)
         api2 = LLMPipelineAPI(
             pipeline_state=real_state,
             order_builder=order_builder,
