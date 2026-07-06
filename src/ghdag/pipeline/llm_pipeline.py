@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from ghdag.exceptions import GhdagError
+from ghdag.loop.budget import LoopBudget
 from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import PipelineState
@@ -132,6 +133,7 @@ class LLMPipelineAPI:
         idempotency_key: str | None = None,
         audit_context: AuditContext,
         metadata: dict[str, str] | None = None,
+        loop_budget: LoopBudget | None = None,
     ) -> list[str]:
         """ステップ群を order/exec.jsonl ファイルに投入する。
 
@@ -141,6 +143,7 @@ class LLMPipelineAPI:
             idempotency_key: 冪等性キー（省略時は記録しない）
             audit_context: enqueue audit に記録するコンテキスト
             metadata: 全ステップ共通のメタデータ（exec.jsonl の annotations に格納）
+            loop_budget: ループ予算情報（指定時は exec レコードの metadata に格納）
 
         Returns:
             書き込んだ JSON レコードを文字列化したリスト（DispatchResult 用）
@@ -152,10 +155,23 @@ class LLMPipelineAPI:
         step_uuid_map: dict[str, str] = {}
         step_engine_map: dict[str, str] = {}
 
+        effective_metadata = dict(metadata) if metadata else {}
+        if loop_budget is not None:
+            budget_info: dict[str, object] = {}
+            if loop_budget.wall_clock is not None:
+                budget_info["loop_budget_wall_clock"] = loop_budget.wall_clock
+            if loop_budget.token is not None:
+                budget_info["loop_budget_token"] = loop_budget.token
+            if loop_budget.cost is not None:
+                budget_info["loop_budget_cost"] = loop_budget.cost
+            if loop_budget.steps is not None:
+                budget_info["loop_budget_steps"] = loop_budget.steps
+            effective_metadata.update({k: str(v) for k, v in budget_info.items()})
+
         return self._submit_jsonl(
             steps, base_context, idempotency_key, ts, order_builder,
             step_uuid_map, step_engine_map, audit_context,
-            metadata=metadata,
+            metadata=effective_metadata if effective_metadata else None,
         )
 
     def _submit_jsonl(
