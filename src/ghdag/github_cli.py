@@ -40,7 +40,7 @@ def _is_simple_jq(query: str) -> bool:
     q = query.strip()
     if _SIMPLE_JQ_RE.match(q):
         return True
-    if q.startswith(".") and "|" not in q and "select" not in q:
+    if q.startswith(".") and "|" not in q and "select" not in q and "//" not in q:
         return True
     return False
 
