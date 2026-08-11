@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from ghdag.llm.capabilities import LLMCapabilities
 from ghdag.llm.engines import LLMResult, build_llm_cmd, call
-from ghdag.llm.spec import render_exec_command, ENGINE_SPECS
+from ghdag.llm.spec import ENGINE_SPECS, render_exec_command
 
 
 class TestLLMResultLatencyMs:
