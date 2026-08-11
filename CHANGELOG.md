@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.9 — 2026-08-11
+
+### Added
+
+- `llm/spec.py`: `_dedupe_extra_args()` ヘルパを追加。`_CAPABILITY_FLAG_BUILDERS` が出力するフラグと `EngineSpec.extra_args` が重複する場合に後者を除去する。codex エンジンで `--json --skip-git-repo-check` が argv に二重展開されエラー終了する問題を修正 (PR #215)
+
+### Fixed
+
+- `llm/engines.py`: codex エンジンの `allowed_tools` / `disallowed_tools` capability を `_UNSUPPORTED_CAPABILITIES` に登録し、`NotImplementedError` で即死していた挙動を noop 化 (PR #215)
+
 ## 0.30.7 — 2026-06-24
 
 ### Fixed
