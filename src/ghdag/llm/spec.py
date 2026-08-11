@@ -23,6 +23,7 @@ class EngineSpec:
     danger_flag: str | None
     danger_flag_position: DangerFlagPosition
     extra_args: tuple[str, ...] = ()
+    subcommand: tuple[str, ...] = ()  # cli 直後に展開されるサブコマンド（例: codex → ("exec", "-")）
 
 
 ENGINE_SPECS: dict[str, EngineSpec] = {
@@ -59,6 +60,16 @@ ENGINE_SPECS: dict[str, EngineSpec] = {
         danger_flag=None, danger_flag_position="none",
         extra_args=("-o", "pipefail"),
     ),
+    "codex": EngineSpec(
+        name="codex", cli="codex",
+        subcommand=("exec", "-"),
+        input_mode="cat_pipe",
+        prompt_flag=None, model_flag="--model",
+        default_model="gpt-5.6-terra",
+        danger_flag="--dangerously-bypass-approvals-and-sandbox",
+        danger_flag_position="trailing",
+        extra_args=("--json", "--skip-git-repo-check"),
+    ),
 }
 
 
@@ -83,7 +94,7 @@ def render_exec_command(
             perm_flags = builder(capabilities, False)
 
     if spec.input_mode == "cat_pipe":
-        parts: list[str] = [spec.cli]
+        parts: list[str] = [spec.cli, *spec.subcommand]
         if spec.prompt_flag:
             parts.append(spec.prompt_flag)
             parts.append(f"'{prompt}'")
@@ -100,7 +111,7 @@ def render_exec_command(
         return f"cat {order_path} | " + " ".join(parts)
 
     if spec.input_mode == "stdin_redirect":
-        parts = [spec.cli]
+        parts = [spec.cli, *spec.subcommand]
         if spec.model_flag and model:
             parts.append(spec.model_flag)
             parts.append(f"'{model}'")
@@ -116,7 +127,7 @@ def render_exec_command(
         return " ".join(parts) + f" < {order_path}"
 
     if spec.input_mode == "argv":
-        parts = [spec.cli]
+        parts = [spec.cli, *spec.subcommand]
         if spec.extra_args:
             parts.extend(spec.extra_args)
         parts.append(order_path)
