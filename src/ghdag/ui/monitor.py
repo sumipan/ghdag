@@ -183,6 +183,12 @@ def extract_engine_model(cmd: str) -> str:
     if re.search(r'\bagent\s+-p\b', cmd):
         return "cursor"
 
+    m = re.search(r'\bcodex\s+exec\b.*?--model\s+[\'"]?(\S+?)[\'"]?(\s|$)', cmd)
+    if m:
+        return f"codex/{m.group(1)}"
+    if re.search(r'\bcodex\s+exec\b', cmd):
+        return "codex"
+
     return ""
 
 

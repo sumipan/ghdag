@@ -38,6 +38,11 @@ def _build_command(engine: str, model: str) -> list[str]:
             model,
             "--dangerously-skip-permissions",
         ]
+    if engine == "codex":
+        cmd = ["codex", "exec", "-", "--json", "--skip-git-repo-check"]
+        if model:
+            cmd.extend(["--model", model])
+        return cmd
     raise ValueError(f"unsupported engine: {engine!r}")
 
 

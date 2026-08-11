@@ -92,6 +92,7 @@ _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
     "gemini": {"disallowed_tools", "allowed_tools", "permission_mode", "stream"},
     "cursor": {"allowed_tools", "permission_mode", "stream"},
     "shell": {"stream"},
+    "codex": {"stream", "allowed_tools", "disallowed_tools", "permission_mode", "output_format"},
 }
 
 
@@ -113,6 +114,11 @@ def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities
             if val:
                 raise NotImplementedError(
                     f"{engine} engine does not support {attr} (got {val!r})"
+                )
+        elif attr == "output_format":
+            if val != "text":
+                raise NotImplementedError(
+                    f"{engine} engine does not support {attr} != 'text' (got {val!r})"
                 )
         elif val:
             raise NotImplementedError(
@@ -149,9 +155,19 @@ def _build_cursor_flags(
     return []
 
 
+def _build_codex_flags(
+    capabilities: LLMCapabilities, dangerously_skip_permissions: bool
+) -> list[str]:
+    flags = ["--json", "--skip-git-repo-check"]
+    if dangerously_skip_permissions:
+        flags.append("--dangerously-bypass-approvals-and-sandbox")
+    return flags
+
+
 _CAPABILITY_FLAG_BUILDERS: dict[str, Callable[[LLMCapabilities, bool], list[str]]] = {
     "claude": _build_claude_flags,
     "cursor": _build_cursor_flags,
+    "codex": _build_codex_flags,
 }
 
 
@@ -231,7 +247,7 @@ def build_llm_cmd(
     """
     spec = ENGINE_SPECS.get(engine)
     cli = spec.cli if spec else engine
-    cmd = [cli]
+    cmd = [cli, *spec.subcommand] if spec else [cli]
 
     if spec is None:
         cmd += ["--model", model, "-p", prompt]
@@ -278,6 +294,15 @@ def call(
     """
     _validate_capabilities_for_engine(engine, capabilities)
     resolved_model = validate_engine_model(engine, model)
+
+    # prompt_flag がなく cat_pipe エンジン（codex 等）は prompt を stdin に回す。
+    # stdin_text が明示指定済みの場合はそれを優先する。
+    spec = ENGINE_SPECS.get(engine)
+    effective_stdin = stdin_text
+    if spec and spec.prompt_flag is None and spec.input_mode == "cat_pipe":
+        if effective_stdin is None:
+            effective_stdin = prompt
+
     cmd = build_llm_cmd(
         engine,
         resolved_model,
@@ -291,7 +316,7 @@ def call(
         cmd,
         capture_output=True,
         text=True,
-        input=stdin_text,
+        input=effective_stdin,
         timeout=timeout,
     )
     latency_ms = (time.monotonic() - t0) * 1000

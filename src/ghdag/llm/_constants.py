@@ -31,4 +31,13 @@ DEFAULT_ENGINE_MODELS: dict[str, list[str]] = {
     "shell": [
         "bash",
     ],
+    # codex CLI (https://github.com/openai/codex) の許可モデル。
+    # ChatGPT アカウント認証時の実測値（2026-08-11 / codex-cli 0.147.0）。
+    # API キー認証では通る集合が変わる可能性がある。
+    "codex": [
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "gpt-5.5",
+        "gpt-5.4-mini",
+    ],
 }

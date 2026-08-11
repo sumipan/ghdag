@@ -49,6 +49,9 @@ def get_output_adapter(engine: str | None) -> EngineOutputAdapter:
     if engine == "cursor":
         from ghdag.llm.adapters.cursor import CursorAdapter
         return CursorAdapter()
+    if engine == "codex":
+        from ghdag.llm.adapters.codex import CodexAdapter
+        return CodexAdapter()
     return _DEFAULT_ADAPTER
 
 
