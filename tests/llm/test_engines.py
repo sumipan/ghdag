@@ -69,6 +69,10 @@ class TestBuildLlmCmdCodex:
         assert "codex exec -" in cmd
         assert "--json" in cmd
         assert "--skip-git-repo-check" in cmd
+        # extra_args と _build_codex_flags の両方が出すため重複しやすい。
+        # codex CLI は `--json` の重複を argument error（exit 2）で弾く。
+        assert cmd.split().count("--json") == 1
+        assert cmd.split().count("--skip-git-repo-check") == 1
 
 
 class TestCallCodexPromptRouting:
@@ -167,3 +171,81 @@ class TestCodexIgnoredCapabilities:
         # 既存の codex 固有フラグは維持されている
         assert "--json" in cmd
         assert "--skip-git-repo-check" in cmd
+
+
+class TestExtraArgsDedupe:
+    """EngineSpec.extra_args と _CAPABILITY_FLAG_BUILDERS の重複フラグを除去する。
+
+    codex CLI は `--json` の重複を `error: the argument '--json' cannot be used
+    multiple times`（exit 2）で拒否するため、重複はモデル呼び出し前の即死になる。
+    """
+
+    def test_dedupe_removes_valueless_flag_emitted_by_builder(self):
+        """値を取らないフラグが builder 側にあれば extra_args から落ちる。"""
+        from ghdag.llm.spec import _dedupe_extra_args
+        assert _dedupe_extra_args(
+            ("--json", "--skip-git-repo-check"), ["--json", "--skip-git-repo-check"]
+        ) == []
+
+    def test_dedupe_removes_flag_with_value_as_a_pair(self):
+        """値付きフラグはフラグと値のペアごと落とす。"""
+        from ghdag.llm.spec import _dedupe_extra_args
+        assert _dedupe_extra_args(
+            ("--output-format", "json"), ["--permission-mode", "default", "--output-format", "json"]
+        ) == []
+
+    def test_dedupe_keeps_flags_builder_did_not_emit(self):
+        """builder が出していないフラグは値ごと残る。"""
+        from ghdag.llm.spec import _dedupe_extra_args
+        assert _dedupe_extra_args(
+            ("--output-format", "json"), ["--permission-mode", "default"]
+        ) == ["--output-format", "json"]
+
+    def test_dedupe_noop_when_builder_emits_nothing(self):
+        """perm_flags が空なら extra_args はそのまま。"""
+        from ghdag.llm.spec import _dedupe_extra_args
+        assert _dedupe_extra_args(("-o", "pipefail"), []) == ["-o", "pipefail"]
+
+    def test_codex_render_has_no_duplicate_flags_for_every_preset(self):
+        """どの permission preset でも codex の argv にフラグ重複が出ない。"""
+        from ghdag.llm.capabilities import PRESETS
+        spec = ENGINE_SPECS["codex"]
+        for name, caps in PRESETS.items():
+            cmd = render_exec_command(
+                spec, order_path="jobs/order.md", prompt="hello",
+                model="gpt-5.6-terra", capabilities=caps,
+            )
+            tokens = cmd.split()
+            for flag in ("--json", "--skip-git-repo-check"):
+                assert tokens.count(flag) == 1, f"preset={name} cmd={cmd}"
+
+    def test_claude_json_only_no_duplicate_output_format(self):
+        """claude + json_only でも --output-format が重複しない（値付きフラグの回帰）。"""
+        from ghdag.llm.capabilities import PRESETS
+        cmd = render_exec_command(
+            ENGINE_SPECS["claude"], order_path="jobs/order.md", prompt="hello",
+            model="claude-sonnet-4-6", capabilities=PRESETS["json_only"],
+        )
+        assert cmd.split().count("--output-format") == 1
+        assert "--output-format json" in cmd
+
+    def test_claude_text_only_keeps_extra_args_output_format(self):
+        """claude + text_only は builder が --output-format を出さないので extra_args 側が残る。
+
+        ここを落とすと ClaudeJsonAdapter が usage を取れなくなる。
+        """
+        from ghdag.llm.capabilities import PRESETS
+        cmd = render_exec_command(
+            ENGINE_SPECS["claude"], order_path="jobs/order.md", prompt="hello",
+            model="claude-sonnet-4-6", capabilities=PRESETS["text_only"],
+        )
+        assert "--output-format json" in cmd
+
+    def test_gemini_without_builder_keeps_extra_args(self):
+        """builder を持たないエンジンの extra_args は変化しない。"""
+        from ghdag.llm.capabilities import PRESETS
+        cmd = render_exec_command(
+            ENGINE_SPECS["gemini"], order_path="jobs/order.md", prompt="hello",
+            model="gemini-3-flash", capabilities=PRESETS["text_only"],
+        )
+        assert "--approval-mode yolo" in cmd
