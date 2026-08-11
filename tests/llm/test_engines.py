@@ -107,3 +107,63 @@ class TestCodexUnsupportedCapabilities:
         """output_format="json" で NotImplementedError が送出される。"""
         with pytest.raises(NotImplementedError, match="output_format"):
             call("test", engine="codex", capabilities=LLMCapabilities(output_format="json"))
+
+    def test_codex_unsupported_permission_mode(self):
+        """permission_mode 非デフォルト値で NotImplementedError が送出される。"""
+        with pytest.raises(NotImplementedError, match="permission_mode"):
+            call(
+                "test",
+                engine="codex",
+                capabilities=LLMCapabilities(permission_mode="bypassPermissions"),
+            )
+
+
+class TestCodexIgnoredCapabilities:
+    """codex は allowed_tools / disallowed_tools を noop で受理する（Issue: TEXT_ONLY で codex を呼びたい）。"""
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_codex_with_text_only_does_not_raise(self, mock_run: MagicMock):
+        """TEXT_ONLY (disallowed_tools あり) を codex に渡しても NotImplementedError が出ない。"""
+        from ghdag.llm.capabilities import TEXT_ONLY
+        mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
+        result = call("test", engine="codex", capabilities=TEXT_ONLY)
+        assert result.returncode == 0
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_codex_with_disallowed_tools_does_not_raise(self, mock_run: MagicMock):
+        """disallowed_tools を明示指定しても codex では noop で通る。"""
+        mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
+        result = call(
+            "test",
+            engine="codex",
+            capabilities=LLMCapabilities(disallowed_tools=("Bash", "Edit")),
+        )
+        assert result.returncode == 0
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_codex_with_allowed_tools_does_not_raise(self, mock_run: MagicMock):
+        """allowed_tools を明示指定しても codex では noop で通る。"""
+        mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
+        result = call(
+            "test",
+            engine="codex",
+            capabilities=LLMCapabilities(allowed_tools=("Read", "Grep")),
+        )
+        assert result.returncode == 0
+
+    def test_codex_tool_flags_not_emitted_in_argv(self):
+        """codex の argv には --allowed-tools / --disallowed-tools が現れない（CLI に該当フラグがない）。"""
+        cmd = build_llm_cmd(
+            "codex",
+            "gpt-5.6-terra",
+            "test",
+            capabilities=LLMCapabilities(
+                allowed_tools=("Read",),
+                disallowed_tools=("Bash", "Edit"),
+            ),
+        )
+        assert "--allowed-tools" not in cmd
+        assert "--disallowed-tools" not in cmd
+        # 既存の codex 固有フラグは維持されている
+        assert "--json" in cmd
+        assert "--skip-git-repo-check" in cmd

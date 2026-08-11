@@ -88,21 +88,37 @@ def validate_engine_model(engine: str, model: str | None) -> str:
 # Engine-specific capability validation — data-driven, no engine string branching
 # ---------------------------------------------------------------------------
 
+# 非デフォルト値を渡されたら NotImplementedError を送出する未対応 capability。
 _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
     "gemini": {"disallowed_tools", "allowed_tools", "permission_mode", "stream"},
     "cursor": {"allowed_tools", "permission_mode", "stream"},
     "shell": {"stream"},
-    "codex": {"stream", "allowed_tools", "disallowed_tools", "permission_mode", "output_format"},
+    "codex": {"stream", "permission_mode", "output_format"},
+}
+
+# エンジン側に等価概念がないため noop（値を受理するが CLI フラグに反映しない）で扱う capability。
+# codex: allowed_tools / disallowed_tools は codex-cli には存在せず、権限制御は
+#   OS レベルの --sandbox / --dangerously-bypass-approvals-and-sandbox で行う。
+#   TEXT_ONLY / JSON_ONLY プリセットが既定で disallowed_tools を持つため、これを
+#   NotImplementedError にせず noop 化することで、呼び出し側がラッパを書かずに
+#   既定 capabilities のまま codex を呼べるようにする。
+_IGNORED_CAPABILITIES: dict[str, set[str]] = {
+    "codex": {"allowed_tools", "disallowed_tools"},
 }
 
 
 def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities) -> None:
     """エンジンが capabilities の機能をサポートしているか検証する。
 
+    _IGNORED_CAPABILITIES に列挙された attr は検証をスキップして受理する（noop）。
+
     Raises:
         NotImplementedError: エンジンが対応していない機能が指定された場合
     """
     unsupported = _UNSUPPORTED_CAPABILITIES.get(engine, set())
+    ignored = _IGNORED_CAPABILITIES.get(engine, set())
+    if ignored:
+        unsupported = unsupported - ignored
     for attr in unsupported:
         val = getattr(capabilities, attr)
         if attr == "permission_mode":
