@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.10 — 2026-08-13
+
+### Added
+
+- `llm/engines.py`: `TextResult` frozen dataclass を追加。`body`（抽出テキスト）、`success`（returncode == 0）、`raw`（LLMResult）フィールドと `stderr` / `returncode` 委譲プロパティを持つ (Issue #2462)
+- `llm/engines.py`: `call_text()` 関数を追加。`call()` と同一シグネチャで呼び出し可能な上位互換 API。engine アダプタ経由でテキスト抽出し、空の場合は `raw.stdout` にフォールバックして `TextResult` を返す (Issue #2462)
+- `llm/__init__.py`: `call_text`、`TextResult` を export 追加
+- `tests/llm/test_call_text.py`: `TextResult` と `call_text()` のユニットテスト 11 件を新規追加
+
 ## 0.30.9 — 2026-08-11
 
 ### Added
