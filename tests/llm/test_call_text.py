@@ -10,7 +10,6 @@ import pytest
 from ghdag.llm import TextResult, call_text
 from ghdag.llm.engines import LLMResult
 
-
 # ---------------------------------------------------------------------------
 # TextResult dataclass テスト
 # ---------------------------------------------------------------------------
@@ -70,7 +69,6 @@ class TestCallText:
     def test_adapter_empty_output_falls_back_to_raw_stdout(self):
         """adapter が空バイトを返した場合 body が raw.stdout にフォールバックすること。"""
         # CodexAdapter は agent_message が 0 件の場合に空バイトを返す
-        empty_jsonl = b""  # no agent_message items
         mock_result = _make_llm_result(stdout="fallback text")
         with patch("ghdag.llm.engines.call", return_value=mock_result):
             with patch("ghdag.llm.adapters.get_output_adapter") as mock_get_adapter:
@@ -119,6 +117,7 @@ class TestCallText:
 
     def test_import_from_ghdag_llm(self):
         """from ghdag.llm import call_text, TextResult が成功すること。"""
-        from ghdag.llm import TextResult as TR, call_text as ct
+        from ghdag.llm import TextResult as TR
+        from ghdag.llm import call_text as ct
         assert TR is TextResult
         assert ct is call_text
