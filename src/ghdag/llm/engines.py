@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from ghdag.exceptions import GhdagError
 from ghdag.llm._config import load_engine_models
+from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.capabilities import TEXT_ONLY, LLMCapabilities, LLMParseError
 from ghdag.llm.spec import ENGINE_SPECS
 
@@ -221,6 +222,22 @@ class LLMResult:
         return self
 
 
+@dataclass(frozen=True)
+class TextResult:
+    """call_text() の呼び出し結果。adapter でテキスト抽出済みのスナップショット。"""
+    body: str
+    success: bool
+    raw: LLMResult
+
+    @property
+    def stderr(self) -> str:
+        return self.raw.stderr
+
+    @property
+    def returncode(self) -> int:
+        return self.raw.returncode
+
+
 def _extract_stream_result(stdout: str) -> str:
     """stream-json JSONL 出力から最終 result テキストを抽出する。"""
     last_result: str | None = None
@@ -344,3 +361,36 @@ def call(
         latency_ms=latency_ms,
     )
     return llm_result.validate(capabilities)
+
+
+def call_text(
+    prompt: str,
+    *,
+    engine: str = "claude",
+    model: str | None = None,
+    timeout: int | None = None,
+    stdin_text: str | None = None,
+    capabilities: LLMCapabilities = TEXT_ONLY,
+    dangerously_skip_permissions: bool = False,
+) -> TextResult:
+    """ワンショットで LLM を呼び出し、adapter でテキスト抽出した TextResult を返す。
+
+    call() と同一シグネチャ。ドロップイン上位互換として利用できる。
+    adapter 出力が空の場合は raw.stdout にフォールバックする。
+    """
+    result = call(
+        prompt,
+        engine=engine,
+        model=model,
+        timeout=timeout,
+        stdin_text=stdin_text,
+        capabilities=capabilities,
+        dangerously_skip_permissions=dangerously_skip_permissions,
+    )
+    adapter = get_output_adapter(engine)
+    extracted = adapter.extract_result_text(
+        result.stdout.encode("utf-8"),
+        result.stderr.encode("utf-8"),
+    ).decode("utf-8")
+    body = extracted if extracted else result.stdout
+    return TextResult(body=body, success=result.ok, raw=result)
