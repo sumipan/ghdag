@@ -121,3 +121,48 @@ class TestCallText:
         from ghdag.llm import call_text as ct
         assert TR is TextResult
         assert ct is call_text
+
+    def test_codex_engine_extracts_agent_message(self):
+        """CodexAdapter が JSONL の agent_message テキストを body に抽出すること。"""
+        import json
+        jsonl_line = json.dumps({
+            "type": "item.completed",
+            "item": {"type": "agent_message", "text": "hello"},
+        })
+        mock_result = _make_llm_result(stdout=jsonl_line)
+        with patch("ghdag.llm.engines.call", return_value=mock_result):
+            result = call_text("test prompt", engine="codex")
+        assert result.body == "hello"
+        assert result.success is True
+
+    def test_cursor_engine_passes_through_stdout(self):
+        """CursorAdapter が stdout をそのまま body にパススルーすること。"""
+        mock_result = _make_llm_result(stdout="cursor output")
+        with patch("ghdag.llm.engines.call", return_value=mock_result):
+            result = call_text("test prompt", engine="cursor")
+        assert result.body == "cursor output"
+        assert result.success is True
+
+    def test_passthrough_engine_passes_through_stdout(self):
+        """未知 engine で _PassthroughAdapter が stdout をそのまま body にパススルーすること。"""
+        mock_result = _make_llm_result(stdout="raw text")
+        with patch("ghdag.llm.engines.call", return_value=mock_result):
+            result = call_text("test prompt", engine="unknown")
+        assert result.body == "raw text"
+        assert result.success is True
+
+    def test_passthrough_empty_stdout_returns_empty(self):
+        """_PassthroughAdapter で stdout が空の場合 body == "" となること。"""
+        mock_result = _make_llm_result(stdout="")
+        with patch("ghdag.llm.engines.call", return_value=mock_result):
+            result = call_text("test prompt", engine="unknown")
+        assert result.body == ""
+
+    def test_json_text_preserved_in_body(self):
+        """result フィールドに JSON 文字列が入っていた場合、body にそのまま保持されること。"""
+        import json
+        json_stdout = json.dumps({"result": '{"key": "val"}', "type": "result"})
+        mock_result = _make_llm_result(stdout=json_stdout)
+        with patch("ghdag.llm.engines.call", return_value=mock_result):
+            result = call_text("test prompt", engine="claude")
+        assert result.body == '{"key": "val"}'
