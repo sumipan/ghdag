@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `llm/__init__.py`: `call_text`、`TextResult` を export 追加
 - `tests/llm/test_call_text.py`: `TextResult` と `call_text()` のユニットテスト 11 件を新規追加
 
+### Notes
+
+- `call_text` / `TextResult` は sumipan/nexus#2459（nexus 側 call_llm 縮退）の前提 API。nexus 側は本リリース以降の ghdag を editable install した状態で `call_text` への移行を開始する。
+
 ## 0.30.9 — 2026-08-11
 
 ### Added
