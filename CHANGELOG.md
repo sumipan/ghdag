@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.12 — 2026-08-14
+
+### Changed
+
+- `CHANGELOG.md`: `## 0.30.10` エントリに `### Notes` セクションを追記。`call_text` / `TextResult` が sumipan/nexus#2459 の前提 API である旨を明記 (nexus Issue #2464)
+
+## 0.30.11 — 2026-08-14
+
+### Added
+
+- `tests/llm/`: `call_text()` / `TextResult` のアダプタ固有テストを追加 (Issue #2463, PR #219)
+
 ## 0.30.10 — 2026-08-13
 
 ### Added
