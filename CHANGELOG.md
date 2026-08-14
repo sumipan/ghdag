@@ -9,8 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `llm/engines.py`, `llm/__init__.py`: `TextResult` frozen dataclass と `call_text()` 関数を追加。`call_text()` は `call()` と同一シグネチャで adapter 経由テキスト抽出を内包し、`TextResult.body` として文字列を返す (Issue #2462)
-- `tests/llm/test_call_text.py`: `call_text()` / `TextResult` の単体テスト追加 (Issue #2463)
+- `llm/engines.py`: `TextResult` frozen dataclass を追加。`body`（抽出テキスト）、`success`（returncode == 0）、`raw`（LLMResult）フィールドと `stderr` / `returncode` 委譲プロパティを持つ (Issue #2462)
+- `llm/engines.py`: `call_text()` 関数を追加。`call()` と同一シグネチャで呼び出し可能な上位互換 API。engine アダプタ経由でテキスト抽出し、空の場合は `raw.stdout` にフォールバックして `TextResult` を返す (Issue #2462)
+- `llm/__init__.py`: `call_text`、`TextResult` を export 追加
+- `tests/llm/test_call_text.py`: `TextResult` と `call_text()` のユニットテスト 11 件を新規追加
 
 ### Notes
 
