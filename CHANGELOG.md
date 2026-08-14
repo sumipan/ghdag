@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.10 — 2026-08-13
+
+### Added
+
+- `llm/engines.py`, `llm/__init__.py`: `TextResult` frozen dataclass と `call_text()` 関数を追加。`call_text()` は `call()` と同一シグネチャで adapter 経由テキスト抽出を内包し、`TextResult.body` として文字列を返す (Issue #2462)
+- `tests/llm/test_call_text.py`: `call_text()` / `TextResult` の単体テスト追加 (Issue #2463)
+
+### Notes
+
+- `call_text` / `TextResult` は sumipan/nexus#2459（nexus 側 call_llm 縮退）の前提 API。nexus 側は本リリース以降の ghdag を editable install した状態で `call_text` への移行を開始する。
+
 ## 0.30.9 — 2026-08-11
 
 ### Added
