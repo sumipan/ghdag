@@ -6,9 +6,12 @@ without the gh CLI. Uses stdlib urllib only (no requests).
 
 from __future__ import annotations
 
+import http.client
 import io
 import json
 import os
+import random
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -26,6 +29,32 @@ from ghdag.exceptions import (
 API_BASE = "https://api.github.com"
 GRAPHQL_URL = "https://api.github.com/graphql"
 DEFAULT_REPO = "sumipan/nexus"
+
+# 一過性障害の限定再試行（nexus#2563: RemoteDisconnected 1 発でパイプラインが停止した）。
+# 認証・権限・入力不正などの恒久エラーは再試行しない。
+_TRANSIENT_HTTP_STATUS = frozenset({502, 503, 504})
+_TRANSIENT_EXCEPTIONS = (
+    http.client.RemoteDisconnected,
+    http.client.BadStatusLine,
+    ConnectionResetError,
+    ConnectionAbortedError,
+    BrokenPipeError,
+    TimeoutError,
+)
+_MAX_ATTEMPTS = 3
+_BACKOFF_BASE_SEC = 1.0
+_BACKOFF_CAP_SEC = 8.0
+
+
+def _backoff_sleep(attempt: int, retry_after: str | None = None) -> None:
+    if retry_after:
+        try:
+            time.sleep(min(float(retry_after), 30.0))
+            return
+        except ValueError:
+            pass
+    delay = min(_BACKOFF_BASE_SEC * (2**attempt), _BACKOFF_CAP_SEC)
+    time.sleep(delay + random.uniform(0, 0.25))
 
 
 @runtime_checkable
@@ -154,26 +183,42 @@ class GitHubClient:
         if data is not None:
             req.add_header("Content-Type", "application/json")
 
-        try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                payload = resp.read()
-        except urllib.error.HTTPError as exc:
-            msg = exc.read().decode("utf-8", errors="replace")
+        for attempt in range(_MAX_ATTEMPTS):
             try:
-                detail = json.loads(msg).get("message", msg)
-            except json.JSONDecodeError:
-                detail = msg or exc.reason
-            error_msg = f"GitHub API {method} {url} failed ({exc.code}): {detail}"
-            if exc.code == 401:
-                raise AuthError(error_msg, status_code=401) from exc
-            if exc.code == 403:
-                remaining = exc.headers.get("X-RateLimit-Remaining") if exc.headers else None
-                if remaining == "0":
-                    raise RateLimitError(error_msg, status_code=403) from exc
-                raise PermissionDeniedError(error_msg, status_code=403) from exc
-            raise GitHubApiError(error_msg, status_code=exc.code) from exc
-        except urllib.error.URLError as exc:
-            raise NetworkError(f"Network error: {exc.reason}") from exc
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    payload = resp.read()
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code in _TRANSIENT_HTTP_STATUS and attempt < _MAX_ATTEMPTS - 1:
+                    retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                    _backoff_sleep(attempt, retry_after)
+                    continue
+                msg = exc.read().decode("utf-8", errors="replace")
+                try:
+                    detail = json.loads(msg).get("message", msg)
+                except json.JSONDecodeError:
+                    detail = msg or exc.reason
+                error_msg = f"GitHub API {method} {url} failed ({exc.code}): {detail}"
+                if exc.code == 401:
+                    raise AuthError(error_msg, status_code=401) from exc
+                if exc.code == 403:
+                    remaining = exc.headers.get("X-RateLimit-Remaining") if exc.headers else None
+                    if remaining == "0":
+                        raise RateLimitError(error_msg, status_code=403) from exc
+                    raise PermissionDeniedError(error_msg, status_code=403) from exc
+                raise GitHubApiError(error_msg, status_code=exc.code) from exc
+            except _TRANSIENT_EXCEPTIONS as exc:
+                # urlopen は接続断を URLError に包まず素通しすることがある
+                # （nexus#2563: RemoteDisconnected が生で送出された実績）
+                if attempt < _MAX_ATTEMPTS - 1:
+                    _backoff_sleep(attempt)
+                    continue
+                raise NetworkError(f"Network error: {exc}") from exc
+            except urllib.error.URLError as exc:
+                if attempt < _MAX_ATTEMPTS - 1:
+                    _backoff_sleep(attempt)
+                    continue
+                raise NetworkError(f"Network error: {exc.reason}") from exc
 
         if raw:
             return payload.decode("utf-8", errors="replace")
@@ -255,18 +300,57 @@ class GitHubClient:
                 f"/repos/{self._owner}/{self._repo}/issues/{number}",
                 body=patch,
             )
-        for label in labels_remove or []:
-            enc = urllib.parse.quote(label, safe="")
-            self._request(
-                "DELETE",
-                f"/repos/{self._owner}/{self._repo}/issues/{number}/labels/{enc}",
-            )
-        if labels_add:
-            self._request(
-                "POST",
-                f"/repos/{self._owner}/{self._repo}/issues/{number}/labels",
-                body=labels_add,
-            )
+        if labels_remove or labels_add:
+            self._converge_labels(number, labels_add or [], labels_remove or [])
+
+    def _converge_labels(
+        self,
+        number: int,
+        labels_add: list[str],
+        labels_remove: list[str],
+        *,
+        attempts: int = 2,
+    ) -> None:
+        """ラベル遷移を冪等に収束させる（nexus#2563）.
+
+        DELETE + POST は非原子的なため、応答喪失（NetworkError）時は現在ラベルを
+        再取得して残作業だけを再実行する。「サーバーでは適用されたが応答を受け取れ
+        なかった」ケースは再取得で吸収される。DELETE の 404（既に無い）は成功扱い。
+        """
+        add = list(labels_add)
+        remove = list(labels_remove)
+        last_exc: Exception | None = None
+        for _ in range(attempts):
+            try:
+                for label in remove:
+                    enc = urllib.parse.quote(label, safe="")
+                    try:
+                        self._request(
+                            "DELETE",
+                            f"/repos/{self._owner}/{self._repo}/issues/{number}/labels/{enc}",
+                        )
+                    except GitHubApiError as exc:
+                        if exc.status_code == 404:
+                            continue
+                        raise
+                if add:
+                    self._request(
+                        "POST",
+                        f"/repos/{self._owner}/{self._repo}/issues/{number}/labels",
+                        body=add,
+                    )
+                return
+            except NetworkError as exc:
+                last_exc = exc
+                current = {
+                    lbl["name"] for lbl in self.issue_get(number, fields=["labels"])["labels"]
+                }
+                remove = [label for label in remove if label in current]
+                add = [label for label in add if label not in current]
+                if not remove and not add:
+                    return
+        assert last_exc is not None
+        raise last_exc
 
     def issue_comment(self, number: int, body: str) -> dict:
         return cast(

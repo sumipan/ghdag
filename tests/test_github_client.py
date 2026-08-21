@@ -346,3 +346,197 @@ def test_url_error_raises_network_error(monkeypatch: pytest.MonkeyPatch) -> None
     with pytest.raises(NetworkError) as exc_info:
         client._request("GET", "/repos/o/r/issues/1")
     assert isinstance(exc_info.value, GhdagError)
+
+
+# --- 一過性障害の限定再試行 + ラベル冪等収束（nexus#2563） ---
+
+
+def _no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("ghdag.github_client.time.sleep", lambda *_: None)
+
+
+def test_transient_remote_disconnected_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    import http.client
+
+    _no_sleep(monkeypatch)
+    client = GitHubClient(token="tok", repo="o/r")
+    calls: list[int] = []
+
+    class FakeResp:
+        def read(self) -> bytes:
+            return json.dumps({"ok": True}).encode()
+
+        def __enter__(self) -> "FakeResp":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+    def fake_urlopen(req: object, timeout: int = 120) -> FakeResp:
+        calls.append(1)
+        if len(calls) < 3:
+            raise http.client.RemoteDisconnected(
+                "Remote end closed connection without response"
+            )
+        return FakeResp()
+
+    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
+    assert client._request("DELETE", "/repos/o/r/issues/1/labels/x") == {"ok": True}
+    assert len(calls) == 3
+
+
+def test_transient_exhausted_raises_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    import http.client
+
+    from ghdag.exceptions import NetworkError
+
+    _no_sleep(monkeypatch)
+    client = GitHubClient(token="tok", repo="o/r")
+    calls: list[int] = []
+
+    def fake_urlopen(req: object, timeout: int = 120) -> None:
+        calls.append(1)
+        raise http.client.RemoteDisconnected("gone")
+
+    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
+    with pytest.raises(NetworkError):
+        client._request("GET", "/repos/o/r/issues/1")
+    assert len(calls) == 3
+
+
+def test_http_502_retried_then_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    _no_sleep(monkeypatch)
+    client = GitHubClient(token="tok", repo="o/r")
+    calls: list[int] = []
+
+    class FakeResp:
+        def read(self) -> bytes:
+            return json.dumps({"ok": True}).encode()
+
+        def __enter__(self) -> "FakeResp":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+    def fake_urlopen(req: object, timeout: int = 120) -> FakeResp:
+        calls.append(1)
+        if len(calls) == 1:
+            raise urllib.error.HTTPError(
+                url="https://api.github.com/x",
+                code=502,
+                msg="Bad Gateway",
+                hdrs=mock.MagicMock(**{"get.return_value": None}),
+                fp=io.BytesIO(b"{}"),
+            )
+        return FakeResp()
+
+    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
+    assert client._request("GET", "/repos/o/r/issues/1") == {"ok": True}
+    assert len(calls) == 2
+
+
+def test_http_401_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ghdag.exceptions import AuthError
+
+    _no_sleep(monkeypatch)
+    client = GitHubClient(token="tok", repo="o/r")
+    calls: list[int] = []
+
+    def fake_urlopen(req: object, timeout: int = 120) -> None:
+        calls.append(1)
+        raise urllib.error.HTTPError(
+            url="https://api.github.com/x",
+            code=401,
+            msg="Unauthorized",
+            hdrs=mock.MagicMock(),
+            fp=io.BytesIO(json.dumps({"message": "Bad credentials"}).encode()),
+        )
+
+    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
+    with pytest.raises(AuthError):
+        client._request("GET", "/repos/o/r/issues/1")
+    assert len(calls) == 1
+
+
+def test_issue_update_tolerates_delete_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ghdag.exceptions import GitHubApiError
+
+    client = GitHubClient(token="tok", repo="o/r")
+    seen: list[tuple[str, str]] = []
+
+    def fake_request(method: str, path: str, **kwargs: object) -> None:
+        seen.append((method, path))
+        if method == "DELETE":
+            raise GitHubApiError("Label does not exist", status_code=404)
+        return None
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    client.issue_update(1, labels_remove=["old"], labels_add=["new"])
+    assert ("DELETE", "/repos/o/r/issues/1/labels/old") in seen
+    assert ("POST", "/repos/o/r/issues/1/labels") in seen
+
+
+def test_issue_update_converges_after_lost_delete_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DELETE はサーバーで適用されたが応答を喪失 → 再取得して残作業（POST）のみ実行"""
+    from ghdag.exceptions import NetworkError
+
+    client = GitHubClient(token="tok", repo="o/r")
+    seen: list[tuple[str, str]] = []
+
+    def fake_request(method: str, path: str, **kwargs: object) -> None:
+        seen.append((method, path))
+        if method == "DELETE":
+            raise NetworkError("Network error: Remote end closed connection")
+        return None
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    # 再取得時: old は既にサーバーで除去済み、new も未付与
+    monkeypatch.setattr(
+        client, "issue_get", lambda n, fields=None: {"labels": [{"name": "other"}]}
+    )
+    client.issue_update(1, labels_remove=["old"], labels_add=["new"])
+    deletes = [s for s in seen if s[0] == "DELETE"]
+    posts = [s for s in seen if s[0] == "POST"]
+    assert len(deletes) == 1  # 再収束パスでは DELETE を再実行しない
+    assert len(posts) == 1
+
+
+def test_issue_update_converges_when_target_already_applied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST まで適用済みで応答だけ喪失 → 再取得で目標状態を確認して成功扱い"""
+    from ghdag.exceptions import NetworkError
+
+    client = GitHubClient(token="tok", repo="o/r")
+
+    def fake_request(method: str, path: str, **kwargs: object) -> None:
+        if method == "POST":
+            raise NetworkError("Network error: connection reset")
+        return None
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    monkeypatch.setattr(
+        client, "issue_get", lambda n, fields=None: {"labels": [{"name": "new"}]}
+    )
+    client.issue_update(1, labels_remove=["old"], labels_add=["new"])  # raise しない
+
+
+def test_issue_update_reraises_when_not_converged(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ghdag.exceptions import NetworkError
+
+    client = GitHubClient(token="tok", repo="o/r")
+
+    def fake_request(method: str, path: str, **kwargs: object) -> None:
+        if method == "DELETE":
+            raise NetworkError("down")
+        return None
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    monkeypatch.setattr(
+        client, "issue_get", lambda n, fields=None: {"labels": [{"name": "old"}]}
+    )
+    with pytest.raises(NetworkError):
+        client.issue_update(1, labels_remove=["old"], labels_add=["new"])
