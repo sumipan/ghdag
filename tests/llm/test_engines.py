@@ -74,6 +74,39 @@ class TestBuildLlmCmdCodex:
         assert cmd.split().count("--json") == 1
         assert cmd.split().count("--skip-git-repo-check") == 1
 
+    def test_render_exec_command_codex_dangerous_full_access(self):
+        """DANGEROUS_FULL_ACCESS 指定時はサンドボックスバイパスフラグが付く（nexus#2558 回帰）。
+
+        render_exec_command は builder を dangerously_skip_permissions=False で呼ぶため、
+        capabilities.permission_mode を見ないとフラグが落ちる。落ちると codex は
+        workspace-write のまま起動し、cwd 外（例: 日記リポジトリ）へ書けずに失敗する。
+        """
+        from ghdag.llm.capabilities import DANGEROUS_FULL_ACCESS
+        spec = ENGINE_SPECS["codex"]
+        cmd = render_exec_command(
+            spec,
+            order_path="jobs/order.md",
+            prompt="hello",
+            model="gpt-5.6-terra",
+            capabilities=DANGEROUS_FULL_ACCESS,
+        )
+        assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+        assert cmd.split().count("--dangerously-bypass-approvals-and-sandbox") == 1
+        assert cmd.split().count("--json") == 1
+
+    def test_render_exec_command_codex_default_keeps_sandbox(self):
+        """既定 capabilities ではバイパスフラグを付けない（サンドボックス維持）。"""
+        from ghdag.llm.capabilities import LLMCapabilities
+        spec = ENGINE_SPECS["codex"]
+        cmd = render_exec_command(
+            spec,
+            order_path="jobs/order.md",
+            prompt="hello",
+            model="gpt-5.6-terra",
+            capabilities=LLMCapabilities(),
+        )
+        assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
+
 
 class TestCallCodexPromptRouting:
     @patch("ghdag.llm.engines.subprocess.run")

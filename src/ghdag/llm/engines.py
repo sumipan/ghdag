@@ -175,8 +175,14 @@ def _build_cursor_flags(
 def _build_codex_flags(
     capabilities: LLMCapabilities, dangerously_skip_permissions: bool
 ) -> list[str]:
+    # permission_mode も見るのは exec.jsonl 経路（render_exec_command）のため。
+    # render_exec_command は dangerously_skip_permissions=False 固定で builder を呼ぶので、
+    # capabilities を見ないと DANGEROUS_FULL_ACCESS が CLI フラグに落ちず、
+    # codex が workspace-write サンドボックスのまま起動して cwd 外へ書けない。
+    # 一方 call() 経路は _validate_capabilities_for_engine が codex の
+    # permission_mode != "default" を弾くため、この分岐には到達しない。
     flags = ["--json", "--skip-git-repo-check"]
-    if dangerously_skip_permissions:
+    if dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions":
         flags.append("--dangerously-bypass-approvals-and-sandbox")
     return flags
 

@@ -781,6 +781,28 @@ class TestStepConfigPermission:
         assert "--permission-mode" in record["command"]
         assert "bypassPermissions" in record["command"]
 
+    def test_permission_dangerous_full_access_codex(self):
+        """codex + permission='dangerous_full_access' → サンドボックスバイパスフラグが付く。
+
+        nexus#2558 回帰: フラグが落ちると codex は workspace-write のまま起動し、
+        cwd 外（日記リポジトリ）へ書けずスキルが黙って失敗する。
+        """
+        import json as _json
+        api, _, _ = _make_api()
+        steps = [
+            StepConfig(
+                template="brushup",
+                engine="codex",
+                model="gpt-5.6-terra",
+                permission="dangerous_full_access",
+            )
+        ]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "--dangerously-bypass-approvals-and-sandbox" in record["command"]
+        assert record["command"].split().count("--json") == 1
+
     def test_safe_default_permission_applied_when_env_set_and_permission_none(self, monkeypatch):
         """AC2: env 指定 + permission=None で safe default が適用される。"""
         import json as _json
