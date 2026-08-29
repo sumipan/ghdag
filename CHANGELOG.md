@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.13 — 2026-08-30
+
+### Fixed
+
+- `llm/engines.py`: `_build_codex_flags` が `capabilities.permission_mode` を見ておらず、`permission="dangerous_full_access"` を指定しても codex の exec.jsonl コマンドに `--dangerously-bypass-approvals-and-sandbox` が付かなかった問題を修正。`render_exec_command` は builder を `dangerously_skip_permissions=False` 固定で呼ぶため、permission_mode を見ないとフラグが落ち、codex が workspace-write サンドボックス（writable = cwd + /tmp のみ、network 制限）のまま起動して cwd 外へ書き込めなかった。`_build_cursor_flags` と同じ判定に揃えた (nexus Issue #2627, PR #223)
+- `github_client.py`: `_request` に一過性障害（RemoteDisconnected / BadStatusLine / ConnectionReset 系 / URLError / 502-504）の限定再試行を追加（上限3回・exponential backoff + jitter・Retry-After 尊重）。401/403/404 等の恒久エラーは再試行しない (nexus Issue #2563, PR #222)
+- `github_client.py`: `issue_update` のラベル操作を DELETE+POST から `_converge_labels` に置換。応答喪失時は現在ラベルを再取得して残作業のみ再実行し目標状態へ収束する。DELETE 404（既に無い）は成功扱い (nexus Issue #2563, PR #222)
+
+### Notes
+
+- 0.30.13 は sumipan/nexus の秘書ペルソナを codex エンジンで動かす前提の修正を含む。nexus 側は `/var/tmp/ghdag` を本バージョンに更新し、常駐プロセス（ghdag_ui / ghdag_runner / mltgnt_daemon）を再起動する必要がある
+
 ## 0.30.12 — 2026-08-14
 
 ### Changed
