@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.14 — 2026-08-30
+
+### Added
+
+- `llm/capabilities.py`: `LLMCapabilities.sandbox` フィールド（`"off"` / `"readonly"`、既定 `"off"`）と `READONLY_OBSERVE` プリセット（`sandbox="readonly"` + 編集系 `disallowed_tools`）を追加。観測系 Bash を許可しつつ非破壊をサンドボックスで担保する (nexus Issue #2640)
+- `llm/engines.py`: claude / codex / cursor のフラグビルダーが `sandbox="readonly"` をそれぞれ `--permission-mode plan` / `-s read-only` / `--sandbox enabled` にマッピング。bypass 系との同時指定は `ValueError`。gemini / shell は未対応として `NotImplementedError` (nexus Issue #2640)
+
+### Fixed
+
+- `llm/engines.py`: cursor の `disallowed_tools` を `_IGNORED_CAPABILITIES` に宣言し、CLI フラグが無いのに黙って無視されていた挙動を文書化された noop にした (nexus Issue #2640)
+
 ## 0.30.13 — 2026-08-30
 
 ### Fixed
