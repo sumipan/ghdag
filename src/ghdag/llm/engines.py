@@ -91,9 +91,9 @@ def validate_engine_model(engine: str, model: str | None) -> str:
 
 # 非デフォルト値を渡されたら NotImplementedError を送出する未対応 capability。
 _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
-    "gemini": {"disallowed_tools", "allowed_tools", "permission_mode", "stream"},
+    "gemini": {"disallowed_tools", "allowed_tools", "permission_mode", "stream", "sandbox"},
     "cursor": {"allowed_tools", "permission_mode", "stream"},
-    "shell": {"stream"},
+    "shell": {"stream", "sandbox"},
     "codex": {"stream", "permission_mode", "output_format"},
 }
 
@@ -103,8 +103,11 @@ _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
 #   TEXT_ONLY / JSON_ONLY プリセットが既定で disallowed_tools を持つため、これを
 #   NotImplementedError にせず noop 化することで、呼び出し側がラッパを書かずに
 #   既定 capabilities のまま codex を呼べるようにする。
+# cursor: disallowed_tools 相当の CLI フラグがなく、_build_cursor_flags も参照しない。
+#   --force 不付与時の approval-deny が実質の防壁。黙って無視されていたのを文書化。
 _IGNORED_CAPABILITIES: dict[str, set[str]] = {
     "codex": {"allowed_tools", "disallowed_tools"},
+    "cursor": {"disallowed_tools"},
 }
 
 
@@ -137,6 +140,12 @@ def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities
                 raise NotImplementedError(
                     f"{engine} engine does not support {attr} != 'text' (got {val!r})"
                 )
+        elif attr == "sandbox":
+            # "off" は truthy なため汎用 `elif val` では弾いてしまう。明示比較する。
+            if val != "off":
+                raise NotImplementedError(
+                    f"{engine} engine does not support {attr} != 'off' (got {val!r})"
+                )
         elif val:
             raise NotImplementedError(
                 f"{engine} engine does not support {attr} (got {val!r})"
@@ -150,7 +159,17 @@ def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities
 def _build_claude_flags(
     capabilities: LLMCapabilities, dangerously_skip_permissions: bool
 ) -> list[str]:
-    flags = ["--permission-mode", capabilities.permission_mode]
+    # sandbox=readonly → --permission-mode plan（read-only Bash 可・変更系 deny）。
+    # permission_mode 明示指定との同時指定は意味が衝突するため拒否する。
+    if capabilities.sandbox == "readonly":
+        if capabilities.permission_mode != "default":
+            raise ValueError(
+                "sandbox='readonly' conflicts with explicit permission_mode="
+                f"{capabilities.permission_mode!r}; use one or the other"
+            )
+        flags = ["--permission-mode", "plan"]
+    else:
+        flags = ["--permission-mode", capabilities.permission_mode]
     if capabilities.stream:
         flags += ["--output-format", "stream-json", "--verbose"]
     elif capabilities.output_format != "text":
@@ -167,7 +186,17 @@ def _build_claude_flags(
 def _build_cursor_flags(
     capabilities: LLMCapabilities, dangerously_skip_permissions: bool
 ) -> list[str]:
-    if dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions":
+    # cursor CLI `--sandbox <enabled|disabled>` は config を上書きする二値モード
+    # （agent --help 実測）。enabled 時は Cursor のサンドボックスを強制する。
+    # 書き込み・ネットワーク遮断の詳細は CLI/設定依存。--force との同時指定は矛盾。
+    bypass = dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions"
+    if capabilities.sandbox == "readonly":
+        if bypass:
+            raise ValueError(
+                "sandbox='readonly' conflicts with --force (bypass permissions)"
+            )
+        return ["--sandbox", "enabled"]
+    if bypass:
         return ["--force"]
     return []
 
@@ -182,7 +211,14 @@ def _build_codex_flags(
     # 一方 call() 経路は _validate_capabilities_for_engine が codex の
     # permission_mode != "default" を弾くため、この分岐には到達しない。
     flags = ["--json", "--skip-git-repo-check"]
-    if dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions":
+    bypass = dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions"
+    if capabilities.sandbox == "readonly":
+        if bypass:
+            raise ValueError(
+                "sandbox='readonly' conflicts with dangerously-bypass-sandbox"
+            )
+        flags += ["-s", "read-only"]
+    elif bypass:
         flags.append("--dangerously-bypass-approvals-and-sandbox")
     return flags
 

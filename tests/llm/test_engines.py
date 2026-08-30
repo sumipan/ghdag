@@ -282,3 +282,141 @@ class TestExtraArgsDedupe:
             model="gemini-3-flash", capabilities=PRESETS["text_only"],
         )
         assert "--approval-mode yolo" in cmd
+
+
+class TestSandboxCapability:
+    """sandbox capability と READONLY_OBSERVE プリセット（nexus Issue #2640）。"""
+
+    def test_sandbox_off_matches_default_for_all_engines(self):
+        """LLMCapabilities(sandbox='off') と LLMCapabilities() で全エンジンの argv が一致する。"""
+        default = LLMCapabilities()
+        explicit_off = LLMCapabilities(sandbox="off")
+        for engine, model in [
+            ("claude", "claude-sonnet-4-6"),
+            ("codex", "gpt-5.6-terra"),
+            ("cursor", "auto"),
+            ("gemini", "gemini-3-flash"),
+            ("shell", "bash"),
+        ]:
+            assert build_llm_cmd(engine, model, "p", capabilities=default) == build_llm_cmd(
+                engine, model, "p", capabilities=explicit_off
+            )
+
+    def test_readonly_observe_preset(self):
+        """PRESETS['readonly_observe'] が sandbox=readonly と編集系 deny を持つ。"""
+        from ghdag.llm.capabilities import PRESETS
+
+        caps = PRESETS["readonly_observe"]
+        assert caps.sandbox == "readonly"
+        assert caps.disallowed_tools == ("Edit", "Write", "NotebookEdit")
+
+    def test_claude_sandbox_readonly_uses_permission_mode_plan(self):
+        """claude + sandbox=readonly → --permission-mode plan。"""
+        cmd = build_llm_cmd(
+            "claude",
+            "claude-sonnet-4-6",
+            "p",
+            capabilities=LLMCapabilities(sandbox="readonly"),
+        )
+        assert "--permission-mode" in cmd
+        assert cmd[cmd.index("--permission-mode") + 1] == "plan"
+
+    def test_codex_sandbox_readonly_uses_s_read_only(self):
+        """codex + sandbox=readonly → -s read-only、bypass フラグなし。"""
+        cmd = build_llm_cmd(
+            "codex",
+            "gpt-5.6-terra",
+            "p",
+            capabilities=LLMCapabilities(sandbox="readonly"),
+        )
+        assert "-s" in cmd
+        assert cmd[cmd.index("-s") + 1] == "read-only"
+        assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
+
+    def test_cursor_sandbox_readonly_uses_sandbox_enabled(self):
+        """cursor + sandbox=readonly → --sandbox enabled、--force なし。"""
+        cmd = build_llm_cmd(
+            "cursor",
+            "auto",
+            "p",
+            capabilities=LLMCapabilities(sandbox="readonly"),
+        )
+        assert "--sandbox" in cmd
+        assert cmd[cmd.index("--sandbox") + 1] == "enabled"
+        assert "--force" not in cmd
+
+    def test_claude_sandbox_readonly_conflicts_with_permission_mode(self):
+        """claude + sandbox=readonly + 明示 permission_mode → ValueError。"""
+        with pytest.raises(ValueError, match="sandbox='readonly' conflicts"):
+            build_llm_cmd(
+                "claude",
+                "claude-sonnet-4-6",
+                "p",
+                capabilities=LLMCapabilities(
+                    sandbox="readonly",
+                    permission_mode="bypassPermissions",
+                ),
+            )
+
+    def test_codex_sandbox_readonly_conflicts_with_bypass(self):
+        """codex + sandbox=readonly + dangerously_skip_permissions → ValueError。"""
+        with pytest.raises(ValueError, match="sandbox='readonly' conflicts"):
+            build_llm_cmd(
+                "codex",
+                "gpt-5.6-terra",
+                "p",
+                capabilities=LLMCapabilities(sandbox="readonly"),
+                dangerously_skip_permissions=True,
+            )
+
+    def test_cursor_sandbox_readonly_conflicts_with_force(self):
+        """cursor + sandbox=readonly + dangerously_skip_permissions → ValueError。"""
+        with pytest.raises(ValueError, match="sandbox='readonly' conflicts"):
+            build_llm_cmd(
+                "cursor",
+                "auto",
+                "p",
+                capabilities=LLMCapabilities(sandbox="readonly"),
+                dangerously_skip_permissions=True,
+            )
+
+    def test_gemini_sandbox_readonly_raises(self):
+        """gemini + sandbox=readonly → NotImplementedError。"""
+        with pytest.raises(NotImplementedError, match="sandbox"):
+            call(
+                "test",
+                engine="gemini",
+                capabilities=LLMCapabilities(sandbox="readonly"),
+            )
+
+    def test_shell_sandbox_readonly_raises(self):
+        """shell + sandbox=readonly → NotImplementedError。"""
+        with pytest.raises(NotImplementedError, match="sandbox"):
+            call(
+                "test",
+                engine="shell",
+                capabilities=LLMCapabilities(sandbox="readonly"),
+            )
+
+    def test_cursor_disallowed_tools_in_ignored_capabilities(self):
+        """cursor の disallowed_tools は _IGNORED_CAPABILITIES で noop 宣言される。"""
+        from ghdag.llm.engines import _IGNORED_CAPABILITIES, _UNSUPPORTED_CAPABILITIES
+
+        assert "disallowed_tools" in _IGNORED_CAPABILITIES["cursor"]
+        # 差集合後は検証対象から外れる（unsupported に含まれていても ignored でスキップ）
+        unsupported = _UNSUPPORTED_CAPABILITIES.get("cursor", set())
+        ignored = _IGNORED_CAPABILITIES.get("cursor", set())
+        assert "disallowed_tools" not in (unsupported - ignored)
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_cursor_disallowed_tools_noop(self, mock_run: MagicMock):
+        """cursor に disallowed_tools を渡しても NotImplementedError にならず argv にも出ない。"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        result = call(
+            "test",
+            engine="cursor",
+            capabilities=LLMCapabilities(disallowed_tools=("Edit", "Write")),
+        )
+        assert result.returncode == 0
+        cmd = mock_run.call_args[0][0]
+        assert "--disallowed-tools" not in cmd
