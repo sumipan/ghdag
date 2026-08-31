@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.15 — 2026-08-31
+
+### Changed
+
+- `core/vocabulary.py`: done マーカー・`QUEUE_FILE_RE`・`PIPELINE_STATUS_RE`・fan-out 規約を共有語彙として集約。cleanup / pipeline / dag の直書き文字列を定数参照に置換（挙動不変）。mypy overrides から `ghdag.workflow.github` を削除 (nexus Issue #2654)
+
 ## 0.30.14 — 2026-08-30
 
 ### Added

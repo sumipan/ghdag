@@ -6,6 +6,8 @@ import fcntl
 import os
 from pathlib import Path
 
+from ghdag.core.vocabulary import DONE_SUCCESS
+
 
 def is_done(exec_done_dir: str | Path, uuid: str) -> bool:
     """Return True if the task has a completion marker."""
@@ -43,7 +45,7 @@ def load_succeeded_from_dir(exec_done_dir: str | Path) -> set[str]:
     for uuid in os.listdir(d):
         try:
             content = open(os.path.join(d, uuid)).read().strip()
-            if content == "0" or content == "":
+            if content == DONE_SUCCESS or content == "":
                 succeeded.add(uuid)
         except OSError:
             pass

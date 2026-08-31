@@ -4,6 +4,7 @@ from pathlib import Path
 
 from ghdag.cleanup import file_timestamp
 from ghdag.cleanup.archiver import QueueArchiver
+from ghdag.core.vocabulary import DONE_ORPHAN_ARCHIVED
 
 
 class OrphanDetector:
@@ -62,7 +63,7 @@ class OrphanDetector:
                 if not self._dry_run:
                     self._done_dir.mkdir(parents=True, exist_ok=True)
                     flag = self._done_dir / uuid
-                    flag.write_text("ORPHAN_ARCHIVED", encoding="utf-8")
+                    flag.write_text(DONE_ORPHAN_ARCHIVED, encoding="utf-8")
                 else:
                     print(f"[dry] create done marker (orphan): {uuid}")
                 all_moved.extend(self._archiver.archive_files(entry, orphan=True))

@@ -5,6 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from ghdag.core.vocabulary import (
+    DONE_EMPTY_RESULT,
+    DONE_REJECTED,
+    DONE_REJECTED_FINAL,
+    DONE_SUCCESS,
+)
+
 # 状態定数
 STATE_PENDING_DEPS = "待機（依存未充足）"
 STATE_PENDING_RUN  = "待機（実行可能）"
@@ -38,11 +45,11 @@ def interpret_done(raw: Optional[str]) -> Optional[str]:
         return None
     first = raw.strip().splitlines()
     c = first[0].strip() if first else ""
-    if c == "" or c == "0":
+    if c == "" or c == DONE_SUCCESS:
         return "success"
-    if c in ("REJECTED", "REJECTED_FINAL"):
+    if c in (DONE_REJECTED, DONE_REJECTED_FINAL):
         return "rejected"
-    if c == "EMPTY_RESULT":
+    if c == DONE_EMPTY_RESULT:
         return "empty_result"
     try:
         n = int(c)

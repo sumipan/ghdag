@@ -9,6 +9,8 @@ import signal
 import time
 from pathlib import Path
 
+from ghdag.core.vocabulary import DONE_DEP_FAILED
+
 from .circuit_breaker import CircuitBreakerPolicy
 from .fanout_manager import FanOutManager
 from .hooks import DagHooks, DefaultHooks
@@ -92,7 +94,7 @@ class DagEngine:
             invalid_tasks = validate_dependencies(list(self._tasks.values()), known_done)
             for inv_uuid, reason in invalid_tasks.items():
                 if inv_uuid not in known_done and not self._launcher.is_running(inv_uuid):
-                    state_mark_done(self._config.exec_done_dir, inv_uuid, "DEP_FAILED")
+                    state_mark_done(self._config.exec_done_dir, inv_uuid, DONE_DEP_FAILED)
                     self._hooks.on_task_dep_failed(inv_uuid, self._tasks[inv_uuid], reason)
                     known_done.add(inv_uuid)
 
@@ -118,7 +120,7 @@ class DagEngine:
                         break
 
                 if dep_failed is not None:
-                    state_mark_done(self._config.exec_done_dir, uuid, "DEP_FAILED")
+                    state_mark_done(self._config.exec_done_dir, uuid, DONE_DEP_FAILED)
                     self._hooks.on_task_dep_failed(uuid, task, dep_failed)
                     known_done.add(uuid)
                     continue
@@ -224,7 +226,7 @@ class DagEngine:
                     continue
                 for dep in task.depends:
                     if dep in known_done and dep not in known_succeeded:
-                        state_mark_done(self._config.exec_done_dir, uuid, "DEP_FAILED")
+                        state_mark_done(self._config.exec_done_dir, uuid, DONE_DEP_FAILED)
                         self._hooks.on_task_dep_failed(uuid, task, dep)
                         known_done.add(uuid)
                         changed = True

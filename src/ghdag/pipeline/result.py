@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
-QUEUE_FILE_RE = re.compile(
-    r"^(\d{14})-([\w-]+)-(order|result|stderr)-([a-fA-F0-9\-]{36})\.md$"
-)
+from ghdag.core.vocabulary import QUEUE_FILE_RE
 
 
 @dataclass(frozen=True)
