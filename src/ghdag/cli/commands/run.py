@@ -30,7 +30,7 @@ def cmd_run(args) -> None:
     if args.hooks:
         hooks: DagHooks = _load_hooks(args.hooks)
     else:
-        from ghdag.pipeline.hooks import AuditHooks
+        from ghdag.dag.audit_hooks import AuditHooks
         audit_path = Path(args.exec_jsonl).resolve().parent.parent / "audit.jsonl"
         hooks = AuditHooks(audit_path=audit_path)
     engine = DagEngine(config, hooks)

@@ -51,7 +51,7 @@ class TestEngineModels:
         """gemini エンジンのデフォルト許可モデル一覧（GHDAG_LLM_MODELS 環境変数の影響を除外）"""
         import ghdag.llm.engines as engines_mod
         from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
-        monkeypatch.setattr(engines_mod, "ENGINE_MODELS", DEFAULT_ENGINE_MODELS)
+        monkeypatch.setattr(engines_mod, "_ENGINE_MODELS", DEFAULT_ENGINE_MODELS)
         models = list_models("gemini")
         assert "gemini-2.5-flash" in models
         assert "gemini-2.5-pro" in models
@@ -78,7 +78,7 @@ class TestValidateEngineModel:
         """gemini + 許可モデル → そのまま返る（GHDAG_LLM_MODELS 環境変数の影響を除外）"""
         import ghdag.llm.engines as engines_mod
         from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
-        monkeypatch.setattr(engines_mod, "ENGINE_MODELS", DEFAULT_ENGINE_MODELS)
+        monkeypatch.setattr(engines_mod, "_ENGINE_MODELS", DEFAULT_ENGINE_MODELS)
         result = validate_engine_model("gemini", "gemini-2.5-pro")
         assert result == "gemini-2.5-pro"
 

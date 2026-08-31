@@ -78,12 +78,35 @@ def test_llm_spec_import_compat() -> None:
         DangerFlagPosition,
         EngineSpec,
         InputMode,
+        render_exec_command,
     )
 
     assert EngineSpec.__name__ == "EngineSpec"
     assert "claude" in ENGINE_SPECS
     assert InputMode is not None
     assert DangerFlagPosition is not None
+    assert callable(render_exec_command)
+
+
+def test_workflow_engine_adapter_import_compat() -> None:
+    from ghdag.workflow.engine import EngineAdapter, get_adapter
+
+    adapter = get_adapter("claude")
+    assert adapter.name == "claude"
+    assert hasattr(adapter, "build_exec_record")
+    assert EngineAdapter is not None
+
+
+def test_pipeline_hooks_audithooks_import_compat() -> None:
+    from ghdag.pipeline.hooks import AuditHooks
+
+    assert AuditHooks.__name__ == "AuditHooks"
+
+
+def test_llm_engines_build_llm_cmd_import_compat() -> None:
+    from ghdag.llm.engines import build_llm_cmd
+
+    assert callable(build_llm_cmd)
 
 
 def test_dag_hooks_import_compat() -> None:

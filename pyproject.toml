@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghdag"
-version = "0.30.16"
+version = "0.31.0"
 description = "Generic DAG execution engine extracted from graph-watcher"
 readme = "README.md"
 license = "MIT"
@@ -85,6 +85,81 @@ forbidden_modules = [
   "ghdag.workflow",
   "ghdag.ui",
   "ghdag.cli",
+]
+
+[[tool.importlinter.contracts]]
+name = "core は ghdag の他パッケージに依存しない"
+type = "forbidden"
+source_modules = ["ghdag.core"]
+forbidden_modules = [
+  "ghdag.io",
+  "ghdag.files",
+  "ghdag.llm",
+  "ghdag.metrics",
+  "ghdag.github_client",
+  "ghdag.github_cli",
+  "ghdag.dag",
+  "ghdag.pipeline",
+  "ghdag.workflow",
+  "ghdag.cli",
+  "ghdag.ui",
+  "ghdag.cleanup",
+  "ghdag.maintenance",
+  "ghdag.tool",
+  "ghdag.markdown",
+]
+
+[[tool.importlinter.contracts]]
+name = "投入塔は実行塔を import しない（通信は exec.jsonl / done のみ）"
+type = "forbidden"
+source_modules = ["ghdag.pipeline", "ghdag.workflow"]
+forbidden_modules = ["ghdag.dag"]
+ignore_imports = [
+  "ghdag.pipeline.hooks -> ghdag.dag.audit_hooks",
+]
+
+[[tool.importlinter.contracts]]
+name = "実行塔は投入塔を import しない"
+type = "forbidden"
+source_modules = ["ghdag.dag"]
+forbidden_modules = ["ghdag.pipeline", "ghdag.workflow"]
+ignore_imports = [
+  "ghdag.dag.audit_hooks -> ghdag.pipeline.audit",
+]
+
+[[tool.importlinter.contracts]]
+name = "io / effects は塔と入口を知らない"
+type = "forbidden"
+source_modules = [
+  "ghdag.io",
+  "ghdag.files",
+  "ghdag.llm",
+  "ghdag.metrics",
+  "ghdag.github_client",
+]
+forbidden_modules = [
+  "ghdag.dag",
+  "ghdag.pipeline",
+  "ghdag.workflow",
+  "ghdag.cli",
+  "ghdag.ui",
+]
+
+[[tool.importlinter.contracts]]
+name = "ops は実行系に依存しない"
+type = "forbidden"
+source_modules = [
+  "ghdag.cleanup",
+  "ghdag.maintenance",
+  "ghdag.tool",
+  "ghdag.markdown",
+]
+forbidden_modules = [
+  "ghdag.dag",
+  "ghdag.pipeline",
+  "ghdag.workflow",
+  "ghdag.cli",
+  "ghdag.ui",
 ]
 
 [[tool.mypy.overrides]]

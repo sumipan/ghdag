@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ghdag.pipeline.audit import _maybe_rotate
+from ghdag.files._rotate import _maybe_rotate
 
 JST = timezone(timedelta(hours=9))
 
