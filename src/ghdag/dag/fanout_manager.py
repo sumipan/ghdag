@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
+from ghdag.core.vocabulary import DONE_FANOUT_CHILD_FAILED, FANOUT_SEPARATOR
 from ghdag.metrics.models import FailureClass, TaskMetrics
 
 from .fanout import FanOutSpec, build_child_jsonl_record
@@ -43,7 +44,7 @@ class FanOutManager:
         """Append child tasks to exec file and register parent as pending."""
         child_uuids: set[str] = set()
         for child in spec.children:
-            child_uuid = f"{parent_uuid}--fo--{child.id}"
+            child_uuid = f"{parent_uuid}{FANOUT_SEPARATOR}{child.id}"
             child_uuids.add(child_uuid)
             line = build_child_jsonl_record(child_uuid, child.command)
             self._append_task_fn(line)
@@ -64,7 +65,7 @@ class FanOutManager:
             failed_children = child_uuids - known_succeeded
 
             if failed_children:
-                state_mark_done(self._config.exec_done_dir, parent_uuid, "FANOUT_CHILD_FAILED")
+                state_mark_done(self._config.exec_done_dir, parent_uuid, DONE_FANOUT_CHILD_FAILED)
                 failure_metrics = TaskMetrics(
                     uuid=parent_uuid,
                     engine=parent_metrics.engine,
@@ -79,7 +80,7 @@ class FanOutManager:
                     request_id=parent_metrics.request_id,
                 )
                 self._hooks.on_task_failure(
-                    parent_uuid, parent_task, 0, "FANOUT_CHILD_FAILED", failure_metrics
+                    parent_uuid, parent_task, 0, DONE_FANOUT_CHILD_FAILED, failure_metrics
                 )
                 known_done.add(parent_uuid)
             else:

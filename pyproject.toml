@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghdag"
-version = "0.30.14"
+version = "0.30.15"
 description = "Generic DAG execution engine extracted from graph-watcher"
 readme = "README.md"
 license = "MIT"
@@ -99,6 +99,5 @@ module = [
   "ghdag.pipeline.state",
   "ghdag.ui.monitor",
   "ghdag.ui.server",
-  "ghdag.workflow.github",
 ]
 ignore_errors = true

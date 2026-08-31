@@ -7,7 +7,7 @@ import re
 import subprocess
 from pathlib import Path
 
-_PIPELINE_STATUS_RE = re.compile(r"^PIPELINE_STATUS:\s*(\S+)\s*$", re.MULTILINE)
+from ghdag.core.vocabulary import PIPELINE_STATUS_RE
 
 # Matches: tee [-a] "quoted path" or tee [-a] unquoted-path (any extension)
 _TEE_RE = re.compile(r'\btee\s+(?:-a\s+)?(?:"([^"]+)"|(\S+))')
@@ -23,7 +23,7 @@ def check_pipeline_status(result_path: str) -> "str | None":
         content = Path(result_path).read_text(encoding="utf-8", errors="replace")
     except (OSError, FileNotFoundError):
         return None
-    matches = _PIPELINE_STATUS_RE.findall(content)
+    matches = PIPELINE_STATUS_RE.findall(content)
     return matches[-1] if matches else None
 
 

@@ -12,6 +12,16 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
+from ghdag.core.vocabulary import (
+    DONE_EMPTY_RESULT,
+    DONE_FANOUT_PARSE_FAILED,
+    DONE_PIPELINE_FAILED_PREFIX,
+    DONE_REJECTED,
+    DONE_REJECTED_FINAL,
+    DONE_SKIPPED_MISSING_INPUT,
+    DONE_TIMEOUT,
+    DONE_UNKNOWN_FAILURE,
+)
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.metrics.models import FailureClass, TaskMetrics
 from ghdag.metrics.parsers import parse_engine_model
@@ -70,7 +80,7 @@ class TaskLauncher:
                     "Task [%s] skipped — stdin input file missing: %s (command: %s)",
                     uuid, input_file, task.command,
                 )
-                state_mark_done(self._config.exec_done_dir, uuid, "SKIPPED_MISSING_INPUT")
+                state_mark_done(self._config.exec_done_dir, uuid, DONE_SKIPPED_MISSING_INPUT)
                 return
 
         stdout_buf: io.BytesIO | None = None
@@ -156,7 +166,7 @@ class TaskLauncher:
 
             try:
                 if was_timeout:
-                    state_mark_done(self._config.exec_done_dir, uuid, "TIMEOUT")
+                    state_mark_done(self._config.exec_done_dir, uuid, DONE_TIMEOUT)
                     metrics = TaskMetrics(
                         uuid=uuid, engine=engine, model=model,
                         wall_time_sec=round(finished_at - rt.started_at, 3),
@@ -191,9 +201,9 @@ class TaskLauncher:
                         retry_depth = task.retry
                         is_final = retry_depth >= self._config.max_retry
                         if is_final:
-                            state_mark_done(self._config.exec_done_dir, uuid, "REJECTED_FINAL")
+                            state_mark_done(self._config.exec_done_dir, uuid, DONE_REJECTED_FINAL)
                         else:
-                            state_mark_done(self._config.exec_done_dir, uuid, "REJECTED")
+                            state_mark_done(self._config.exec_done_dir, uuid, DONE_REJECTED)
                             if task.result_path and Path(task.result_path).exists():
                                 Path(task.result_path).unlink()
                         metrics = TaskMetrics(
@@ -213,9 +223,10 @@ class TaskLauncher:
                     elif effective_result_path and (
                         pipeline_status := self._hooks.check_pipeline_status(effective_result_path)
                     ) and pipeline_status.endswith("_FAILED"):
+                        pipeline_failed = f"{DONE_PIPELINE_FAILED_PREFIX}{pipeline_status}"
                         state_mark_done(
                             self._config.exec_done_dir, uuid,
-                            f"PIPELINE_FAILED:{pipeline_status}",
+                            pipeline_failed,
                         )
                         metrics = TaskMetrics(
                             uuid=uuid, engine=engine, model=model,
@@ -230,7 +241,7 @@ class TaskLauncher:
                             cache_creation_tokens=cache_creation_tokens,
                         )
                         self._hooks.on_task_failure(
-                            uuid, task, 0, f"PIPELINE_FAILED:{pipeline_status}", metrics
+                            uuid, task, 0, pipeline_failed, metrics
                         )
                         self._circuit_breaker.record_failure()
 
@@ -239,7 +250,7 @@ class TaskLauncher:
                         and os.path.exists(effective_result_path)
                         and os.path.getsize(effective_result_path) == 0
                     ):
-                        state_mark_done(self._config.exec_done_dir, uuid, "EMPTY_RESULT")
+                        state_mark_done(self._config.exec_done_dir, uuid, DONE_EMPTY_RESULT)
                         metrics = TaskMetrics(
                             uuid=uuid, engine=engine, model=model,
                             wall_time_sec=round(finished_at - rt.started_at, 3),
@@ -283,7 +294,7 @@ class TaskLauncher:
                                 cache_creation_tokens=cache_creation_tokens,
                             )
                             state_mark_done(
-                                self._config.exec_done_dir, uuid, "FANOUT_PARSE_FAILED"
+                                self._config.exec_done_dir, uuid, DONE_FANOUT_PARSE_FAILED
                             )
                             self._hooks.on_task_failure(uuid, task, 0, str(exc), failure_metrics)
                             continue
@@ -316,7 +327,7 @@ class TaskLauncher:
                 logger.exception(
                     "Unexpected error handling completion for task [%s]: %s", uuid, exc
                 )
-                state_mark_done(self._config.exec_done_dir, uuid, "UNKNOWN_FAILURE")
+                state_mark_done(self._config.exec_done_dir, uuid, DONE_UNKNOWN_FAILURE)
                 metrics = TaskMetrics(
                     uuid=uuid, engine=engine, model=model,
                     wall_time_sec=round(finished_at - rt.started_at, 3),

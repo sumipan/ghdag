@@ -8,11 +8,10 @@ from dataclasses import dataclass
 
 import yaml
 
+from ghdag.core.vocabulary import FANOUT_ANCHOR, FANOUT_KEY, FANOUT_SEPARATOR
 from ghdag.exceptions import GhdagError
 
 logger = logging.getLogger(__name__)
-
-FANOUT_SEPARATOR = "--fo--"
 
 
 class FanoutError(GhdagError, ValueError):
@@ -52,7 +51,7 @@ def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
 
     fanout_line_idx: int | None = None
     for i in range(len(lines) - 1, -1, -1):
-        if lines[i].startswith("ghdag_fanout:"):
+        if lines[i].startswith(FANOUT_ANCHOR):
             fanout_line_idx = i
             break
 
@@ -69,10 +68,10 @@ def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
         logger.warning("parse_fanout_spec: invalid YAML in %s: %s", result_path, exc)
         return None
 
-    if not isinstance(data, dict) or "ghdag_fanout" not in data:
+    if not isinstance(data, dict) or FANOUT_KEY not in data:
         return None
 
-    fanout_data = data["ghdag_fanout"]
+    fanout_data = data[FANOUT_KEY]
     if not isinstance(fanout_data, dict):
         return None
 

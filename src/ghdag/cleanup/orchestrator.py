@@ -9,6 +9,7 @@ from ghdag.cleanup.archiver import QueueArchiver
 from ghdag.cleanup.link_rewriter import LinkRewriter
 from ghdag.cleanup.orphan_detector import OrphanDetector
 from ghdag.cleanup.pruner import ExecJsonlPruner
+from ghdag.core.vocabulary import DONE_ORPHAN_ARCHIVED
 
 
 def cleanup_queue(
@@ -102,7 +103,7 @@ def cleanup_queue(
                         if not dry_run:
                             done_dir.mkdir(parents=True, exist_ok=True)
                             flag = done_dir / uuid
-                            flag.write_text("ORPHAN_ARCHIVED", encoding="utf-8")
+                            flag.write_text(DONE_ORPHAN_ARCHIVED, encoding="utf-8")
                         else:
                             print(f"[dry] create done marker (orphan): {uuid}")
                         all_moved.extend(archiver.archive_files(entry, orphan=True))
