@@ -5,11 +5,11 @@ from __future__ import annotations
 from ghdag.core.capabilities import (
     DANGEROUS_FULL_ACCESS,
     JSON_ONLY,
-    LLMCapabilities,
     PRESETS,
     READONLY_OBSERVE,
     TEXT_ONLY,
     WEB_RESEARCH,
+    LLMCapabilities,
 )
 from ghdag.exceptions import GhdagError
 

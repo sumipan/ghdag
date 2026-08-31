@@ -8,9 +8,6 @@ def test_exceptions_import_compat() -> None:
         AuthError,
         GhdagError,
         GitHubApiError,
-        NetworkError,
-        PermissionDeniedError,
-        RateLimitError,
     )
 
     assert issubclass(GhdagError, Exception)
@@ -64,9 +61,9 @@ def test_workflow_schema_import_compat() -> None:
 def test_llm_capabilities_import_compat() -> None:
     from ghdag.llm.capabilities import (
         JSON_ONLY,
-        LLMCapabilities,
         PRESETS,
         TEXT_ONLY,
+        LLMCapabilities,
     )
 
     assert LLMCapabilities.__name__ == "LLMCapabilities"

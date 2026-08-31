@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
-
-if TYPE_CHECKING:
-    from ghdag.core.capabilities import LLMCapabilities
+from typing import Literal
 
 InputMode = Literal["cat_pipe", "stdin_redirect", "argv"]
 DangerFlagPosition = Literal["after_prompt", "trailing", "none"]
