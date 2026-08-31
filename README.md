@@ -1,19 +1,49 @@
 # ghdag
 
-Generic DAG execution engine for GitHub Issue–driven LLM pipelines.
-Polls GitHub labels, dispatches workflow handlers, and runs `exec.jsonl` task queues with dependency-aware concurrency — unlike generic CI runners, ghdag couples workflow YAML, LLM engine adapters, and audit logging in one package.
+Generic DAG execution engine extracted from graph-watcher.
+
+ghdag polls GitHub labels, dispatches workflow handlers, and runs `exec.jsonl` task queues with dependency-aware concurrency. It couples workflow YAML, LLM engine adapters, and audit logging in one package — unlike generic CI runners that leave those concerns to external tooling.
+
+## Not
+
+ghdag is **not**:
+
+- A CI/CD product or GitHub Actions replacement
+- A general-purpose workflow DSL for arbitrary orchestration
+- An application framework for hosting long-running services
+
+It is a library + CLI for GitHub Issue–driven LLM pipelines and local `exec.jsonl` DAG execution.
 
 ## Status
 
-![version](https://img.shields.io/badge/version-v0.31.0-blue)
+![version](https://img.shields.io/badge/version-v0.32.0-blue)
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
+![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
+![license](https://img.shields.io/badge/license-MIT-green)
 
-**v0.31.0** — pre-1.0; public API may change until `1.0.0`.
+**v0.32.0** — pre-1.0 (`0.Y.Z`). Public API may change until `1.0.0`.
+
+### Public API Stability
+
+Until `1.0.0`, SemVer for this package means:
+
+| Bump | When |
+|---|---|
+| **Y** (minor) | Breaking change to public API (`ghdag.__all__`), CLI contract, or entry points |
+| **Z** (patch) | Backward-compatible fixes and additions |
+
+Treat symbols outside `ghdag.__all__` as internal unless documented here.
 
 ## Installation
 
 ```bash
-pip install git+https://github.com/sumipan/ghdag.git@v0.31.0
+pip install ghdag
+```
+
+From source (pinned release):
+
+```bash
+pip install git+https://github.com/sumipan/ghdag.git@v0.32.0
 ```
 
 **Requirements**
@@ -21,26 +51,28 @@ pip install git+https://github.com/sumipan/ghdag.git@v0.31.0
 | Item | Value |
 |---|---|
 | Python | `>=3.10` (`requires-python` in `pyproject.toml`) |
-| Runtime deps | `watchdog`, `pyyaml`, `requests` |
-| Optional LLM CLIs | `claude`, `gemini`, `agent` (Cursor), `bash` — used by `ghdag llm` and workflow steps |
+| Runtime deps | `watchdog>=4.0.0`, `pyyaml>=6.0`, `requests>=2.28.0` |
+| Optional LLM CLIs | `claude`, `gemini`, `agent` (Cursor), `codex`, `bash` — used by `ghdag llm` and workflow steps |
+
+Dev extras: `pip install "ghdag[dev]"` (pytest, mypy, ruff, import-linter, …).
 
 ## Quick Start
 
-### Run a task queue (`ghdag run`)
+Minimal queue from the fixture shape used in `tests/ui/test_dashboard.py`:
 
 Create `jobs/exec.jsonl`:
 
 ```jsonl
-{"uuid":"a1b2c3d4-e5f6-7890-abcd-ef1234567890","command":"echo hello","depends":[]}
+{"uuid":"aaaa-bbbb-cccc-0001","command":"echo hello","depends":[]}
 ```
 
-Execute:
+Run the DAG engine:
 
 ```bash
 ghdag run jobs/exec.jsonl
 ```
 
-### Watch GitHub workflows (`ghdag watch`)
+Watch GitHub workflows (requires token + repo list):
 
 ```bash
 export GITHUB_TOKEN="ghp_..."          # or GH_TOKEN
@@ -48,11 +80,11 @@ export GITHUB_REPOSITORIES="owner/repo"
 ghdag watch workflows/ --exec-md jobs/exec.jsonl
 ```
 
-`watch` polls GitHub at `--interval` seconds (default: 30), matches workflow trigger labels, and appends new entries to `jobs/exec.jsonl`. Use `--once` for a single poll cycle.
+`watch` polls GitHub every `--interval` seconds (default: `30`), matches workflow trigger labels, and appends entries to `jobs/exec.jsonl`. Use `--once` for a single poll cycle.
 
-## CLI Reference
+## CLI Reference / Public API
 
-Global flags (all subcommands): `--verbose` / `-v` (DEBUG), `--quiet` / `-q` (WARNING+ only).
+Global flags (all subcommands): `--verbose` / `-v` (DEBUG), `--quiet` / `-q` (WARNING and above only).
 
 | Subcommand | Description | Key arguments |
 |---|---|---|
@@ -198,40 +230,58 @@ ghdag tools list --path DIR [--json]
 | `--path DIR` | — | Tool definition directory (required) |
 | `--json` | — | Output as JSON instead of text |
 
+### Public API
+
+`ghdag.__init__.__all__` exports:
+
+| Symbol | Module | Description |
+|---|---|---|
+| `GhdagError` | `ghdag.exceptions` | Base exception for all ghdag errors |
+| `QueueTask` | `ghdag.pipeline.result` | One queue task (UUID → order / result / stderr) |
+| `QueueTaskStore` | `ghdag.pipeline.result` | Read/write access to queue task files |
+| `LLMPipelineAPI` | `ghdag.pipeline.llm_pipeline` | Submit and track LLM pipeline orders |
+| `PipelineState` | `ghdag.pipeline.state` | Persistent pipeline state (`.pipeline-state/`) |
+| `DagEngine` | `ghdag.dag.engine` | DAG execution loop over `exec.jsonl` |
+| `WorkflowDispatcher` | `ghdag.workflow.dispatcher` | GitHub polling and handler dispatch |
+
+```python
+from ghdag import DagEngine, WorkflowDispatcher, LLMPipelineAPI, GhdagError
+```
+
 ## Architecture
 
 ```
 src/ghdag/
-├── __init__.py          # Package public API
+├── __init__.py          # Package public API (__all__)
 ├── __main__.py          # python -m ghdag entry
 ├── exceptions.py        # Re-export shim for core.exceptions
 ├── cleanup/             # Archive completed/orphaned queue tasks
 ├── cli/                 # CLI subcommand definitions
 │   ├── main.py          # argparse entry
 │   └── commands/        # Per-subcommand implementations
-├── core/                # Shared foundation (exceptions, command, models)
-├── dag/                 # DAG engine and fanout
+├── core/                # Shared foundation (exceptions, command, models, ports)
+├── dag/                 # DAG engine and fanout (execution tower)
 ├── files/               # File I/O and append
 ├── github_cli.py        # gh CLI wrapper
 ├── github_client.py     # GitHub REST API client
-├── io/                  # I/O utilities
+├── io/                  # I/O utilities (exec.jsonl, audit)
 ├── llm/                 # LLM engine adapters and config
 ├── maintenance.py       # Repository maintenance utilities
 ├── markdown/            # Markdown body editing
 ├── metrics/             # Metrics and FailureClass
-├── pipeline/            # Pipeline state, config, audit, hooks
+├── pipeline/            # Pipeline state, config, audit, hooks (intake tower)
 ├── tool/                # Tool definition registry
 ├── ui/                  # Web UI dashboard
-└── workflow/            # Workflow dispatcher, loader, engine
+└── workflow/            # Workflow dispatcher, loader, engine (intake tower)
 ```
 
 | Module / package | Responsibility |
 |---|---|
 | `cli/` | CLI entry — `main`, `commands/` (`run`, `watch`, `ui`, `llm`, `cleanup`, `trigger`, `audit_query`) |
 | `core/` | Shared foundation — `exceptions`, `command`, `models`, `ports`, `capabilities`, `engine_spec` |
-| `dag/` | Core DAG execution — `engine`, `parser`, `state`, `fanout`, `hooks`, `watcher`, `models` |
-| `workflow/` | GitHub polling and dispatch — `dispatcher`, `engine`, `loader`, `schema`, `state_machine`, `gates` |
-| `pipeline/` | LLM pipeline — `llm_pipeline`, `order`, `result`, `state`, `audit`, `config`, `hooks` |
+| `dag/` | Execution tower — `engine`, `parser`, `state`, `fanout`, `hooks`, `watcher`, `models` |
+| `workflow/` | Intake tower — GitHub polling / dispatch (`dispatcher`, `engine`, `loader`, `schema`, `state_machine`, `gates`) |
+| `pipeline/` | Intake tower — LLM pipeline (`llm_pipeline`, `order`, `result`, `state`, `audit`, `config`, `hooks`) |
 | `llm/` | LLM engine integration — `engines`, `capabilities`, `spec`, `adapters`, `_config` |
 | `files/` | Repository-scoped `.md` I/O — `reader`, `writer`, `append`, `promote` |
 | `cleanup/` | Archive completed and orphaned queue tasks under `jobs/` |
@@ -239,25 +289,24 @@ src/ghdag/
 | `metrics/` | Task execution metrics — `recorder`, `parsers`, `models` |
 | `tool/` | Tool definition management — `registry`, `schema`, `cli`, `exceptions` |
 | `ui/` | Web UI dashboard — `dashboard`, `monitor`, `server`, `static` |
-| `io/` | Filesystem I/O facade |
+| `io/` | Filesystem I/O facade — `exec_jsonl`, `audit`, `audit_query` |
 | `github_cli.py` | Thin wrapper around `gh` CLI for issue operations |
 | `github_client.py` | GitHub REST API client (token auth) |
 | `maintenance.py` | Repository maintenance utilities |
 | `exceptions.py` | Re-export shim for `ghdag.core.exceptions` |
+| `__main__.py` | `python -m ghdag` entry |
 
-## Public API
+### Layer dependency constraints (import-linter)
 
-`ghdag.__init__.__all__` exports:
+Enforced by `[tool.importlinter.contracts]` in `pyproject.toml`:
 
-| Symbol | Module | Description |
-|---|---|---|
-| `GhdagError` | `ghdag.exceptions` | Base exception for all ghdag errors |
-| `QueueTask` | `ghdag.pipeline.result` | Parsed queue task record |
-| `QueueTaskStore` | `ghdag.pipeline.result` | Read/write access to queue task files |
-| `LLMPipelineAPI` | `ghdag.pipeline.llm_pipeline` | Submit and track LLM pipeline orders |
-| `PipelineState` | `ghdag.pipeline.state` | Persistent pipeline state (`.pipeline-state/`) |
-| `DagEngine` | `ghdag.dag.engine` | DAG execution loop over `exec.jsonl` |
-| `WorkflowDispatcher` | `ghdag.workflow.dispatcher` | GitHub polling and handler dispatch |
+| Layer | Rule |
+|---|---|
+| **core** | Must not import other ghdag packages |
+| **infra** (`io`, `files`, `llm`, `metrics`, `github_client`) | Must not import orchestration (`pipeline`, `workflow`, `dag`, `cli`, `ui`) |
+| **intake** (`pipeline`, `workflow`) | Must not import **execution** (`dag`); communication is via `exec.jsonl` / `done` only |
+| **execution** (`dag`) | Must not import **intake** (`pipeline`, `workflow`) |
+| **ops** (`cleanup`, `maintenance`, `tool`, `markdown`) | Must not depend on execution/orchestration towers |
 
 ## Configuration
 
@@ -265,7 +314,8 @@ src/ghdag/
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `GITHUB_TOKEN` / `GH_TOKEN` | Either one required for `watch` / `trigger` | — | GitHub API authentication (`github_client.py`) |
+| `GITHUB_TOKEN` | Either `GITHUB_TOKEN` or `GH_TOKEN` for `watch` / `trigger` | — | GitHub API authentication (`github_client.py`) |
+| `GH_TOKEN` | Alternate of `GITHUB_TOKEN` | — | Same as `GITHUB_TOKEN` (checked second) |
 | `GITHUB_REPOSITORIES` | Required for `watch` | — | Comma-separated `owner/repo` list to poll (`github_client.py`) |
 | `GHDAG_SAFE_DEFAULT_PERMISSION` | Optional | `text_only` | Safe-default capabilities preset for LLM pipeline when permission is unset (`pipeline/llm_pipeline.py`) |
 | `GHDAG_AUDIT_PATH` | Optional | `jobs/audit.jsonl` | Audit log file path (`ghdag llm`, `ghdag ui`) |
@@ -278,7 +328,7 @@ Override the per-engine model allowlist. Resolution order (see `ghdag.llm._confi
 
 1. Path in `GHDAG_LLM_MODELS`
 2. `llm-models.yml` in the current working directory
-3. Built-in `DEFAULT_ENGINE_MODELS`
+3. Built-in `DEFAULT_ENGINE_MODELS` (`llm/_constants.py`)
 
 Example:
 
@@ -289,13 +339,16 @@ engines:
     - claude-haiku-4-5-20251001
   gemini:
     - gemini-2.5-flash
+  cursor:
+    - auto
+    - composer-2
 ```
 
 ## Error Reference
 
 ### `GhdagError` hierarchy
 
-Canonical definitions live under `ghdag.core.exceptions` (and related modules). `ghdag.exceptions` re-exports the GitHub API exception family for compatibility. External code can use `except GhdagError` to catch all rows below except where noted.
+Canonical definitions live under `ghdag.core.exceptions` and related modules. `ghdag.exceptions` re-exports the GitHub API exception family. External code can use `except GhdagError` to catch all rows below except where noted.
 
 ```
 GhdagError (core.exceptions)
@@ -345,7 +398,7 @@ These exceptions are **not** caught by `except GhdagError`:
 
 | Exception | Module | Base class | Notes |
 |---|---|---|---|
-| `TemplateVariableError` | `ghdag.pipeline.order` | `ValueError`, `KeyError` | Missing template variable in order rendering (not yet under `GhdagError`) |
+| `TemplateVariableError` | `ghdag.pipeline.order` | `ValueError`, `KeyError` | Missing template variable in order rendering (not under `GhdagError`) |
 
 ## License
 
