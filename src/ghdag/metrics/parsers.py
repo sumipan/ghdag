@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
-import re
 import shlex
 
-from ghdag.llm.spec import ENGINE_SPECS
-from ghdag.metrics.models import TokenUsage
+import shlex
+
+from ghdag.core.engine_spec import ENGINE_SPECS
+from ghdag.core.parsers import parse_token_count, parse_token_usage_json
+
+__all__ = ["parse_engine_model", "parse_token_usage_json", "parse_token_count"]
 
 
 def parse_engine_model(command: str) -> tuple[str | None, str | None]:
@@ -38,38 +41,3 @@ def parse_engine_model(command: str) -> tuple[str | None, str | None]:
                 model = tokens[i + 1]
                 break
     return spec.name, model
-
-
-def parse_token_usage_json(stdout_json: dict) -> TokenUsage:
-    """claude --output-format json のレスポンスから TokenUsage を生成する。"""
-    usage = stdout_json.get("usage") or {}
-    input_tokens = usage.get("input_tokens") or 0
-    output_tokens = usage.get("output_tokens") or 0
-    total = input_tokens + output_tokens
-    return TokenUsage(
-        token_count=total if total > 0 else None,
-        cost_usd=stdout_json.get("total_cost_usd"),
-        cache_read_tokens=stdout_json.get("cache_read_input_tokens"),
-        cache_creation_tokens=stdout_json.get("cache_creation_input_tokens"),
-    )
-
-
-def parse_token_count(engine: str | None, stderr_text: str) -> int | None:
-    """stderr からトークン数を抽出する。取得不能なら None。"""
-    if engine != "claude":
-        return None
-
-    m = re.search(r"Total tokens:\s*(\d+)", stderr_text)
-    if m:
-        return int(m.group(1))
-
-    input_m = re.search(r'input_tokens["\s:]+(\d+)', stderr_text)
-    output_m = re.search(r'output_tokens["\s:]+(\d+)', stderr_text)
-    if input_m and output_m:
-        return int(input_m.group(1)) + int(output_m.group(1))
-    if input_m:
-        return int(input_m.group(1))
-    if output_m:
-        return int(output_m.group(1))
-
-    return None

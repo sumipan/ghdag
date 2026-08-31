@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ghdag.metrics.models import TokenUsage
+from ghdag.core.models.metrics import TokenUsage
 
 
 class CursorAdapter:

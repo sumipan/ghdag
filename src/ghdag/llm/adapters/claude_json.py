@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 
-from ghdag.metrics.models import TokenUsage
-from ghdag.metrics.parsers import parse_token_usage_json
+from ghdag.core.models.metrics import TokenUsage
+from ghdag.core.parsers import parse_token_usage_json
 
 
 class ClaudeJsonAdapter:

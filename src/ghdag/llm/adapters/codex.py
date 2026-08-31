@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from ghdag.metrics.models import TokenUsage
+from ghdag.core.models.metrics import TokenUsage
 
 
 class CodexAdapter:

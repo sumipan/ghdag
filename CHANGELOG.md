@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.30.16 — 2026-08-31
+
+### Changed
+
+- `core/` パッケージ新設: 型・Protocol・エンジン宣言データ（exceptions, models, ports, capabilities, engine_spec, parsers）を集約し、`llm ⇄ metrics` の循環依存を解消。旧 import パスは re-export shim で完全互換を維持 (nexus Issue #2655)
+- `metrics/parsers.py`: `parse_token_count` / `parse_token_usage_json` を `core/parsers.py` に移動（shim 経由で旧パスも維持）
+- `llm/adapters/*`: `TokenUsage` / parser 関数の import を `core` 経由に変更
+
 ## 0.30.15 — 2026-08-31
 
 ### Changed
