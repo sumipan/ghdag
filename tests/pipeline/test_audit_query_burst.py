@@ -165,7 +165,7 @@ class TestGetCorrelationTopN:
              "correlation_id": "cid-new", "timestamp": _ts(60)},
         ])
 
-        with patch("ghdag.pipeline.audit_query.time.time", return_value=time.time()):
+        with patch("ghdag.io.audit_query.time.time", return_value=time.time()):
             result = get_correlation_top_n(audit_path, since_sec=3600, top_n=5)
 
         assert len(result) == 1

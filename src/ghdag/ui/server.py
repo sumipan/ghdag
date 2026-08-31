@@ -15,7 +15,7 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, urlparse
 
-from ghdag.pipeline.audit_query import get_correlation_top_n
+from ghdag.io.audit_query import get_correlation_top_n
 
 from .dashboard import (
     aggregate_cb_firing,

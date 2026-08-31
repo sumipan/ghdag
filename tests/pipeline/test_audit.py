@@ -514,8 +514,9 @@ class TestWriteLlmAuditLog:
 class TestRotation:
     def test_ac1_size_rotation_triggers(self, tmp_path, monkeypatch):
         """AC-1: file > threshold → rotate; new record in fresh audit.jsonl."""
-        import ghdag.pipeline.audit as audit_mod
-        monkeypatch.setattr(audit_mod, "_MAX_AUDIT_BYTES", 5)
+        # rotate 実装は io/_rotate に一元化（#2673）。閾値パッチは正規モジュールへ。
+        import ghdag.io._rotate as rotate_mod
+        monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
 
         audit_path = tmp_path / "audit.jsonl"
         old_content = "x" * 10 + "\n"
@@ -576,12 +577,12 @@ class TestRotation:
 
     def test_ac5_oserror_on_rotation_warns_and_writes(self, tmp_path, monkeypatch, capsys):
         """AC-5: OSError during rotation → stderr warning; write still proceeds."""
-        import ghdag.pipeline.audit as audit_mod
-        monkeypatch.setattr(audit_mod, "_MAX_AUDIT_BYTES", 5)
+        import ghdag.io._rotate as rotate_mod
+        monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
 
         def bad_rotate(p):
             raise OSError("permission denied")
-        monkeypatch.setattr(audit_mod, "_do_rotate", bad_rotate)
+        monkeypatch.setattr(rotate_mod, "_do_rotate", bad_rotate)
 
         audit_path = tmp_path / "audit.jsonl"
         audit_path.write_text("x" * 10 + "\n")
@@ -600,9 +601,9 @@ class TestRotation:
 
     def test_ac6_write_llm_audit_log_rotates(self, tmp_path, monkeypatch):
         """AC-6: write_llm_audit_log triggers rotation."""
-        import ghdag.pipeline.audit as audit_mod
+        import ghdag.io._rotate as rotate_mod
         from ghdag.pipeline.audit import write_llm_audit_log
-        monkeypatch.setattr(audit_mod, "_MAX_AUDIT_BYTES", 5)
+        monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
 
         audit_path = tmp_path / "audit.jsonl"
         audit_path.write_text("x" * 10 + "\n")
@@ -613,9 +614,9 @@ class TestRotation:
 
     def test_ac6_write_task_exit_audit_rotates(self, tmp_path, monkeypatch):
         """AC-6: write_task_exit_audit triggers rotation."""
-        import ghdag.pipeline.audit as audit_mod
+        import ghdag.io._rotate as rotate_mod
         from ghdag.pipeline.audit import write_task_exit_audit
-        monkeypatch.setattr(audit_mod, "_MAX_AUDIT_BYTES", 5)
+        monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
 
         audit_path = tmp_path / "audit.jsonl"
         audit_path.write_text("x" * 10 + "\n")
@@ -626,7 +627,7 @@ class TestRotation:
 
     def test_ac7_write_md_write_audit_rotates(self, tmp_path, monkeypatch):
         """AC-7: write_md_write_audit in files/writer.py triggers rotation."""
-        import ghdag.files._rotate as rotate_mod
+        import ghdag.io._rotate as rotate_mod
         from ghdag.files.writer import write_md_write_audit
         monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
 
@@ -639,7 +640,7 @@ class TestRotation:
 
     def test_ac7_write_promote_audit_rotates(self, tmp_path, monkeypatch):
         """AC-7: _write_promote_audit in files/promote.py triggers rotation."""
-        import ghdag.files._rotate as rotate_mod
+        import ghdag.io._rotate as rotate_mod
         from ghdag.files.promote import _write_promote_audit
         monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
 

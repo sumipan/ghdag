@@ -8,7 +8,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ghdag.pipeline.audit_query import read_task_exit_events
+from ghdag.io.audit_query import read_task_exit_events
 
 __all__ = [
     "aggregate_task_status",

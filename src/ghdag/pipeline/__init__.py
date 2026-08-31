@@ -1,6 +1,6 @@
 """ghdag.pipeline — Layer 1 パイプライン公開 API"""
 
-from ghdag.pipeline.audit_query import get_latest_status, read_task_exit_events
+from ghdag.io.audit_query import get_latest_status, read_task_exit_events
 from ghdag.pipeline.config import (
     ModelValidationError,
     PipelineConfig,
