@@ -38,20 +38,9 @@ def validate_exec_jsonl(exec_jsonl_path: Path) -> list[tuple[int, str]]:
     Raises:
         FileNotFoundError: exec_jsonl_path が存在しない場合
     """
-    if not Path(exec_jsonl_path).exists():
-        raise FileNotFoundError(exec_jsonl_path)
+    from ghdag.io import exec_jsonl
 
-    invalid: list[tuple[int, str]] = []
-    with open(exec_jsonl_path, encoding="utf-8") as f:
-        for lineno, raw in enumerate(f, start=1):
-            stripped = raw.rstrip("\n")
-            if not stripped.strip():
-                continue
-            try:
-                json.loads(stripped)
-            except json.JSONDecodeError:
-                invalid.append((lineno, stripped))
-    return invalid
+    return exec_jsonl.validate(Path(exec_jsonl_path))
 
 
 def repair_exec_jsonl(exec_jsonl_path: Path, *, dry_run: bool = False) -> int:
@@ -66,32 +55,9 @@ def repair_exec_jsonl(exec_jsonl_path: Path, *, dry_run: bool = False) -> int:
         書き込み時は fcntl.LOCK_EX で排他ロックを取得する。
         空行・空白のみの行も除去対象とする。
     """
-    p = Path(exec_jsonl_path)
-    with open(p, "a+", encoding="utf-8") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            f.seek(0)
-            lines = f.readlines()
-            keep: list[str] = []
-            removed = 0
-            for raw in lines:
-                stripped = raw.rstrip("\n")
-                if not stripped.strip():
-                    removed += 1
-                    continue
-                try:
-                    json.loads(stripped)
-                    keep.append(raw)
-                except json.JSONDecodeError:
-                    removed += 1
-            if removed > 0 and not dry_run:
-                f.seek(0)
-                f.truncate()
-                f.writelines(keep)
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+    from ghdag.io import exec_jsonl
 
-    return removed
+    return exec_jsonl.repair(Path(exec_jsonl_path), dry_run=dry_run)
 
 
 def repair_jobs_done(
@@ -119,39 +85,41 @@ def repair_jobs_done(
     restored = 0
     skipped = 0
 
-    with open(exec_jsonl_path, encoding="utf-8") as f:
-        for raw in f:
-            stripped = raw.strip()
-            if not stripped:
-                continue
-            try:
-                record = json.loads(stripped)
-            except json.JSONDecodeError:
-                continue
+    from ghdag.io import exec_jsonl
 
-            uuid = record.get("uuid")
-            result_path_str = record.get("result_path")
-            if not uuid or not result_path_str:
-                continue
+    text = exec_jsonl.read(Path(exec_jsonl_path))
+    for raw in text.splitlines(keepends=True):
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        try:
+            record = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
 
-            result_path = base / result_path_str
-            if not result_path.exists():
-                continue
+        uuid = record.get("uuid")
+        result_path_str = record.get("result_path")
+        if not uuid or not result_path_str:
+            continue
 
-            if _is_done(done_dir, uuid):
-                skipped += 1
-                continue
+        result_path = base / result_path_str
+        if not result_path.exists():
+            continue
 
-            content = result_path.read_text(encoding="utf-8")
-            if content.startswith("REJECTED:"):
-                status = "REJECTED"
-            elif content == "":
-                status = "EMPTY_RESULT"
-            else:
-                status = "0"
+        if _is_done(done_dir, uuid):
+            skipped += 1
+            continue
 
-            if not dry_run:
-                _mark_done(done_dir, uuid, status)
-            restored += 1
+        content = result_path.read_text(encoding="utf-8")
+        if content.startswith("REJECTED:"):
+            status = "REJECTED"
+        elif content == "":
+            status = "EMPTY_RESULT"
+        else:
+            status = "0"
+
+        if not dry_run:
+            _mark_done(done_dir, uuid, status)
+        restored += 1
 
     return {"restored": restored, "skipped": skipped}

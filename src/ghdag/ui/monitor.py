@@ -335,15 +335,16 @@ def _rows_with_tree_layout(
 
 def _parse_exec_jsonl(path: str) -> tuple[dict[str, MonitorTask], list[str]]:
     """JSONL 形式の exec ファイルをパースして MonitorTask を返す。"""
+    from ghdag.io import exec_jsonl
+
     tasks: dict[str, MonitorTask] = {}
     file_order: list[str] = []
     try:
-        with open(path, encoding="utf-8") as f:
-            lines = f.readlines()
+        text = exec_jsonl.read(Path(path))
     except FileNotFoundError:
         return tasks, file_order
 
-    for line in lines:
+    for line in text.splitlines():
         line = line.strip()
         if not line:
             continue

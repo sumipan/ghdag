@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.32.0 — 2026-08-31
+
+### Changed
+
+- exec.jsonl の読み書きを `ghdag.io.exec_jsonl` に一元化。`dag` / `pipeline` / `cleanup` / `maintenance` / `ui` は委譲ファサード化（公開 API は互換維持、`parse_jsonl` は shim）(nexus Issue #2674)
+- `ExecJsonlPruner.prune` 相当の rewrite に `fcntl.LOCK_EX` を追加（従来はロック未取得）
+- `FanOutManager.append_task_fn` シグネチャを `(line, parent_uuid)` に拡張（**breaking** for direct FanOutManager constructors）
+
+### Added
+
+- fan-out 子タスク追記時に `audit.jsonl` へ `source="fanout"`, `correlation_id=親uuid` の enqueue レコードを書く（全 enqueue 経路の監査漏れ是正）
+- `tests/io/test_exec_jsonl.py` / `tests/test_fanout_audit.py`: 一元化・ロック・fan-out 監査の固定テスト
+
+
 ## 0.31.1 — 2026-08-31
 
 ### Changed

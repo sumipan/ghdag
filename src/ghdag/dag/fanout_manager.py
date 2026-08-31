@@ -23,7 +23,7 @@ class FanOutManager:
         self,
         config: DagConfig,
         hooks: DagHooks,
-        append_task_fn: Callable[[str], None],
+        append_task_fn: Callable[[str, str], None],
         promote_fn: Callable[[str | None], None],
     ) -> None:
         self._config = config
@@ -47,7 +47,8 @@ class FanOutManager:
             child_uuid = f"{parent_uuid}{FANOUT_SEPARATOR}{child.id}"
             child_uuids.add(child_uuid)
             line = build_child_jsonl_record(child_uuid, child.command)
-            self._append_task_fn(line)
+            # parent_uuid を渡し、AuditContext 構築は DagEngine 側ラッパーに委ねる
+            self._append_task_fn(line, parent_uuid)
             logger.info("FanOut [%s]: spawned child [%s]", parent_uuid, child_uuid)
         self._pending[parent_uuid] = child_uuids
         self._tasks[parent_uuid] = parent_task
