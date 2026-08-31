@@ -73,9 +73,9 @@ class TestWriteLlmInferenceAudit:
         assert r["correlation_id"] is None
 
     def test_write_llm_inference_audit_rotation(self, tmp_path, monkeypatch):
-        import ghdag.pipeline.audit as audit_mod
+        import ghdag.io._rotate as rotate_mod
 
-        monkeypatch.setattr(audit_mod, "_MAX_AUDIT_BYTES", 5)
+        monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
 
         audit_path = tmp_path / "audit.jsonl"
         audit_path.write_text("x" * 10 + "\n")

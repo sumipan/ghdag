@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ghdag.files._rotate import _maybe_rotate
 from ghdag.files.append import md_append
 from ghdag.files.models import AppendStatus, PathTraversalError, PromoteResult, PromoteStatus
 from ghdag.files.reader import md_read
+from ghdag.io.audit import append_audit_record
 
 JST = timezone(timedelta(hours=9))
 
@@ -22,7 +21,6 @@ def _write_promote_audit(
     status: str,
     correlation_id: str | None = None,
 ) -> None:
-    _maybe_rotate(audit_path)
     record = {
         "event": "md_promote",
         "timestamp": datetime.now(JST).isoformat(),
@@ -33,8 +31,7 @@ def _write_promote_audit(
         "source": "md_promote",
         "correlation_id": correlation_id,
     }
-    with open(audit_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    append_audit_record(audit_path, record)
 
 
 def md_promote(

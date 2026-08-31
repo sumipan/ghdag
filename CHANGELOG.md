@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.31.1 — 2026-08-31
+
+### Changed
+
+- audit I/O を `ghdag.io.audit` / `ghdag.io.audit_query` / `ghdag.io._rotate` に一元化。`pipeline.audit`・`pipeline.audit_query`・`files._rotate` は re-export shim で互換維持 (nexus Issue #2673)
+- `files/writer.py` / `files/promote.py` / `tool/audit.py` の JSON append + rotate を `io.audit.append_audit_record` 経由に統一
+- `ui/dashboard.py` / `ui/server.py` / `pipeline/__init__.py` の read API import を `io.audit_query` に移行
+
+### Added
+
+- `tests/io/test_audit.py` / `tests/io/test_audit_query.py`: 一元化・互換 import・rotate 正規配置の固定テスト
+
+
 ## 0.31.0 — 2026-08-31
 
 ### Changed

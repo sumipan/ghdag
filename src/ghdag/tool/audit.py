@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ghdag.files._rotate import _maybe_rotate
+from ghdag.io.audit import append_audit_record
 
 JST = timezone(timedelta(hours=9))
 
@@ -26,7 +25,6 @@ def write_tool_fallback_audit(
     correlation_id: str | None = None,
 ) -> None:
     """Record a tool fallback chain activation to audit.jsonl."""
-    _maybe_rotate(audit_path)
     record: dict[str, object] = {
         "schema_version": 1,
         "event": "tool.fallback",
@@ -44,8 +42,7 @@ def write_tool_fallback_audit(
         record["correlation_id"] = correlation_id
 
     try:
-        with open(audit_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        append_audit_record(audit_path, record)
     except OSError as e:
         print(
             f"[audit] warning: failed to write tool fallback audit: {e}",

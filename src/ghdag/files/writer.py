@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import fcntl
-import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ghdag.files._rotate import _maybe_rotate
 from ghdag.files.models import PathTraversalError, WriteResult
+from ghdag.io.audit import append_audit_record
 
 JST = timezone(timedelta(hours=9))
 
@@ -20,7 +19,6 @@ def write_md_write_audit(
     source: str = "md_write",
     correlation_id: str | None = None,
 ) -> None:
-    _maybe_rotate(audit_path)
     record = {
         "event": "md_write",
         "timestamp": datetime.now(JST).isoformat(),
@@ -29,8 +27,7 @@ def write_md_write_audit(
         "source": source,
         "correlation_id": correlation_id,
     }
-    with open(audit_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    append_audit_record(audit_path, record)
 
 
 def md_write(
