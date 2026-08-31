@@ -7,6 +7,16 @@ from enum import Enum
 
 
 class FailureClass(Enum):
+    cause: str
+    retry_policy: str
+
+    def __new__(cls, value: str, cause: str, retry_policy: str) -> FailureClass:
+        obj = object.__new__(cls)
+        obj._value_ = value
+        obj.cause = cause
+        obj.retry_policy = retry_policy
+        return obj
+
     TIMEOUT = ("TIMEOUT", "transient", "safe")
     REJECTED = ("REJECTED", "permanent", "forbidden")
     PROCESS_ERROR = ("PROCESS_ERROR", "permanent", "requires_review")
@@ -16,11 +26,6 @@ class FailureClass(Enum):
     FANOUT_PARSE_FAILED = ("FANOUT_PARSE_FAILED", "permanent", "requires_review")
     DEP_FAILED = ("DEP_FAILED", "permanent", "forbidden")
     UNKNOWN_FAILURE = ("UNKNOWN_FAILURE", "unknown", "requires_review")
-
-    def __init__(self, value: str, cause: str, retry_policy: str):
-        self._value_ = value
-        self.cause = cause
-        self.retry_policy = retry_policy
 
 
 @dataclass(frozen=True)
