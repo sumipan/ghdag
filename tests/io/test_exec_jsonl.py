@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import ast
-import json
 import fcntl
+import json
 from pathlib import Path
 
 import pytest
@@ -109,8 +109,8 @@ class TestAppend:
         assert audit_rec["exec_lines_count"] == 1
 
     def test_append_uses_lock_ex(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        from ghdag.io.audit import AuditContext
         from ghdag.io import exec_jsonl
+        from ghdag.io.audit import AuditContext
 
         locks: list[int] = []
         real_flock = fcntl.flock
@@ -153,7 +153,7 @@ class TestRemove:
         )
         removed = remove_by_predicate(path, lambda r: r.get("idempotency_key") == "drop")
         assert removed == 1
-        remaining = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        remaining = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
         assert [r["uuid"] for r in remaining] == ["a"]
 
     def test_remove_by_uuids(self, tmp_path: Path) -> None:
@@ -166,7 +166,7 @@ class TestRemove:
             encoding="utf-8",
         )
         assert remove_by_uuids(path, {"a"}) == 1
-        remaining = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        remaining = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
         assert [r["uuid"] for r in remaining] == ["b"]
 
     def test_remove_uses_lock_ex(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

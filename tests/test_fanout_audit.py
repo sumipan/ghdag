@@ -11,9 +11,9 @@ from ghdag.dag.engine import DagEngine
 from ghdag.dag.fanout import FanOutItem, FanOutSpec
 from ghdag.dag.hooks import DagHooks
 from ghdag.dag.models import DagConfig, Task
+from ghdag.io.audit import AuditContext
 from ghdag.metrics.models import TaskMetrics
 from ghdag.pipeline.state import PipelineState
-from ghdag.io.audit import AuditContext
 
 
 def _make_config(tmp_path: Path) -> DagConfig:
