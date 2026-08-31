@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from ghdag.io.audit import (
-    AuditContext,
     _MAX_AUDIT_BYTES,
+    AuditContext,
     _do_rotate,
     _maybe_rotate,
     append_audit_record,
