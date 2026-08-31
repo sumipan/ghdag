@@ -758,19 +758,23 @@ class TestDoneDeleteOrder:
         call_order: list[str] = []
 
         original_unlink = Path.unlink
-        original_write_text = Path.write_text
+        import ghdag.io.exec_jsonl as exec_jsonl_mod
+
+        original_prune = exec_jsonl_mod.prune
 
         def tracking_unlink(self, missing_ok=False):
             call_order.append(f"unlink:{self.name}")
             return original_unlink(self, missing_ok=missing_ok)
 
-        def tracking_write_text(self, data, *args, **kwargs):
-            if self.name == exec_jsonl.name:
-                call_order.append(f"write_exec:{self.name}")
-            return original_write_text(self, data, *args, **kwargs)
+        def tracking_prune(path, prune_uuids, *, dry_run=False):
+            # prune は LOCK_EX 付き rewrite（旧 Path.write_text 相当）
+            result = original_prune(path, prune_uuids, dry_run=dry_run)
+            if Path(path).name == exec_jsonl.name and result > 0 and not dry_run:
+                call_order.append(f"write_exec:{exec_jsonl.name}")
+            return result
 
         with patch.object(Path, "unlink", tracking_unlink), \
-             patch.object(Path, "write_text", tracking_write_text):
+             patch.object(exec_jsonl_mod, "prune", tracking_prune):
             cleanup_queue(
                 queue_dir=queue_dir,
                 archive_dir=archive_dir,

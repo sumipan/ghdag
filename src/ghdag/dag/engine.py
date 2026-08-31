@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import logging
 import os
 import signal
@@ -10,12 +11,14 @@ import time
 from pathlib import Path
 
 from ghdag.core.vocabulary import DONE_DEP_FAILED
+from ghdag.io import exec_jsonl
+from ghdag.io.audit import AuditContext
 
 from .circuit_breaker import CircuitBreakerPolicy
 from .fanout_manager import FanOutManager
 from .hooks import DagHooks, DefaultHooks
 from .models import DagConfig, Task
-from .parser import parse_jsonl, validate_dependencies
+from .parser import validate_dependencies
 from .state import (
     load_done_from_dir,
     load_succeeded_from_dir,
@@ -44,7 +47,7 @@ class DagEngine:
             max_consecutive_failures=config.max_consecutive_failures,
         )
         self._fanout_manager = FanOutManager(
-            config, self._hooks, self.append_task, self._run_promote
+            config, self._hooks, self._append_fanout_child, self._run_promote
         )
         self._launcher = TaskLauncher(
             config, self._hooks, self._circuit_breaker,
@@ -70,13 +73,8 @@ class DagEngine:
 
             if mtime != last_mtime:
                 last_mtime = mtime
-                with open(exec_jsonl_path, encoding="utf-8") as f:
-                    fcntl.flock(f, fcntl.LOCK_SH)
-                    try:
-                        text = f.read()
-                    finally:
-                        fcntl.flock(f, fcntl.LOCK_UN)
-                task_list = parse_jsonl(text)
+                text = exec_jsonl.read(Path(exec_jsonl_path))
+                task_list = exec_jsonl.parse(text)
                 self._tasks = {t.uuid: t for t in task_list}
                 logger.info("Loaded exec file (%d tasks)", len(self._tasks))
 
@@ -153,15 +151,23 @@ class DagEngine:
 
         logger.info("DagEngine stopped")
 
-    def append_task(self, line: str) -> None:
-        """Append a line to exec.jsonl with fcntl.LOCK_EX protection."""
-        path = str(self._config.exec_jsonl_path)
-        with open(path, "a", encoding="utf-8") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            try:
-                f.write(line if line.endswith("\n") else line + "\n")
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
+    def append_task(self, line: str, audit_context: AuditContext | None = None) -> None:
+        """Append a JSONL record to exec.jsonl with LOCK_EX + audit enqueue."""
+        path = Path(self._config.exec_jsonl_path)
+        record = json.loads(line if not line.endswith("\n") else line[:-1])
+        exec_jsonl.append(
+            path,
+            [record],
+            audit_context or AuditContext(source="dag"),
+            audit_path=path.parent / "audit.jsonl",
+        )
+
+    def _append_fanout_child(self, line: str, parent_uuid: str) -> None:
+        """FanOutManager callback: build AuditContext and append child task."""
+        self.append_task(
+            line,
+            AuditContext(source="fanout", correlation_id=parent_uuid),
+        )
 
     def mark_done(self, uuid: str, status: str | int) -> None:
         """Delegate to state.mark_done."""

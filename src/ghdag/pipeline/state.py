@@ -19,7 +19,8 @@ from pathlib import Path
 
 import yaml
 
-from ghdag.pipeline.audit import AuditContext, write_audit_log
+from ghdag.io import exec_jsonl
+from ghdag.io.audit import AuditContext
 
 
 class PipelineState:
@@ -40,17 +41,7 @@ class PipelineState:
         JSONL レコードの "idempotency_key" フィールドで判定する。
         ファイルが存在しない場合も True を返す。
         """
-        if not self._exec_jsonl_path.exists():
-            return True
-        with open(self._exec_jsonl_path, encoding="utf-8") as f:
-            for line in f:
-                try:
-                    rec = json.loads(line)
-                    if rec.get("idempotency_key") == key:
-                        return False
-                except json.JSONDecodeError:
-                    continue
-        return True
+        return exec_jsonl.check_idempotency(self._exec_jsonl_path, key)
 
     def remove_idempotency_matching(self, workflow_name: str, issue_number: int) -> int:
         """exec.jsonl から workflow_name:*:issue_number にマッチする冪等性記録を削除。
@@ -87,36 +78,7 @@ class PipelineState:
         Returns:
             削除したレコード数
         """
-        if not self._exec_jsonl_path.exists():
-            return 0
-
-        with open(self._exec_jsonl_path, "r+", encoding="utf-8") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            try:
-                lines = f.readlines()
-                new_lines = []
-                removed = 0
-                for line in lines:
-                    stripped = line.strip()
-                    if not stripped:
-                        new_lines.append(line)
-                        continue
-                    try:
-                        data = json.loads(stripped)
-                        if predicate(data):
-                            removed += 1
-                            continue
-                    except json.JSONDecodeError:
-                        pass
-                    new_lines.append(line)
-                if removed > 0:
-                    f.seek(0)
-                    f.writelines(new_lines)
-                    f.truncate()
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-
-        return removed
+        return exec_jsonl.remove_by_predicate(self._exec_jsonl_path, predicate)
 
     # --- JSON 状態永続化 ---
 
@@ -151,31 +113,11 @@ class PipelineState:
         audit_context: AuditContext | None = None,
     ) -> None:
         """exec.jsonl に records を JSONL 形式で追記。fcntl 排他ロック付き。"""
-        if audit_context and audit_context.request_id:
-            for rec in records:
-                rec.setdefault("annotations", {})["_request_id"] = audit_context.request_id
-
-        lines = [json.dumps(r, ensure_ascii=False) for r in records]
-        with open(self._exec_jsonl_path, "a", encoding="utf-8") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            try:
-                f.write("\n".join(lines) + "\n")
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-
-        ctx = audit_context or AuditContext()
-        audit_path = self._exec_jsonl_path.parent / "audit.jsonl"
-        uuids = [r["uuid"] for r in records if "uuid" in r]
-        dp_uuids = [
-            r["uuid"] for r in records
-            if r.get("annotations", {}).get("default_permission_applied")
-        ]
-        write_audit_log(
-            audit_path,
-            task_uuids=uuids,
-            exec_lines_count=len(records),
-            context=ctx,
-            default_permission_uuids=dp_uuids or None,
+        exec_jsonl.append(
+            self._exec_jsonl_path,
+            records,
+            audit_context or AuditContext(),
+            audit_path=self._exec_jsonl_path.parent / "audit.jsonl",
         )
 
     def write_order_file(
@@ -244,24 +186,7 @@ class PipelineState:
         Returns:
             {uuid: command} の辞書。
         """
-        if not self._exec_jsonl_path.exists():
-            return {}
-
-        result: dict[str, str] = {}
-        with open(self._exec_jsonl_path, encoding="utf-8") as f:
-            for line in f:
-                stripped = line.strip()
-                if not stripped:
-                    continue
-                try:
-                    data = json.loads(stripped)
-                except json.JSONDecodeError:
-                    continue
-                uuid = data.get("uuid")
-                command = data.get("command")
-                if uuid and command:
-                    result[uuid] = command
-        return result
+        return exec_jsonl.parse_as_dict(self._exec_jsonl_path)
 
     def remove_exec_entries(self, uuids: set[str]) -> int:
         """exec.jsonl から指定 UUID のエントリ行を削除する。fcntl ロック付き。
@@ -272,36 +197,7 @@ class PipelineState:
         Returns:
             削除した行数
         """
-        if not self._exec_jsonl_path.exists():
-            return 0
-
-        with open(self._exec_jsonl_path, "a+", encoding="utf-8") as f:
-            fcntl.flock(f, fcntl.LOCK_EX)
-            try:
-                f.seek(0)
-                lines = f.readlines()
-                new_lines = []
-                removed = 0
-                for line in lines:
-                    stripped = line.strip()
-                    if not stripped:
-                        new_lines.append(line)
-                        continue
-                    try:
-                        data = json.loads(stripped)
-                        if data.get("uuid") in uuids:
-                            removed += 1
-                            continue
-                    except json.JSONDecodeError:
-                        pass
-                    new_lines.append(line)
-                if removed > 0:
-                    f.seek(0)
-                    f.truncate()
-                    f.writelines(new_lines)
-            finally:
-                fcntl.flock(f, fcntl.LOCK_UN)
-        return removed
+        return exec_jsonl.remove_by_uuids(self._exec_jsonl_path, uuids)
 
 
 def status_rank(status: str, status_order: tuple[str, ...]) -> int:

@@ -2,61 +2,13 @@
 
 from __future__ import annotations
 
-import json
-import logging
 from collections import deque
+
+from ghdag.io.exec_jsonl import parse as parse_jsonl
 
 from .models import Task
 
-logger = logging.getLogger(__name__)
-
-
-def parse_jsonl(text: str) -> list[Task]:
-    """JSONL テキストをパースし Task リストを返す。
-
-    各行を json.loads でパースし、不正行（空行・不正 JSON・必須フィールド欠落）はスキップする。
-    同一 uuid が複数回出現した場合、後の定義が優先する（parse_exec_md と同じ挙動）。
-    """
-    tasks: list[Task] = []
-    seen: set[str] = set()
-
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-
-        try:
-            data = json.loads(line)
-        except json.JSONDecodeError:
-            logger.warning("Skipping invalid JSON line: %s", line)
-            continue
-
-        if "uuid" not in data:
-            logger.warning("Skipping line missing 'uuid': %s", line)
-            continue
-        if "command" not in data:
-            logger.warning("Skipping line missing 'command': %s", line)
-            continue
-
-        uuid = data["uuid"]
-        if uuid in seen:
-            tasks = [t for t in tasks if t.uuid != uuid]
-        seen.add(uuid)
-
-        tasks.append(Task(
-            uuid=uuid,
-            command=data["command"],
-            depends=data.get("depends", []),
-            retry=data.get("retry", 0),
-            annotations=data.get("annotations", {}),
-            result_path=data.get("result_path") or None,
-            idempotency_key=data.get("idempotency_key"),
-            engine=data.get("engine"),
-            model=data.get("model"),
-            result_finalize=data.get("result_finalize"),
-        ))
-
-    return tasks
+__all__ = ["parse_jsonl", "validate_dependencies"]
 
 
 def validate_dependencies(

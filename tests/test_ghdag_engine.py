@@ -1072,8 +1072,10 @@ class TestFanOutManagerUnit:
 
         config = _make_config(tmp_path, "")
         hooks = MagicMock(spec=DagHooks)
-        appended: list[str] = []
-        fm = FanOutManager(config, hooks, appended.append, lambda _: None)
+        appended: list[tuple[str, str]] = []
+        fm = FanOutManager(
+            config, hooks, lambda line, parent: appended.append((line, parent)), lambda _: None
+        )
 
         parent_uuid = "parent"
         task = Task(uuid=parent_uuid, command="true")
@@ -1090,6 +1092,7 @@ class TestFanOutManagerUnit:
         fm.spawn(parent_uuid, task, spec, metrics)
 
         assert len(appended) == 2
+        assert all(parent == parent_uuid for _, parent in appended)
         assert fm.is_pending(parent_uuid)
 
     def test_check_completions_marks_parent_done_when_all_children_complete(self, tmp_path):
@@ -1107,7 +1110,7 @@ class TestFanOutManagerUnit:
         os.makedirs(str(tmp_path / "jobs" / "done"), exist_ok=True)
 
         hooks = MagicMock(spec=DagHooks)
-        fm = FanOutManager(config, hooks, lambda _: None, lambda _: None)
+        fm = FanOutManager(config, hooks, lambda _line, _parent: None, lambda _: None)
 
         parent_uuid = "parent-fm"
         child_uuids = {f"{parent_uuid}--fo--c1", f"{parent_uuid}--fo--c2"}
