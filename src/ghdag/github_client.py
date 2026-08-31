@@ -16,8 +16,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import Any, cast
 
+from ghdag.core.ports.github import GitHubIssuePort
 from ghdag.exceptions import (
     AuthError,
     GitHubApiError,
@@ -55,20 +56,6 @@ def _backoff_sleep(attempt: int, retry_after: str | None = None) -> None:
             pass
     delay = min(_BACKOFF_BASE_SEC * (2**attempt), _BACKOFF_CAP_SEC)
     time.sleep(delay + random.uniform(0, 0.25))
-
-
-@runtime_checkable
-class GitHubIssuePort(Protocol):
-    """GitHub Issues 操作の抽象インタフェース。dispatcher はこの Protocol にのみ依存する。"""
-
-    def get_issue(self, number: int) -> dict: ...
-    def list_issues(self, label: str, state: str = "open") -> list[dict]: ...
-    def get_issue_comments(self, number: int) -> list[dict]: ...
-    def update_label(self, number: int, remove: str, add: str) -> None: ...
-    def add_comment(self, number: int, body: str) -> None: ...
-    def remove_label(self, number: int, label: str) -> None: ...
-    def dispatch_event(self, event_type: str, payload: dict | None = None) -> None: ...
-    def get_rate_limit(self) -> dict | None: ...
 
 
 def _resolve_token(token: str | None = None) -> str:

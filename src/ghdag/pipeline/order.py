@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import string
 from pathlib import Path
-from typing import Protocol
+
+from ghdag.core.ports.order import OrderBuilder
+
+__all__ = ["OrderBuilder", "InlineOrderBuilder", "TemplateOrderBuilder", "TemplateVariableError"]
 
 
 class TemplateVariableError(ValueError, KeyError):
@@ -16,12 +19,6 @@ class TemplateVariableError(ValueError, KeyError):
 
     def __str__(self) -> str:
         return self.args[0] if self.args else ""
-
-
-class OrderBuilder(Protocol):
-    def build_order(self, step_id: str, context: dict[str, str]) -> str:
-        """ステップ ID とコンテキストから order 本文を生成。"""
-        ...
 
 
 def _check_missing_vars(
