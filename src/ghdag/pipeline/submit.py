@@ -6,9 +6,9 @@ import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from ghdag.core.command import get_adapter
 from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.state import PipelineState
-from ghdag.workflow.engine import get_adapter
 
 _TZ = ZoneInfo("Asia/Tokyo")
 _PROMPT = "受け取った内容を実行して"

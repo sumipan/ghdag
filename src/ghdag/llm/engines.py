@@ -10,14 +10,41 @@ from __future__ import annotations
 import json
 import subprocess
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 
+from ghdag.core.command import (
+    _CAPABILITY_FLAG_BUILDERS,
+    _build_claude_flags,
+    _build_codex_flags,
+    _build_cursor_flags,
+    build_llm_cmd,
+)
 from ghdag.exceptions import GhdagError
 from ghdag.llm._config import load_engine_models
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.capabilities import TEXT_ONLY, LLMCapabilities, LLMParseError
 from ghdag.llm.spec import ENGINE_SPECS
+
+__all__ = [
+    "EngineModelError",
+    "LLMResult",
+    "TextResult",
+    "build_llm_cmd",
+    "call",
+    "call_text",
+    "get_engine_models",
+    "list_engines",
+    "list_models",
+    "validate_engine_model",
+    "ENGINE_CLI",
+    "ENGINE_DEFAULTS",
+    "_CAPABILITY_FLAG_BUILDERS",
+    "_build_claude_flags",
+    "_build_codex_flags",
+    "_build_cursor_flags",
+    "_IGNORED_CAPABILITIES",
+    "_UNSUPPORTED_CAPABILITIES",
+]
 
 
 class EngineModelError(GhdagError):
@@ -25,10 +52,19 @@ class EngineModelError(GhdagError):
 
 
 # ---------------------------------------------------------------------------
-# エンジン・モデル ホワイトリスト（YAML 設定または DEFAULT_ENGINE_MODELS にフォールバック）
+# エンジン・モデル ホワイトリスト（遅延初期化 — import 時に env / cwd を読まない）
 # ---------------------------------------------------------------------------
 
-ENGINE_MODELS: dict[str, list[str]] = load_engine_models()
+_ENGINE_MODELS: dict[str, list[str]] | None = None
+
+
+def get_engine_models() -> dict[str, list[str]]:
+    """ENGINE_MODELS 相当を返す（初回呼び出しで load_engine_models を実行しキャッシュ）。"""
+    global _ENGINE_MODELS
+    if _ENGINE_MODELS is None:
+        _ENGINE_MODELS = load_engine_models()
+    return _ENGINE_MODELS
+
 
 # エンジンごとの CLI コマンド名（spec から派生）
 ENGINE_CLI: dict[str, str] = {name: spec.cli for name, spec in ENGINE_SPECS.items()}
@@ -39,7 +75,7 @@ ENGINE_DEFAULTS: dict[str, str | None] = {name: spec.default_model for name, spe
 
 def list_engines() -> list[str]:
     """利用可能なエンジン名の一覧を返す。"""
-    return sorted(ENGINE_MODELS.keys())
+    return sorted(get_engine_models().keys())
 
 
 def list_models(engine: str) -> list[str]:
@@ -48,12 +84,13 @@ def list_models(engine: str) -> list[str]:
     Raises:
         EngineModelError: 未知のエンジン
     """
-    if engine not in ENGINE_MODELS:
+    models = get_engine_models()
+    if engine not in models:
         raise EngineModelError(
             f"Unknown engine: {engine!r}. "
-            f"Available: {sorted(ENGINE_MODELS.keys())}"
+            f"Available: {sorted(models.keys())}"
         )
-    return sorted(ENGINE_MODELS[engine])
+    return sorted(models[engine])
 
 
 def validate_engine_model(engine: str, model: str | None) -> str:
@@ -67,16 +104,17 @@ def validate_engine_model(engine: str, model: str | None) -> str:
     Raises:
         EngineModelError: 未知のエンジンまたは許可外モデル
     """
-    if engine not in ENGINE_MODELS:
+    models = get_engine_models()
+    if engine not in models:
         raise EngineModelError(
             f"Unknown engine: {engine!r}. "
-            f"Available: {sorted(ENGINE_MODELS.keys())}"
+            f"Available: {sorted(models.keys())}"
         )
 
     if model is None:
         return ENGINE_DEFAULTS[engine]
 
-    allowed = ENGINE_MODELS[engine]
+    allowed = models[engine]
     if model not in allowed:
         raise EngineModelError(
             f"Model not in allowlist: {model!r} (engine={engine}). "
@@ -152,84 +190,6 @@ def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities
             )
 
 
-# ---------------------------------------------------------------------------
-# LLM command builders — per-engine capability flag helpers
-# ---------------------------------------------------------------------------
-
-def _build_claude_flags(
-    capabilities: LLMCapabilities, dangerously_skip_permissions: bool
-) -> list[str]:
-    # sandbox=readonly → --permission-mode plan（read-only Bash 可・変更系 deny）。
-    # permission_mode 明示指定との同時指定は意味が衝突するため拒否する。
-    if capabilities.sandbox == "readonly":
-        if capabilities.permission_mode != "default":
-            raise ValueError(
-                "sandbox='readonly' conflicts with explicit permission_mode="
-                f"{capabilities.permission_mode!r}; use one or the other"
-            )
-        flags = ["--permission-mode", "plan"]
-    else:
-        flags = ["--permission-mode", capabilities.permission_mode]
-    if capabilities.stream:
-        flags += ["--output-format", "stream-json", "--verbose"]
-    elif capabilities.output_format != "text":
-        flags += ["--output-format", capabilities.output_format]
-    if capabilities.allowed_tools:
-        flags += ["--allowed-tools", ",".join(capabilities.allowed_tools)]
-    if capabilities.disallowed_tools:
-        flags += ["--disallowed-tools", ",".join(capabilities.disallowed_tools)]
-    if dangerously_skip_permissions:
-        flags += ["--dangerously-skip-permissions"]
-    return flags
-
-
-def _build_cursor_flags(
-    capabilities: LLMCapabilities, dangerously_skip_permissions: bool
-) -> list[str]:
-    # cursor CLI `--sandbox <enabled|disabled>` は config を上書きする二値モード
-    # （agent --help 実測）。enabled 時は Cursor のサンドボックスを強制する。
-    # 書き込み・ネットワーク遮断の詳細は CLI/設定依存。--force との同時指定は矛盾。
-    bypass = dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions"
-    if capabilities.sandbox == "readonly":
-        if bypass:
-            raise ValueError(
-                "sandbox='readonly' conflicts with --force (bypass permissions)"
-            )
-        return ["--sandbox", "enabled"]
-    if bypass:
-        return ["--force"]
-    return []
-
-
-def _build_codex_flags(
-    capabilities: LLMCapabilities, dangerously_skip_permissions: bool
-) -> list[str]:
-    # permission_mode も見るのは exec.jsonl 経路（render_exec_command）のため。
-    # render_exec_command は dangerously_skip_permissions=False 固定で builder を呼ぶので、
-    # capabilities を見ないと DANGEROUS_FULL_ACCESS が CLI フラグに落ちず、
-    # codex が workspace-write サンドボックスのまま起動して cwd 外へ書けない。
-    # 一方 call() 経路は _validate_capabilities_for_engine が codex の
-    # permission_mode != "default" を弾くため、この分岐には到達しない。
-    flags = ["--json", "--skip-git-repo-check"]
-    bypass = dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions"
-    if capabilities.sandbox == "readonly":
-        if bypass:
-            raise ValueError(
-                "sandbox='readonly' conflicts with dangerously-bypass-sandbox"
-            )
-        flags += ["-s", "read-only"]
-    elif bypass:
-        flags.append("--dangerously-bypass-approvals-and-sandbox")
-    return flags
-
-
-_CAPABILITY_FLAG_BUILDERS: dict[str, Callable[[LLMCapabilities, bool], list[str]]] = {
-    "claude": _build_claude_flags,
-    "cursor": _build_cursor_flags,
-    "codex": _build_codex_flags,
-}
-
-
 @dataclass
 class LLMResult:
     """ワンショット LLM 呼び出しの結果。"""
@@ -299,46 +259,6 @@ def _extract_stream_result(stdout: str) -> str:
             raw=stdout, reason="no result line in stream-json output"
         )
     return last_result
-
-
-def build_llm_cmd(
-    engine: str,
-    model: str,
-    prompt: str,
-    *,
-    capabilities: LLMCapabilities = TEXT_ONLY,
-    dangerously_skip_permissions: bool = False,
-) -> list[str]:
-    """LLM CLI コマンドのリストを構築する。
-
-    Args:
-        engine: エンジン名
-        model: 検証済みモデル ID
-        prompt: プロンプト文字列
-        capabilities: 能力制約値オブジェクト（デフォルト: TEXT_ONLY）
-        dangerously_skip_permissions: claude エンジン時に --dangerously-skip-permissions を付与
-    Returns:
-        subprocess 用のコマンドリスト
-    """
-    spec = ENGINE_SPECS.get(engine)
-    cli = spec.cli if spec else engine
-    cmd = [cli, *spec.subcommand] if spec else [cli]
-
-    if spec is None:
-        cmd += ["--model", model, "-p", prompt]
-    else:
-        if spec.model_flag:
-            cmd += [spec.model_flag, model]
-        if spec.prompt_flag:
-            cmd += [spec.prompt_flag, prompt]
-
-    builder = _CAPABILITY_FLAG_BUILDERS.get(engine)
-    if builder:
-        cmd += builder(capabilities, dangerously_skip_permissions)
-    elif dangerously_skip_permissions and spec and spec.danger_flag:
-        cmd.append(spec.danger_flag)
-
-    return cmd
 
 
 def call(

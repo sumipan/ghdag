@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.31.0 — 2026-08-31
+
+### Changed
+
+- `core/command.py` 新設: `render_exec_command` / flag builders / `build_llm_cmd` / `EngineAdapter` / `get_adapter` を集約。`pipeline ⇄ workflow` と `llm.spec ⇄ llm.engines` の循環を解消。旧パスは re-export shim で互換維持 (nexus Issue #2656)
+- `dag/audit_hooks.py`: `AuditHooks` の正規配置先へ移動。`pipeline/hooks.py` は shim（import-linter で許容）(nexus Issue #2656)
+- `llm/engines.py`: モジュールレベル `ENGINE_MODELS = load_engine_models()` を廃止し `get_engine_models()` 遅延初期化へ移行（**breaking**: `ENGINE_MODELS` 変数は公開しない）(nexus Issue #2656)
+- `tool/audit.py`: `_maybe_rotate` の import 先を `files._rotate` に変更（`tool → pipeline` 逆流解消）(nexus Issue #2656)
+- `pyproject.toml`: import-linter 契約 5 本を追加（core 独立・二塔分離・io/ops 隔離）(nexus Issue #2656)
+- `maintenance.py`: ops 契約のため `dag.state` 依存をローカルヘルパーに置換（挙動不変）(nexus Issue #2656)
+
+### Added
+
+- `tests/core/test_purity.py` / `test_no_import_side_effects.py`: core 純度ガードと import 副作用固定テスト (nexus Issue #2656)
+- `ghdag.io`: Step 2 用プレースホルダパッケージ（import-linter 契約参照用）(nexus Issue #2656)
+
 ## 0.30.16 — 2026-08-31
 
 ### Changed
