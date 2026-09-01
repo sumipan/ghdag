@@ -61,3 +61,17 @@ class CodexAdapter:
                     cost_usd=None,
                 )
         return None
+
+    def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
+        for line in stdout.decode("utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            session_id = obj.get("session_id") if isinstance(obj, dict) else None
+            if isinstance(session_id, str) and session_id:
+                return session_id
+        return None

@@ -32,3 +32,13 @@ class ClaudeJsonAdapter:
             return parse_token_usage_json(data)
         except (json.JSONDecodeError, UnicodeDecodeError):
             return None
+
+    def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
+        if not stdout:
+            return None
+        try:
+            data = json.loads(stdout.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return None
+        session_id = data.get("session_id") if isinstance(data, dict) else None
+        return session_id if isinstance(session_id, str) and session_id else None

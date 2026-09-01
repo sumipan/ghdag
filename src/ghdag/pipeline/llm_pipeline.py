@@ -64,6 +64,42 @@ def _validate_depends(steps: "list[StepConfig]") -> None:
     if visited < len(in_degree):
         raise DependencyError("circular dependency detected among steps")
 
+    dep_map: dict[str, set[str]] = {
+        s.id: set(s.depends) for s in steps if s.id is not None
+    }
+
+    def _is_transitive_ancestor(child_id: str, ancestor_id: str) -> bool:
+        seen: set[str] = set()
+        queue = list(dep_map.get(child_id, set()))
+        while queue:
+            dep = queue.pop(0)
+            if dep == ancestor_id:
+                return True
+            if dep in seen:
+                continue
+            seen.add(dep)
+            queue.extend(dep_map.get(dep, set()))
+        return False
+
+    for step in steps:
+        resume_from = step.resume_from
+        if resume_from is None:
+            continue
+        if not isinstance(resume_from, str):
+            raise DependencyError(
+                f"resume_from must be a single step id string (fan-in is unsupported): {resume_from!r}"
+            )
+        if step.id is None:
+            raise DependencyError("resume_from requires step.id to be set")
+        if resume_from not in step_ids:
+            raise DependencyError(f"Unknown resume_from dependency: {resume_from!r}")
+        if step.id == resume_from:
+            raise DependencyError("resume_from cannot reference itself")
+        if not _is_transitive_ancestor(step.id, resume_from):
+            raise DependencyError(
+                f"resume_from {resume_from!r} must be a transitive ancestor of step {step.id!r}"
+            )
+
 
 @dataclass
 class SubmittedStep:
@@ -218,6 +254,8 @@ class LLMPipelineAPI:
                 model=step.model,
                 permission=step.permission,
             )
+            if step.resume_from:
+                record.setdefault("annotations", {})["resume_from_uuid"] = step_uuid_map[step.resume_from]
             if metadata:
                 record.setdefault("annotations", {}).update(metadata)
             if idempotency_key:

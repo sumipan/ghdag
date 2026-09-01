@@ -22,6 +22,7 @@ from ghdag.core.vocabulary import (
     DONE_TIMEOUT,
     DONE_UNKNOWN_FAILURE,
 )
+from ghdag.io import sessions
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.metrics.models import FailureClass, TaskMetrics
 from ghdag.metrics.parsers import parse_engine_model
@@ -37,6 +38,10 @@ from .state import mark_done as state_mark_done
 logger = logging.getLogger(__name__)
 
 _STDIN_REDIR_RE = re.compile(r"(?<!<)<\s+(\S+)")
+_RESUME_ERROR_RE = re.compile(
+    r"(resume|session|chat_id|not found|expired|invalid)",
+    re.IGNORECASE,
+)
 
 
 def _task_request_id(task: Task) -> str | None:
@@ -63,6 +68,7 @@ class TaskLauncher:
 
     def launch(self, uuid: str, task: Task) -> None:
         """Start a subprocess for the given task and register it in _running."""
+        self._apply_resume_if_available(uuid, task)
         logger.info("Launching [%s]: %s", uuid, task.command)
         cwd = str(self._config.cwd) if self._config.cwd else None
 
@@ -121,6 +127,7 @@ class TaskLauncher:
 
     def check_completions(self) -> None:
         """Inspect running processes and process any that have finished."""
+        cwd = str(self._config.cwd) if self._config.cwd else None
         for uuid in list(self._running):
             rt = self._running[uuid]
 
@@ -164,6 +171,27 @@ class TaskLauncher:
             cache_read_tokens = usage.cache_read_tokens if usage else None
             cache_creation_tokens = usage.cache_creation_tokens if usage else None
 
+            if returncode != 0 and self._is_resume_fallback_target(task, stderr_text):
+                original_command = task.annotations.get("_command_without_resume")
+                if original_command:
+                    logger.info("Retrying [%s] without --resume due to session-related failure", uuid)
+                    fallback = subprocess.run(
+                        ["bash", "-o", "pipefail", "-c", original_command],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        cwd=cwd,
+                    )
+                    returncode = fallback.returncode
+                    stdout_data = fallback.stdout
+                    stderr_bytes = fallback.stderr
+                    stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
+                    usage = adapter.extract_token_usage(stdout_data, stderr_bytes)
+                    token_count = usage.token_count if usage else None
+                    cost_usd = usage.cost_usd if usage else None
+                    cache_read_tokens = usage.cache_read_tokens if usage else None
+                    cache_creation_tokens = usage.cache_creation_tokens if usage else None
+                    task.command = original_command
+
             try:
                 if was_timeout:
                     state_mark_done(self._config.exec_done_dir, uuid, DONE_TIMEOUT)
@@ -187,6 +215,9 @@ class TaskLauncher:
                     continue
 
                 if returncode == 0:
+                    session_id = adapter.extract_session_id(stdout_data, stderr_bytes)
+                    if session_id and isinstance(engine, str):
+                        sessions.save(self._queue_dir(), uuid, engine, session_id)
                     if task.result_path is not None:
                         transformed = adapter.extract_result_text(stdout_data, stderr_bytes)
                         rp = Path(task.result_path)
@@ -341,6 +372,58 @@ class TaskLauncher:
                     cache_creation_tokens=cache_creation_tokens,
                 )
                 self._hooks.on_task_failure(uuid, task, -1, str(exc), metrics)
+
+    def _queue_dir(self) -> Path:
+        return Path(self._config.exec_done_dir).parent
+
+    def _apply_resume_if_available(self, uuid: str, task: Task) -> None:
+        resume_from_uuid = task.annotations.get("resume_from_uuid")
+        if not resume_from_uuid:
+            return
+        resolved = sessions.load(self._queue_dir(), resume_from_uuid)
+        if not resolved:
+            return
+        parent_engine, session_id = resolved
+        engine = task.engine or parent_engine
+        if task.engine and parent_engine != task.engine:
+            logger.warning(
+                "Task [%s] resume skipped due to engine mismatch: parent=%s task=%s",
+                uuid,
+                parent_engine,
+                task.engine,
+            )
+            return
+        command = self._inject_resume_command(task.command, engine, session_id)
+        if command == task.command:
+            return
+        task.annotations["_command_without_resume"] = task.command
+        task.annotations["resumed_session_id"] = session_id
+        task.command = command
+
+    def _inject_resume_command(self, command: str, engine: str | None, session_id: str) -> str:
+        quoted = f"'{session_id}'"
+        if engine == "claude":
+            if "--resume " in command:
+                return command
+            return f"{command} --resume {quoted}"
+        if engine == "cursor":
+            if "--resume " in command:
+                return command
+            if " < " in command:
+                return command.replace(" < ", f" --resume {quoted} < ", 1)
+            return f"{command} --resume {quoted}"
+        if engine == "codex":
+            if "codex exec resume " in command:
+                return command
+            return command.replace("codex exec -", f"codex exec resume {quoted}", 1)
+        return command
+
+    def _is_resume_fallback_target(self, task: Task, stderr_text: str) -> bool:
+        if "resumed_session_id" not in task.annotations:
+            return False
+        if "_command_without_resume" not in task.annotations:
+            return False
+        return bool(_RESUME_ERROR_RE.search(stderr_text))
 
     def is_running(self, uuid: str) -> bool:
         """Return True if the given task uuid is currently running."""

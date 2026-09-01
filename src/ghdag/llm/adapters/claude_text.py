@@ -19,3 +19,6 @@ class ClaudeTextAdapter:
         if token_count is None:
             return None
         return TokenUsage(token_count=token_count)
+
+    def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
+        return None

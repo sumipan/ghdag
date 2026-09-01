@@ -14,6 +14,7 @@ class LLMCapabilities:
     disallowed_tools: tuple[str, ...] = ()  # 空 = 指定なし（CLI に渡さない）
     stream: bool = False  # True 時 --output-format stream-json（output_format を上書き）
     sandbox: str = "off"  # "off" | "readonly"
+    resume: bool = False  # True 時セッション再開フローを許可
 
 
 TEXT_ONLY = LLMCapabilities(

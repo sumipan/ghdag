@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.33.0 — 2026-09-01
+
+### Added
+
+- `StepConfig.resume_from` と `io/sessions.py` を追加し、`resume_from_uuid` で指定した親タスクの session を `.sessions/<uuid>.json` に保存・参照できるようにした
+- `EngineOutputAdapter.extract_session_id()` を追加し、`ClaudeJsonAdapter`/`CursorAdapter`/`CodexAdapter` が engine 固有の session ID（`session_id` / `chat_id`）を抽出できるようにした
+- `tests/workflow/test_resume_from.py` / `tests/io/test_sessions.py` / `tests/llm/adapters/test_session_id_extraction.py` を追加し、`resume_from` 検証・コマンド生成・session 保存/抽出を固定化した
+
+### Changed
+
+- `pipeline/llm_pipeline.py`: `resume_from` が推移的祖先を指すことを検証し、submit 時に `annotations.resume_from_uuid` を記録するようにした
+- `core/command.py`: `render_exec_command(..., resume_session_id=...)` を追加し、`claude`/`cursor` は `--resume` 注入、`codex` は `exec resume <session_id>` に切り替えるようにした（`gemini`/`shell` は従来どおり）
+- `dag/task_launcher.py`: launch 時に session ストアを参照して resume 注入し、session エラー時は自動で非 resume コマンドへフォールバックするようにした
+
+
 ## 0.32.1 — 2026-09-01
 
 ### Changed

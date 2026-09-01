@@ -129,9 +129,9 @@ def validate_engine_model(engine: str, model: str | None) -> str:
 
 # 非デフォルト値を渡されたら NotImplementedError を送出する未対応 capability。
 _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
-    "gemini": {"disallowed_tools", "allowed_tools", "permission_mode", "stream", "sandbox"},
+    "gemini": {"disallowed_tools", "allowed_tools", "permission_mode", "stream", "sandbox", "resume"},
     "cursor": {"allowed_tools", "permission_mode", "stream"},
-    "shell": {"stream", "sandbox"},
+    "shell": {"stream", "sandbox", "resume"},
     "codex": {"stream", "permission_mode", "output_format"},
 }
 
