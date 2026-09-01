@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
 
@@ -14,10 +15,15 @@ def save(queue_dir: str | Path, task_uuid: str, engine: str, session_id: str) ->
     base = _sessions_dir(queue_dir)
     base.mkdir(parents=True, exist_ok=True)
     data = {"engine": engine, "session_id": session_id}
-    (base / f"{task_uuid}.json").write_text(
-        json.dumps(data, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    target = base / f"{task_uuid}.json"
+    fd, tmp = tempfile.mkstemp(dir=base, suffix=".tmp")
+    try:
+        with open(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(data, ensure_ascii=False))
+        Path(tmp).replace(target)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
 
 
 def load(queue_dir: str | Path, task_uuid: str) -> tuple[str, str] | None:
