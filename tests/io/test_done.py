@@ -6,8 +6,6 @@ import concurrent.futures
 import inspect
 from pathlib import Path
 
-import pytest
-
 
 class TestIsDoneAndMarkDone:
     def test_mark_done_and_is_done(self, tmp_path: Path) -> None:
@@ -166,6 +164,7 @@ class TestNoDuplicateDoneIo:
     def test_direct_done_io_only_in_io_done(self) -> None:
         """Acceptance: jobs/done の直接 I/O は io/done.py のみ。"""
         import ast
+
         import ghdag
 
         root = Path(inspect.getsourcefile(ghdag)).resolve().parent
