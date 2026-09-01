@@ -98,6 +98,7 @@ def _validate(data: dict, filename: str) -> None:
         if steps is None:
             raise ValidationError(f"handler '{handler_name}' requires 'steps': {filename}")
 
+        step_engine_by_id: dict[str, str] = {}
         for i, step in enumerate(steps):
             if not isinstance(step, dict):
                 raise ValidationError(f"handler '{handler_name}' step[{i}] must be a mapping: {filename}")
@@ -105,6 +106,32 @@ def _validate(data: dict, filename: str) -> None:
                 raise ValidationError(f"handler '{handler_name}' step[{i}] requires 'template': {filename}")
             if "model" not in step:
                 raise ValidationError(f"handler '{handler_name}' step[{i}] requires 'model': {filename}")
+            step_id = step.get("id")
+            if isinstance(step_id, str):
+                step_engine_by_id[step_id] = str(step.get("engine", "claude"))
+
+        for i, step in enumerate(steps):
+            if not isinstance(step, dict):
+                continue
+            resume_from = step.get("resume_from")
+            if resume_from is None:
+                continue
+            if not isinstance(resume_from, str):
+                raise ValidationError(
+                    f"handler '{handler_name}' step[{i}].resume_from must be a string: {filename}"
+                )
+            if resume_from not in step_engine_by_id:
+                raise ValidationError(
+                    f"handler '{handler_name}' step[{i}].resume_from references unknown step id "
+                    f"{resume_from!r}: {filename}"
+                )
+            step_engine = str(step.get("engine", "claude"))
+            parent_engine = step_engine_by_id[resume_from]
+            if step_engine != parent_engine:
+                raise ValidationError(
+                    f"handler '{handler_name}' step[{i}].resume_from requires same engine "
+                    f"(self={step_engine!r}, parent={parent_engine!r}): {filename}"
+                )
 
     handler_names = set(data["handlers"].keys())
     for i, t in enumerate(data["triggers"]):
@@ -179,6 +206,7 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
                     model=s["model"],
                     engine=s.get("engine", "claude"),
                     depends=s.get("depends", []),
+                    resume_from=s.get("resume_from"),
                     permission=s.get("permission"),
                     skill_name=s.get("skill_name"),
                 )

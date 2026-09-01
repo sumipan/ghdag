@@ -141,6 +141,7 @@ def render_exec_command(
     prompt: str,
     model: str | None,
     capabilities: LLMCapabilities | None = None,
+    resume_session_id: str | None = None,
 ) -> str:
     """exec.jsonl の command フィールド用（tee パイプを含まない）。
 
@@ -155,15 +156,24 @@ def render_exec_command(
             perm_flags = builder(capabilities, False)
 
     effective_extra_args = _dedupe_extra_args(spec.extra_args, perm_flags)
+    resume_flags: list[str] = []
+    subcommand = list(spec.subcommand)
+    if resume_session_id:
+        if spec.name in {"claude", "cursor"}:
+            resume_flags = ["--resume", f"'{resume_session_id}'"]
+        elif spec.name == "codex":
+            subcommand = ["exec", "resume", f"'{resume_session_id}'"]
 
     if spec.input_mode == "cat_pipe":
-        parts: list[str] = [spec.cli, *spec.subcommand]
+        parts: list[str] = [spec.cli, *subcommand]
         if spec.prompt_flag:
             parts.append(spec.prompt_flag)
             parts.append(f"'{prompt}'")
         if spec.model_flag and model:
             parts.append(spec.model_flag)
             parts.append(f"'{model}'")
+        if resume_flags:
+            parts.extend(resume_flags)
         if effective_extra_args:
             parts.extend(effective_extra_args)
         if capabilities is None:
@@ -174,12 +184,14 @@ def render_exec_command(
         return f"cat {order_path} | " + " ".join(parts)
 
     if spec.input_mode == "stdin_redirect":
-        parts = [spec.cli, *spec.subcommand]
+        parts = [spec.cli, *subcommand]
         if spec.model_flag and model:
             parts.append(spec.model_flag)
             parts.append(f"'{model}'")
         if spec.prompt_flag:
             parts.append(spec.prompt_flag)
+        if resume_flags:
+            parts.extend(resume_flags)
         if capabilities is None:
             if spec.danger_flag_position == "after_prompt" and spec.danger_flag:
                 parts.append(spec.danger_flag)

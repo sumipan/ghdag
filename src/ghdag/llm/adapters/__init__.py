@@ -19,6 +19,9 @@ class _PassthroughAdapter:
     def extract_token_usage(self, stdout: bytes, stderr: bytes) -> TokenUsage | None:
         return None
 
+    def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
+        return None
+
 
 _DEFAULT_ADAPTER = _PassthroughAdapter()
 

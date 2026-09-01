@@ -12,6 +12,7 @@ class StepConfig:
     id: str | None = None   # ステップ ID（depends 参照用）
     engine: str = "claude"  # LLM エンジン名（"claude", "gemini", "cursor" 等）
     depends: list[str] = field(default_factory=list)  # 依存ステップ ID リスト
+    resume_from: str | None = None  # 親ステップのセッション継続元 ID
     permission: str | None = None  # capabilities プリセット名（None = エンジンデフォルト）
     skill_name: str | None = None  # このステップが呼び出すスキル名
 

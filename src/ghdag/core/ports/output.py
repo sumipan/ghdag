@@ -18,3 +18,7 @@ class EngineOutputAdapter(Protocol):
     def extract_token_usage(self, stdout: bytes, stderr: bytes) -> TokenUsage | None:
         """stdout/stderr から TokenUsage を抽出する。取得不能なら None。"""
         ...
+
+    def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
+        """stdout/stderr から再開可能な session_id を抽出する。取得不能なら None。"""
+        ...
