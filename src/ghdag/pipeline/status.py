@@ -11,6 +11,7 @@ from ghdag.core.vocabulary import (
     DONE_REJECTED_FINAL,
     DONE_SUCCESS,
 )
+from ghdag.io.done import dep_succeeded, read_done_content
 
 # 状態定数
 STATE_PENDING_DEPS = "待機（依存未充足）"
@@ -21,17 +22,6 @@ STATE_FAIL         = "完了（失敗）"
 STATE_REJECTED     = "完了（REJECTED）"
 STATE_EMPTY        = "完了（EMPTY_RESULT）"
 STATE_UNKNOWN_DONE = "完了（その他）"
-
-
-def read_done_content(exec_done_dir: Path, uuid: str) -> Optional[str]:
-    """jobs/done/<uuid> の内容を読み取る。存在しなければ None。"""
-    p = exec_done_dir / uuid
-    if not p.is_file():
-        return None
-    try:
-        return p.read_text(encoding="utf-8")
-    except OSError:
-        return None
 
 
 def interpret_done(raw: Optional[str]) -> Optional[str]:
@@ -56,10 +46,6 @@ def interpret_done(raw: Optional[str]) -> Optional[str]:
         return "success" if n == 0 else "failed_exit"
     except ValueError:
         return "other"
-
-
-def dep_succeeded(exec_done_dir: Path, dep_uuid: str) -> bool:
-    return interpret_done(read_done_content(exec_done_dir, dep_uuid)) == "success"
 
 
 def label_for_done(raw: Optional[str]) -> Optional[str]:

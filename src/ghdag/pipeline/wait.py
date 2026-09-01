@@ -5,7 +5,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from ghdag.pipeline.status import interpret_done, read_done_content
+from ghdag.io.done import read_done_content
+from ghdag.pipeline.status import interpret_done
 
 
 def wait_for_result(

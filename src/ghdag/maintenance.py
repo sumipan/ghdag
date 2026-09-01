@@ -2,29 +2,11 @@
 
 from __future__ import annotations
 
-import fcntl
 import json
-import os
 from pathlib import Path
 
-
-def _is_done(exec_done_dir: str | Path, uuid: str) -> bool:
-    """Return True if the task has a completion marker."""
-    return os.path.exists(os.path.join(str(exec_done_dir), uuid))
-
-
-def _mark_done(exec_done_dir: str | Path, uuid: str, status: str | int) -> None:
-    """Write a completion marker for the given task."""
-    d = str(exec_done_dir)
-    os.makedirs(d, exist_ok=True)
-    with open(os.path.join(d, uuid), "a+") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            f.seek(0)
-            f.truncate()
-            f.write(str(status))
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+from ghdag.io.done import is_done as _is_done
+from ghdag.io.done import mark_done as _mark_done
 
 
 def validate_exec_jsonl(exec_jsonl_path: Path) -> list[tuple[int, str]]:
@@ -77,7 +59,7 @@ def repair_jobs_done(
     Note:
         result_path は exec_jsonl_path.parent を基準に相対パスを解決する。
         result_path が存在しないエントリは restored にも skipped にもカウントしない。
-        done マーカーの書き込みにはローカル _mark_done を使用する（ops 層は dag に依存しない）。
+        done マーカーの書き込みには ``ghdag.io.done.mark_done`` を使用する（ops 層は dag に依存しない）。
     """
     base = Path(exec_jsonl_path).parent
     done_dir = Path(done_dir)

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.32.1 — 2026-09-01
+
+### Changed
+
+- done マーカー / queue 走査 I/O を `ghdag.io.done` / `ghdag.io.queue` に一元化。`dag.state` / `pipeline.result` は re-export shim、`pipeline.status` / `wait` / `ui.monitor` / `maintenance` は委譲（公開 API は互換維持）(nexus Issue #2675)
+
+### Added
+
+- `tests/io/test_done.py` / `tests/io/test_queue.py`: done/queue I/O 一元化・shim 互換の固定テスト
+
+
 ## 0.32.0 — 2026-08-31
 
 ### Changed
