@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
+from ghdag.io.done import dep_succeeded, read_done_content
 from ghdag.pipeline.status import (
     STATE_EMPTY,
     STATE_FAIL,
@@ -23,10 +24,8 @@ from ghdag.pipeline.status import (
     STATE_REJECTED,
     STATE_RUNNING,
     STATE_UNKNOWN_DONE,
-    dep_succeeded,
     interpret_done,
     label_for_done,
-    read_done_content,
     task_status,
 )
 
