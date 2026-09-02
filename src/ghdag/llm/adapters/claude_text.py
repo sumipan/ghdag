@@ -6,6 +6,7 @@ stdout をそのまま返し、stderr から token_count を抽出する既存�
 from __future__ import annotations
 
 from ghdag.core.models.metrics import TokenUsage
+from ghdag.core.ports.output import EngineError
 from ghdag.core.parsers import parse_token_count
 
 
@@ -21,4 +22,7 @@ class ClaudeTextAdapter:
         return TokenUsage(token_count=token_count)
 
     def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
+        return None
+
+    def extract_error(self, stdout: bytes, stderr: bytes) -> EngineError | None:
         return None

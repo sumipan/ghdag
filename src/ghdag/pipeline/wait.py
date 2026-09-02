@@ -28,6 +28,7 @@ def wait_for_result(
         status は interpret_done の結果:
           "success"     — exit code 0 または空
           "rejected"    — REJECTED / REJECTED_FINAL
+          "engine_error" — ENGINE_ERROR / ENGINE_ERROR_FINAL
           "empty_result" — EMPTY_RESULT
           "failed_exit" — 非ゼロ exit code
           "other"       — 上記以外

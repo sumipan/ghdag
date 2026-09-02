@@ -7,6 +7,8 @@ from typing import Optional
 
 from ghdag.core.vocabulary import (
     DONE_EMPTY_RESULT,
+    DONE_ENGINE_ERROR,
+    DONE_ENGINE_ERROR_FINAL,
     DONE_REJECTED,
     DONE_REJECTED_FINAL,
     DONE_SUCCESS,
@@ -21,6 +23,7 @@ STATE_OK           = "完了（成功）"
 STATE_FAIL         = "完了（失敗）"
 STATE_REJECTED     = "完了（REJECTED）"
 STATE_EMPTY        = "完了（EMPTY_RESULT）"
+STATE_ENGINE_ERROR = "完了（ENGINE_ERROR）"
 STATE_UNKNOWN_DONE = "完了（その他）"
 
 
@@ -41,6 +44,8 @@ def interpret_done(raw: Optional[str]) -> Optional[str]:
         return "rejected"
     if c == DONE_EMPTY_RESULT:
         return "empty_result"
+    if c in (DONE_ENGINE_ERROR, DONE_ENGINE_ERROR_FINAL):
+        return "engine_error"
     try:
         n = int(c)
         return "success" if n == 0 else "failed_exit"
@@ -60,6 +65,8 @@ def label_for_done(raw: Optional[str]) -> Optional[str]:
         return STATE_REJECTED
     if kind == "empty_result":
         return STATE_EMPTY
+    if kind == "engine_error":
+        return STATE_ENGINE_ERROR
     return STATE_UNKNOWN_DONE
 
 

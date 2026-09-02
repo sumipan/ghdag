@@ -83,14 +83,20 @@ class TestTaskMetrics:
 
 
 class TestFailureClass:
-    def test_all_9_values_exist(self):
-        """FailureClass enum が 9 値を持つ。"""
+    def test_all_10_values_exist(self):
+        """FailureClass enum が 10 値を持つ。"""
         expected = {
+            "ENGINE_ERROR",
             "TIMEOUT", "REJECTED", "PROCESS_ERROR", "PIPELINE_FAILED",
             "EMPTY_RESULT", "FANOUT_CHILD_FAILED", "FANOUT_PARSE_FAILED",
             "DEP_FAILED", "UNKNOWN_FAILURE",
         }
         assert {fc.value for fc in FailureClass} == expected
+
+    def test_engine_error_meta(self):
+        assert FailureClass.ENGINE_ERROR.value == "ENGINE_ERROR"
+        assert FailureClass.ENGINE_ERROR.cause == "transient"
+        assert FailureClass.ENGINE_ERROR.retry_policy == "safe"
 
     def test_timeout_meta(self):
         assert FailureClass.TIMEOUT.value == "TIMEOUT"

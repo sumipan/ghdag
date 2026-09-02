@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ghdag.pipeline.status import (
+    STATE_ENGINE_ERROR,
     STATE_EMPTY,
     STATE_FAIL,
     STATE_OK,
@@ -33,6 +34,10 @@ class TestInterpretDone:
 
     def test_empty_result_returns_empty_result(self):
         assert interpret_done("EMPTY_RESULT\n") == "empty_result"
+
+    def test_engine_error_returns_engine_error(self):
+        assert interpret_done("ENGINE_ERROR\n") == "engine_error"
+        assert interpret_done("ENGINE_ERROR_FINAL\n") == "engine_error"
 
     def test_nonzero_exit_returns_failed_exit(self):
         assert interpret_done("1\n") == "failed_exit"
@@ -66,6 +71,12 @@ class TestTaskStatus:
         exec_done.mkdir(parents=True)
         (exec_done / "uuid-1").write_text("EMPTY_RESULT\n", encoding="utf-8")
         assert task_status("uuid-1", exec_done) == STATE_EMPTY
+
+    def test_completed_engine_error(self, tmp_path):
+        exec_done = tmp_path / "jobs" / "done"
+        exec_done.mkdir(parents=True)
+        (exec_done / "uuid-1").write_text("ENGINE_ERROR\n", encoding="utf-8")
+        assert task_status("uuid-1", exec_done) == STATE_ENGINE_ERROR
 
     def test_pending_deps_when_dep_not_done(self, tmp_path):
         exec_done = tmp_path / "jobs" / "done"

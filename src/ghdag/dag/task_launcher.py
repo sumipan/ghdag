@@ -14,6 +14,8 @@ from pathlib import Path
 
 from ghdag.core.vocabulary import (
     DONE_EMPTY_RESULT,
+    DONE_ENGINE_ERROR,
+    DONE_ENGINE_ERROR_FINAL,
     DONE_FANOUT_PARSE_FAILED,
     DONE_PIPELINE_FAILED_PREFIX,
     DONE_REJECTED,
@@ -165,11 +167,6 @@ class TaskLauncher:
 
             stdout_data = rt.stdout_buf.getvalue() if rt.stdout_buf else b""
             adapter = get_output_adapter(engine)
-            usage = adapter.extract_token_usage(stdout_data, stderr_bytes)
-            token_count = usage.token_count if usage else None
-            cost_usd = usage.cost_usd if usage else None
-            cache_read_tokens = usage.cache_read_tokens if usage else None
-            cache_creation_tokens = usage.cache_creation_tokens if usage else None
 
             if returncode != 0 and self._is_resume_fallback_target(task, stderr_text):
                 original_command = task.annotations.get("_command_without_resume")
@@ -192,6 +189,13 @@ class TaskLauncher:
                     cache_creation_tokens = usage.cache_creation_tokens if usage else None
                     task.command = original_command
 
+            engine_error = adapter.extract_error(stdout_data, stderr_bytes)
+            usage = adapter.extract_token_usage(stdout_data, stderr_bytes)
+            token_count = usage.token_count if usage else None
+            cost_usd = usage.cost_usd if usage else None
+            cache_read_tokens = usage.cache_read_tokens if usage else None
+            cache_creation_tokens = usage.cache_creation_tokens if usage else None
+
             try:
                 if was_timeout:
                     state_mark_done(self._config.exec_done_dir, uuid, DONE_TIMEOUT)
@@ -211,6 +215,39 @@ class TaskLauncher:
                         f"TIMEOUT: task exceeded task_timeout={self._config.task_timeout}s"
                     )
                     self._hooks.on_task_failure(uuid, task, returncode, timeout_msg, metrics)
+                    self._circuit_breaker.record_failure()
+                    continue
+
+                if engine_error is not None:
+                    error_summary = (
+                        f"ENGINE_ERROR ({engine_error.kind.value}): {engine_error.message}"
+                    )
+                    if task.result_path is not None:
+                        Path(task.result_path).write_text(error_summary, encoding="utf-8")
+                    retry_depth = task.retry
+                    is_final = (not engine_error.retryable) or (
+                        retry_depth >= self._config.max_retry
+                    )
+                    state_mark_done(
+                        self._config.exec_done_dir,
+                        uuid,
+                        DONE_ENGINE_ERROR_FINAL if is_final else DONE_ENGINE_ERROR,
+                    )
+                    metrics = TaskMetrics(
+                        uuid=uuid, engine=engine, model=model,
+                        wall_time_sec=round(finished_at - rt.started_at, 3),
+                        token_count=token_count, status="failure",
+                        started_at=rt.started_at, finished_at=finished_at,
+                        correlation_id=task.idempotency_key,
+                        failure_class=FailureClass.ENGINE_ERROR,
+                        request_id=_task_request_id(task),
+                        cost_usd=cost_usd,
+                        cache_read_tokens=cache_read_tokens,
+                        cache_creation_tokens=cache_creation_tokens,
+                    )
+                    self._hooks.on_task_failure(
+                        uuid, task, returncode, error_summary, metrics
+                    )
                     self._circuit_breaker.record_failure()
                     continue
 

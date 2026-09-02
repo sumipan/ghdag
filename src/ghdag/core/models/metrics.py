@@ -19,6 +19,7 @@ class FailureClass(Enum):
 
     TIMEOUT = ("TIMEOUT", "transient", "safe")
     REJECTED = ("REJECTED", "permanent", "forbidden")
+    ENGINE_ERROR = ("ENGINE_ERROR", "transient", "safe")
     PROCESS_ERROR = ("PROCESS_ERROR", "permanent", "requires_review")
     PIPELINE_FAILED = ("PIPELINE_FAILED", "permanent", "requires_review")
     EMPTY_RESULT = ("EMPTY_RESULT", "unknown", "requires_review")

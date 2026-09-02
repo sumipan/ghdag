@@ -16,6 +16,7 @@ from typing import Iterable, Optional
 
 from ghdag.io.done import dep_succeeded, read_done_content
 from ghdag.pipeline.status import (
+    STATE_ENGINE_ERROR,
     STATE_EMPTY,
     STATE_FAIL,
     STATE_OK,
@@ -33,7 +34,7 @@ QUEUE_TS = re.compile(r"(?:queue|jobs)/(\d{14})")
 
 __all__ = [
     "STATE_PENDING_DEPS", "STATE_PENDING_RUN", "STATE_RUNNING",
-    "STATE_OK", "STATE_FAIL", "STATE_REJECTED", "STATE_EMPTY", "STATE_UNKNOWN_DONE",
+    "STATE_OK", "STATE_FAIL", "STATE_REJECTED", "STATE_EMPTY", "STATE_ENGINE_ERROR", "STATE_UNKNOWN_DONE",
     "read_done_content", "interpret_done", "dep_succeeded", "label_for_done",
     "task_status", "task_state",
     "Row", "MonitorTask", "build_rows", "filter_rows",
@@ -49,6 +50,7 @@ STATE_ALIASES = {
     "fail": STATE_FAIL,
     "failed": STATE_FAIL,
     "rejected": STATE_REJECTED,
+    "engine_error": STATE_ENGINE_ERROR,
     "empty": STATE_EMPTY,
     "empty_result": STATE_EMPTY,
     "unknown": STATE_UNKNOWN_DONE,

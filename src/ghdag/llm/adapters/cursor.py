@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from ghdag.core.models.metrics import TokenUsage
+from ghdag.core.ports.output import EngineError
 
 
 class CursorAdapter:
@@ -26,4 +27,7 @@ class CursorAdapter:
             chat_id = obj.get("chat_id") if isinstance(obj, dict) else None
             if isinstance(chat_id, str) and chat_id:
                 return chat_id
+        return None
+
+    def extract_error(self, stdout: bytes, stderr: bytes) -> EngineError | None:
         return None

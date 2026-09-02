@@ -6,6 +6,7 @@ import io
 import time
 from unittest.mock import MagicMock, patch
 
+from ghdag.core.vocabulary import DONE_ENGINE_ERROR, DONE_ENGINE_ERROR_FINAL
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DagHooks
 from ghdag.dag.models import DagConfig, RunningTask, Task
@@ -97,3 +98,63 @@ def test_task_removed_from_running_after_failure(mock_tee, mock_mark_done, tmp_p
     engine._launcher.check_completions()
 
     assert rt.uuid not in engine._launcher._running
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_retryable_engine_error_marks_done_for_retry(mock_mark_done, tmp_path):
+    engine, hooks = _make_engine(tmp_path)
+    result_file = tmp_path / "result.md"
+    stdout = b'{"type":"error","message":"Selected model is at capacity."}\n'
+    proc = MagicMock()
+    proc.poll.return_value = 0
+    proc.returncode = 0
+    task = Task(uuid="err-retry", command="codex exec", engine="codex", result_path=str(result_file), retry=0)
+    rt = RunningTask(
+        uuid=task.uuid,
+        task=task,
+        proc=proc,
+        started_at=time.time() - 0.1,
+        started_at_mono=time.monotonic() - 0.1,
+        stderr_buf=io.BytesIO(b""),
+        stdout_buf=io.BytesIO(stdout),
+        retry_depth=0,
+    )
+    engine._launcher._running[rt.uuid] = rt
+
+    engine._launcher.check_completions()
+
+    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, DONE_ENGINE_ERROR)
+    hooks.on_task_failure.assert_called_once()
+    _, _, returncode_arg, stderr_arg, metrics = hooks.on_task_failure.call_args[0]
+    assert returncode_arg == 0
+    assert "ENGINE_ERROR (CAPACITY)" in stderr_arg
+    assert metrics.failure_class == FailureClass.ENGINE_ERROR
+    assert result_file.read_text(encoding="utf-8").startswith("ENGINE_ERROR (CAPACITY):")
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_non_retryable_engine_error_marks_done_final(mock_mark_done, tmp_path):
+    engine, hooks = _make_engine(tmp_path)
+    stdout = b'{"type":"error","message":"Authentication failed"}\n'
+    proc = MagicMock()
+    proc.poll.return_value = 0
+    proc.returncode = 0
+    task = Task(uuid="err-final", command="codex exec", engine="codex", retry=0)
+    rt = RunningTask(
+        uuid=task.uuid,
+        task=task,
+        proc=proc,
+        started_at=time.time() - 0.1,
+        started_at_mono=time.monotonic() - 0.1,
+        stderr_buf=io.BytesIO(b""),
+        stdout_buf=io.BytesIO(stdout),
+        retry_depth=0,
+    )
+    engine._launcher._running[rt.uuid] = rt
+
+    engine._launcher.check_completions()
+
+    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, DONE_ENGINE_ERROR_FINAL)
+    hooks.on_task_failure.assert_called_once()
+    metrics = hooks.on_task_failure.call_args[0][4]
+    assert metrics.failure_class == FailureClass.ENGINE_ERROR

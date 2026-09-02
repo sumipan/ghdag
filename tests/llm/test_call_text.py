@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from ghdag.core.ports.output import EngineErrorKind
 from ghdag.llm import TextResult, call_text
 from ghdag.llm.engines import LLMResult
 
@@ -54,6 +55,16 @@ def _make_llm_result(stdout: str, stderr: str = "", returncode: int = 0) -> LLMR
 
 
 class TestCallText:
+    def test_error_stream_sets_success_false_and_empty_body(self):
+        error_jsonl = '{"type":"error","message":"Selected model is at capacity."}'
+        mock_result = _make_llm_result(stdout=error_jsonl, returncode=0)
+        with patch("ghdag.llm.engines.call", return_value=mock_result):
+            result = call_text("test prompt", engine="codex")
+        assert result.success is False
+        assert result.body == ""
+        assert result.error is not None
+        assert result.error.kind is EngineErrorKind.CAPACITY
+
     def test_claude_engine_extracts_result_field(self):
         """ClaudeJsonAdapter が {"result": "extracted"} から "extracted" を返すこと。"""
         import json
@@ -86,6 +97,7 @@ class TestCallText:
             result = call_text("test prompt", engine="claude")
         assert result.success is False
         assert result.returncode == 1
+        assert result.error is None
         # body は adapter 出力または raw.stdout フォールバック — 空でないこと
         assert result.body
 
