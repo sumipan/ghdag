@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from ghdag.core.models.metrics import TokenUsage
+from ghdag.core.ports.output import EngineError, EngineErrorKind
 
 
 class CodexAdapter:
@@ -75,3 +76,43 @@ class CodexAdapter:
             if isinstance(session_id, str) and session_id:
                 return session_id
         return None
+
+    def extract_error(self, stdout: bytes, stderr: bytes) -> EngineError | None:
+        for line in stdout.decode("utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if obj.get("type") not in {"error", "turn.failed"}:
+                continue
+            message = _extract_error_message(obj)
+            kind, retryable = _classify_error(message)
+            return EngineError(kind=kind, message=message, retryable=retryable)
+        return None
+
+
+def _extract_error_message(obj: dict) -> str:
+    for key in ("message", "error", "detail"):
+        value = obj.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, dict):
+            nested = value.get("message")
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+    event_type = obj.get("type")
+    return f"codex engine error ({event_type})"
+
+
+def _classify_error(message: str) -> tuple[EngineErrorKind, bool]:
+    lower = message.lower()
+    if "rate limit" in lower or "ratelimit" in lower:
+        return EngineErrorKind.RATE_LIMIT, True
+    if "capacity" in lower or "overloaded" in lower:
+        return EngineErrorKind.CAPACITY, True
+    if any(token in lower for token in ("auth", "unauthorized", "forbidden")):
+        return EngineErrorKind.AUTH, False
+    return EngineErrorKind.UNKNOWN, False

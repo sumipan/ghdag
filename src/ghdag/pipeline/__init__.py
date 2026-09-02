@@ -13,6 +13,7 @@ from ghdag.pipeline.order import InlineOrderBuilder, OrderBuilder, TemplateOrder
 from ghdag.pipeline.state import PipelineState, parse_frontmatter, status_rank
 from ghdag.pipeline.status import (
     STATE_EMPTY,
+    STATE_ENGINE_ERROR,
     STATE_FAIL,
     STATE_OK,
     STATE_PENDING_DEPS,
@@ -44,6 +45,7 @@ __all__ = [
     "read_task_exit_events",
     "get_latest_status",
     "STATE_EMPTY",
+    "STATE_ENGINE_ERROR",
     "STATE_FAIL",
     "STATE_OK",
     "STATE_PENDING_DEPS",

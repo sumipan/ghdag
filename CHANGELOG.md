@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.34.1 — 2026-09-02
+
+### Added
+
+- `EngineOutputAdapter` に `extract_error()` を追加し、`EngineError`（`kind`/`message`/`retryable`）を標準化。`CodexAdapter`/`ClaudeJsonAdapter` で capacity・rate-limit 等のエラーイベント抽出を実装し、`CursorAdapter`/passthrough は no-op で後方互換を維持
+- `tests/llm/adapters/test_error_extraction.py` を追加し、codex/claude/cursor/passthrough のエラー抽出仕様を固定化
+
+### Changed
+
+- `llm/engines.py`: `TextResult.error` を追加し、`call_text()` が `extract_error()` 検出時に `success=False`・`body=""` で即返却するよう変更。エラー JSONL の本文混入を防止
+- `dag/task_launcher.py`: adapter のエラー検出を統合し、`retryable=True` は `ENGINE_ERROR`、それ以外は `ENGINE_ERROR_FINAL` を done に記録。`result_path` には生 JSONL ではなく `ENGINE_ERROR (...)` 要約を書き込むよう変更
+- `pipeline/status.py` / `pipeline/wait.py` / `ui/monitor.py`: `ENGINE_ERROR` / `ENGINE_ERROR_FINAL` の状態解釈と表示ラベルを追加
+- `core/models/metrics.py`: `FailureClass.ENGINE_ERROR` を追加し、エンジンエラー失敗の分類を明示化
+
+
 ## 0.34.0 — 2026-09-02
 
 ### Added

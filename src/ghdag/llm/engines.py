@@ -19,6 +19,7 @@ from ghdag.core.command import (
     _build_cursor_flags,
     build_llm_cmd,
 )
+from ghdag.core.ports.output import EngineError
 from ghdag.exceptions import GhdagError
 from ghdag.llm._config import load_engine_models
 from ghdag.llm.adapters import get_output_adapter
@@ -230,6 +231,7 @@ class TextResult:
     body: str
     success: bool
     raw: LLMResult
+    error: EngineError | None = None
 
     @property
     def stderr(self) -> str:
@@ -350,9 +352,11 @@ def call_text(
         dangerously_skip_permissions=dangerously_skip_permissions,
     )
     adapter = get_output_adapter(engine)
-    extracted = adapter.extract_result_text(
-        result.stdout.encode("utf-8"),
-        result.stderr.encode("utf-8"),
-    ).decode("utf-8")
+    stdout_bytes = result.stdout.encode("utf-8")
+    stderr_bytes = result.stderr.encode("utf-8")
+    error = adapter.extract_error(stdout_bytes, stderr_bytes)
+    if error is not None:
+        return TextResult(body="", success=False, error=error, raw=result)
+    extracted = adapter.extract_result_text(stdout_bytes, stderr_bytes).decode("utf-8")
     body = extracted if extracted else result.stdout
-    return TextResult(body=body, success=result.ok, raw=result)
+    return TextResult(body=body, success=result.ok, error=None, raw=result)
