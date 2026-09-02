@@ -45,6 +45,11 @@ class TestTextResult:
         assert result.stderr == "err"
         assert result.returncode == 2
 
+    def test_session_id_delegates_to_raw(self):
+        raw = LLMResult(stdout="out", stderr="", returncode=0, session_id="sess-abc")
+        result = TextResult(body="out", success=True, raw=raw)
+        assert result.session_id == "sess-abc"
+
 
 # ---------------------------------------------------------------------------
 # call_text 関数テスト

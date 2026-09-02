@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.34.2 — 2026-09-02
+
+### Added
+
+- `ghdag.llm.session` を追加し、`SessionStore`（record/lookup/invalidate/gc）と `SessionRecord` を公開。`.sessions/{key}.json` の新形式（`created_at` 付き）と旧形式（`created_at` なし・mtime フォールバック）の双方を読めるようにした
+- `tests/llm/test_session.py` を追加し、record/lookup、有効期限判定、invalidate、gc、旧形式互換を固定化した
+
+### Changed
+
+- `llm/engines.py`: `call()`/`call_text()` に `resume_session_id` を追加し、対応エンジン（claude/cursor/codex）へ `--resume` 相当を注入。成功時に adapter で抽出した `session_id` を `LLMResult.session_id` として保持し、`TextResult.session_id` から参照可能にした
+- `core/command.py`: `build_llm_cmd()` に `resume_session_id` を追加。codex は `exec -` から `exec resume <session_id>` へ切り替える
+- `dag/task_launcher.py`: `ghdag.io.sessions` 直呼びを廃止し、`SessionStore` 経由で `resume_from` 解決と session 記録を行うように統一した
+
+
 ## 0.34.1 — 2026-09-02
 
 ### Added

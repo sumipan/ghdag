@@ -44,6 +44,28 @@ class TestBuildLlmCmdCodex:
             # subcommand が空なので cli の直後がオプションや引数（exec など余分な要素が入らない）
             assert "exec" not in cmd
 
+    def test_build_llm_cmd_claude_includes_resume(self):
+        """resume_session_id 指定で claude は --resume を付与する。"""
+        cmd = build_llm_cmd(
+            "claude",
+            "claude-sonnet-4-6",
+            "test",
+            resume_session_id="sess-1",
+        )
+        assert "--resume" in cmd
+        assert "sess-1" in cmd
+
+    def test_build_llm_cmd_codex_switches_to_resume_subcommand(self):
+        """resume_session_id 指定で codex は exec resume に切り替わる。"""
+        cmd = build_llm_cmd(
+            "codex",
+            "gpt-5.6-terra",
+            "test",
+            resume_session_id="sess-1",
+        )
+        assert cmd[:4] == ["codex", "exec", "resume", "sess-1"]
+        assert "-" not in cmd[:5]
+
     def test_render_exec_command_codex(self):
         """render_exec_command が codex 向けの正しいシェルコマンドを生成する。"""
         spec = ENGINE_SPECS["codex"]
@@ -132,6 +154,32 @@ class TestCallCodexPromptRouting:
         call("hello", engine="claude", stdin_text=None)
         _, kwargs = mock_run.call_args
         assert kwargs["input"] is None
+
+
+class TestCallResumeSessionId:
+    def test_call_with_resume_unsupported_engine_raises(self):
+        """gemini + resume_session_id は NotImplementedError。"""
+        with pytest.raises(NotImplementedError, match="resume"):
+            call(
+                "hello",
+                engine="gemini",
+                capabilities=LLMCapabilities(),
+                resume_session_id="sess-1",
+            )
+
+    @patch("ghdag.llm.engines.get_output_adapter")
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_sets_session_id_from_adapter(self, mock_run: MagicMock, mock_get_adapter: MagicMock):
+        """成功時に adapter 抽出結果が LLMResult.session_id に入る。"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        adapter = MagicMock()
+        adapter.extract_session_id.return_value = "sess-abc"
+        mock_get_adapter.return_value = adapter
+
+        result = call("hello", engine="claude")
+
+        assert result.session_id == "sess-abc"
+        adapter.extract_session_id.assert_called_once_with(b"ok", b"")
 
 
 class TestCodexUnsupportedCapabilities:

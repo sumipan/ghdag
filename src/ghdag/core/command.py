@@ -218,6 +218,7 @@ def build_llm_cmd(
     *,
     capabilities: LLMCapabilities = TEXT_ONLY,
     dangerously_skip_permissions: bool = False,
+    resume_session_id: str | None = None,
 ) -> list[str]:
     """LLM CLI コマンドのリストを構築する。
 
@@ -227,12 +228,15 @@ def build_llm_cmd(
         prompt: プロンプト文字列
         capabilities: 能力制約値オブジェクト（デフォルト: TEXT_ONLY）
         dangerously_skip_permissions: claude エンジン時に --dangerously-skip-permissions を付与
+        resume_session_id: 再開対象セッションID（対応エンジンのみ）
     Returns:
         subprocess 用のコマンドリスト
     """
     spec = ENGINE_SPECS.get(engine)
     cli = spec.cli if spec else engine
     cmd = [cli, *spec.subcommand] if spec else [cli]
+    if spec and resume_session_id and spec.name == "codex":
+        cmd = [cli, "exec", "resume", resume_session_id]
 
     if spec is None:
         cmd += ["--model", model, "-p", prompt]
@@ -241,6 +245,8 @@ def build_llm_cmd(
             cmd += [spec.model_flag, model]
         if spec.prompt_flag:
             cmd += [spec.prompt_flag, prompt]
+        if resume_session_id and spec.name in {"claude", "cursor"}:
+            cmd += ["--resume", resume_session_id]
 
     builder = _CAPABILITY_FLAG_BUILDERS.get(engine)
     if builder:
