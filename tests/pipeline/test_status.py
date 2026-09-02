@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ghdag.pipeline.status import (
+    STATE_DEFERRED,
     STATE_EMPTY,
     STATE_ENGINE_ERROR,
     STATE_FAIL,
@@ -93,6 +94,25 @@ class TestTaskStatus:
         assert task_status(
             "uuid-1",
             exec_done,
+            running_uuids={"uuid-1"},
+        ) == STATE_RUNNING
+
+    def test_deferred_when_not_done_or_running(self, tmp_path):
+        exec_done = tmp_path / "jobs" / "done"
+        exec_done.mkdir(parents=True)
+        assert task_status(
+            "uuid-1",
+            exec_done,
+            deferred_uuids={"uuid-1"},
+        ) == STATE_DEFERRED
+
+    def test_running_precedes_dependency_pending(self, tmp_path):
+        exec_done = tmp_path / "jobs" / "done"
+        exec_done.mkdir(parents=True)
+        assert task_status(
+            "uuid-1",
+            exec_done,
+            task_depends={"dep-uuid"},
             running_uuids={"uuid-1"},
         ) == STATE_RUNNING
 

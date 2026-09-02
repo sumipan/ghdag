@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghdag"
-version = "0.34.2"
+version = "0.34.3"
 description = "Generic DAG execution engine extracted from graph-watcher"
 readme = "README.md"
 license = "MIT"
@@ -154,6 +154,18 @@ source_modules = [
   "ghdag.tool",
   "ghdag.markdown",
 ]
+forbidden_modules = [
+  "ghdag.dag",
+  "ghdag.pipeline",
+  "ghdag.workflow",
+  "ghdag.cli",
+  "ghdag.ui",
+]
+
+[[tool.importlinter.contracts]]
+name = "quota 層はオーケストレーション層に依存しない"
+type = "forbidden"
+source_modules = ["ghdag.quota"]
 forbidden_modules = [
   "ghdag.dag",
   "ghdag.pipeline",

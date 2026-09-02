@@ -22,6 +22,11 @@ def _build_parser() -> argparse.ArgumentParser:
     from ghdag.cli.commands.audit_query import cmd_audit_query
     from ghdag.cli.commands.cleanup import cmd_cleanup
     from ghdag.cli.commands.llm import cmd_llm
+    from ghdag.cli.commands.quota import (
+        cmd_quota_clear,
+        cmd_quota_report,
+        cmd_quota_status,
+    )
     from ghdag.cli.commands.run import cmd_run
     from ghdag.cli.commands.trigger import cmd_trigger
     from ghdag.cli.commands.ui import cmd_ui
@@ -330,6 +335,68 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output as JSON",
     )
     list_parser.set_defaults(func=cmd_tools_list)
+
+    # ghdag quota
+    quota_parser = subparsers.add_parser("quota", help="Manage quota gate state")
+    quota_subparsers = quota_parser.add_subparsers(title="quota subcommands")
+
+    quota_report = quota_subparsers.add_parser("report", help="Report engine quota state")
+    quota_report.add_argument("engine", help="Engine name (e.g. claude)")
+    quota_report.add_argument(
+        "--status",
+        required=True,
+        choices=["available", "paused"],
+        help="Quota status",
+    )
+    quota_report.add_argument(
+        "--observed-at",
+        required=True,
+        dest="observed_at",
+        help="Observed time in ISO8601 with timezone",
+    )
+    quota_report.add_argument(
+        "--resume-at",
+        default=None,
+        dest="resume_at",
+        help="Optional resume time in ISO8601 with timezone",
+    )
+    quota_report.add_argument(
+        "--reason",
+        default=None,
+        help="Optional reason",
+    )
+    quota_report.add_argument(
+        "--state-path",
+        default="jobs/quota-gate.json",
+        dest="state_path",
+        help="Path to quota state JSON",
+    )
+    quota_report.set_defaults(func=cmd_quota_report)
+
+    quota_clear = quota_subparsers.add_parser("clear", help="Clear engine quota state")
+    quota_clear.add_argument("engine", help="Engine name")
+    quota_clear.add_argument(
+        "--observed-at",
+        required=True,
+        dest="observed_at",
+        help="Observed time in ISO8601 with timezone",
+    )
+    quota_clear.add_argument(
+        "--state-path",
+        default="jobs/quota-gate.json",
+        dest="state_path",
+        help="Path to quota state JSON",
+    )
+    quota_clear.set_defaults(func=cmd_quota_clear)
+
+    quota_status = quota_subparsers.add_parser("status", help="Show quota state snapshot")
+    quota_status.add_argument(
+        "--state-path",
+        default="jobs/quota-gate.json",
+        dest="state_path",
+        help="Path to quota state JSON",
+    )
+    quota_status.set_defaults(func=cmd_quota_status)
 
     return parser
 

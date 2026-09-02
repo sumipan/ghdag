@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+from datetime import datetime
 
 from ghdag.core.models.metrics import TokenUsage
 from ghdag.core.ports.output import EngineError, EngineErrorKind
@@ -89,8 +91,13 @@ class CodexAdapter:
             if obj.get("type") not in {"error", "turn.failed"}:
                 continue
             message = _extract_error_message(obj)
-            kind, retryable = _classify_error(message)
-            return EngineError(kind=kind, message=message, retryable=retryable)
+            kind, retryable, resume_at = _classify_error(message)
+            return EngineError(
+                kind=kind,
+                message=message,
+                retryable=retryable,
+                resume_at=resume_at,
+            )
         return None
 
 
@@ -107,12 +114,34 @@ def _extract_error_message(obj: dict) -> str:
     return f"codex engine error ({event_type})"
 
 
-def _classify_error(message: str) -> tuple[EngineErrorKind, bool]:
+_RESET_AT_RE = re.compile(
+    r"(?:reset(?:s)?(?:\s+at)?|try again at)\s*[:\-]?\s*([0-9T:\-\+\.\s]{16,40}Z?)",
+    re.IGNORECASE,
+)
+
+
+def _parse_reset_at(message: str) -> datetime | None:
+    m = _RESET_AT_RE.search(message)
+    if not m:
+        return None
+    candidate = m.group(1).strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        return None
+    return parsed
+
+
+def _classify_error(message: str) -> tuple[EngineErrorKind, bool, datetime | None]:
     lower = message.lower()
+    if "quota" in lower and "exhaust" in lower:
+        return EngineErrorKind.QUOTA_EXHAUSTED, False, _parse_reset_at(message)
     if "rate limit" in lower or "ratelimit" in lower:
-        return EngineErrorKind.RATE_LIMIT, True
+        return EngineErrorKind.RATE_LIMIT, True, None
     if "capacity" in lower or "overloaded" in lower:
-        return EngineErrorKind.CAPACITY, True
+        return EngineErrorKind.CAPACITY, True, None
     if any(token in lower for token in ("auth", "unauthorized", "forbidden")):
-        return EngineErrorKind.AUTH, False
-    return EngineErrorKind.UNKNOWN, False
+        return EngineErrorKind.AUTH, False, None
+    return EngineErrorKind.UNKNOWN, False, None

@@ -36,6 +36,18 @@ def test_codex_extract_error_normal_stream_returns_none() -> None:
     assert adapter.extract_error(stdout, b"") is None
 
 
+def test_codex_quota_exhausted_extracts_resume_at() -> None:
+    adapter = CodexAdapter()
+    stdout = (
+        b'{"type":"error","message":"quota exhausted; '
+        b'resets at 2026-09-02T17:00:00+09:00"}\n'
+    )
+    err = adapter.extract_error(stdout, b"")
+    assert err is not None
+    assert err.kind is EngineErrorKind.QUOTA_EXHAUSTED
+    assert err.resume_at is not None
+
+
 def test_claude_extract_error_is_error_true() -> None:
     adapter = ClaudeJsonAdapter()
     stdout = b'{"is_error":true,"error":{"message":"overloaded"}}'
@@ -49,6 +61,27 @@ def test_claude_extract_error_normal_json_returns_none() -> None:
     adapter = ClaudeJsonAdapter()
     stdout = b'{"result":"hello","type":"result"}'
     assert adapter.extract_error(stdout, b"") is None
+
+
+def test_claude_quota_exhausted_extracts_resume_at() -> None:
+    adapter = ClaudeJsonAdapter()
+    stdout = (
+        b'{"is_error":true,"error":{"message":"quota exhausted. '
+        b'Try again at 2026-09-02T17:00:00+09:00"}}'
+    )
+    err = adapter.extract_error(stdout, b"")
+    assert err is not None
+    assert err.kind is EngineErrorKind.QUOTA_EXHAUSTED
+    assert err.retryable is False
+    assert err.resume_at is not None
+
+
+def test_claude_rate_limit_is_not_quota_exhausted() -> None:
+    adapter = ClaudeJsonAdapter()
+    stdout = b'{"is_error":true,"error":{"message":"rate limit exceeded"}}'
+    err = adapter.extract_error(stdout, b"")
+    assert err is not None
+    assert err.kind is EngineErrorKind.RATE_LIMIT
 
 
 def test_cursor_extract_error_always_none() -> None:

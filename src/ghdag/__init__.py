@@ -12,6 +12,7 @@ from ghdag.exceptions import GhdagError
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.result import QueueTask, QueueTaskStore
 from ghdag.pipeline.state import PipelineState
+from ghdag.quota import QuotaGate
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "PipelineState",
     "DagEngine",
     "WorkflowDispatcher",
+    "QuotaGate",
 ]

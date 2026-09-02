@@ -13,6 +13,8 @@ from pathlib import Path
 from ghdag.core.vocabulary import DONE_DEP_FAILED
 from ghdag.io import exec_jsonl
 from ghdag.io.audit import AuditContext
+from ghdag.metrics.parsers import parse_engine_model
+from ghdag.quota import QuotaGate
 
 from .circuit_breaker import CircuitBreakerPolicy
 from .fanout_manager import FanOutManager
@@ -52,7 +54,9 @@ class DagEngine:
         self._launcher = TaskLauncher(
             config, self._hooks, self._circuit_breaker,
             self._fanout_manager, self._run_promote,
+            quota_gate=QuotaGate(config.quota_state_path, audit_path=config.quota_audit_path),
         )
+        self._quota_gate = self._launcher.quota_gate
 
     def run(self) -> None:
         """Main loop (blocking). Graceful shutdown on SIGINT/SIGTERM."""
@@ -79,6 +83,12 @@ class DagEngine:
                 logger.info("Loaded exec file (%d tasks)", len(self._tasks))
 
             self._launcher.check_completions()
+            try:
+                self._quota_gate.release_ready()
+            except ValueError:
+                logger.exception("Quota state is unreadable; skipping launches in this poll")
+                time.sleep(self._config.poll_interval)
+                continue
 
             if self._circuit_breaker.tripped:
                 self._shutdown = True
@@ -144,6 +154,17 @@ class DagEngine:
                 if launched > 0:
                     time.sleep(self._config.launch_stagger)
 
+                launch_engine = task.engine
+                if launch_engine is None:
+                    launch_engine, _ = parse_engine_model(task.command)
+                decision = self._quota_gate.admit(
+                    task_uuid=uuid,
+                    engine=launch_engine,
+                    phase="launch",
+                )
+                if not decision.allowed:
+                    continue
+
                 self._launcher.launch(uuid, task)
                 launched += 1
 
@@ -160,6 +181,7 @@ class DagEngine:
             [record],
             audit_context or AuditContext(source="dag"),
             audit_path=path.parent / "audit.jsonl",
+            quota_gate=self._quota_gate,
         )
 
     def _append_fanout_child(self, line: str, parent_uuid: str) -> None:

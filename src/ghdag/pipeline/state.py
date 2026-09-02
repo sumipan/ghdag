@@ -21,6 +21,7 @@ import yaml
 
 from ghdag.io import exec_jsonl
 from ghdag.io.audit import AuditContext
+from ghdag.quota import QuotaGate
 
 
 class PipelineState:
@@ -118,6 +119,10 @@ class PipelineState:
             records,
             audit_context or AuditContext(),
             audit_path=self._exec_jsonl_path.parent / "audit.jsonl",
+            quota_gate=QuotaGate(
+                self._exec_jsonl_path.parent / "quota-gate.json",
+                audit_path=self._exec_jsonl_path.parent / "audit.jsonl",
+            ),
         )
 
     def write_order_file(

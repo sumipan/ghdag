@@ -19,6 +19,7 @@ from ghdag.io.done import dep_succeeded, read_done_content
 STATE_PENDING_DEPS = "待機（依存未充足）"
 STATE_PENDING_RUN  = "待機（実行可能）"
 STATE_RUNNING      = "実行中"
+STATE_DEFERRED     = "保留（DEFERRED）"
 STATE_OK           = "完了（成功）"
 STATE_FAIL         = "完了（失敗）"
 STATE_REJECTED     = "完了（REJECTED）"
@@ -76,6 +77,7 @@ def task_status(
     *,
     task_depends: set[str] | None = None,
     running_uuids: set[str] | None = None,
+    deferred_uuids: set[str] | None = None,
 ) -> str:
     """タスクの現在状態を判定して状態定数を返す。
 
@@ -89,12 +91,15 @@ def task_status(
         lbl = label_for_done(raw)
         return lbl if lbl else STATE_UNKNOWN_DONE
 
+    if running_uuids and uuid in running_uuids:
+        return STATE_RUNNING
+
+    if deferred_uuids and uuid in deferred_uuids:
+        return STATE_DEFERRED
+
     if task_depends:
         for d in task_depends:
             if not dep_succeeded(exec_done_dir, d):
                 return STATE_PENDING_DEPS
-
-    if running_uuids and uuid in running_uuids:
-        return STATE_RUNNING
 
     return STATE_PENDING_RUN
