@@ -25,7 +25,9 @@ __all__ = [
     "write_llm_audit_log",
     "write_llm_inference_audit",
     "write_rate_limit_audit",
+    "write_quarantine_audit",
     "write_task_exit_audit",
+    "write_task_retry_audit",
     "_MAX_AUDIT_BYTES",
     "_do_rotate",
     "_maybe_rotate",
@@ -213,6 +215,50 @@ def write_rate_limit_audit(
         append_audit_record(audit_path, record)
     except OSError as e:
         print(f"[audit] warning: failed to write rate limit audit: {e}", file=sys.stderr)
+
+
+def write_task_retry_audit(
+    audit_path: Path,
+    *,
+    uuid: str,
+    attempt: int,
+    failure_class: FailureClass,
+    stderr_excerpt: str | None = None,
+) -> None:
+    record = {
+        "schema_version": 1,
+        "event_type": "task_retry",
+        "timestamp": datetime.now(JST).isoformat(),
+        "uuid": uuid,
+        "attempt": attempt,
+        "failure_class": failure_class.value,
+        "stderr_excerpt": stderr_excerpt,
+    }
+    try:
+        append_audit_record(audit_path, record)
+    except OSError as e:
+        print(f"[audit] warning: failed to write task retry audit: {e}", file=sys.stderr)
+
+
+def write_quarantine_audit(
+    audit_path: Path,
+    *,
+    engine: str,
+    action: str,
+    cooldown_sec: int | None = None,
+) -> None:
+    record = {
+        "schema_version": 1,
+        "event_type": "engine_quarantine",
+        "timestamp": datetime.now(JST).isoformat(),
+        "engine": engine,
+        "action": action,
+        "cooldown_sec": cooldown_sec,
+    }
+    try:
+        append_audit_record(audit_path, record)
+    except OSError as e:
+        print(f"[audit] warning: failed to write quarantine audit: {e}", file=sys.stderr)
 
 
 def _capture_caller_stack() -> list[str]:

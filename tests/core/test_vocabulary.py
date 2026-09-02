@@ -5,6 +5,7 @@ from __future__ import annotations
 from ghdag.core.vocabulary import (
     DONE_DEP_FAILED,
     DONE_EMPTY_RESULT,
+    DONE_ENGINE_ENV_ERROR,
     DONE_FANOUT_CHILD_FAILED,
     DONE_FANOUT_PARSE_FAILED,
     DONE_ORPHAN_ARCHIVED,
@@ -41,6 +42,9 @@ class TestDoneMarkers:
 
     def test_done_empty_result(self) -> None:
         assert DONE_EMPTY_RESULT == "EMPTY_RESULT"
+
+    def test_done_engine_environment_error(self) -> None:
+        assert DONE_ENGINE_ENV_ERROR == "ENGINE_ENVIRONMENT_ERROR"
 
     def test_done_pipeline_failed_prefix(self) -> None:
         assert DONE_PIPELINE_FAILED_PREFIX == "PIPELINE_FAILED:"

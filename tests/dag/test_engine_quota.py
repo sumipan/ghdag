@@ -208,9 +208,11 @@ def test_runtime_quota_error_becomes_deferred_without_failure_hook(mock_mark_don
 
     result_file = tmp_path / "result.md"
     result_file.write_text("placeholder", encoding="utf-8")
+    resume_at = datetime.now(JST) + timedelta(hours=1)
     stdout = (
-        b'{"is_error":true,"error":{"message":"quota exhausted. '
-        b'Try again at 2026-09-02T17:00:00+09:00"}}'
+        b'{"is_error":true,"error":{"message":"quota exhausted. Try again at '
+        + resume_at.isoformat().encode("utf-8")
+        + b'"}}'
     )
     proc = MagicMock()
     proc.poll.return_value = 0
@@ -226,6 +228,7 @@ def test_runtime_quota_error_becomes_deferred_without_failure_hook(mock_mark_don
         stdout_buf=io.BytesIO(stdout),
     )
     engine._launcher._running[task.uuid] = rt
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="claude")
 
     engine._launcher.check_completions()
 

@@ -80,6 +80,8 @@ class TestCompatImports:
             "write_audit_log",
             "write_llm_audit_log",
             "write_llm_inference_audit",
+            "write_task_retry_audit",
+            "write_quarantine_audit",
             "write_task_exit_audit",
             "write_rate_limit_audit",
             "compute_prompt_hash",

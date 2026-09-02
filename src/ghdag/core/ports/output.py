@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
-from ghdag.core.models.metrics import TokenUsage
+from ghdag.core.models.metrics import FailureClass, TokenUsage
 
 
 class EngineErrorKind(str, Enum):
@@ -44,4 +44,13 @@ class EngineOutputAdapter(Protocol):
 
     def extract_error(self, stdout: bytes, stderr: bytes) -> EngineError | None:
         """stdout/stderr からエンジンエラーを抽出する。エラー未検出なら None。"""
+        ...
+
+    def classify_failure(
+        self,
+        returncode: int,
+        stdout: bytes,
+        stderr: bytes,
+    ) -> FailureClass | None:
+        """異常終了時に stderr から FailureClass を推定する。不明なら None。"""
         ...
