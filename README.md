@@ -80,8 +80,13 @@ Global options: `--verbose`/`-v`, `--quiet`/`-q`.
 | `ghdag audit-query` | Query `audit.jsonl` or detect bursts | `--correlation-id`, `--burst-detect`, `--since`, `--audit-path`, `--window-sec`, `--threshold` |
 | `ghdag quota report` | Report engine quota availability | `engine`, `--status`, `--observed-at`, `--resume-at`, `--reason`, `--state-path` |
 | `ghdag quota clear` | Clear engine quota pause state | `engine`, `--observed-at`, `--state-path` |
-| `ghdag quota status` | Print quota/deferred snapshot JSON | `--state-path` |
+| `ghdag quota drain` | Pause new launches for one engine and wait for idle | `engine`, `--reason`, `--state-path` |
+| `ghdag quota resume` | Release drain mode for one engine | `engine`, `--state-path` |
+| `ghdag quota status` | Print engine-level quota/drain/queue snapshot JSON | `--state-path`, `--exec-path`, `--done-dir` |
 | `ghdag tools list` | List tool definitions | `--path`, `--json` |
+
+`ghdag quota status` returns per-engine `quota_status`, `draining`, `queued`, `deferred`, `running`, and `idle`.
+`idle` only means "running subprocess count is zero" for that engine.
 
 ## Public API
 

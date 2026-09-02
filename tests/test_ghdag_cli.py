@@ -964,6 +964,20 @@ class TestQuotaCli:
         from ghdag.cli import main
 
         state_path = tmp_path / "quota-gate.json"
+        exec_path = tmp_path / "exec.jsonl"
+        done_dir = tmp_path / "done"
+        done_dir.mkdir(parents=True, exist_ok=True)
+        exec_path.write_text(
+            "\n".join(
+                [
+                    json.dumps({"uuid": "u-queued", "command": "claude -p queued", "depends": []}),
+                    json.dumps({"uuid": "u-deferred", "command": "claude -p deferred", "depends": []}),
+                    json.dumps({"uuid": "u-unresolved", "command": "echo hello", "depends": []}),
+                ]
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         main([
             "quota",
             "report",
@@ -978,10 +992,88 @@ class TestQuotaCli:
             str(state_path),
         ])
         capsys.readouterr()
-
-        main(["quota", "status", "--state-path", str(state_path)])
+        main(["quota", "drain", "claude", "--state-path", str(state_path)])
+        capsys.readouterr()
+        main([
+            "quota",
+            "report",
+            "claude",
+            "--status",
+            "paused",
+            "--observed-at",
+            "2026-09-02T12:01:00+09:00",
+            "--state-path",
+            str(state_path),
+        ])
+        capsys.readouterr()
+        main([
+            "quota",
+            "report",
+            "codex",
+            "--status",
+            "available",
+            "--observed-at",
+            "2026-09-02T12:00:00+09:00",
+            "--state-path",
+            str(state_path),
+        ])
+        capsys.readouterr()
+        main([
+            "quota",
+            "resume",
+            "claude",
+            "--state-path",
+            str(state_path),
+        ])
+        capsys.readouterr()
+        main([
+            "quota",
+            "report",
+            "claude",
+            "--status",
+            "paused",
+            "--observed-at",
+            "2026-09-02T12:02:00+09:00",
+            "--state-path",
+            str(state_path),
+        ])
+        capsys.readouterr()
+        main([
+            "quota",
+            "status",
+            "--state-path",
+            str(state_path),
+            "--exec-path",
+            str(exec_path),
+            "--done-dir",
+            str(done_dir),
+        ])
         payload = json.loads(capsys.readouterr().out.strip())
         assert payload["engines"]["claude"]["status"] == "paused"
+        assert payload["engines"]["claude"]["observed_at"] == "2026-09-02T03:02:00+00:00"
+        assert payload["engines"]["claude"]["resume_at"] is None
+        assert payload["engines"]["claude"]["reason"] is None
+        assert payload["engines"]["claude"]["quota_status"] == "paused"
+        assert payload["engines"]["claude"]["queued"] == 2
+        assert payload["engines"]["claude"]["deferred"] == 0
+        assert payload["engines"]["claude"]["running"] == 0
+        assert payload["engines"]["claude"]["idle"] is True
+        assert payload["deferred_tasks"] == {}
+        assert payload["unresolved"] == 1
+
+    def test_quota_drain_and_resume(self, tmp_path, capsys):
+        from ghdag.cli import main
+
+        state_path = tmp_path / "quota-gate.json"
+        main(["quota", "drain", "claude", "--reason", "model switch", "--state-path", str(state_path)])
+        drain_payload = json.loads(capsys.readouterr().out.strip())
+        assert drain_payload["engine"] == "claude"
+        assert drain_payload["draining"] is True
+
+        main(["quota", "resume", "claude", "--state-path", str(state_path)])
+        resume_payload = json.loads(capsys.readouterr().out.strip())
+        assert resume_payload["draining"] is False
+        assert resume_payload["released"] == []
 
     def test_quota_report_naive_timestamp_exits_1(self, tmp_path):
         from ghdag.cli import main
@@ -998,4 +1090,11 @@ class TestQuotaCli:
                 "--state-path",
                 str(tmp_path / "quota-gate.json"),
             ])
+        assert exc.value.code == 1
+
+    def test_quota_invalid_engine_exits_1(self, tmp_path):
+        from ghdag.cli import main
+
+        with pytest.raises(SystemExit) as exc:
+            main(["quota", "drain", "", "--state-path", str(tmp_path / "quota-gate.json")])
         assert exc.value.code == 1

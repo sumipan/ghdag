@@ -80,11 +80,14 @@ class TaskLauncher:
     def quota_gate(self) -> QuotaGate:
         return self._quota_gate
 
-    def launch(self, uuid: str, task: Task) -> None:
+    def launch(self, uuid: str, task: Task) -> bool:
         """Start a subprocess for the given task and register it in _running."""
         self._apply_resume_if_available(uuid, task)
         logger.info("Launching [%s]: %s", uuid, task.command)
         cwd = str(self._config.cwd) if self._config.cwd else None
+        launch_engine = task.engine
+        if launch_engine is None:
+            launch_engine, _ = parse_engine_model(task.command)
 
         m = _STDIN_REDIR_RE.search(task.command)
         if m:
@@ -101,26 +104,40 @@ class TaskLauncher:
                     uuid, input_file, task.command,
                 )
                 state_mark_done(self._config.exec_done_dir, uuid, DONE_SKIPPED_MISSING_INPUT)
-                return
+                return False
+
+        decision = self._quota_gate.begin_run(task_uuid=uuid, engine=launch_engine)
+        if not decision.allowed:
+            logger.info(
+                "Task [%s] launch deferred by quota gate: engine=%s reason=%s",
+                uuid,
+                launch_engine,
+                decision.reason,
+            )
+            return False
 
         stdout_buf: io.BytesIO | None = None
         t_stdout: threading.Thread | None = None
-        if task.result_path is not None:
-            proc = subprocess.Popen(
-                ["bash", "-o", "pipefail", "-c", task.command],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=cwd,
-            )
-            stdout_buf = io.BytesIO()
-            t_stdout = threading.Thread(target=_stdout_reader, args=(proc, stdout_buf), daemon=True)
-            t_stdout.start()
-        else:
-            proc = subprocess.Popen(
-                ["bash", "-o", "pipefail", "-c", task.command],
-                stderr=subprocess.PIPE,
-                cwd=cwd,
-            )
+        try:
+            if task.result_path is not None:
+                proc = subprocess.Popen(
+                    ["bash", "-o", "pipefail", "-c", task.command],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=cwd,
+                )
+                stdout_buf = io.BytesIO()
+                t_stdout = threading.Thread(target=_stdout_reader, args=(proc, stdout_buf), daemon=True)
+                t_stdout.start()
+            else:
+                proc = subprocess.Popen(
+                    ["bash", "-o", "pipefail", "-c", task.command],
+                    stderr=subprocess.PIPE,
+                    cwd=cwd,
+                )
+        except Exception:
+            self._quota_gate.finish_run(task_uuid=uuid)
+            raise
 
         stderr_buf = io.BytesIO()
         t_stderr = threading.Thread(target=_stderr_reader, args=(proc, stderr_buf), daemon=True)
@@ -138,6 +155,7 @@ class TaskLauncher:
             stdout_thread=t_stdout,
         )
         self._hooks.on_task_start(uuid, task)
+        return True
 
     def check_completions(self) -> None:
         """Inspect running processes and process any that have finished."""
@@ -180,26 +198,35 @@ class TaskLauncher:
             stdout_data = rt.stdout_buf.getvalue() if rt.stdout_buf else b""
             adapter = get_output_adapter(engine)
 
-            if returncode != 0 and self._is_resume_fallback_target(task, stderr_text):
-                original_command = task.annotations.get("_command_without_resume")
-                if original_command:
-                    logger.info("Retrying [%s] without --resume due to session-related failure", uuid)
-                    fallback = subprocess.run(
-                        ["bash", "-o", "pipefail", "-c", original_command],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        cwd=cwd,
-                    )
-                    returncode = fallback.returncode
-                    stdout_data = fallback.stdout
-                    stderr_bytes = fallback.stderr
-                    stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
-                    usage = adapter.extract_token_usage(stdout_data, stderr_bytes)
-                    token_count = usage.token_count if usage else None
-                    cost_usd = usage.cost_usd if usage else None
-                    cache_read_tokens = usage.cache_read_tokens if usage else None
-                    cache_creation_tokens = usage.cache_creation_tokens if usage else None
-                    task.command = original_command
+            try:
+                if returncode != 0 and self._is_resume_fallback_target(task, stderr_text):
+                    original_command = task.annotations.get("_command_without_resume")
+                    if original_command:
+                        logger.info(
+                            "Retrying [%s] without --resume due to session-related failure",
+                            uuid,
+                        )
+                        fallback = subprocess.run(
+                            ["bash", "-o", "pipefail", "-c", original_command],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            cwd=cwd,
+                        )
+                        returncode = fallback.returncode
+                        stdout_data = fallback.stdout
+                        stderr_bytes = fallback.stderr
+                        stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
+                        usage = adapter.extract_token_usage(stdout_data, stderr_bytes)
+                        token_count = usage.token_count if usage else None
+                        cost_usd = usage.cost_usd if usage else None
+                        cache_read_tokens = usage.cache_read_tokens if usage else None
+                        cache_creation_tokens = usage.cache_creation_tokens if usage else None
+                        task.command = original_command
+            finally:
+                try:
+                    self._quota_gate.finish_run(task_uuid=uuid)
+                except ValueError:
+                    logger.exception("Failed to update running registry for [%s]", uuid)
 
             engine_error = adapter.extract_error(stdout_data, stderr_bytes)
             usage = adapter.extract_token_usage(stdout_data, stderr_bytes)

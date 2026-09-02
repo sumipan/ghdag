@@ -2,15 +2,34 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig, RunningTask, Task
 
 JST = timezone(timedelta(hours=9))
+
+
+class _DummyProc:
+    def __init__(self) -> None:
+        self.stderr = io.BytesIO(b"")
+        self.returncode = None
+
+    def poll(self):
+        return None
+
+    def terminate(self):
+        return None
+
+    def kill(self):
+        return None
 
 
 def _write_exec(path: Path, records: list[dict]) -> None:
@@ -38,13 +57,120 @@ def test_paused_launch_does_not_call_subprocess(tmp_path: Path) -> None:
     def stop_after_first_sleep(*_args, **_kwargs):
         engine._shutdown = True
 
-    with patch.object(engine._launcher, "launch") as mock_launch, patch(
-        "ghdag.dag.engine.time.sleep",
-        side_effect=stop_after_first_sleep,
+    with patch("ghdag.dag.task_launcher.subprocess.Popen") as mock_popen, patch(
+        "ghdag.dag.engine.time.sleep", side_effect=stop_after_first_sleep
     ):
         engine.run()
 
-    mock_launch.assert_not_called()
+    mock_popen.assert_not_called()
+
+
+def test_draining_one_engine_still_launches_other_engine(tmp_path: Path) -> None:
+    exec_path = tmp_path / "jobs" / "exec.jsonl"
+    done_dir = tmp_path / "jobs" / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    _write_exec(
+        exec_path,
+        [
+            {"uuid": "claude-task", "command": "claude -p hello", "depends": []},
+            {"uuid": "codex-task", "command": "codex exec -p hello", "depends": []},
+        ],
+    )
+
+    config = DagConfig(exec_jsonl_path=exec_path, exec_done_dir=done_dir, poll_interval=0.01)
+    hooks = MagicMock()
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = None
+    engine = DagEngine(config, hooks)
+    engine._quota_gate.drain(engine="claude", now=datetime(2026, 9, 2, 12, 0, tzinfo=JST))
+
+    proc = _DummyProc()
+
+    def stop_after_first_sleep(*_args, **_kwargs):
+        engine._shutdown = True
+
+    with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=proc), patch(
+        "ghdag.dag.engine.time.sleep", side_effect=stop_after_first_sleep
+    ):
+        engine.run()
+
+    assert "claude-task" in engine._quota_gate.snapshot().deferred_tasks
+    assert "codex-task" in engine._launcher._running
+
+
+def test_launch_popen_failure_rolls_back_running_reservation(tmp_path: Path) -> None:
+    exec_path = tmp_path / "jobs" / "exec.jsonl"
+    done_dir = tmp_path / "jobs" / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    _write_exec(exec_path, [])
+
+    config = DagConfig(exec_jsonl_path=exec_path, exec_done_dir=done_dir)
+    hooks = MagicMock()
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = None
+    engine = DagEngine(config, hooks)
+    task = Task(uuid="task-1", command="claude -p hello", depends=[])
+
+    with patch("ghdag.dag.task_launcher.subprocess.Popen", side_effect=OSError("boom")):
+        with pytest.raises(OSError):
+            engine._launcher.launch(task.uuid, task)
+
+    snapshot = engine._quota_gate.snapshot()
+    assert "task-1" not in snapshot.running_tasks
+    assert engine._quota_gate.wait_idle("claude", timeout=0.1, poll_interval=0.01) is True
+
+
+def test_resume_fallback_remains_running_until_fallback_exits(tmp_path: Path) -> None:
+    config = DagConfig(
+        exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl",
+        exec_done_dir=tmp_path / "jobs" / "done",
+    )
+    hooks = MagicMock()
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = None
+    engine = DagEngine(config, hooks)
+    task = Task(
+        uuid="task-1",
+        command="claude -p hello --resume 'expired-session'",
+        engine="claude",
+        annotations={
+            "resumed_session_id": "expired-session",
+            "_command_without_resume": "claude -p hello",
+        },
+    )
+    proc = MagicMock()
+    proc.poll.return_value = 1
+    proc.returncode = 1
+    engine._launcher._running[task.uuid] = RunningTask(
+        uuid=task.uuid,
+        task=task,
+        proc=proc,
+        started_at=time.time() - 0.1,
+        started_at_mono=time.monotonic() - 0.1,
+        stderr_buf=io.BytesIO(b"session not found"),
+    )
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="claude")
+
+    fallback_started = threading.Event()
+    release_fallback = threading.Event()
+
+    def run_fallback(*_args, **_kwargs):
+        fallback_started.set()
+        assert release_fallback.wait(timeout=1)
+        return subprocess.CompletedProcess([], 0, stdout=b"", stderr=b"")
+
+    with patch("ghdag.dag.task_launcher.subprocess.run", side_effect=run_fallback), patch(
+        "ghdag.dag.task_launcher.state_mark_done"
+    ):
+        worker = threading.Thread(target=engine._launcher.check_completions, daemon=True)
+        worker.start()
+        assert fallback_started.wait(timeout=1)
+        assert task.uuid in engine._quota_gate.snapshot().running_tasks
+        release_fallback.set()
+        worker.join(timeout=1)
+
+    assert not worker.is_alive()
+    assert task.uuid not in engine._quota_gate.snapshot().running_tasks
 
 
 def test_enqueue_records_are_kept_and_deferred_registry_updated(tmp_path: Path) -> None:

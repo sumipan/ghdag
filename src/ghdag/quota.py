@@ -6,6 +6,7 @@ import fcntl
 import json
 import os
 import tempfile
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -56,6 +57,20 @@ class DeferredTaskState:
 class QuotaSnapshot:
     engines: dict[str, EngineQuotaState]
     deferred_tasks: dict[str, DeferredTaskState]
+    draining_engines: dict[str, "DrainState"]
+    running_tasks: dict[str, "RunningTaskState"]
+
+
+@dataclass(frozen=True)
+class DrainState:
+    started_at: datetime
+    reason: str | None
+
+
+@dataclass(frozen=True)
+class RunningTaskState:
+    engine: str
+    started_at: datetime
 
 
 class QuotaGate:
@@ -171,6 +186,57 @@ class QuotaGate:
             reason=None,
         )
 
+    def drain(
+        self,
+        *,
+        engine: str,
+        reason: str | None = None,
+        now: datetime | None = None,
+    ) -> None:
+        engine_name = _require_non_empty(engine, "engine")
+        current = _aware_now(now)
+        changed = False
+
+        with self._lock(exclusive=True):
+            state = self._load_state_unlocked()
+            if engine_name not in state["draining_engines"]:
+                state["draining_engines"][engine_name] = {
+                    "started_at": _iso(current),
+                    "reason": reason,
+                }
+                self._write_state_unlocked(state)
+                changed = True
+
+        if changed:
+            self._audit_engine_drain_started(engine=engine_name, observed_at=current, reason=reason)
+
+    def resume(
+        self,
+        *,
+        engine: str,
+        now: datetime | None = None,
+    ) -> list[str]:
+        engine_name = _require_non_empty(engine, "engine")
+        current = _aware_now(now)
+        changed = False
+        drain_removed = False
+        released: list[str] = []
+
+        with self._lock(exclusive=True):
+            state = self._load_state_unlocked()
+            drain_removed = state["draining_engines"].pop(engine_name, None) is not None
+            released = self._release_for_engine(state, engine_name, current)
+            if drain_removed or released:
+                self._write_state_unlocked(state)
+                changed = True
+
+        if drain_removed:
+            self._audit_engine_drain_resumed(engine=engine_name, observed_at=current)
+        if changed:
+            for task_uuid in released:
+                self._audit_task_resumed(task_uuid=task_uuid, engine=engine_name, observed_at=current)
+        return released
+
     def admit(
         self,
         *,
@@ -191,33 +257,144 @@ class QuotaGate:
 
         with self._lock(exclusive=True):
             state = self._load_state_unlocked()
-            engine_state = _to_engine_state(state["engines"].get(engine_name))
-            if engine_state is None or not _is_paused(engine_state, current):
+            decision = self._evaluate_admission_unlocked(
+                state=state,
+                engine=engine_name,
+                now=current,
+                fallback_reason=reason,
+            )
+            if decision.allowed:
                 return AdmissionDecision(True, "ALLOWED", None, None)
 
-            deferred_reason = reason or engine_state.reason or "quota paused"
-            state["deferred_tasks"][task_uuid] = {
+            deferred_payload = {
                 "engine": engine_name,
                 "phase": phase,
                 "deferred_at": _iso(current),
-                "reason": deferred_reason,
+                "reason": decision.reason,
             }
+            previous_deferred = state["deferred_tasks"].get(task_uuid)
+            removed_running = state["running_tasks"].pop(task_uuid, None) is not None
+            state["deferred_tasks"][task_uuid] = deferred_payload
+            changed = previous_deferred != deferred_payload or removed_running
+            if changed:
+                self._write_state_unlocked(state)
+
+        if changed:
+            self._audit_task_deferred(
+                task_uuid=task_uuid,
+                engine=engine_name,
+                phase=phase,
+                observed_at=current,
+                resume_at=decision.resume_at,
+                reason=decision.reason,
+            )
+        return decision
+
+    def begin_run(
+        self,
+        *,
+        task_uuid: str,
+        engine: str | None,
+        now: datetime | None = None,
+    ) -> AdmissionDecision:
+        _require_non_empty(task_uuid, "task_uuid")
+        if engine is None:
+            return AdmissionDecision(True, "ALLOWED", None, None)
+
+        engine_name = _require_non_empty(engine, "engine")
+        current = _aware_now(now)
+
+        with self._lock(exclusive=True):
+            state = self._load_state_unlocked()
+            decision = self._evaluate_admission_unlocked(
+                state=state,
+                engine=engine_name,
+                now=current,
+                fallback_reason=None,
+            )
+            if decision.allowed:
+                removed_deferred = state["deferred_tasks"].pop(task_uuid, None) is not None
+                previous_running = state["running_tasks"].get(task_uuid)
+                running_payload = {
+                    "engine": engine_name,
+                    "started_at": _iso(current),
+                }
+                changed = previous_running != running_payload or removed_deferred
+                state["running_tasks"][task_uuid] = running_payload
+                if changed:
+                    self._write_state_unlocked(state)
+            else:
+                deferred_payload = {
+                    "engine": engine_name,
+                    "phase": "launch",
+                    "deferred_at": _iso(current),
+                    "reason": decision.reason,
+                }
+                previous_deferred = state["deferred_tasks"].get(task_uuid)
+                removed_running = state["running_tasks"].pop(task_uuid, None) is not None
+                state["deferred_tasks"][task_uuid] = deferred_payload
+                changed = previous_deferred != deferred_payload or removed_running
+                if changed:
+                    self._write_state_unlocked(state)
+
+        if changed:
+            if decision.allowed:
+                self._audit_task_running_started(
+                    task_uuid=task_uuid,
+                    engine=engine_name,
+                    observed_at=current,
+                )
+            else:
+                self._audit_task_deferred(
+                    task_uuid=task_uuid,
+                    engine=engine_name,
+                    phase="launch",
+                    observed_at=current,
+                    resume_at=decision.resume_at,
+                    reason=decision.reason,
+                )
+        return decision
+
+    def finish_run(self, *, task_uuid: str) -> bool:
+        task_id = _require_non_empty(task_uuid, "task_uuid")
+        with self._lock(exclusive=True):
+            state = self._load_state_unlocked()
+            running = state["running_tasks"].pop(task_id, None)
+            if running is None:
+                return False
             self._write_state_unlocked(state)
 
-        self._audit_task_deferred(
-            task_uuid=task_uuid,
-            engine=engine_name,
-            phase=phase,
-            observed_at=current,
-            resume_at=engine_state.resume_at,
-            reason=deferred_reason,
+        engine = str(running.get("engine", "unknown"))
+        self._audit_task_running_finished(
+            task_uuid=task_id,
+            engine=engine,
+            observed_at=datetime.now(timezone.utc),
         )
-        return AdmissionDecision(
-            allowed=False,
-            status="DEFERRED",
-            reason=deferred_reason,
-            resume_at=engine_state.resume_at,
-        )
+        return True
+
+    def wait_idle(
+        self,
+        engine: str,
+        timeout: float | None = None,
+        poll_interval: float = 0.1,
+    ) -> bool:
+        engine_name = _require_non_empty(engine, "engine")
+        if timeout is not None and timeout < 0:
+            raise ValueError("timeout must be >= 0")
+        if poll_interval <= 0:
+            raise ValueError("poll_interval must be > 0")
+
+        deadline = None if timeout is None else (time.monotonic() + timeout)
+        while True:
+            snapshot = self.snapshot()
+            running_count = sum(
+                1 for state in snapshot.running_tasks.values() if state.engine == engine_name
+            )
+            if running_count == 0:
+                return True
+            if deadline is not None and time.monotonic() >= deadline:
+                return False
+            time.sleep(poll_interval)
 
     def release_ready(self, *, now: datetime | None = None) -> list[str]:
         current = _aware_now(now)
@@ -276,9 +453,25 @@ class QuotaGate:
             )
             for task_uuid, payload in state["deferred_tasks"].items()
         }
-        return QuotaSnapshot(engines=engines, deferred_tasks=deferred_tasks)
+        draining_engines: dict[str, DrainState] = {}
+        for engine_name, payload in state["draining_engines"].items():
+            drain_state = _to_drain_state(payload)
+            if drain_state is not None:
+                draining_engines[engine_name] = drain_state
+        running_tasks = {
+            task_uuid: _to_running_state(payload)
+            for task_uuid, payload in state["running_tasks"].items()
+        }
+        return QuotaSnapshot(
+            engines=engines,
+            deferred_tasks=deferred_tasks,
+            draining_engines=draining_engines,
+            running_tasks=running_tasks,
+        )
 
     def _release_for_engine(self, state: dict, engine: str, observed_at: datetime) -> list[str]:
+        if engine in state["draining_engines"]:
+            return []
         eng_payload = state["engines"].get(engine)
         engine_state = _to_engine_state(eng_payload)
         is_effective_available = eng_payload is None or (
@@ -298,7 +491,13 @@ class QuotaGate:
 
     def _load_state_unlocked(self) -> dict:
         if not self._state_path.exists():
-            return {"schema_version": 1, "engines": {}, "deferred_tasks": {}}
+            return {
+                "schema_version": 1,
+                "engines": {},
+                "deferred_tasks": {},
+                "draining_engines": {},
+                "running_tasks": {},
+            }
         try:
             payload = cast(dict[str, Any], json.loads(self._state_path.read_text(encoding="utf-8")))
         except json.JSONDecodeError as exc:
@@ -309,7 +508,37 @@ class QuotaGate:
             raise ValueError("unsupported quota state schema version")
         payload.setdefault("engines", {})
         payload.setdefault("deferred_tasks", {})
+        payload.setdefault("draining_engines", {})
+        payload.setdefault("running_tasks", {})
         return payload
+
+    def _evaluate_admission_unlocked(
+        self,
+        *,
+        state: dict,
+        engine: str,
+        now: datetime,
+        fallback_reason: str | None,
+    ) -> AdmissionDecision:
+        engine_state = _to_engine_state(state["engines"].get(engine))
+        if engine_state is not None and _is_paused(engine_state, now):
+            deferred_reason = fallback_reason or engine_state.reason or "quota paused"
+            return AdmissionDecision(
+                allowed=False,
+                status="DEFERRED",
+                reason=deferred_reason,
+                resume_at=engine_state.resume_at,
+            )
+        drain_state = _to_drain_state(state["draining_engines"].get(engine))
+        if drain_state is not None:
+            deferred_reason = fallback_reason or drain_state.reason or "engine draining"
+            return AdmissionDecision(
+                allowed=False,
+                status="DEFERRED",
+                reason=deferred_reason,
+                resume_at=None,
+            )
+        return AdmissionDecision(True, "ALLOWED", None, None)
 
     def _write_state_unlocked(self, state: dict) -> None:
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -414,6 +643,76 @@ class QuotaGate:
             }
         )
 
+    def _audit_engine_drain_started(
+        self,
+        *,
+        engine: str,
+        observed_at: datetime,
+        reason: str | None,
+    ) -> None:
+        self._append_audit(
+            {
+                "schema_version": 1,
+                "event_type": "engine_drain_started",
+                "engine": engine,
+                "reason": reason,
+                "observed_at": _iso(observed_at),
+                "correlation_id": f"quota:{engine}",
+            }
+        )
+
+    def _audit_engine_drain_resumed(
+        self,
+        *,
+        engine: str,
+        observed_at: datetime,
+    ) -> None:
+        self._append_audit(
+            {
+                "schema_version": 1,
+                "event_type": "engine_drain_resumed",
+                "engine": engine,
+                "observed_at": _iso(observed_at),
+                "correlation_id": f"quota:{engine}",
+            }
+        )
+
+    def _audit_task_running_started(
+        self,
+        *,
+        task_uuid: str,
+        engine: str,
+        observed_at: datetime,
+    ) -> None:
+        self._append_audit(
+            {
+                "schema_version": 1,
+                "event_type": "task_running_started",
+                "uuid": task_uuid,
+                "engine": engine,
+                "observed_at": _iso(observed_at),
+                "correlation_id": task_uuid,
+            }
+        )
+
+    def _audit_task_running_finished(
+        self,
+        *,
+        task_uuid: str,
+        engine: str,
+        observed_at: datetime,
+    ) -> None:
+        self._append_audit(
+            {
+                "schema_version": 1,
+                "event_type": "task_running_finished",
+                "uuid": task_uuid,
+                "engine": engine,
+                "observed_at": _iso(observed_at),
+                "correlation_id": task_uuid,
+            }
+        )
+
     def _audit_state_error(self, reason: str) -> None:
         self._append_audit(
             {
@@ -487,6 +786,24 @@ def _to_engine_state(payload: dict | None) -> EngineQuotaState | None:
         resume_at=resume_at,
         reason=reason,
     )
+
+
+def _to_drain_state(payload: dict | None) -> DrainState | None:
+    if payload is None:
+        return None
+    started_at = _parse_dt(str(payload.get("started_at")), "started_at")
+    reason = payload.get("reason")
+    if reason is not None and not isinstance(reason, str):
+        reason = str(reason)
+    return DrainState(started_at=started_at, reason=reason)
+
+
+def _to_running_state(payload: dict | None) -> RunningTaskState:
+    if payload is None:
+        raise ValueError("running task payload must not be null")
+    engine = _require_non_empty(str(payload.get("engine", "")), "engine")
+    started_at = _parse_dt(str(payload.get("started_at")), "started_at")
+    return RunningTaskState(engine=engine, started_at=started_at)
 
 
 def _is_paused(state: EngineQuotaState, now: datetime) -> bool:
