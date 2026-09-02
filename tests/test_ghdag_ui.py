@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -88,6 +89,30 @@ class TestMonitor:
             repo, running_uuids_override={"aaaa-bbbb-cccc-dddd"}, detect_running=False,
         )
         assert rows[0].state == STATE_RUNNING
+
+    def test_build_rows_deferred_from_quota_gate(self, tmp_path):
+        import json as _json
+
+        from ghdag.quota import QuotaGate
+        from ghdag.ui.monitor import STATE_DEFERRED, build_rows
+
+        content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "claude -p hello", "depends": []})
+        repo = self._make_repo(tmp_path, content + "\n")
+        gate = QuotaGate(repo / "jobs" / "quota-gate.json")
+        gate.report(
+            engine="claude",
+            status="paused",
+            observed_at=datetime(2026, 9, 2, 12, 0, tzinfo=timezone.utc),
+        )
+        gate.admit(
+            task_uuid="aaaa-bbbb-cccc-dddd",
+            engine="claude",
+            phase="launch",
+            now=datetime(2026, 9, 2, 12, 1, tzinfo=timezone.utc),
+        )
+
+        rows, _, _ = build_rows(repo, detect_running=False)
+        assert rows[0].state == STATE_DEFERRED
 
     def test_extract_engine_model(self):
         from ghdag.ui.monitor import extract_engine_model

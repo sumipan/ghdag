@@ -36,9 +36,20 @@ class DagConfig:
     serialize_mutating: bool = False
     max_consecutive_failures: int = 5
     failure_window_sec: float = 60.0
+    quota_state_path: str | Path | None = None
+    quota_audit_path: str | Path | None = None
 
     def __post_init__(self) -> None:
+        queue_dir = Path(self.exec_jsonl_path).parent
         if self.lock_file is None:
-            self.lock_file = Path(self.exec_jsonl_path).parent / ".ghdag.lock"
+            self.lock_file = queue_dir / ".ghdag.lock"
         else:
             self.lock_file = Path(self.lock_file)
+        if self.quota_state_path is None:
+            self.quota_state_path = queue_dir / "quota-gate.json"
+        else:
+            self.quota_state_path = Path(self.quota_state_path)
+        if self.quota_audit_path is None:
+            self.quota_audit_path = queue_dir / "audit.jsonl"
+        else:
+            self.quota_audit_path = Path(self.quota_audit_path)

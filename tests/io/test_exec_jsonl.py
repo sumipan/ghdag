@@ -140,6 +140,31 @@ class TestAppend:
         written = json.loads(path.read_text(encoding="utf-8").strip())
         assert written["annotations"]["_request_id"] == "req-1"
 
+    def test_append_registers_deferred_when_engine_paused(self, tmp_path: Path) -> None:
+        from datetime import datetime, timedelta, timezone
+
+        from ghdag.io.audit import AuditContext
+        from ghdag.io.exec_jsonl import append
+        from ghdag.quota import QuotaGate
+
+        jst = timezone(timedelta(hours=9))
+        path = tmp_path / "exec.jsonl"
+        gate = QuotaGate(tmp_path / "quota-gate.json")
+        gate.report(
+            engine="claude",
+            status="paused",
+            observed_at=datetime(2026, 9, 2, 12, 0, tzinfo=jst),
+        )
+        records = [{"uuid": "u1", "command": "claude -p hi", "engine": "claude"}]
+        append(
+            path,
+            records,
+            AuditContext(source="test"),
+            audit_path=tmp_path / "audit.jsonl",
+            quota_gate=gate,
+        )
+        assert "u1" in gate.snapshot().deferred_tasks
+
 
 class TestRemove:
     def test_remove_by_predicate(self, tmp_path: Path) -> None:

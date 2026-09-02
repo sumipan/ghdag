@@ -10,6 +10,7 @@ from pathlib import Path
 
 from ghdag.core.models.dag import Task
 from ghdag.io.audit import AuditContext, write_audit_log
+from ghdag.quota import QuotaGate
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,7 @@ def append(
     audit_path: Path,
     idempotency_key: str | None = None,
     default_permission_uuids: list[str] | None = None,
+    quota_gate: QuotaGate | None = None,
 ) -> None:
     """Append records as JSONL under LOCK_EX and write an audit enqueue record."""
     if not records:
@@ -151,6 +153,17 @@ def append(
             f.write("\n".join(lines) + "\n")
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
+
+    if quota_gate is not None:
+        for rec in records:
+            uuid = rec.get("uuid")
+            engine = rec.get("engine")
+            if isinstance(uuid, str) and engine is not None:
+                quota_gate.admit(
+                    task_uuid=uuid,
+                    engine=str(engine),
+                    phase="enqueue",
+                )
 
     uuids = [r["uuid"] for r in records if "uuid" in r]
     dp_uuids = default_permission_uuids

@@ -10,6 +10,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ghdag.core.vocabulary import (
@@ -28,6 +29,7 @@ from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.session import SessionStore
 from ghdag.metrics.models import FailureClass, TaskMetrics
 from ghdag.metrics.parsers import parse_engine_model
+from ghdag.quota import QuotaGate
 
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .circuit_breaker import CircuitBreakerPolicy
@@ -60,6 +62,7 @@ class TaskLauncher:
         circuit_breaker: CircuitBreakerPolicy,
         fanout_manager: FanOutManager,
         promote_fn: Callable[[str | None], None],
+        quota_gate: QuotaGate | None = None,
     ) -> None:
         self._config = config
         self._hooks = hooks
@@ -68,6 +71,14 @@ class TaskLauncher:
         self._promote_fn = promote_fn
         self._running: dict[str, RunningTask] = {}
         self._session_store = SessionStore(self._queue_dir() / ".sessions")
+        self._quota_gate = quota_gate or QuotaGate(
+            self._queue_dir() / "quota-gate.json",
+            audit_path=self._queue_dir() / "audit.jsonl",
+        )
+
+    @property
+    def quota_gate(self) -> QuotaGate:
+        return self._quota_gate
 
     def launch(self, uuid: str, task: Task) -> None:
         """Start a subprocess for the given task and register it in _running."""
@@ -220,6 +231,26 @@ class TaskLauncher:
                     continue
 
                 if engine_error is not None:
+                    if engine_error.kind.value == "QUOTA_EXHAUSTED":
+                        observed = datetime.now(timezone.utc)
+                        if isinstance(engine, str):
+                            self._quota_gate.report(
+                                engine=engine,
+                                status="paused",
+                                observed_at=observed,
+                                resume_at=engine_error.resume_at,
+                                reason=engine_error.message,
+                            )
+                            self._quota_gate.admit(
+                                task_uuid=uuid,
+                                engine=engine,
+                                phase="runtime",
+                                now=observed,
+                                reason=engine_error.message,
+                            )
+                        if task.result_path and Path(task.result_path).exists():
+                            Path(task.result_path).unlink()
+                        continue
                     error_summary = (
                         f"ENGINE_ERROR ({engine_error.kind.value}): {engine_error.message}"
                     )

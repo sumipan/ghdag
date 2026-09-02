@@ -957,3 +957,45 @@ class TestLLMCapabilitiesArgs:
         caps = call_kwargs["capabilities"]
         assert caps.permission_mode == "plan"
         assert caps.disallowed_tools == TEXT_ONLY.disallowed_tools
+
+
+class TestQuotaCli:
+    def test_quota_report_and_status(self, tmp_path, capsys):
+        from ghdag.cli import main
+
+        state_path = tmp_path / "quota-gate.json"
+        main([
+            "quota",
+            "report",
+            "claude",
+            "--status",
+            "paused",
+            "--observed-at",
+            "2026-09-02T12:00:00+09:00",
+            "--resume-at",
+            "2026-09-02T17:00:00+09:00",
+            "--state-path",
+            str(state_path),
+        ])
+        capsys.readouterr()
+
+        main(["quota", "status", "--state-path", str(state_path)])
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["engines"]["claude"]["status"] == "paused"
+
+    def test_quota_report_naive_timestamp_exits_1(self, tmp_path):
+        from ghdag.cli import main
+
+        with pytest.raises(SystemExit) as exc:
+            main([
+                "quota",
+                "report",
+                "claude",
+                "--status",
+                "paused",
+                "--observed-at",
+                "2026-09-02T12:00:00",
+                "--state-path",
+                str(tmp_path / "quota-gate.json"),
+            ])
+        assert exc.value.code == 1

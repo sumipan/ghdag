@@ -78,6 +78,9 @@ Global options: `--verbose`/`-v`, `--quiet`/`-q`.
 | `ghdag cleanup` | Archive completed/orphaned queue tasks | `repo_root`, `--dry-run`, `--cutoff-days`, `--orphan-days`, `--auto-repair` |
 | `ghdag trigger` | Trigger one workflow handler for one issue | `issue_number`, `--handler`, `--workflows-dir`, `--exec-md`, `--workflow` |
 | `ghdag audit-query` | Query `audit.jsonl` or detect bursts | `--correlation-id`, `--burst-detect`, `--since`, `--audit-path`, `--window-sec`, `--threshold` |
+| `ghdag quota report` | Report engine quota availability | `engine`, `--status`, `--observed-at`, `--resume-at`, `--reason`, `--state-path` |
+| `ghdag quota clear` | Clear engine quota pause state | `engine`, `--observed-at`, `--state-path` |
+| `ghdag quota status` | Print quota/deferred snapshot JSON | `--state-path` |
 | `ghdag tools list` | List tool definitions | `--path`, `--json` |
 
 ## Public API
@@ -93,12 +96,13 @@ Global options: `--verbose`/`-v`, `--quiet`/`-q`.
 | `PipelineState` | `ghdag.pipeline.state` |
 | `DagEngine` | `ghdag.dag.engine` |
 | `WorkflowDispatcher` | `ghdag.workflow.dispatcher` |
+| `QuotaGate` | `ghdag.quota` |
 
 Full `__all__` exports by module:
 
 | Module | Exported symbols (`__all__`) |
 |---|---|
-| `ghdag` | `GhdagError`, `QueueTask`, `QueueTaskStore`, `LLMPipelineAPI`, `PipelineState`, `DagEngine`, `WorkflowDispatcher` |
+| `ghdag` | `GhdagError`, `QueueTask`, `QueueTaskStore`, `LLMPipelineAPI`, `PipelineState`, `DagEngine`, `WorkflowDispatcher`, `QuotaGate` |
 | `ghdag.cleanup` | `cleanup_queue`, `CleanupResult`, `file_timestamp`, `QUEUE_FILE_RE` |
 | `ghdag.cli` | `main` |
 | `ghdag.core` | `command` |
@@ -126,15 +130,16 @@ Full `__all__` exports by module:
 | `ghdag.metrics` | `MetricsRecorder`, `TaskMetrics` |
 | `ghdag.metrics.models` | `FailureClass`, `TokenUsage`, `TaskMetrics` |
 | `ghdag.metrics.parsers` | `parse_engine_model`, `parse_token_usage_json`, `parse_token_count` |
-| `ghdag.pipeline` | `AuditHooks`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `resolve_models`, `build_agent_cmd`, `status_rank`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `task_status`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `STATE_EMPTY`, `STATE_FAIL`, `STATE_OK`, `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_REJECTED`, `STATE_RUNNING`, `STATE_UNKNOWN_DONE`, `make_order_record`, `submit_order` |
+| `ghdag.pipeline` | `AuditHooks`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `resolve_models`, `build_agent_cmd`, `status_rank`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `task_status`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `STATE_EMPTY`, `STATE_DEFERRED`, `STATE_FAIL`, `STATE_OK`, `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_REJECTED`, `STATE_RUNNING`, `STATE_UNKNOWN_DONE`, `make_order_record`, `submit_order` |
 | `ghdag.pipeline.audit` | `AuditContext`, `append_audit_record`, `compute_prompt_hash`, `write_audit_log`, `write_llm_audit_log`, `write_llm_inference_audit`, `write_rate_limit_audit`, `write_task_exit_audit`, `_MAX_AUDIT_BYTES`, `_do_rotate`, `_maybe_rotate` |
 | `ghdag.pipeline.audit_query` | `read_task_exit_events`, `get_latest_status`, `detect_correlation_bursts`, `get_correlation_top_n` |
 | `ghdag.pipeline.hooks` | `AuditHooks` |
 | `ghdag.pipeline.order` | `OrderBuilder`, `InlineOrderBuilder`, `TemplateOrderBuilder`, `TemplateVariableError` |
 | `ghdag.pipeline.result` | `QueueTask`, `QueueTaskStore` |
+| `ghdag.quota` | `QuotaGate`, `AdmissionDecision`, `QuotaSnapshot`, `QuotaReportResult` |
 | `ghdag.tool` | `FallbackEntry`, `TOOL_EXIT_CODES`, `ToolDef`, `ToolRegistry`, `write_tool_fallback_audit` |
 | `ghdag.ui.dashboard` | `aggregate_task_status`, `aggregate_token_usage`, `aggregate_cb_firing`, `resolve_audit_path` |
-| `ghdag.ui.monitor` | `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_RUNNING`, `STATE_OK`, `STATE_FAIL`, `STATE_REJECTED`, `STATE_EMPTY`, `STATE_UNKNOWN_DONE`, `read_done_content`, `interpret_done`, `dep_succeeded`, `label_for_done`, `task_status`, `task_state`, `Row`, `MonitorTask`, `build_rows`, `filter_rows`, `relayout_tree_for_visible_rows`, `apply_default_monitor_filters` |
+| `ghdag.ui.monitor` | `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_RUNNING`, `STATE_DEFERRED`, `STATE_OK`, `STATE_FAIL`, `STATE_REJECTED`, `STATE_EMPTY`, `STATE_UNKNOWN_DONE`, `read_done_content`, `interpret_done`, `dep_succeeded`, `label_for_done`, `task_status`, `task_state`, `Row`, `MonitorTask`, `build_rows`, `filter_rows`, `relayout_tree_for_visible_rows`, `apply_default_monitor_filters` |
 | `ghdag.workflow` | `WorkflowConfig`, `TriggerConfig`, `HandlerConfig`, `StepConfig`, `OnTriggerConfig`, `DispatchResult`, `load_workflows`, `WorkflowDispatcher`, `GitHubIssueClient`, `create_github_client` |
 | `ghdag.workflow.engine` | `EngineAdapter`, `_GenericAdapter`, `_CUSTOM_ADAPTERS`, `AdapterNotFoundError`, `register_adapter`, `get_adapter` |
 | `ghdag.workflow.gates` | `Violation`, `GateRule`, `GATE_REGISTRY` |
@@ -159,6 +164,7 @@ Module inventory under `src/ghdag`:
 | `ghdag.cli.commands.audit_query` | CLI command implementation |
 | `ghdag.cli.commands.cleanup` | CLI command implementation |
 | `ghdag.cli.commands.llm` | CLI command implementation |
+| `ghdag.cli.commands.quota` | CLI command implementation |
 | `ghdag.cli.commands.run` | CLI command implementation |
 | `ghdag.cli.commands.trigger` | CLI command implementation |
 | `ghdag.cli.commands.ui` | CLI command implementation |

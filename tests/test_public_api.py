@@ -29,9 +29,14 @@ def test_workflow_dispatcher_importable():
     assert WorkflowDispatcher is not None
 
 
+def test_quota_gate_importable():
+    from ghdag import QuotaGate
+    assert QuotaGate is not None
+
+
 def test_all_new_symbols_in_dunder_all():
     import ghdag
-    expected = {"LLMPipelineAPI", "PipelineState", "DagEngine", "WorkflowDispatcher"}
+    expected = {"LLMPipelineAPI", "PipelineState", "DagEngine", "WorkflowDispatcher", "QuotaGate"}
     missing = expected - set(ghdag.__all__)
     assert not missing, f"Missing from __all__: {missing}"
 

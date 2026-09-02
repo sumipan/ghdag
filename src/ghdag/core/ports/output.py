@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
@@ -13,6 +14,7 @@ class EngineErrorKind(str, Enum):
     CAPACITY = "CAPACITY"
     RATE_LIMIT = "RATE_LIMIT"
     AUTH = "AUTH"
+    QUOTA_EXHAUSTED = "QUOTA_EXHAUSTED"
     UNKNOWN = "UNKNOWN"
 
 
@@ -21,6 +23,7 @@ class EngineError:
     kind: EngineErrorKind
     message: str
     retryable: bool
+    resume_at: datetime | None = None
 
 
 @runtime_checkable
