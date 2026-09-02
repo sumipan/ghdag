@@ -23,6 +23,7 @@ from ghdag.llm.engines import (
     list_models,
     validate_engine_model,
 )
+from ghdag.llm.session import SessionRecord, SessionStore
 from ghdag.llm.spec import ENGINE_SPECS, EngineSpec
 
 __all__ = [
@@ -36,6 +37,8 @@ __all__ = [
     "LLMParseError",
     "LLMResult",
     "TextResult",
+    "SessionRecord",
+    "SessionStore",
     "TEXT_ONLY",
     "JSON_ONLY",
     "WEB_RESEARCH",

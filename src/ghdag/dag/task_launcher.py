@@ -24,8 +24,8 @@ from ghdag.core.vocabulary import (
     DONE_TIMEOUT,
     DONE_UNKNOWN_FAILURE,
 )
-from ghdag.io import sessions
 from ghdag.llm.adapters import get_output_adapter
+from ghdag.llm.session import SessionStore
 from ghdag.metrics.models import FailureClass, TaskMetrics
 from ghdag.metrics.parsers import parse_engine_model
 
@@ -67,6 +67,7 @@ class TaskLauncher:
         self._fanout_manager = fanout_manager
         self._promote_fn = promote_fn
         self._running: dict[str, RunningTask] = {}
+        self._session_store = SessionStore(self._queue_dir() / ".sessions")
 
     def launch(self, uuid: str, task: Task) -> None:
         """Start a subprocess for the given task and register it in _running."""
@@ -254,7 +255,7 @@ class TaskLauncher:
                 if returncode == 0:
                     session_id = adapter.extract_session_id(stdout_data, stderr_bytes)
                     if session_id and isinstance(engine, str):
-                        sessions.save(self._queue_dir(), uuid, engine, session_id)
+                        self._session_store.record(uuid, engine, session_id)
                     if task.result_path is not None:
                         transformed = adapter.extract_result_text(stdout_data, stderr_bytes)
                         rp = Path(task.result_path)
@@ -417,10 +418,11 @@ class TaskLauncher:
         resume_from_uuid = task.annotations.get("resume_from_uuid")
         if not resume_from_uuid:
             return
-        resolved = sessions.load(self._queue_dir(), resume_from_uuid)
+        resolved = self._session_store.lookup(resume_from_uuid)
         if not resolved:
             return
-        parent_engine, session_id = resolved
+        parent_engine = resolved.engine
+        session_id = resolved.session_id
         engine = task.engine or parent_engine
         if task.engine and parent_engine != task.engine:
             logger.warning(

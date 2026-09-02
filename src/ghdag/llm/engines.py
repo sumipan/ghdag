@@ -198,6 +198,7 @@ class LLMResult:
     stderr: str
     returncode: int
     latency_ms: float = 0.0
+    session_id: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -241,6 +242,10 @@ class TextResult:
     def returncode(self) -> int:
         return self.raw.returncode
 
+    @property
+    def session_id(self) -> str | None:
+        return self.raw.session_id
+
 
 def _extract_stream_result(stdout: str) -> str:
     """stream-json JSONL 出力から最終 result テキストを抽出する。"""
@@ -272,6 +277,7 @@ def call(
     stdin_text: str | None = None,
     capabilities: LLMCapabilities = TEXT_ONLY,
     dangerously_skip_permissions: bool = False,
+    resume_session_id: str | None = None,
 ) -> LLMResult:
     """ワンショットで LLM を呼び出し、結果を返す。
 
@@ -290,6 +296,13 @@ def call(
         subprocess.TimeoutExpired: タイムアウト
     """
     _validate_capabilities_for_engine(engine, capabilities)
+    if resume_session_id:
+        unsupported = _UNSUPPORTED_CAPABILITIES.get(engine, set())
+        ignored = _IGNORED_CAPABILITIES.get(engine, set())
+        if "resume" in (unsupported - ignored):
+            raise NotImplementedError(
+                f"{engine} engine does not support resume (got {resume_session_id!r})"
+            )
     resolved_model = validate_engine_model(engine, model)
 
     # prompt_flag がなく cat_pipe エンジン（codex 等）は prompt を stdin に回す。
@@ -306,6 +319,7 @@ def call(
         prompt,
         capabilities=capabilities,
         dangerously_skip_permissions=dangerously_skip_permissions,
+        resume_session_id=resume_session_id,
     )
 
     t0 = time.monotonic()
@@ -317,12 +331,20 @@ def call(
         timeout=timeout,
     )
     latency_ms = (time.monotonic() - t0) * 1000
+    session_id: str | None = None
+    if result.returncode == 0:
+        adapter = get_output_adapter(engine)
+        session_id = adapter.extract_session_id(
+            result.stdout.encode("utf-8"),
+            result.stderr.encode("utf-8"),
+        )
 
     llm_result = LLMResult(
         stdout=result.stdout,
         stderr=result.stderr,
         returncode=result.returncode,
         latency_ms=latency_ms,
+        session_id=session_id,
     )
     return llm_result.validate(capabilities)
 
@@ -336,6 +358,7 @@ def call_text(
     stdin_text: str | None = None,
     capabilities: LLMCapabilities = TEXT_ONLY,
     dangerously_skip_permissions: bool = False,
+    resume_session_id: str | None = None,
 ) -> TextResult:
     """ワンショットで LLM を呼び出し、adapter でテキスト抽出した TextResult を返す。
 
@@ -350,6 +373,7 @@ def call_text(
         stdin_text=stdin_text,
         capabilities=capabilities,
         dangerously_skip_permissions=dangerously_skip_permissions,
+        resume_session_id=resume_session_id,
     )
     adapter = get_output_adapter(engine)
     stdout_bytes = result.stdout.encode("utf-8")
