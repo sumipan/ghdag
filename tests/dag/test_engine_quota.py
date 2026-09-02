@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -116,6 +118,59 @@ def test_launch_popen_failure_rolls_back_running_reservation(tmp_path: Path) -> 
     snapshot = engine._quota_gate.snapshot()
     assert "task-1" not in snapshot.running_tasks
     assert engine._quota_gate.wait_idle("claude", timeout=0.1, poll_interval=0.01) is True
+
+
+def test_resume_fallback_remains_running_until_fallback_exits(tmp_path: Path) -> None:
+    config = DagConfig(
+        exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl",
+        exec_done_dir=tmp_path / "jobs" / "done",
+    )
+    hooks = MagicMock()
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = None
+    engine = DagEngine(config, hooks)
+    task = Task(
+        uuid="task-1",
+        command="claude -p hello --resume 'expired-session'",
+        engine="claude",
+        annotations={
+            "resumed_session_id": "expired-session",
+            "_command_without_resume": "claude -p hello",
+        },
+    )
+    proc = MagicMock()
+    proc.poll.return_value = 1
+    proc.returncode = 1
+    engine._launcher._running[task.uuid] = RunningTask(
+        uuid=task.uuid,
+        task=task,
+        proc=proc,
+        started_at=time.time() - 0.1,
+        started_at_mono=time.monotonic() - 0.1,
+        stderr_buf=io.BytesIO(b"session not found"),
+    )
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="claude")
+
+    fallback_started = threading.Event()
+    release_fallback = threading.Event()
+
+    def run_fallback(*_args, **_kwargs):
+        fallback_started.set()
+        assert release_fallback.wait(timeout=1)
+        return subprocess.CompletedProcess([], 0, stdout=b"", stderr=b"")
+
+    with patch("ghdag.dag.task_launcher.subprocess.run", side_effect=run_fallback), patch(
+        "ghdag.dag.task_launcher.state_mark_done"
+    ):
+        worker = threading.Thread(target=engine._launcher.check_completions, daemon=True)
+        worker.start()
+        assert fallback_started.wait(timeout=1)
+        assert task.uuid in engine._quota_gate.snapshot().running_tasks
+        release_fallback.set()
+        worker.join(timeout=1)
+
+    assert not worker.is_alive()
+    assert task.uuid not in engine._quota_gate.snapshot().running_tasks
 
 
 def test_enqueue_records_are_kept_and_deferred_registry_updated(tmp_path: Path) -> None:

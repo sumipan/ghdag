@@ -1049,11 +1049,16 @@ class TestQuotaCli:
             str(done_dir),
         ])
         payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["engines"]["claude"]["status"] == "paused"
+        assert payload["engines"]["claude"]["observed_at"] == "2026-09-02T03:02:00+00:00"
+        assert payload["engines"]["claude"]["resume_at"] is None
+        assert payload["engines"]["claude"]["reason"] is None
         assert payload["engines"]["claude"]["quota_status"] == "paused"
         assert payload["engines"]["claude"]["queued"] == 2
         assert payload["engines"]["claude"]["deferred"] == 0
         assert payload["engines"]["claude"]["running"] == 0
         assert payload["engines"]["claude"]["idle"] is True
+        assert payload["deferred_tasks"] == {}
         assert payload["unresolved"] == 1
 
     def test_quota_drain_and_resume(self, tmp_path, capsys):

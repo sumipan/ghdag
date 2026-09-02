@@ -102,10 +102,32 @@ def cmd_quota_status(args) -> None:
     engine_names.update(running_by_engine.keys())
     engine_names.update(queued_by_engine.keys())
 
-    payload: dict[str, Any] = {"engines": {}, "unresolved": unresolved}
+    payload: dict[str, Any] = {
+        "engines": {},
+        "deferred_tasks": {
+            task_uuid: {
+                "engine": state.engine,
+                "phase": state.phase,
+                "deferred_at": state.deferred_at.isoformat(),
+                "reason": state.reason,
+            }
+            for task_uuid, state in snapshot.deferred_tasks.items()
+        },
+        "unresolved": unresolved,
+    }
     for name in sorted(engine_names):
         quota_state = snapshot.engines.get(name)
         payload["engines"][name] = {
+            # Keep the pre-drain status contract while adding the explicit
+            # quota_status name and drain/run counters.
+            "status": quota_state.status if quota_state else "available",
+            "observed_at": quota_state.observed_at.isoformat() if quota_state else None,
+            "resume_at": (
+                quota_state.resume_at.isoformat()
+                if quota_state and quota_state.resume_at
+                else None
+            ),
+            "reason": quota_state.reason if quota_state else None,
             "quota_status": quota_state.status if quota_state else "available",
             "draining": name in snapshot.draining_engines,
             "queued": queued_by_engine.get(name, 0),

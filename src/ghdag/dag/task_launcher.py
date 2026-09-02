@@ -183,10 +183,6 @@ class TaskLauncher:
 
             was_timeout = rt.term_sent_at is not None
             finished_at = time.time()
-            try:
-                self._quota_gate.finish_run(task_uuid=uuid)
-            except ValueError:
-                logger.exception("Failed to update running registry for [%s]", uuid)
             del self._running[uuid]
             self._join_reader_threads(rt)
             stderr_bytes = rt.stderr_buf.getvalue()
@@ -202,26 +198,35 @@ class TaskLauncher:
             stdout_data = rt.stdout_buf.getvalue() if rt.stdout_buf else b""
             adapter = get_output_adapter(engine)
 
-            if returncode != 0 and self._is_resume_fallback_target(task, stderr_text):
-                original_command = task.annotations.get("_command_without_resume")
-                if original_command:
-                    logger.info("Retrying [%s] without --resume due to session-related failure", uuid)
-                    fallback = subprocess.run(
-                        ["bash", "-o", "pipefail", "-c", original_command],
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        cwd=cwd,
-                    )
-                    returncode = fallback.returncode
-                    stdout_data = fallback.stdout
-                    stderr_bytes = fallback.stderr
-                    stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
-                    usage = adapter.extract_token_usage(stdout_data, stderr_bytes)
-                    token_count = usage.token_count if usage else None
-                    cost_usd = usage.cost_usd if usage else None
-                    cache_read_tokens = usage.cache_read_tokens if usage else None
-                    cache_creation_tokens = usage.cache_creation_tokens if usage else None
-                    task.command = original_command
+            try:
+                if returncode != 0 and self._is_resume_fallback_target(task, stderr_text):
+                    original_command = task.annotations.get("_command_without_resume")
+                    if original_command:
+                        logger.info(
+                            "Retrying [%s] without --resume due to session-related failure",
+                            uuid,
+                        )
+                        fallback = subprocess.run(
+                            ["bash", "-o", "pipefail", "-c", original_command],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            cwd=cwd,
+                        )
+                        returncode = fallback.returncode
+                        stdout_data = fallback.stdout
+                        stderr_bytes = fallback.stderr
+                        stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
+                        usage = adapter.extract_token_usage(stdout_data, stderr_bytes)
+                        token_count = usage.token_count if usage else None
+                        cost_usd = usage.cost_usd if usage else None
+                        cache_read_tokens = usage.cache_read_tokens if usage else None
+                        cache_creation_tokens = usage.cache_creation_tokens if usage else None
+                        task.command = original_command
+            finally:
+                try:
+                    self._quota_gate.finish_run(task_uuid=uuid)
+                except ValueError:
+                    logger.exception("Failed to update running registry for [%s]", uuid)
 
             engine_error = adapter.extract_error(stdout_data, stderr_bytes)
             usage = adapter.extract_token_usage(stdout_data, stderr_bytes)
