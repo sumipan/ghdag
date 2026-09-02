@@ -93,6 +93,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Poll once and exit (one-shot mode for event-driven triggers)",
     )
+    watch_parser.add_argument(
+        "--pause-file",
+        default=None,
+        metavar="PATH",
+        help="Pause dispatch while this file exists (default: disabled)",
+    )
     watch_parser.set_defaults(func=cmd_watch)
 
     # ghdag ui

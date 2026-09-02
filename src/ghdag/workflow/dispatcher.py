@@ -8,11 +8,16 @@ import re
 import shlex
 import subprocess
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ghdag.exceptions import GhdagError
 from ghdag.github_client import GitHubIssuePort
-from ghdag.pipeline.audit import AuditContext, write_rate_limit_audit
+from ghdag.pipeline.audit import (
+    AuditContext,
+    append_audit_record,
+    write_rate_limit_audit,
+)
 from ghdag.pipeline.audit_query import detect_correlation_bursts
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.schema import (
@@ -30,6 +35,8 @@ _RATE_LIMIT_THRESHOLD = 100
 _BURST_WINDOW_SEC = 600
 _BURST_THRESHOLD = 10
 _BURST_COOLDOWN_SEC = 3600
+_PAUSE_REASON_MAX_CHARS = 500
+_JST = timezone(timedelta(hours=9))
 
 
 class ContextHookError(GhdagError, ValueError):
@@ -47,6 +54,7 @@ class WorkflowDispatcher:
         github_client: GitHubIssuePort | list[GitHubIssuePort],
         pipeline: LLMPipelineAPI,
         queue_dir: str = "queue",
+        pause_file: str | Path | None = None,
     ):
         self._workflows = workflows
         # 単一クライアントとクライアントのリストの両方を受け付ける。
@@ -58,6 +66,8 @@ class WorkflowDispatcher:
         self._pipeline = pipeline
         self._queue_dir = queue_dir
         self._burst_warned: dict[str, float] = {}
+        self._pause_file = Path(pause_file) if pause_file is not None else None
+        self._paused = False
 
     def poll_once(self) -> list[dict]:
         """1回のポーリングを実行。マッチした Issue とアクションのリストを返す。
@@ -196,6 +206,28 @@ class WorkflowDispatcher:
         )
         count = 0
         while max_iterations is None or count < max_iterations:
+            if self._pause_file is not None and self._pause_file.exists():
+                if not self._paused:
+                    reason = self._read_pause_reason(self._pause_file)
+                    logger.info("dispatcher paused: pause_file=%s", self._pause_file)
+                    self._append_dispatcher_audit_event(
+                        event="dispatcher_pause",
+                        reason=reason,
+                    )
+                    self._paused = True
+                count += 1
+                if max_iterations is None or count < max_iterations:
+                    time.sleep(polling_interval)
+                continue
+
+            if self._pause_file is not None and self._paused:
+                logger.info("dispatcher resumed: pause_file removed: %s", self._pause_file)
+                self._append_dispatcher_audit_event(
+                    event="dispatcher_resume",
+                    reason="pause file removed",
+                )
+                self._paused = False
+
             matches = self.poll_once()
             self._observe_rate_limit()
             self._observe_correlation_burst()
@@ -221,6 +253,26 @@ class WorkflowDispatcher:
             count += 1
             if max_iterations is None or count < max_iterations:
                 time.sleep(polling_interval)
+
+    def _append_dispatcher_audit_event(self, *, event: str, reason: str) -> None:
+        audit_path = Path(self._queue_dir) / "audit.jsonl"
+        record = {
+            "timestamp": datetime.now(_JST).isoformat(),
+            "schema_version": 1,
+            "event": event,
+            "reason": reason,
+        }
+        try:
+            append_audit_record(audit_path, record)
+        except OSError:
+            logger.debug("dispatcher audit write failed", exc_info=True)
+
+    def _read_pause_reason(self, pause_file: Path) -> str:
+        try:
+            reason = pause_file.read_text(errors="replace")
+        except OSError:
+            return "pause file read failed"
+        return reason[:_PAUSE_REASON_MAX_CHARS]
 
     def _observe_rate_limit(self) -> None:
         """各クライアントの GitHub API rate limit を取得し、audit.jsonl に記録する。"""

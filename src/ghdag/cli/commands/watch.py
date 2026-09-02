@@ -52,5 +52,6 @@ def cmd_watch(args) -> None:
         github_client=github_clients,
         pipeline=pipeline,
         queue_dir=queue_dir,
+        pause_file=args.pause_file,
     )
     dispatcher.run(max_iterations=1 if args.once else None)
