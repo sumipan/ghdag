@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from ghdag.core.models.metrics import TokenUsage
+from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.ports.output import EngineError
 
 
@@ -30,4 +30,12 @@ class CursorAdapter:
         return None
 
     def extract_error(self, stdout: bytes, stderr: bytes) -> EngineError | None:
+        return None
+
+    def classify_failure(
+        self,
+        returncode: int,
+        stdout: bytes,
+        stderr: bytes,
+    ) -> FailureClass | None:
         return None

@@ -6,7 +6,7 @@ import json
 import re
 from datetime import datetime
 
-from ghdag.core.models.metrics import TokenUsage
+from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.ports.output import EngineError, EngineErrorKind
 
 
@@ -100,6 +100,24 @@ class CodexAdapter:
             )
         return None
 
+    def classify_failure(
+        self,
+        returncode: int,
+        stdout: bytes,
+        stderr: bytes,
+    ) -> FailureClass | None:
+        text = stderr.decode("utf-8", errors="replace")
+        if _is_environment_error(text, "codex"):
+            return FailureClass.ENGINE_ENVIRONMENT_ERROR
+        lower = text.lower()
+        if "failed to load models cache" in lower:
+            return FailureClass.ENGINE_ERROR
+        if "sigkill" in lower or returncode in {137, -9}:
+            return FailureClass.ENGINE_ERROR
+        if "stream" in lower and any(token in lower for token in ("disconnect", "closed", "broken pipe")):
+            return FailureClass.ENGINE_ERROR
+        return None
+
 
 def _extract_error_message(obj: dict) -> str:
     for key in ("message", "error", "detail"):
@@ -145,3 +163,11 @@ def _classify_error(message: str) -> tuple[EngineErrorKind, bool, datetime | Non
     if any(token in lower for token in ("auth", "unauthorized", "forbidden")):
         return EngineErrorKind.AUTH, False, None
     return EngineErrorKind.UNKNOWN, False, None
+
+
+def _is_environment_error(message: str, binary: str) -> bool:
+    lower = message.lower()
+    return binary in lower and (
+        "no such file or directory" in lower
+        or "permission denied" in lower
+    )

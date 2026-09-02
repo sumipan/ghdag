@@ -6,7 +6,7 @@ EngineOutputAdapter Protocol は engine 固有の stdout 形式から
 
 from __future__ import annotations
 
-from ghdag.core.models.metrics import TokenUsage
+from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.ports.output import EngineError, EngineOutputAdapter
 
 
@@ -23,6 +23,14 @@ class _PassthroughAdapter:
         return None
 
     def extract_error(self, stdout: bytes, stderr: bytes) -> EngineError | None:
+        return None
+
+    def classify_failure(
+        self,
+        returncode: int,
+        stdout: bytes,
+        stderr: bytes,
+    ) -> FailureClass | None:
         return None
 
 

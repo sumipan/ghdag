@@ -6,7 +6,7 @@ import json
 import re
 from datetime import datetime
 
-from ghdag.core.models.metrics import TokenUsage
+from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.parsers import parse_token_usage_json
 from ghdag.core.ports.output import EngineError, EngineErrorKind
 
@@ -65,6 +65,19 @@ class ClaudeJsonAdapter:
         kind, retryable, resume_at = _classify_error(message)
         return EngineError(kind=kind, message=message, retryable=retryable, resume_at=resume_at)
 
+    def classify_failure(
+        self,
+        returncode: int,
+        stdout: bytes,
+        stderr: bytes,
+    ) -> FailureClass | None:
+        text = stderr.decode("utf-8", errors="replace")
+        if _is_environment_error(text, "claude"):
+            return FailureClass.ENGINE_ENVIRONMENT_ERROR
+        if _is_quota_exhausted_error(text):
+            return FailureClass.QUOTA_EXHAUSTED
+        return None
+
 
 def _extract_error_message(data: dict) -> str:
     err = data.get("error")
@@ -113,3 +126,20 @@ def _classify_error(message: str) -> tuple[EngineErrorKind, bool, datetime | Non
     if any(token in lower for token in ("auth", "unauthorized", "forbidden")):
         return EngineErrorKind.AUTH, False, None
     return EngineErrorKind.UNKNOWN, False, None
+
+
+def _is_quota_exhausted_error(message: str) -> bool:
+    lower = message.lower()
+    if "session limit" in lower:
+        return True
+    if "you've reached your monthly" in lower:
+        return True
+    return "resets " in lower and "hit your session limit" in lower
+
+
+def _is_environment_error(message: str, binary: str) -> bool:
+    lower = message.lower()
+    return binary in lower and (
+        "no such file or directory" in lower
+        or "permission denied" in lower
+    )

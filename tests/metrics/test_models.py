@@ -83,10 +83,12 @@ class TestTaskMetrics:
 
 
 class TestFailureClass:
-    def test_all_10_values_exist(self):
-        """FailureClass enum が 10 値を持つ。"""
+    def test_all_12_values_exist(self):
+        """FailureClass enum が 12 値を持つ。"""
         expected = {
             "ENGINE_ERROR",
+            "QUOTA_EXHAUSTED",
+            "ENGINE_ENVIRONMENT_ERROR",
             "TIMEOUT", "REJECTED", "PROCESS_ERROR", "PIPELINE_FAILED",
             "EMPTY_RESULT", "FANOUT_CHILD_FAILED", "FANOUT_PARSE_FAILED",
             "DEP_FAILED", "UNKNOWN_FAILURE",
@@ -112,6 +114,16 @@ class TestFailureClass:
         assert FailureClass.PROCESS_ERROR.value == "PROCESS_ERROR"
         assert FailureClass.PROCESS_ERROR.cause == "permanent"
         assert FailureClass.PROCESS_ERROR.retry_policy == "requires_review"
+
+    def test_quota_exhausted_meta(self):
+        assert FailureClass.QUOTA_EXHAUSTED.value == "QUOTA_EXHAUSTED"
+        assert FailureClass.QUOTA_EXHAUSTED.cause == "transient"
+        assert FailureClass.QUOTA_EXHAUSTED.retry_policy == "forbidden"
+
+    def test_engine_environment_error_meta(self):
+        assert FailureClass.ENGINE_ENVIRONMENT_ERROR.value == "ENGINE_ENVIRONMENT_ERROR"
+        assert FailureClass.ENGINE_ENVIRONMENT_ERROR.cause == "permanent"
+        assert FailureClass.ENGINE_ENVIRONMENT_ERROR.retry_policy == "forbidden"
 
     def test_pipeline_failed_meta(self):
         assert FailureClass.PIPELINE_FAILED.value == "PIPELINE_FAILED"

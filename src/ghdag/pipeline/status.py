@@ -7,6 +7,7 @@ from typing import Optional
 
 from ghdag.core.vocabulary import (
     DONE_EMPTY_RESULT,
+    DONE_ENGINE_ENV_ERROR,
     DONE_ENGINE_ERROR,
     DONE_ENGINE_ERROR_FINAL,
     DONE_REJECTED,
@@ -45,7 +46,7 @@ def interpret_done(raw: Optional[str]) -> Optional[str]:
         return "rejected"
     if c == DONE_EMPTY_RESULT:
         return "empty_result"
-    if c in (DONE_ENGINE_ERROR, DONE_ENGINE_ERROR_FINAL):
+    if c in (DONE_ENGINE_ERROR, DONE_ENGINE_ERROR_FINAL, DONE_ENGINE_ENV_ERROR):
         return "engine_error"
     try:
         n = int(c)

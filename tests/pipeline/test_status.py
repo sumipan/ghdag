@@ -39,6 +39,7 @@ class TestInterpretDone:
     def test_engine_error_returns_engine_error(self):
         assert interpret_done("ENGINE_ERROR\n") == "engine_error"
         assert interpret_done("ENGINE_ERROR_FINAL\n") == "engine_error"
+        assert interpret_done("ENGINE_ENVIRONMENT_ERROR\n") == "engine_error"
 
     def test_nonzero_exit_returns_failed_exit(self):
         assert interpret_done("1\n") == "failed_exit"

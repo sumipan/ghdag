@@ -15,6 +15,7 @@ from pathlib import Path
 
 from ghdag.core.vocabulary import (
     DONE_EMPTY_RESULT,
+    DONE_ENGINE_ENV_ERROR,
     DONE_ENGINE_ERROR,
     DONE_ENGINE_ERROR_FINAL,
     DONE_FANOUT_PARSE_FAILED,
@@ -25,6 +26,7 @@ from ghdag.core.vocabulary import (
     DONE_TIMEOUT,
     DONE_UNKNOWN_FAILURE,
 )
+from ghdag.io.audit import write_quarantine_audit, write_task_retry_audit
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.session import SessionStore
 from ghdag.metrics.models import FailureClass, TaskMetrics
@@ -33,6 +35,7 @@ from ghdag.quota import QuotaGate
 
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .circuit_breaker import CircuitBreakerPolicy
+from .engine_quarantine import EngineQuarantine
 from .fanout import parse_fanout_spec
 from .fanout_manager import FanOutManager
 from .hooks import DagHooks
@@ -75,6 +78,7 @@ class TaskLauncher:
             self._queue_dir() / "quota-gate.json",
             audit_path=self._queue_dir() / "audit.jsonl",
         )
+        self._engine_quarantine = EngineQuarantine()
 
     @property
     def quota_gate(self) -> QuotaGate:
@@ -88,6 +92,18 @@ class TaskLauncher:
         launch_engine = task.engine
         if launch_engine is None:
             launch_engine, _ = parse_engine_model(task.command)
+        if isinstance(launch_engine, str):
+            had_entry = self._engine_quarantine.has_entry(launch_engine)
+            if self._engine_quarantine.is_quarantined(launch_engine):
+                logger.warning("Task [%s] launch skipped: engine %s is quarantined", uuid, launch_engine)
+                return False
+            if had_entry:
+                write_quarantine_audit(
+                    self._queue_audit_path(),
+                    engine=launch_engine,
+                    action="expire",
+                    cooldown_sec=None,
+                )
 
         m = _STDIN_REDIR_RE.search(task.command)
         if m:
@@ -434,6 +450,85 @@ class TaskLauncher:
                             self._promote_fn(effective_result_path)
 
                 else:
+                    classified = adapter.classify_failure(returncode, stdout_data, stderr_bytes)
+                    if classified == FailureClass.QUOTA_EXHAUSTED:
+                        observed = datetime.now(timezone.utc)
+                        if isinstance(engine, str):
+                            self._quota_gate.report(
+                                engine=engine,
+                                status="paused",
+                                observed_at=observed,
+                                reason=stderr_text,
+                            )
+                            self._quota_gate.admit(
+                                task_uuid=uuid,
+                                engine=engine,
+                                phase="runtime",
+                                now=observed,
+                                reason=stderr_text,
+                            )
+                        if task.result_path and Path(task.result_path).exists():
+                            Path(task.result_path).unlink()
+                        continue
+
+                    if classified == FailureClass.ENGINE_ENVIRONMENT_ERROR:
+                        if isinstance(engine, str):
+                            self._engine_quarantine.enter(engine, cooldown=300)
+                            write_quarantine_audit(
+                                self._queue_audit_path(),
+                                engine=engine,
+                                action="enter",
+                                cooldown_sec=300,
+                            )
+                        state_mark_done(self._config.exec_done_dir, uuid, DONE_ENGINE_ENV_ERROR)
+                        metrics = TaskMetrics(
+                            uuid=uuid, engine=engine, model=model,
+                            wall_time_sec=round(finished_at - rt.started_at, 3),
+                            token_count=token_count, status="failure",
+                            started_at=rt.started_at, finished_at=finished_at,
+                            correlation_id=task.idempotency_key,
+                            failure_class=FailureClass.ENGINE_ENVIRONMENT_ERROR,
+                            request_id=_task_request_id(task),
+                            cost_usd=cost_usd,
+                            cache_read_tokens=cache_read_tokens,
+                            cache_creation_tokens=cache_creation_tokens,
+                        )
+                        self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
+                        self._circuit_breaker.record_failure()
+                        continue
+
+                    if classified == FailureClass.ENGINE_ERROR:
+                        retry_depth = task.retry
+                        is_final = retry_depth >= self._config.max_retry
+                        state_mark_done(
+                            self._config.exec_done_dir,
+                            uuid,
+                            DONE_ENGINE_ERROR_FINAL if is_final else DONE_ENGINE_ERROR,
+                        )
+                        if not is_final:
+                            write_task_retry_audit(
+                                self._queue_audit_path(),
+                                uuid=uuid,
+                                attempt=retry_depth + 1,
+                                failure_class=FailureClass.ENGINE_ERROR,
+                                stderr_excerpt=stderr_text[:200] if stderr_text else None,
+                            )
+                        metrics = TaskMetrics(
+                            uuid=uuid, engine=engine, model=model,
+                            wall_time_sec=round(finished_at - rt.started_at, 3),
+                            token_count=token_count, status="failure",
+                            started_at=rt.started_at, finished_at=finished_at,
+                            correlation_id=task.idempotency_key,
+                            failure_class=FailureClass.ENGINE_ERROR,
+                            request_id=_task_request_id(task),
+                            cost_usd=cost_usd,
+                            cache_read_tokens=cache_read_tokens,
+                            cache_creation_tokens=cache_creation_tokens,
+                        )
+                        self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
+                        self._circuit_breaker.record_failure()
+                        continue
+
                     state_mark_done(self._config.exec_done_dir, uuid, returncode)
                     metrics = TaskMetrics(
                         uuid=uuid, engine=engine, model=model,
@@ -471,6 +566,9 @@ class TaskLauncher:
 
     def _queue_dir(self) -> Path:
         return Path(self._config.exec_done_dir).parent
+
+    def _queue_audit_path(self) -> Path:
+        return self._queue_dir() / "audit.jsonl"
 
     def _apply_resume_if_available(self, uuid: str, task: Task) -> None:
         resume_from_uuid = task.annotations.get("resume_from_uuid")
