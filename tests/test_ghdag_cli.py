@@ -50,6 +50,7 @@ class TestHelp:
         assert "workflows_dir" in captured.out
         assert "--interval" in captured.out
         assert "--exec-md" in captured.out
+        assert "--pause-file" in captured.out
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +259,7 @@ class TestWatchNormal:
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
         exec_jsonl_path = str(tmp_path / "out.md")
+        pause_file_path = str(tmp_path / "pause.txt")
 
         mock_load = MagicMock(return_value=[])
         mock_dispatcher_cls = MagicMock()
@@ -275,6 +277,7 @@ class TestWatchNormal:
                 "watch", str(workflows_dir),
                 "--interval", "60",
                 "--exec-md", exec_jsonl_path,
+                "--pause-file", pause_file_path,
             ])
 
         mock_state_cls.assert_called_once_with(
@@ -282,6 +285,8 @@ class TestWatchNormal:
             exec_jsonl_path=exec_jsonl_path,
         )
         mock_create_github_clients.assert_called_once_with()
+        dispatcher_kwargs = mock_dispatcher_cls.call_args[1]
+        assert dispatcher_kwargs["pause_file"] == pause_file_path
         mock_dispatcher_cls.return_value.run.assert_called_once()
 
 

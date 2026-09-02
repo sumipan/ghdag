@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.34.0 — 2026-09-02
+
+### Added
+
+- `ghdag watch --pause-file PATH` を追加。指定ファイルが存在する間は `WorkflowDispatcher` が `poll_once` / `dispatch` と GitHub API 呼び出しを停止し、ファイル削除後に次ループから自動再開する
+- pause 開始/解除時に `jobs/audit.jsonl` へ `dispatcher_pause` / `dispatcher_resume` イベントを記録し、pause 理由（ファイル本文）は 500 文字で切り捨てる
+- `tests/workflow/test_dispatcher_pause.py` を追加し、pause 中スキップ・解除後再開・audit の重複抑止・reason 文字数上限を固定化
+
+
 ## 0.33.0 — 2026-09-01
 
 ### Added
