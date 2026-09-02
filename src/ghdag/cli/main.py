@@ -24,7 +24,9 @@ def _build_parser() -> argparse.ArgumentParser:
     from ghdag.cli.commands.llm import cmd_llm
     from ghdag.cli.commands.quota import (
         cmd_quota_clear,
+        cmd_quota_drain,
         cmd_quota_report,
+        cmd_quota_resume,
         cmd_quota_status,
     )
     from ghdag.cli.commands.run import cmd_run
@@ -389,12 +391,49 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     quota_clear.set_defaults(func=cmd_quota_clear)
 
+    quota_drain = quota_subparsers.add_parser("drain", help="Start engine drain mode")
+    quota_drain.add_argument("engine", help="Engine name")
+    quota_drain.add_argument(
+        "--reason",
+        default=None,
+        help="Optional drain reason",
+    )
+    quota_drain.add_argument(
+        "--state-path",
+        default="jobs/quota-gate.json",
+        dest="state_path",
+        help="Path to quota state JSON",
+    )
+    quota_drain.set_defaults(func=cmd_quota_drain)
+
+    quota_resume = quota_subparsers.add_parser("resume", help="Resume engine from drain mode")
+    quota_resume.add_argument("engine", help="Engine name")
+    quota_resume.add_argument(
+        "--state-path",
+        default="jobs/quota-gate.json",
+        dest="state_path",
+        help="Path to quota state JSON",
+    )
+    quota_resume.set_defaults(func=cmd_quota_resume)
+
     quota_status = quota_subparsers.add_parser("status", help="Show quota state snapshot")
     quota_status.add_argument(
         "--state-path",
         default="jobs/quota-gate.json",
         dest="state_path",
         help="Path to quota state JSON",
+    )
+    quota_status.add_argument(
+        "--exec-path",
+        default="jobs/exec.jsonl",
+        dest="exec_path",
+        help="Path to exec.jsonl",
+    )
+    quota_status.add_argument(
+        "--done-dir",
+        default="jobs/done",
+        dest="done_dir",
+        help="Path to done marker directory",
     )
     quota_status.set_defaults(func=cmd_quota_status)
 

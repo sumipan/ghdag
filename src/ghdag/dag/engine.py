@@ -13,7 +13,6 @@ from pathlib import Path
 from ghdag.core.vocabulary import DONE_DEP_FAILED
 from ghdag.io import exec_jsonl
 from ghdag.io.audit import AuditContext
-from ghdag.metrics.parsers import parse_engine_model
 from ghdag.quota import QuotaGate
 
 from .circuit_breaker import CircuitBreakerPolicy
@@ -154,19 +153,8 @@ class DagEngine:
                 if launched > 0:
                     time.sleep(self._config.launch_stagger)
 
-                launch_engine = task.engine
-                if launch_engine is None:
-                    launch_engine, _ = parse_engine_model(task.command)
-                decision = self._quota_gate.admit(
-                    task_uuid=uuid,
-                    engine=launch_engine,
-                    phase="launch",
-                )
-                if not decision.allowed:
-                    continue
-
-                self._launcher.launch(uuid, task)
-                launched += 1
+                if self._launcher.launch(uuid, task):
+                    launched += 1
 
             time.sleep(self._config.poll_interval)
 

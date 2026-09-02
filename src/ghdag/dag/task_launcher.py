@@ -80,11 +80,14 @@ class TaskLauncher:
     def quota_gate(self) -> QuotaGate:
         return self._quota_gate
 
-    def launch(self, uuid: str, task: Task) -> None:
+    def launch(self, uuid: str, task: Task) -> bool:
         """Start a subprocess for the given task and register it in _running."""
         self._apply_resume_if_available(uuid, task)
         logger.info("Launching [%s]: %s", uuid, task.command)
         cwd = str(self._config.cwd) if self._config.cwd else None
+        launch_engine = task.engine
+        if launch_engine is None:
+            launch_engine, _ = parse_engine_model(task.command)
 
         m = _STDIN_REDIR_RE.search(task.command)
         if m:
@@ -101,26 +104,40 @@ class TaskLauncher:
                     uuid, input_file, task.command,
                 )
                 state_mark_done(self._config.exec_done_dir, uuid, DONE_SKIPPED_MISSING_INPUT)
-                return
+                return False
+
+        decision = self._quota_gate.begin_run(task_uuid=uuid, engine=launch_engine)
+        if not decision.allowed:
+            logger.info(
+                "Task [%s] launch deferred by quota gate: engine=%s reason=%s",
+                uuid,
+                launch_engine,
+                decision.reason,
+            )
+            return False
 
         stdout_buf: io.BytesIO | None = None
         t_stdout: threading.Thread | None = None
-        if task.result_path is not None:
-            proc = subprocess.Popen(
-                ["bash", "-o", "pipefail", "-c", task.command],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=cwd,
-            )
-            stdout_buf = io.BytesIO()
-            t_stdout = threading.Thread(target=_stdout_reader, args=(proc, stdout_buf), daemon=True)
-            t_stdout.start()
-        else:
-            proc = subprocess.Popen(
-                ["bash", "-o", "pipefail", "-c", task.command],
-                stderr=subprocess.PIPE,
-                cwd=cwd,
-            )
+        try:
+            if task.result_path is not None:
+                proc = subprocess.Popen(
+                    ["bash", "-o", "pipefail", "-c", task.command],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=cwd,
+                )
+                stdout_buf = io.BytesIO()
+                t_stdout = threading.Thread(target=_stdout_reader, args=(proc, stdout_buf), daemon=True)
+                t_stdout.start()
+            else:
+                proc = subprocess.Popen(
+                    ["bash", "-o", "pipefail", "-c", task.command],
+                    stderr=subprocess.PIPE,
+                    cwd=cwd,
+                )
+        except Exception:
+            self._quota_gate.finish_run(task_uuid=uuid)
+            raise
 
         stderr_buf = io.BytesIO()
         t_stderr = threading.Thread(target=_stderr_reader, args=(proc, stderr_buf), daemon=True)
@@ -138,6 +155,7 @@ class TaskLauncher:
             stdout_thread=t_stdout,
         )
         self._hooks.on_task_start(uuid, task)
+        return True
 
     def check_completions(self) -> None:
         """Inspect running processes and process any that have finished."""
@@ -165,6 +183,10 @@ class TaskLauncher:
 
             was_timeout = rt.term_sent_at is not None
             finished_at = time.time()
+            try:
+                self._quota_gate.finish_run(task_uuid=uuid)
+            except ValueError:
+                logger.exception("Failed to update running registry for [%s]", uuid)
             del self._running[uuid]
             self._join_reader_threads(rt)
             stderr_bytes = rt.stderr_buf.getvalue()

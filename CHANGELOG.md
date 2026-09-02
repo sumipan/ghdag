@@ -12,12 +12,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `ghdag.quota.QuotaGate` を追加し、`jobs/quota-gate.json` に engine 単位の paused/available 状態と deferred task を排他・atomic write で永続化できるようにした
 - `ghdag quota report|clear|status` を追加し、host 側から quota 状態を JSON 入出力で通知・参照できるようにした
 - `tests/test_quota.py` / `tests/dag/test_engine_quota.py` を追加し、stale 通知無視・release・runtime defer・enqueue defer を固定化した
+- `QuotaGate` に `drain/resume/begin_run/finish_run/wait_idle` を追加し、draining と running registry を公開 API として扱えるようにした
 
 ### Changed
 
 - `dag/engine.py` / `dag/task_launcher.py` / `io/exec_jsonl.py` に quota admission を接続し、paused engine の launch 抑止と runtime quota exhausted の deferred 化（failure hook 非発火）を実装した
 - `core/ports/output.py` / `llm/adapters/{claude_json,codex}.py` を拡張し、`EngineErrorKind.QUOTA_EXHAUSTED` と timezone-aware `resume_at` 抽出を追加した
 - `pipeline/status.py` / `ui/monitor.py` で `DEFERRED` 表示を追加し、状態優先順位を done → running → deferred → pending deps → runnable に更新した
+- `TaskLauncher` の launch admission を `begin_run()` へ置換し、`Popen` 失敗時の running reservation rollback と subprocess 終了直後の `finish_run()` を保証した
+- `ghdag quota drain|resume|status` を拡張し、engine ごとの `queued/deferred/running/idle` と `unresolved` を JSON 集計できるようにした
 
 
 ## 0.34.2 — 2026-09-02
