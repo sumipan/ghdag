@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from ghdag.pipeline.status import (
-    STATE_ENGINE_ERROR,
     STATE_EMPTY,
+    STATE_ENGINE_ERROR,
     STATE_FAIL,
     STATE_OK,
     STATE_PENDING_DEPS,

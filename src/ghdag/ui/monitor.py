@@ -16,8 +16,8 @@ from typing import Iterable, Optional
 
 from ghdag.io.done import dep_succeeded, read_done_content
 from ghdag.pipeline.status import (
-    STATE_ENGINE_ERROR,
     STATE_EMPTY,
+    STATE_ENGINE_ERROR,
     STATE_FAIL,
     STATE_OK,
     STATE_PENDING_DEPS,

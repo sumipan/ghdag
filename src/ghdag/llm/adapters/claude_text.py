@@ -6,8 +6,8 @@ stdout をそのまま返し、stderr から token_count を抽出する既存�
 from __future__ import annotations
 
 from ghdag.core.models.metrics import TokenUsage
-from ghdag.core.ports.output import EngineError
 from ghdag.core.parsers import parse_token_count
+from ghdag.core.ports.output import EngineError
 
 
 class ClaudeTextAdapter:
