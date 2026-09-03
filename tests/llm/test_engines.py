@@ -468,3 +468,21 @@ class TestSandboxCapability:
         assert result.returncode == 0
         cmd = mock_run.call_args[0][0]
         assert "--disallowed-tools" not in cmd
+
+
+class TestCallCwd:
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_passes_cwd_to_subprocess(self, mock_run: MagicMock, tmp_path):
+        """call(..., cwd=...) が subprocess.run に cwd を渡す。"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("hello", engine="claude", cwd=tmp_path)
+        _, kwargs = mock_run.call_args
+        assert kwargs["cwd"] == tmp_path
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_default_cwd_is_none(self, mock_run: MagicMock):
+        """cwd 未指定時は subprocess.run の cwd=None（現行互換）。"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("hello", engine="claude")
+        _, kwargs = mock_run.call_args
+        assert kwargs.get("cwd") is None

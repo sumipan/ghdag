@@ -11,6 +11,7 @@ import json
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 from ghdag.core.command import (
     _CAPABILITY_FLAG_BUILDERS,
@@ -275,6 +276,7 @@ def call(
     model: str | None = None,
     timeout: int | None = None,
     stdin_text: str | None = None,
+    cwd: Path | str | None = None,
     capabilities: LLMCapabilities = TEXT_ONLY,
     dangerously_skip_permissions: bool = False,
     resume_session_id: str | None = None,
@@ -287,6 +289,7 @@ def call(
         model: モデル ID（None でエンジンデフォルト）
         timeout: タイムアウト秒数（None で無制限）
         stdin_text: 標準入力として渡すテキスト（None で stdin なし）
+        cwd: サブプロセスの作業ディレクトリ（None で現行プロセス cwd）
         capabilities: 能力制約値オブジェクト（デフォルト: TEXT_ONLY）
     Returns:
         LLMResult
@@ -329,6 +332,7 @@ def call(
         text=True,
         input=effective_stdin,
         timeout=timeout,
+        cwd=cwd,
     )
     latency_ms = (time.monotonic() - t0) * 1000
     session_id: str | None = None
@@ -356,6 +360,7 @@ def call_text(
     model: str | None = None,
     timeout: int | None = None,
     stdin_text: str | None = None,
+    cwd: Path | str | None = None,
     capabilities: LLMCapabilities = TEXT_ONLY,
     dangerously_skip_permissions: bool = False,
     resume_session_id: str | None = None,
@@ -371,6 +376,7 @@ def call_text(
         model=model,
         timeout=timeout,
         stdin_text=stdin_text,
+        cwd=cwd,
         capabilities=capabilities,
         dangerously_skip_permissions=dangerously_skip_permissions,
         resume_session_id=resume_session_id,

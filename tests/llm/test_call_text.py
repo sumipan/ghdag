@@ -183,3 +183,11 @@ class TestCallText:
         with patch("ghdag.llm.engines.call", return_value=mock_result):
             result = call_text("test prompt", engine="claude")
         assert result.body == '{"key": "val"}'
+
+
+class TestCallTextCwd:
+    def test_call_text_forwards_cwd(self, tmp_path):
+        mock_result = _make_llm_result(stdout="ok")
+        with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
+            call_text("hello", engine="claude", cwd=tmp_path)
+        assert mock_call.call_args.kwargs["cwd"] == tmp_path
