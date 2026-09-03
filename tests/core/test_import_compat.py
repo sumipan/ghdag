@@ -73,17 +73,22 @@ def test_llm_capabilities_import_compat() -> None:
 
 
 def test_llm_spec_import_compat() -> None:
+    from enum import Enum
+
     from ghdag.llm.spec import (
         ENGINE_SPECS,
         DangerFlagPosition,
         EngineSpec,
         InputMode,
+        PromptFlag,
         render_exec_command,
     )
 
     assert EngineSpec.__name__ == "EngineSpec"
     assert "claude" in ENGINE_SPECS
-    assert InputMode is not None
+    assert issubclass(InputMode, Enum)
+    assert InputMode.STDIN in InputMode
+    assert PromptFlag.FLAG_ONLY in PromptFlag
     assert DangerFlagPosition is not None
     assert callable(render_exec_command)
 

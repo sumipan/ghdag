@@ -11,7 +11,6 @@ from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.state import PipelineState
 
 _TZ = ZoneInfo("Asia/Tokyo")
-_PROMPT = "受け取った内容を実行して"
 
 
 def make_order_record(
@@ -41,7 +40,6 @@ def make_order_record(
         uuid=uid,
         order_path=order_path,
         result_path=result_path,
-        prompt=_PROMPT,
         model=model,
         depends=depends or [],
     )

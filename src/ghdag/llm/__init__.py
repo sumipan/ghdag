@@ -25,7 +25,7 @@ from ghdag.llm.engines import (
 )
 from ghdag.llm.managed import ManagedResult, call_managed
 from ghdag.llm.session import SessionRecord, SessionStore
-from ghdag.llm.spec import ENGINE_SPECS, EngineSpec
+from ghdag.llm.spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
 
 __all__ = [
     "_config",
@@ -34,6 +34,8 @@ __all__ = [
     "ENGINE_SPECS",
     "EngineModelError",
     "EngineSpec",
+    "InputMode",
+    "PromptFlag",
     "LLMCapabilities",
     "LLMParseError",
     "LLMResult",
