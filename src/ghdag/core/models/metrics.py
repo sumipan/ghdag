@@ -21,6 +21,7 @@ class FailureClass(Enum):
     REJECTED = ("REJECTED", "permanent", "forbidden")
     ENGINE_ERROR = ("ENGINE_ERROR", "transient", "safe")
     QUOTA_EXHAUSTED = ("QUOTA_EXHAUSTED", "transient", "forbidden")
+    AUTH = ("AUTH", "permanent", "forbidden")
     ENGINE_ENVIRONMENT_ERROR = ("ENGINE_ENVIRONMENT_ERROR", "permanent", "forbidden")
     PROCESS_ERROR = ("PROCESS_ERROR", "permanent", "requires_review")
     PIPELINE_FAILED = ("PIPELINE_FAILED", "permanent", "requires_review")

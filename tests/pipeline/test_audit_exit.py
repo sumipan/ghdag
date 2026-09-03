@@ -295,6 +295,20 @@ class TestWriteTaskExitAudit:
         r = json.loads(audit_path.read_text().strip())
         assert r["failure_class"] == "TIMEOUT"
 
+    def test_failure_class_auth_serialized_as_string(self, tmp_path):
+        """write_task_exit_audit(failure_class=FailureClass.AUTH) → JSON で "failure_class": "AUTH"。"""
+        audit_path = tmp_path / "audit.jsonl"
+        write_task_exit_audit(
+            audit_path,
+            event_type="task_failed",
+            uuid=UUID,
+            status="failure",
+            failure_class=FailureClass.AUTH,
+        )
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["failure_class"] == "AUTH"
+
     def test_failure_class_enum_none_serialized_as_null(self, tmp_path):
         """write_task_exit_audit(failure_class=None) → JSON で "failure_class": null。"""
         audit_path = tmp_path / "audit.jsonl"

@@ -529,6 +529,24 @@ class TaskLauncher:
                         self._circuit_breaker.record_failure()
                         continue
 
+                    if classified == FailureClass.AUTH:
+                        state_mark_done(self._config.exec_done_dir, uuid, returncode)
+                        metrics = TaskMetrics(
+                            uuid=uuid, engine=engine, model=model,
+                            wall_time_sec=round(finished_at - rt.started_at, 3),
+                            token_count=token_count, status="failure",
+                            started_at=rt.started_at, finished_at=finished_at,
+                            correlation_id=task.idempotency_key,
+                            failure_class=FailureClass.AUTH,
+                            request_id=_task_request_id(task),
+                            cost_usd=cost_usd,
+                            cache_read_tokens=cache_read_tokens,
+                            cache_creation_tokens=cache_creation_tokens,
+                        )
+                        self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
+                        self._circuit_breaker.record_failure()
+                        continue
+
                     state_mark_done(self._config.exec_done_dir, uuid, returncode)
                     metrics = TaskMetrics(
                         uuid=uuid, engine=engine, model=model,

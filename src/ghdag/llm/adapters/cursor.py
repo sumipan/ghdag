@@ -6,6 +6,7 @@ import json
 
 from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.ports.output import EngineError
+from ghdag.llm.adapters.failure_classification import classify_common_failure
 
 
 class CursorAdapter:
@@ -38,4 +39,4 @@ class CursorAdapter:
         stdout: bytes,
         stderr: bytes,
     ) -> FailureClass | None:
-        return None
+        return classify_common_failure("cursor", stdout, stderr)

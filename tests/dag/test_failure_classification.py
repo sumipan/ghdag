@@ -5,6 +5,8 @@ import json
 import time
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from ghdag.core.vocabulary import (
     DONE_ENGINE_ENV_ERROR,
     DONE_ENGINE_ERROR,
@@ -16,6 +18,7 @@ from ghdag.dag.hooks import DagHooks
 from ghdag.dag.models import DagConfig, RunningTask, Task
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
+from ghdag.llm.adapters.claude_text import ClaudeTextAdapter
 from ghdag.llm.adapters.codex import CodexAdapter
 from ghdag.llm.adapters.cursor import CursorAdapter
 from ghdag.metrics.models import FailureClass
@@ -51,9 +54,63 @@ def _make_running_task(task: Task, stdout: bytes = b"", stderr: bytes = b"", ret
     )
 
 
-def test_passthrough_and_cursor_classify_failure_default_none() -> None:
+@pytest.fixture
+def all_adapters():
+    return [
+        ClaudeJsonAdapter(),
+        ClaudeTextAdapter(),
+        CursorAdapter(),
+        CodexAdapter(),
+    ]
+
+
+def test_passthrough_classify_failure_default_none() -> None:
     assert get_output_adapter("unknown").classify_failure(1, b"", b"boom") is None
-    assert CursorAdapter().classify_failure(1, b"", b"boom") is None
+
+
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+def test_all_adapters_detect_quota_exhausted_from_both_streams(all_adapters, stream: str) -> None:
+    message = "You've hit your session limit \xc2\xb7 resets 2:30am (Asia/Tokyo)".encode("utf-8")
+    for adapter in all_adapters:
+        stdout = message if stream == "stdout" else b""
+        stderr = message if stream == "stderr" else b""
+        failure = adapter.classify_failure(1, stdout, stderr)
+        assert failure == FailureClass.QUOTA_EXHAUSTED
+
+
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+def test_all_adapters_detect_auth_from_both_streams(all_adapters, stream: str) -> None:
+    message = b"Failed to authenticate: OAuth session expired and could not be refreshed"
+    for adapter in all_adapters:
+        stdout = message if stream == "stdout" else b""
+        stderr = message if stream == "stderr" else b""
+        failure = adapter.classify_failure(1, stdout, stderr)
+        assert failure == FailureClass.AUTH
+
+
+@pytest.mark.parametrize(
+    ("adapter", "binary"),
+    [
+        (ClaudeJsonAdapter(), "claude"),
+        (ClaudeTextAdapter(), "claude"),
+        (CursorAdapter(), "cursor"),
+        (CodexAdapter(), "codex"),
+    ],
+)
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+def test_all_adapters_detect_environment_from_both_streams(adapter, binary: str, stream: str) -> None:
+    message = f"{binary}: No such file or directory".encode("utf-8")
+    stdout = message if stream == "stdout" else b""
+    stderr = message if stream == "stderr" else b""
+    failure = adapter.classify_failure(127, stdout, stderr)
+    assert failure == FailureClass.ENGINE_ENVIRONMENT_ERROR
+
+
+def test_environment_match_has_priority_over_auth() -> None:
+    adapter = ClaudeJsonAdapter()
+    message = b"claude: Permission denied while checking auth token"
+    failure = adapter.classify_failure(126, message, message)
+    assert failure == FailureClass.ENGINE_ENVIRONMENT_ERROR
 
 
 def test_codex_classify_failure_detects_engine_error_from_stderr() -> None:
@@ -76,14 +133,15 @@ def test_codex_classify_failure_detects_environment_error() -> None:
     assert failure == FailureClass.ENGINE_ENVIRONMENT_ERROR
 
 
-def test_claude_classify_failure_detects_quota_exhausted_from_stderr() -> None:
-    adapter = ClaudeJsonAdapter()
-    failure = adapter.classify_failure(
-        1,
-        b"",
-        b"You've hit your session limit \xc2\xb7 resets 2:20am",
-    )
-    assert failure == FailureClass.QUOTA_EXHAUSTED
+def test_all_adapters_return_none_for_ordinary_process_failure(all_adapters) -> None:
+    for adapter in all_adapters:
+        assert adapter.classify_failure(1, b"ordinary process failure", b"") is None
+
+
+def test_all_adapters_handle_invalid_utf8_without_exception(all_adapters) -> None:
+    noisy_bytes = b"\xff\xfe\xfa\xfd"
+    for adapter in all_adapters:
+        assert adapter.classify_failure(1, noisy_bytes, b"") is None
 
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
@@ -161,6 +219,34 @@ def test_runtime_quota_failure_from_stderr_is_deferred(mock_mark_done, tmp_path)
     snapshot = engine._quota_gate.snapshot()
     assert task.uuid in snapshot.deferred_tasks
     assert snapshot.deferred_tasks[task.uuid].phase == "runtime"
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_runtime_auth_failure_keeps_auth_class_without_retry_gate_actions(mock_mark_done, tmp_path) -> None:
+    engine, hooks = _make_engine(tmp_path)
+    task = Task(
+        uuid="runtime-auth",
+        command="cursor agent -p hi",
+        engine="cursor",
+    )
+    rt = _make_running_task(
+        task,
+        stdout=b"Failed to authenticate: OAuth session expired and could not be refreshed",
+        stderr=b"",
+        returncode=1,
+    )
+    engine._launcher._running[task.uuid] = rt
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="cursor")
+
+    engine._launcher.check_completions()
+
+    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, 1)
+    hooks.on_task_failure.assert_called_once()
+    metrics = hooks.on_task_failure.call_args[0][4]
+    assert metrics.failure_class == FailureClass.AUTH
+    snapshot = engine._quota_gate.snapshot()
+    assert task.uuid not in snapshot.deferred_tasks
+    assert "cursor" not in snapshot.engines
 
 
 @patch("ghdag.dag.task_launcher.state_mark_done")

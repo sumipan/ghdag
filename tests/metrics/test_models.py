@@ -83,11 +83,12 @@ class TestTaskMetrics:
 
 
 class TestFailureClass:
-    def test_all_12_values_exist(self):
-        """FailureClass enum が 12 値を持つ。"""
+    def test_all_13_values_exist(self):
+        """FailureClass enum が 13 値を持つ。"""
         expected = {
             "ENGINE_ERROR",
             "QUOTA_EXHAUSTED",
+            "AUTH",
             "ENGINE_ENVIRONMENT_ERROR",
             "TIMEOUT", "REJECTED", "PROCESS_ERROR", "PIPELINE_FAILED",
             "EMPTY_RESULT", "FANOUT_CHILD_FAILED", "FANOUT_PARSE_FAILED",
@@ -119,6 +120,11 @@ class TestFailureClass:
         assert FailureClass.QUOTA_EXHAUSTED.value == "QUOTA_EXHAUSTED"
         assert FailureClass.QUOTA_EXHAUSTED.cause == "transient"
         assert FailureClass.QUOTA_EXHAUSTED.retry_policy == "forbidden"
+
+    def test_auth_meta(self):
+        assert FailureClass.AUTH.value == "AUTH"
+        assert FailureClass.AUTH.cause == "permanent"
+        assert FailureClass.AUTH.retry_policy == "forbidden"
 
     def test_engine_environment_error_meta(self):
         assert FailureClass.ENGINE_ENVIRONMENT_ERROR.value == "ENGINE_ENVIRONMENT_ERROR"

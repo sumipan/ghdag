@@ -5,9 +5,10 @@ stdout をそのまま返し、stderr から token_count を抽出する既存�
 
 from __future__ import annotations
 
-from ghdag.core.models.metrics import TokenUsage
+from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.parsers import parse_token_count
 from ghdag.core.ports.output import EngineError
+from ghdag.llm.adapters.failure_classification import classify_common_failure
 
 
 class ClaudeTextAdapter:
@@ -26,3 +27,11 @@ class ClaudeTextAdapter:
 
     def extract_error(self, stdout: bytes, stderr: bytes) -> EngineError | None:
         return None
+
+    def classify_failure(
+        self,
+        returncode: int,
+        stdout: bytes,
+        stderr: bytes,
+    ) -> FailureClass | None:
+        return classify_common_failure("claude", stdout, stderr)

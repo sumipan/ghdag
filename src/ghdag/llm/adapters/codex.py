@@ -8,6 +8,7 @@ from datetime import datetime
 
 from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.ports.output import EngineError, EngineErrorKind
+from ghdag.llm.adapters.failure_classification import classify_common_failure
 
 
 class CodexAdapter:
@@ -106,9 +107,10 @@ class CodexAdapter:
         stdout: bytes,
         stderr: bytes,
     ) -> FailureClass | None:
-        text = stderr.decode("utf-8", errors="replace")
-        if _is_environment_error(text, "codex"):
-            return FailureClass.ENGINE_ENVIRONMENT_ERROR
+        classified = classify_common_failure("codex", stdout, stderr)
+        if classified is not None:
+            return classified
+        text = _decode_streams(stdout, stderr)
         lower = text.lower()
         if "failed to load models cache" in lower:
             return FailureClass.ENGINE_ERROR
@@ -165,9 +167,9 @@ def _classify_error(message: str) -> tuple[EngineErrorKind, bool, datetime | Non
     return EngineErrorKind.UNKNOWN, False, None
 
 
-def _is_environment_error(message: str, binary: str) -> bool:
-    lower = message.lower()
-    return binary in lower and (
-        "no such file or directory" in lower
-        or "permission denied" in lower
-    )
+def _decode_streams(stdout: bytes, stderr: bytes) -> str:
+    stdout_text = stdout.decode("utf-8", errors="replace")
+    stderr_text = stderr.decode("utf-8", errors="replace")
+    if stdout_text and stderr_text:
+        return f"{stdout_text}\n{stderr_text}"
+    return stdout_text or stderr_text
