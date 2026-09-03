@@ -52,5 +52,5 @@ class EngineOutputAdapter(Protocol):
         stdout: bytes,
         stderr: bytes,
     ) -> FailureClass | None:
-        """異常終了時に stderr から FailureClass を推定する。不明なら None。"""
+        """異常終了時に stdout/stderr から FailureClass を推定する。不明なら None。"""
         ...

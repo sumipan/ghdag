@@ -61,6 +61,24 @@ class TestAggregateTaskStatus:
         assert "period_start" in result
         assert "period_end" in result
 
+    def test_aggregates_mixed_legacy_and_auth_failure_classes(self, audit_path, fixed_now):
+        from ghdag.ui.dashboard import aggregate_task_status
+
+        _write_events(audit_path, [
+            {"event_type": "task_failed", "status": "failure", "failure_class": "PROCESS_ERROR",
+             "timestamp": _ts(-1), "correlation_id": "c1", "uuid": "u1"},
+            {"event_type": "task_failed", "status": "failure", "failure_class": "AUTH",
+             "timestamp": _ts(-2), "correlation_id": "c2", "uuid": "u2"},
+        ])
+
+        with patch("ghdag.ui.dashboard.time.time", return_value=fixed_now):
+            result = aggregate_task_status(audit_path, since_sec=86400.0)
+
+        assert result["total"] == 2
+        assert result["by_status"]["failure"] == 2
+        assert result["by_failure_class"]["PROCESS_ERROR"] == 1
+        assert result["by_failure_class"]["AUTH"] == 1
+
     def test_empty_file_returns_empty_aggregation(self, audit_path, fixed_now):
         from ghdag.ui.dashboard import aggregate_task_status
 
