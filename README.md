@@ -6,12 +6,12 @@ Unlike CI-centric orchestrators, ghdag focuses on label-driven GitHub workflow d
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.34.0-blue)
+![version](https://img.shields.io/badge/version-v0.35.0-blue)
 ![ci](https://github.com/sumipan/ghdag/actions/workflows/test.yml/badge.svg?branch=main)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
-Current release is **v0.34.0** (pre-1.0). Interfaces may evolve before `1.0.0`.
+Current release is **v0.35.0** (pre-1.0). Interfaces may evolve before `1.0.0`.
 
 ## Installation
 
@@ -22,7 +22,7 @@ pip install ghdag
 Install from a specific tag:
 
 ```bash
-pip install git+https://github.com/sumipan/ghdag.git@v0.34.0
+pip install git+https://github.com/sumipan/ghdag.git@v0.35.0
 ```
 
 | Item | Value |
@@ -33,7 +33,7 @@ pip install git+https://github.com/sumipan/ghdag.git@v0.34.0
 
 ## Quick Start
 
-Create an execution queue and run it:
+Create an execution queue (`jobs/exec.jsonl`) and run it:
 
 ```jsonl
 {"uuid":"demo-0001","command":"echo hello from ghdag","depends":[]}
@@ -43,7 +43,7 @@ Create an execution queue and run it:
 ghdag run jobs/exec.jsonl
 ```
 
-Create a minimal workflow file (based on `tests/fixtures/sample-workflow.yml`) and run one dispatch poll:
+Create a minimal workflow file and run one dispatch poll:
 
 ```yaml
 name: sample-pipeline
@@ -68,25 +68,45 @@ ghdag watch workflows --exec-md jobs/exec.jsonl --once
 
 Global options: `--verbose`/`-v`, `--quiet`/`-q`.
 
-| Command | Description | Key options/arguments |
-|---|---|---|
-| `ghdag run` | Run `exec.jsonl` via `DagEngine` | `exec_jsonl`, `--interval`, `--hooks`, `--max-concurrency` |
-| `ghdag watch` | Poll GitHub issues and dispatch workflow handlers | `workflows_dir`, `--interval`, `--exec-md`, `--once`, `--pause-file` |
-| `ghdag ui` | Launch dashboard server | `--repo-root`, `--host`, `--port`, `--interval`, `--max-visible` |
-| `ghdag llm` | Execute one LLM call without workflow dispatch | `prompt`, `--engine`, `--model`, `--timeout`, `--dangerously-skip-permissions`, `--permission-mode`, `--capabilities-preset`, `--stdin`, `--list-engines`, `--list-models`, `--audit-path`, `--correlation-id`, `--request-id` |
-| `ghdag version` | Print installed package version | none |
-| `ghdag cleanup` | Archive completed/orphaned queue tasks | `repo_root`, `--dry-run`, `--cutoff-days`, `--orphan-days`, `--auto-repair` |
-| `ghdag trigger` | Trigger one workflow handler for one issue | `issue_number`, `--handler`, `--workflows-dir`, `--exec-md`, `--workflow` |
-| `ghdag audit-query` | Query `audit.jsonl` or detect bursts | `--correlation-id`, `--burst-detect`, `--since`, `--audit-path`, `--window-sec`, `--threshold` |
-| `ghdag quota report` | Report engine quota availability | `engine`, `--status`, `--observed-at`, `--resume-at`, `--reason`, `--state-path` |
-| `ghdag quota clear` | Clear engine quota pause state | `engine`, `--observed-at`, `--state-path` |
-| `ghdag quota drain` | Pause new launches for one engine and wait for idle | `engine`, `--reason`, `--state-path` |
-| `ghdag quota resume` | Release drain mode for one engine | `engine`, `--state-path` |
-| `ghdag quota status` | Print engine-level quota/drain/queue snapshot JSON | `--state-path`, `--exec-path`, `--done-dir` |
-| `ghdag tools list` | List tool definitions | `--path`, `--json` |
+### Top-level commands
+
+| Command | Description |
+|---|---|
+| `ghdag run` | Run `exec.jsonl` via `DagEngine` |
+| `ghdag watch` | Poll GitHub issues and dispatch workflow handlers |
+| `ghdag ui` | Launch the Web UI dashboard |
+| `ghdag llm` | Execute one LLM call without workflow dispatch |
+| `ghdag version` | Print installed package version |
+| `ghdag cleanup` | Archive completed/orphaned queue tasks |
+| `ghdag trigger` | Trigger one workflow handler for one issue |
+| `ghdag audit-query` | Query `audit.jsonl` or detect bursts |
+| `ghdag tools` | Manage tool definitions |
+| `ghdag quota` | Manage quota gate state |
+
+### Subcommands
+
+| Command | Description |
+|---|---|
+| `ghdag tools list` | List tool definitions (`--path`, `--json`) |
+| `ghdag quota report` | Report engine quota availability |
+| `ghdag quota clear` | Clear engine quota pause state |
+| `ghdag quota drain` | Pause new launches for one engine and wait for idle |
+| `ghdag quota resume` | Release drain mode for one engine |
+| `ghdag quota status` | Print engine-level quota/drain/queue snapshot JSON |
 
 `ghdag quota status` returns per-engine `quota_status`, `draining`, `queued`, `deferred`, `running`, and `idle`.
-`idle` only means "running subprocess count is zero" for that engine.
+
+### Key options
+
+| Command | Key options/arguments |
+|---|---|
+| `ghdag run` | `exec_jsonl`, `--interval`, `--hooks`, `--max-concurrency` |
+| `ghdag watch` | `workflows_dir`, `--interval`, `--exec-md`, `--once`, `--pause-file` |
+| `ghdag ui` | `--repo-root`, `--host`, `--port`, `--interval`, `--max-visible` |
+| `ghdag llm` | `prompt`, `--engine`, `--model`, `--timeout`, `--dangerously-skip-permissions`, `--permission-mode`, `--capabilities-preset`, `--stdin`, `--list-engines`, `--list-models`, `--audit-path`, `--correlation-id`, `--request-id` |
+| `ghdag cleanup` | `repo_root`, `--dry-run`, `--cutoff-days`, `--orphan-days`, `--auto-repair` |
+| `ghdag trigger` | `issue_number`, `--handler`, `--workflows-dir`, `--exec-md`, `--workflow` |
+| `ghdag audit-query` | `--correlation-id`, `--burst-detect`, `--since`, `--audit-path`, `--window-sec`, `--threshold` |
 
 ## Public API
 
@@ -103,180 +123,36 @@ Global options: `--verbose`/`-v`, `--quiet`/`-q`.
 | `WorkflowDispatcher` | `ghdag.workflow.dispatcher` |
 | `QuotaGate` | `ghdag.quota` |
 
-Full `__all__` exports by module:
-
-| Module | Exported symbols (`__all__`) |
-|---|---|
-| `ghdag` | `GhdagError`, `QueueTask`, `QueueTaskStore`, `LLMPipelineAPI`, `PipelineState`, `DagEngine`, `WorkflowDispatcher`, `QuotaGate` |
-| `ghdag.cleanup` | `cleanup_queue`, `CleanupResult`, `file_timestamp`, `QUEUE_FILE_RE` |
-| `ghdag.cli` | `main` |
-| `ghdag.core` | `command` |
-| `ghdag.core.command` | `AdapterNotFoundError`, `EngineAdapter`, `_CAPABILITY_FLAG_BUILDERS`, `_GenericAdapter`, `_build_claude_flags`, `_build_codex_flags`, `_build_cursor_flags`, `_dedupe_extra_args`, `build_llm_cmd`, `get_adapter`, `register_adapter`, `render_exec_command` |
-| `ghdag.dag` | `DagConfig`, `DagEngine`, `DagHooks`, `DefaultHooks`, `RunningTask`, `Task`, `check_pipeline_status`, `extract_tee_target`, `parse_jsonl` |
-| `ghdag.dag.hooks` | `DagHooks`, `DefaultHooks` |
-| `ghdag.dag.models` | `Task`, `DagConfig`, `RunningTask` |
-| `ghdag.dag.parser` | `parse_jsonl`, `validate_dependencies` |
-| `ghdag.dag.state` | `is_done`, `mark_done`, `load_done_from_dir`, `load_succeeded_from_dir` |
-| `ghdag.exceptions` | `GhdagError`, `GitHubApiError`, `AuthError`, `RateLimitError`, `PermissionDeniedError`, `NetworkError` |
-| `ghdag.files` | `AppendResult`, `AppendStatus`, `MdFile`, `PathTraversalError`, `PromoteResult`, `PromoteStatus`, `WriteResult`, `md_append`, `md_promote`, `md_read`, `md_write` |
-| `ghdag.files._rotate` | `_MAX_AUDIT_BYTES`, `_do_rotate`, `_maybe_rotate` |
-| `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
-| `ghdag.files.models` | `PathTraversalError`, `MdFile`, `AppendStatus`, `AppendResult`, `WriteResult`, `PromoteStatus`, `PromoteResult` |
-| `ghdag.github_cli` | `GitHubClient`, `DEFAULT_REPO`, `API_BASE`, `GRAPHQL_URL` |
-| `ghdag.io` | `audit`, `audit_query`, `done`, `exec_jsonl`, `queue`, `sessions` |
-| `ghdag.io.audit` | `AuditContext`, `append_audit_record`, `compute_prompt_hash`, `write_audit_log`, `write_llm_audit_log`, `write_llm_inference_audit`, `write_rate_limit_audit`, `write_task_exit_audit`, `_MAX_AUDIT_BYTES`, `_do_rotate`, `_maybe_rotate` |
-| `ghdag.io.audit_query` | `read_task_exit_events`, `get_latest_status`, `detect_correlation_bursts`, `get_correlation_top_n` |
-| `ghdag.io.exec_jsonl` | `read`, `parse`, `parse_as_dict`, `check_idempotency`, `append`, `remove_by_predicate`, `remove_by_uuids`, `prune`, `load_uuids`, `validate`, `repair`, `extract_uuid` |
-| `ghdag.llm` | `_config`, `DEFAULT_ENGINE_MODELS`, `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineModelError`, `EngineSpec`, `LLMCapabilities`, `LLMParseError`, `LLMResult`, `TextResult`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `build_llm_cmd`, `call`, `call_text`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model` |
-| `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
-| `ghdag.llm.capabilities` | `LLMParseError`, `LLMCapabilities`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `READONLY_OBSERVE`, `PRESETS` |
-| `ghdag.llm.engines` | `EngineModelError`, `LLMResult`, `TextResult`, `build_llm_cmd`, `call`, `call_text`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model`, `ENGINE_CLI`, `ENGINE_DEFAULTS`, `_CAPABILITY_FLAG_BUILDERS`, `_build_claude_flags`, `_build_codex_flags`, `_build_cursor_flags`, `_IGNORED_CAPABILITIES`, `_UNSUPPORTED_CAPABILITIES` |
-| `ghdag.llm.spec` | `InputMode`, `DangerFlagPosition`, `EngineSpec`, `ENGINE_SPECS`, `render_exec_command`, `_dedupe_extra_args` |
-| `ghdag.metrics` | `MetricsRecorder`, `TaskMetrics` |
-| `ghdag.metrics.models` | `FailureClass`, `TokenUsage`, `TaskMetrics` |
-| `ghdag.metrics.parsers` | `parse_engine_model`, `parse_token_usage_json`, `parse_token_count` |
-| `ghdag.pipeline` | `AuditHooks`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `resolve_models`, `build_agent_cmd`, `status_rank`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `task_status`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `STATE_EMPTY`, `STATE_DEFERRED`, `STATE_FAIL`, `STATE_OK`, `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_REJECTED`, `STATE_RUNNING`, `STATE_UNKNOWN_DONE`, `make_order_record`, `submit_order` |
-| `ghdag.pipeline.audit` | `AuditContext`, `append_audit_record`, `compute_prompt_hash`, `write_audit_log`, `write_llm_audit_log`, `write_llm_inference_audit`, `write_rate_limit_audit`, `write_task_exit_audit`, `_MAX_AUDIT_BYTES`, `_do_rotate`, `_maybe_rotate` |
-| `ghdag.pipeline.audit_query` | `read_task_exit_events`, `get_latest_status`, `detect_correlation_bursts`, `get_correlation_top_n` |
-| `ghdag.pipeline.hooks` | `AuditHooks` |
-| `ghdag.pipeline.order` | `OrderBuilder`, `InlineOrderBuilder`, `TemplateOrderBuilder`, `TemplateVariableError` |
-| `ghdag.pipeline.result` | `QueueTask`, `QueueTaskStore` |
-| `ghdag.quota` | `QuotaGate`, `AdmissionDecision`, `QuotaSnapshot`, `QuotaReportResult` |
-| `ghdag.tool` | `FallbackEntry`, `TOOL_EXIT_CODES`, `ToolDef`, `ToolRegistry`, `write_tool_fallback_audit` |
-| `ghdag.ui.dashboard` | `aggregate_task_status`, `aggregate_token_usage`, `aggregate_cb_firing`, `resolve_audit_path` |
-| `ghdag.ui.monitor` | `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_RUNNING`, `STATE_DEFERRED`, `STATE_OK`, `STATE_FAIL`, `STATE_REJECTED`, `STATE_EMPTY`, `STATE_UNKNOWN_DONE`, `read_done_content`, `interpret_done`, `dep_succeeded`, `label_for_done`, `task_status`, `task_state`, `Row`, `MonitorTask`, `build_rows`, `filter_rows`, `relayout_tree_for_visible_rows`, `apply_default_monitor_filters` |
-| `ghdag.workflow` | `WorkflowConfig`, `TriggerConfig`, `HandlerConfig`, `StepConfig`, `OnTriggerConfig`, `DispatchResult`, `load_workflows`, `WorkflowDispatcher`, `GitHubIssueClient`, `create_github_client` |
-| `ghdag.workflow.engine` | `EngineAdapter`, `_GenericAdapter`, `_CUSTOM_ADAPTERS`, `AdapterNotFoundError`, `register_adapter`, `get_adapter` |
-| `ghdag.workflow.gates` | `Violation`, `GateRule`, `GATE_REGISTRY` |
-| `ghdag.workflow.schema` | `StepConfig`, `OnTriggerConfig`, `HandlerConfig`, `TriggerConfig`, `DispatchResult`, `WorkflowConfig` |
-
 ## Architecture
 
-Module inventory under `src/ghdag`:
+### Module layout
 
-| Module | Responsibility |
-|---|---|
-| `ghdag` | Package initializer and re-exports |
-| `ghdag.__main__` | Module entry point for `python -m ghdag` |
-| `ghdag.cleanup` | Package initializer and re-exports |
-| `ghdag.cleanup.archiver` | Queue cleanup and archive logic |
-| `ghdag.cleanup.link_rewriter` | Queue cleanup and archive logic |
-| `ghdag.cleanup.orchestrator` | Queue cleanup and archive logic |
-| `ghdag.cleanup.orphan_detector` | Queue cleanup and archive logic |
-| `ghdag.cleanup.pruner` | Queue cleanup and archive logic |
-| `ghdag.cli` | Package initializer and re-exports |
-| `ghdag.cli.commands` | Package initializer and re-exports |
-| `ghdag.cli.commands.audit_query` | CLI command implementation |
-| `ghdag.cli.commands.cleanup` | CLI command implementation |
-| `ghdag.cli.commands.llm` | CLI command implementation |
-| `ghdag.cli.commands.quota` | CLI command implementation |
-| `ghdag.cli.commands.run` | CLI command implementation |
-| `ghdag.cli.commands.trigger` | CLI command implementation |
-| `ghdag.cli.commands.ui` | CLI command implementation |
-| `ghdag.cli.commands.watch` | CLI command implementation |
-| `ghdag.cli.main` | CLI command implementation |
-| `ghdag.core` | Package initializer and re-exports |
-| `ghdag.core.capabilities` | Core models, protocols, and shared primitives |
-| `ghdag.core.command` | Core models, protocols, and shared primitives |
-| `ghdag.core.engine_spec` | Core models, protocols, and shared primitives |
-| `ghdag.core.exceptions` | Core models, protocols, and shared primitives |
-| `ghdag.core.models` | Package initializer and re-exports |
-| `ghdag.core.models.dag` | Core models, protocols, and shared primitives |
-| `ghdag.core.models.files` | Core models, protocols, and shared primitives |
-| `ghdag.core.models.metrics` | Core models, protocols, and shared primitives |
-| `ghdag.core.models.workflow` | Core models, protocols, and shared primitives |
-| `ghdag.core.parsers` | Core models, protocols, and shared primitives |
-| `ghdag.core.ports` | Package initializer and re-exports |
-| `ghdag.core.ports.dag_hooks` | Core models, protocols, and shared primitives |
-| `ghdag.core.ports.gate` | Core models, protocols, and shared primitives |
-| `ghdag.core.ports.github` | Core models, protocols, and shared primitives |
-| `ghdag.core.ports.order` | Core models, protocols, and shared primitives |
-| `ghdag.core.ports.output` | Core models, protocols, and shared primitives |
-| `ghdag.core.vocabulary` | Core models, protocols, and shared primitives |
-| `ghdag.dag` | Package initializer and re-exports |
-| `ghdag.dag._util` | DAG runtime execution logic |
-| `ghdag.dag.audit_hooks` | DAG runtime execution logic |
-| `ghdag.dag.circuit_breaker` | DAG runtime execution logic |
-| `ghdag.dag.engine` | DAG runtime execution logic |
-| `ghdag.dag.fanout` | DAG runtime execution logic |
-| `ghdag.dag.fanout_manager` | DAG runtime execution logic |
-| `ghdag.dag.hooks` | DAG runtime execution logic |
-| `ghdag.dag.models` | DAG runtime execution logic |
-| `ghdag.dag.parser` | DAG runtime execution logic |
-| `ghdag.dag.state` | DAG runtime execution logic |
-| `ghdag.dag.task_launcher` | DAG runtime execution logic |
-| `ghdag.dag.watcher` | DAG runtime execution logic |
-| `ghdag.exceptions` | Shared exception exports |
-| `ghdag.files` | Package initializer and re-exports |
-| `ghdag.files._rotate` | Markdown file operation utilities |
-| `ghdag.files.append` | Markdown file operation utilities |
-| `ghdag.files.links` | Package initializer and re-exports |
-| `ghdag.files.links.obsidian` | Markdown file operation utilities |
-| `ghdag.files.models` | Markdown file operation utilities |
-| `ghdag.files.promote` | Markdown file operation utilities |
-| `ghdag.files.reader` | Markdown file operation utilities |
-| `ghdag.files.writer` | Markdown file operation utilities |
-| `ghdag.github_cli` | GitHub API client layer and CLI wrapper |
-| `ghdag.github_client` | GitHub API client layer and CLI wrapper |
-| `ghdag.io` | Package initializer and re-exports |
-| `ghdag.io._rotate` | Filesystem I/O helpers for queue, done, and audit files |
-| `ghdag.io.audit` | Filesystem I/O helpers for queue, done, and audit files |
-| `ghdag.io.audit_query` | Filesystem I/O helpers for queue, done, and audit files |
-| `ghdag.io.done` | Filesystem I/O helpers for queue, done, and audit files |
-| `ghdag.io.exec_jsonl` | Filesystem I/O helpers for queue, done, and audit files |
-| `ghdag.io.queue` | Filesystem I/O helpers for queue, done, and audit files |
-| `ghdag.io.sessions` | Filesystem I/O helpers for queue, done, and audit files |
-| `ghdag.llm` | Package initializer and re-exports |
-| `ghdag.llm._config` | LLM adapters, engine selection, and capability handling |
-| `ghdag.llm._constants` | LLM adapters, engine selection, and capability handling |
-| `ghdag.llm.adapters` | Package initializer and re-exports |
-| `ghdag.llm.adapters.claude_json` | LLM adapters, engine selection, and capability handling |
-| `ghdag.llm.adapters.claude_text` | LLM adapters, engine selection, and capability handling |
-| `ghdag.llm.adapters.codex` | LLM adapters, engine selection, and capability handling |
-| `ghdag.llm.adapters.cursor` | LLM adapters, engine selection, and capability handling |
-| `ghdag.llm.capabilities` | LLM adapters, engine selection, and capability handling |
-| `ghdag.llm.engines` | LLM adapters, engine selection, and capability handling |
-| `ghdag.llm.spec` | LLM adapters, engine selection, and capability handling |
-| `ghdag.maintenance` | Queue maintenance and repair helpers |
-| `ghdag.markdown` | Package initializer and re-exports |
-| `ghdag.markdown.body_editor` | Markdown body editing utilities |
-| `ghdag.metrics` | Package initializer and re-exports |
-| `ghdag.metrics.models` | Metrics models, parsing, and persistence |
-| `ghdag.metrics.parsers` | Metrics models, parsing, and persistence |
-| `ghdag.metrics.recorder` | Metrics models, parsing, and persistence |
-| `ghdag.pipeline` | Package initializer and re-exports |
-| `ghdag.pipeline.audit` | Pipeline orchestration and task submission |
-| `ghdag.pipeline.audit_query` | Pipeline orchestration and task submission |
-| `ghdag.pipeline.config` | Pipeline orchestration and task submission |
-| `ghdag.pipeline.hooks` | Pipeline orchestration and task submission |
-| `ghdag.pipeline.llm_pipeline` | Pipeline orchestration and task submission |
-| `ghdag.pipeline.order` | Pipeline orchestration and task submission |
-| `ghdag.pipeline.result` | Pipeline orchestration and task submission |
-| `ghdag.pipeline.state` | Pipeline orchestration and task submission |
-| `ghdag.pipeline.status` | Pipeline orchestration and task submission |
-| `ghdag.pipeline.submit` | Pipeline orchestration and task submission |
-| `ghdag.pipeline.wait` | Pipeline orchestration and task submission |
-| `ghdag.tool` | Package initializer and re-exports |
-| `ghdag.tool.audit` | Tool schema, registry, and CLI support |
-| `ghdag.tool.cli` | Tool schema, registry, and CLI support |
-| `ghdag.tool.exceptions` | Tool schema, registry, and CLI support |
-| `ghdag.tool.registry` | Tool schema, registry, and CLI support |
-| `ghdag.tool.schema` | Tool schema, registry, and CLI support |
-| `ghdag.ui` | Package initializer and re-exports |
-| `ghdag.ui.dashboard` | Dashboard monitoring and HTTP/SSE server code |
-| `ghdag.ui.monitor` | Dashboard monitoring and HTTP/SSE server code |
-| `ghdag.ui.server` | Dashboard monitoring and HTTP/SSE server code |
-| `ghdag.workflow` | Package initializer and re-exports |
-| `ghdag.workflow.conditional_step` | Workflow polling, routing, and schema handling |
-| `ghdag.workflow.dispatcher` | Workflow polling, routing, and schema handling |
-| `ghdag.workflow.engine` | Workflow polling, routing, and schema handling |
-| `ghdag.workflow.gates` | Package initializer and re-exports |
-| `ghdag.workflow.gates.__main__` | Module entry point for `python -m ghdag` |
-| `ghdag.workflow.gates.common` | Workflow polling, routing, and schema handling |
-| `ghdag.workflow.loader` | Workflow polling, routing, and schema handling |
-| `ghdag.workflow.schema` | Workflow polling, routing, and schema handling |
-| `ghdag.workflow.state_machine` | Workflow polling, routing, and schema handling |
-| `ghdag.workflow.typecheck` | Workflow polling, routing, and schema handling |
+```
+src/ghdag/
+├── cli/             — CLI entry point (commands/ subpackage)
+├── core/            — Foundations (exceptions, command, models, ports)
+├── dag/             — DAG engine and fanout
+├── files/           — File operations (append, state)
+├── io/              — I/O utilities (queue, done, audit, exec_jsonl)
+├── llm/             — LLM engines and capabilities
+├── markdown/        — Markdown parser and body_editor
+├── metrics/         — Metrics and FailureClass
+├── pipeline/        — Pipeline (config, order, audit)
+├── tool/            — Tool extensions and ToolRegistry
+├── ui/              — UI utilities (dashboard, server)
+├── workflow/        — Workflow (dispatcher, loader)
+├── cleanup/         — Cleanup utilities
+├── __init__.py      — Top-level public API
+├── __main__.py      — `python -m ghdag` entry point
+├── exceptions.py    — Re-export shim for core/exceptions.py (backward compat)
+├── github_cli.py    — CLI-compatible wrapper (GitHubClient)
+├── github_client.py — GitHub API client
+├── maintenance.py   — Maintenance utilities
+├── quota.py         — Quota gate (QuotaGate)
+└── py.typed         — PEP 561 type marker
+```
+
+13 packages + standalone modules: `github_cli.py`, `github_client.py`, `maintenance.py`, `quota.py`, `exceptions.py`.
 
 ## Configuration
 
@@ -284,13 +160,13 @@ Module inventory under `src/ghdag`:
 
 | Variable | Required | Default | Used in |
 |---|---|---|---|
-| `GITHUB_TOKEN` | One of `GITHUB_TOKEN`/`GH_TOKEN` is required for GitHub API calls | none | `ghdag.github_client` |
+| `GITHUB_TOKEN` | One of `GITHUB_TOKEN`/`GH_TOKEN` required for GitHub API calls | none | `ghdag.github_client` |
 | `GH_TOKEN` | Fallback token variable | none | `ghdag.github_client` |
 | `GITHUB_REPOSITORIES` | Required for multi-repo watch/list behaviors | none | `ghdag.github_client` |
 | `GHDAG_AUDIT_PATH` | Optional | `jobs/audit.jsonl` | `ghdag.ui.dashboard`, `ghdag.cli.commands.llm` |
 | `GHDAG_TOKEN_WARN_THRESHOLD` | Optional | `500000` | `ghdag.ui.dashboard` |
-| `GHDAG_SAFE_DEFAULT_PERMISSION` | Optional | `text_only` | `ghdag.pipeline.llm_pipeline` |
 | `GHDAG_LLM_MODELS` | Optional | `llm-models.yml` in current directory, then built-ins | `ghdag.llm._config` |
+| `GHDAG_SAFE_DEFAULT_PERMISSION` | Optional | `text_only` | `ghdag.pipeline.llm_pipeline` |
 
 Example `llm-models.yml`:
 
@@ -306,7 +182,36 @@ engines:
 
 ## Error Reference
 
-`GhdagError` base and GitHub API hierarchy:
+### Exception hierarchy
+
+```
+GhdagError (core/exceptions.py)
+├── GitHubApiError (core/exceptions.py)
+│   ├── AuthError
+│   ├── RateLimitError
+│   ├── PermissionDeniedError
+│   └── NetworkError
+├── ModelValidationError (pipeline/config.py)
+├── DependencyError (pipeline/llm_pipeline.py) *
+├── EngineModelError (llm/engines.py)
+├── LLMParseError (llm/capabilities.py)
+├── ConfigLoadError (llm/_config.py) *
+├── AdapterNotFoundError (core/command.py) *
+├── FanoutError (dag/fanout.py) *
+├── ValidationError (workflow/loader.py) *
+├── ContextHookError (workflow/dispatcher.py) *
+├── AppendRecoverError (files/append.py) *
+├── PathTraversalError (core/models/files.py) *
+└── ToolRegistryError (tool/exceptions.py)
+```
+
+`*` = multiple inheritance from both `GhdagError` and `ValueError` (catchable via `except ValueError`).
+
+Hierarchy-external exception: `TemplateVariableError` (`pipeline/order.py` — inherits `ValueError` + `KeyError`, not integrated into `GhdagError`).
+
+Re-exports: `src/ghdag/exceptions.py` re-exports the primary exceptions from `core/exceptions.py` for backward compatibility.
+
+### Exception reference table
 
 | Exception | Module | Notes |
 |---|---|---|
@@ -314,30 +219,20 @@ engines:
 | `GitHubApiError` | `ghdag.core.exceptions` | GitHub API call failure |
 | `AuthError` | `ghdag.core.exceptions` | Authentication/token failure |
 | `RateLimitError` | `ghdag.core.exceptions` | Rate limit exhausted |
-| `PermissionDeniedError` | `ghdag.core.exceptions` | Permission denied (403 without rate limit exhaustion) |
+| `PermissionDeniedError` | `ghdag.core.exceptions` | 403 without rate limit exhaustion |
 | `NetworkError` | `ghdag.core.exceptions` | Network/transport failure |
-
-Custom `GhdagError` subclasses verified in `tests/test_exceptions.py::_CUSTOM_EXCEPTIONS`:
-
-| Exception | Module |
-|---|---|
-| `ValidationError` | `ghdag.workflow.loader` |
-| `AdapterNotFoundError` | `ghdag.workflow.engine` |
-| `ContextHookError` | `ghdag.workflow.dispatcher` |
-| `DependencyError` | `ghdag.pipeline.llm_pipeline` |
-| `ModelValidationError` | `ghdag.pipeline.config` |
-| `ConfigLoadError` | `ghdag.llm._config` |
-| `LLMParseError` | `ghdag.llm.capabilities` |
-| `EngineModelError` | `ghdag.llm.engines` |
-| `FanoutError` | `ghdag.dag.fanout` |
-| `PathTraversalError` | `ghdag.files.models` |
-| `AppendRecoverError` | `ghdag.files.append` |
-
-Additional public exception:
-
-| Exception | Module |
-|---|---|
-| `ToolRegistryError` | `ghdag.tool.exceptions` |
+| `ModelValidationError` | `ghdag.pipeline.config` | LLM model validation failure |
+| `DependencyError` | `ghdag.pipeline.llm_pipeline` | Pipeline dependency failure (`ValueError`) |
+| `EngineModelError` | `ghdag.llm.engines` | Unknown engine or model |
+| `LLMParseError` | `ghdag.llm.capabilities` | LLM response parse failure |
+| `ConfigLoadError` | `ghdag.llm._config` | LLM config load failure (`ValueError`) |
+| `AdapterNotFoundError` | `ghdag.core.command` | Engine adapter not registered (`ValueError`) |
+| `FanoutError` | `ghdag.dag.fanout` | DAG fanout failure (`ValueError`) |
+| `ValidationError` | `ghdag.workflow.loader` | Workflow schema validation failure (`ValueError`) |
+| `ContextHookError` | `ghdag.workflow.dispatcher` | Context hook failure (`ValueError`) |
+| `AppendRecoverError` | `ghdag.files.append` | Markdown append recovery failure (`ValueError`) |
+| `PathTraversalError` | `ghdag.core.models.files` | Path traversal attempt detected (`ValueError`) |
+| `ToolRegistryError` | `ghdag.tool.exceptions` | Tool registry error |
 
 ## License
 
