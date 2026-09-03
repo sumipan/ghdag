@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import shlex
 from collections.abc import Callable
 from typing import Protocol
 
 from ghdag.core.capabilities import TEXT_ONLY, LLMCapabilities
-from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec
+from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
 from ghdag.core.exceptions import GhdagError
 
 __all__ = [
@@ -138,17 +139,20 @@ def render_exec_command(
     spec: EngineSpec,
     *,
     order_path: str,
-    prompt: str,
     model: str | None,
+    prompt: str | None = None,
     capabilities: LLMCapabilities | None = None,
     resume_session_id: str | None = None,
 ) -> str:
     """exec.jsonl の command フィールド用（tee パイプを含まない）。
 
+    prompt は FLAG_ONLY / NONE では無視する（argv に載せない。入力は stdin / ARGV のみ）。
     capabilities が None の場合は従来通り EngineSpec.danger_flag を使用。
     capabilities が指定された場合は _CAPABILITY_FLAG_BUILDERS 経由でフラグを生成し、
     builder が出したフラグは extra_args 側から除去する（_dedupe_extra_args）。
     """
+    del prompt  # FLAG_ONLY / NONE では argv に載せない
+
     perm_flags: list[str] = []
     if capabilities is not None:
         builder = _CAPABILITY_FLAG_BUILDERS.get(spec.name)
@@ -164,51 +168,54 @@ def render_exec_command(
         elif spec.name == "codex":
             subcommand = ["exec", "resume", f"'{resume_session_id}'"]
 
-    if spec.input_mode == "cat_pipe":
-        parts: list[str] = [spec.cli, *subcommand]
-        if spec.prompt_flag:
-            parts.append(spec.prompt_flag)
-            parts.append(f"'{prompt}'")
-        if spec.model_flag and model:
-            parts.append(spec.model_flag)
-            parts.append(f"'{model}'")
-        if resume_flags:
-            parts.extend(resume_flags)
-        if effective_extra_args:
-            parts.extend(effective_extra_args)
-        if capabilities is None:
-            if spec.danger_flag_position == "trailing" and spec.danger_flag:
-                parts.append(spec.danger_flag)
-        else:
-            parts.extend(perm_flags)
-        return f"cat {order_path} | " + " ".join(parts)
-
-    if spec.input_mode == "stdin_redirect":
-        parts = [spec.cli, *subcommand]
-        if spec.model_flag and model:
-            parts.append(spec.model_flag)
-            parts.append(f"'{model}'")
-        if spec.prompt_flag:
-            parts.append(spec.prompt_flag)
-        if resume_flags:
-            parts.extend(resume_flags)
-        if capabilities is None:
-            if spec.danger_flag_position == "after_prompt" and spec.danger_flag:
-                parts.append(spec.danger_flag)
-        else:
-            parts.extend(perm_flags)
-        if effective_extra_args:
-            parts.extend(effective_extra_args)
-        return " ".join(parts) + f" < {order_path}"
-
-    if spec.input_mode == "argv":
+    if spec.input_mode is InputMode.ARGV:
         parts = [spec.cli, *spec.subcommand]
         if spec.extra_args:
             parts.extend(spec.extra_args)
         parts.append(order_path)
         return " ".join(parts)
 
-    raise ValueError(f"Unknown input_mode: {spec.input_mode!r}")
+    if spec.input_mode is not InputMode.STDIN:
+        raise ValueError(f"Unknown input_mode: {spec.input_mode!r}")
+
+    parts = [spec.cli, *subcommand]
+
+    def _append_prompt_flag() -> None:
+        if spec.prompt_flag is PromptFlag.FLAG_ONLY and spec.prompt_flag_token:
+            parts.append(spec.prompt_flag_token)
+
+    def _append_model() -> None:
+        if spec.model_flag and model:
+            parts.append(spec.model_flag)
+            parts.append(f"'{model}'")
+
+    def _append_danger_or_perm() -> None:
+        if capabilities is None:
+            if spec.danger_flag:
+                parts.append(spec.danger_flag)
+        else:
+            parts.extend(perm_flags)
+
+    if spec.danger_flag_position == "leading":
+        # cursor: model → prompt → resume → danger/perm → extra_args
+        _append_model()
+        _append_prompt_flag()
+        if resume_flags:
+            parts.extend(resume_flags)
+        _append_danger_or_perm()
+        if effective_extra_args:
+            parts.extend(effective_extra_args)
+    else:
+        # claude / gemini / codex: prompt → model → resume → extra_args → danger/perm
+        _append_prompt_flag()
+        _append_model()
+        if resume_flags:
+            parts.extend(resume_flags)
+        if effective_extra_args:
+            parts.extend(effective_extra_args)
+        _append_danger_or_perm()
+
+    return " ".join(parts) + f" < {shlex.quote(order_path)}"
 
 
 def build_llm_cmd(
@@ -243,8 +250,9 @@ def build_llm_cmd(
     else:
         if spec.model_flag:
             cmd += [spec.model_flag, model]
-        if spec.prompt_flag:
-            cmd += [spec.prompt_flag, prompt]
+        if spec.prompt_flag_token:
+            # subprocess 直呼び経路は prompt 本文を argv で渡す（FLAG_ONLY でもトークン+本文）
+            cmd += [spec.prompt_flag_token, prompt]
         if resume_session_id and spec.name in {"claude", "cursor"}:
             cmd += ["--resume", resume_session_id]
 
@@ -271,9 +279,9 @@ class EngineAdapter(Protocol):
         uuid: str,
         order_path: str,
         result_path: str | None,
-        prompt: str,
         model: str | None,
         depends: list[str],
+        prompt: str | None = None,
         capabilities: LLMCapabilities | None = None,
     ) -> dict:
         """exec.jsonl に書き込む 1 レコード（dict）を組み立てる。
@@ -298,9 +306,9 @@ class _GenericAdapter:
         uuid: str,
         order_path: str,
         result_path: str | None,
-        prompt: str,
         model: str | None,
         depends: list[str],
+        prompt: str | None = None,
         capabilities: LLMCapabilities | None = None,
     ) -> dict:
         return {

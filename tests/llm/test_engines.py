@@ -72,10 +72,12 @@ class TestBuildLlmCmdCodex:
         cmd = render_exec_command(
             spec,
             order_path="jobs/order.md",
-            prompt="hello",
             model="gpt-5.6-terra",
         )
-        assert cmd == "cat jobs/order.md | codex exec - --model 'gpt-5.6-terra' --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox"
+        assert cmd == (
+            "codex exec - --model 'gpt-5.6-terra' --json --skip-git-repo-check"
+            " --dangerously-bypass-approvals-and-sandbox < jobs/order.md"
+        )
 
     def test_render_exec_command_codex_with_capabilities(self):
         """capabilities 指定時は _build_codex_flags 経由でフラグ生成される。"""
@@ -84,7 +86,6 @@ class TestBuildLlmCmdCodex:
         cmd = render_exec_command(
             spec,
             order_path="jobs/order.md",
-            prompt="hello",
             model="gpt-5.6-terra",
             capabilities=LLMCapabilities(),
         )
@@ -108,7 +109,6 @@ class TestBuildLlmCmdCodex:
         cmd = render_exec_command(
             spec,
             order_path="jobs/order.md",
-            prompt="hello",
             model="gpt-5.6-terra",
             capabilities=DANGEROUS_FULL_ACCESS,
         )
@@ -123,7 +123,6 @@ class TestBuildLlmCmdCodex:
         cmd = render_exec_command(
             spec,
             order_path="jobs/order.md",
-            prompt="hello",
             model="gpt-5.6-terra",
             capabilities=LLMCapabilities(),
         )
@@ -293,7 +292,7 @@ class TestExtraArgsDedupe:
         spec = ENGINE_SPECS["codex"]
         for name, caps in PRESETS.items():
             cmd = render_exec_command(
-                spec, order_path="jobs/order.md", prompt="hello",
+                spec, order_path="jobs/order.md",
                 model="gpt-5.6-terra", capabilities=caps,
             )
             tokens = cmd.split()
@@ -304,7 +303,7 @@ class TestExtraArgsDedupe:
         """claude + json_only でも --output-format が重複しない（値付きフラグの回帰）。"""
         from ghdag.llm.capabilities import PRESETS
         cmd = render_exec_command(
-            ENGINE_SPECS["claude"], order_path="jobs/order.md", prompt="hello",
+            ENGINE_SPECS["claude"], order_path="jobs/order.md",
             model="claude-sonnet-4-6", capabilities=PRESETS["json_only"],
         )
         assert cmd.split().count("--output-format") == 1
@@ -317,7 +316,7 @@ class TestExtraArgsDedupe:
         """
         from ghdag.llm.capabilities import PRESETS
         cmd = render_exec_command(
-            ENGINE_SPECS["claude"], order_path="jobs/order.md", prompt="hello",
+            ENGINE_SPECS["claude"], order_path="jobs/order.md",
             model="claude-sonnet-4-6", capabilities=PRESETS["text_only"],
         )
         assert "--output-format json" in cmd
@@ -326,7 +325,7 @@ class TestExtraArgsDedupe:
         """builder を持たないエンジンの extra_args は変化しない。"""
         from ghdag.llm.capabilities import PRESETS
         cmd = render_exec_command(
-            ENGINE_SPECS["gemini"], order_path="jobs/order.md", prompt="hello",
+            ENGINE_SPECS["gemini"], order_path="jobs/order.md",
             model="gemini-3-flash", capabilities=PRESETS["text_only"],
         )
         assert "--approval-mode yolo" in cmd

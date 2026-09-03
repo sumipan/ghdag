@@ -616,8 +616,8 @@ class TestEngineSpec:
         assert EngineSpec is not None
         assert ENGINE_SPECS is not None
 
-    def test_cursor_danger_flag_position_after_prompt(self):
-        assert ENGINE_SPECS["cursor"].danger_flag_position == "after_prompt"
+    def test_cursor_danger_flag_position_leading(self):
+        assert ENGINE_SPECS["cursor"].danger_flag_position == "leading"
 
     def test_claude_danger_flag_position_trailing(self):
         assert ENGINE_SPECS["claude"].danger_flag_position == "trailing"
@@ -643,46 +643,63 @@ class TestEngineSpec:
 class TestRenderExecCommand:
     def test_claude_with_model(self):
         spec = ENGINE_SPECS["claude"]
-        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="hello", model="claude-opus-4-6")
-        assert cmd == "cat queue/order.md | claude -p 'hello' --model 'claude-opus-4-6' --output-format json --dangerously-skip-permissions"
+        cmd = render_exec_command(spec, order_path="queue/order.md", model="claude-opus-4-6")
+        assert cmd == "claude -p --model 'claude-opus-4-6' --output-format json --dangerously-skip-permissions < queue/order.md"
 
     def test_claude_without_model(self):
         spec = ENGINE_SPECS["claude"]
-        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="hello", model=None)
-        assert cmd == "cat queue/order.md | claude -p 'hello' --output-format json --dangerously-skip-permissions"
+        cmd = render_exec_command(spec, order_path="queue/order.md", model=None)
+        assert cmd == "claude -p --output-format json --dangerously-skip-permissions < queue/order.md"
 
     def test_gemini_with_model(self):
         spec = ENGINE_SPECS["gemini"]
-        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="hello", model="gemini-2.5-flash")
-        assert cmd == "cat queue/order.md | gemini -p 'hello' --model 'gemini-2.5-flash' --approval-mode yolo"
+        cmd = render_exec_command(spec, order_path="queue/order.md", model="gemini-2.5-flash")
+        assert cmd == "gemini -p --model 'gemini-2.5-flash' --approval-mode yolo < queue/order.md"
 
     def test_gemini_no_dash_m(self):
         """gemini コマンドに -m を含まないこと（--model に統一）"""
         spec = ENGINE_SPECS["gemini"]
-        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="hello", model="gemini-2.5-flash")
+        cmd = render_exec_command(spec, order_path="queue/order.md", model="gemini-2.5-flash")
         assert " -m " not in cmd
         assert "--model" in cmd
 
     def test_cursor_with_model(self):
         spec = ENGINE_SPECS["cursor"]
-        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="", model="auto")
+        cmd = render_exec_command(spec, order_path="queue/order.md", model="auto")
         assert cmd == "agent --model 'auto' -p --force < queue/order.md"
 
     def test_cursor_without_model(self):
         spec = ENGINE_SPECS["cursor"]
-        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="", model=None)
+        cmd = render_exec_command(spec, order_path="queue/order.md", model=None)
         assert cmd == "agent -p --force < queue/order.md"
 
     def test_cursor_p_force_adjacent(self):
         """-p と --force が隣接していること"""
         spec = ENGINE_SPECS["cursor"]
-        cmd = render_exec_command(spec, order_path="queue/order.md", prompt="", model="auto")
+        cmd = render_exec_command(spec, order_path="queue/order.md", model="auto")
         assert "-p --force" in cmd
 
     def test_shell_command(self):
         spec = ENGINE_SPECS["shell"]
-        cmd = render_exec_command(spec, order_path="queue/order.sh", prompt="", model=None)
+        cmd = render_exec_command(spec, order_path="queue/order.sh", model=None)
         assert cmd == "bash -o pipefail queue/order.sh"
+
+    def test_prompt_ignored_for_flag_only(self):
+        """FLAG_ONLY では prompt 文字列を argv に載せない"""
+        spec = ENGINE_SPECS["claude"]
+        cmd = render_exec_command(
+            spec, order_path="jobs/o.md", model="claude-sonnet-4-6", prompt="任意文字列",
+        )
+        assert "-p '" not in cmd
+        assert "任意文字列" not in cmd
+
+    def test_no_engine_embeds_prompt_value_in_argv(self):
+        """全 ENGINE_SPECS について生成コマンドに `-p '` を含まない"""
+        for name, spec in ENGINE_SPECS.items():
+            cmd = render_exec_command(
+                spec, order_path="jobs/o.md", model=spec.default_model, prompt="hello",
+            )
+            assert "-p '" not in cmd, f"{name}: {cmd}"
 
 
 # ---------------------------------------------------------------------------
@@ -696,13 +713,27 @@ class TestAdapterOutputs:
             uuid="u1",
             order_path="queue/order.md",
             result_path="results/result.md",
-            prompt="hello",
             model="claude-sonnet-4-6",
             depends=[],
         )
         assert record["uuid"] == "u1"
         cmd = record["command"]
-        assert "cat queue/order.md | claude -p 'hello' --model 'claude-sonnet-4-6' --output-format json --dangerously-skip-permissions" == cmd
+        assert cmd == (
+            "claude -p --model 'claude-sonnet-4-6' --output-format json"
+            " --dangerously-skip-permissions < queue/order.md"
+        )
+
+    def test_claude_adapter_prompt_optional(self):
+        """build_exec_record は prompt 省略で呼べる"""
+        adapter = get_adapter("claude")
+        record = adapter.build_exec_record(
+            uuid="u1",
+            order_path="queue/order.md",
+            result_path="results/result.md",
+            model="claude-sonnet-4-6",
+            depends=[],
+        )
+        assert "-p '" not in record["command"]
 
     def test_gemini_adapter_uses_double_dash_model(self):
         """get_adapter('gemini') が -m ではなく --model を使う"""
@@ -711,7 +742,6 @@ class TestAdapterOutputs:
             uuid="u1",
             order_path="queue/order.md",
             result_path="results/result.md",
-            prompt="hello",
             model="gemini-2.5-flash",
             depends=[],
         )
@@ -726,7 +756,6 @@ class TestAdapterOutputs:
             uuid="u1",
             order_path="queue/order.md",
             result_path="results/result.md",
-            prompt="",
             model="auto",
             depends=[],
         )
@@ -738,7 +767,6 @@ class TestAdapterOutputs:
             uuid="u1",
             order_path="queue/order.sh",
             result_path="results/result.md",
-            prompt="",
             model=None,
             depends=[],
         )
@@ -755,7 +783,7 @@ class TestRenderExecCommandCapabilities:
         from ghdag.llm.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
-            spec, order_path="queue/order.md", prompt="hello", model="claude-opus-4-6",
+            spec, order_path="queue/order.md", model="claude-opus-4-6",
             capabilities=TEXT_ONLY,
         )
         assert "--permission-mode" in cmd
@@ -770,7 +798,7 @@ class TestRenderExecCommandCapabilities:
         from ghdag.llm.capabilities import DANGEROUS_FULL_ACCESS
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
-            spec, order_path="queue/order.md", prompt="hello", model=None,
+            spec, order_path="queue/order.md", model=None,
             capabilities=DANGEROUS_FULL_ACCESS,
         )
         assert "--permission-mode" in cmd
@@ -782,7 +810,7 @@ class TestRenderExecCommandCapabilities:
         from ghdag.llm.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(
-            spec, order_path="queue/order.md", prompt="", model="auto",
+            spec, order_path="queue/order.md", model="auto",
             capabilities=TEXT_ONLY,
         )
         assert "--force" not in cmd
@@ -791,7 +819,7 @@ class TestRenderExecCommandCapabilities:
         """AC8: capabilities=None（デフォルト）→ 従来通り --dangerously-skip-permissions"""
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
-            spec, order_path="queue/order.md", prompt="hello", model="claude-opus-4-6",
+            spec, order_path="queue/order.md", model="claude-opus-4-6",
             capabilities=None,
         )
         assert "--dangerously-skip-permissions" in cmd
@@ -802,7 +830,7 @@ class TestRenderExecCommandCapabilities:
         from ghdag.llm.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["gemini"]
         cmd = render_exec_command(
-            spec, order_path="queue/order.md", prompt="hello", model="gemini-2.5-flash",
+            spec, order_path="queue/order.md", model="gemini-2.5-flash",
             capabilities=TEXT_ONLY,
         )
         assert "--permission-mode" not in cmd
@@ -812,8 +840,8 @@ class TestRenderExecCommandCapabilities:
         """shell + capabilities → コマンド変化なし"""
         from ghdag.llm.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["shell"]
-        cmd_no_caps = render_exec_command(spec, order_path="queue/order.sh", prompt="", model=None)
-        cmd_with_caps = render_exec_command(spec, order_path="queue/order.sh", prompt="", model=None, capabilities=TEXT_ONLY)
+        cmd_no_caps = render_exec_command(spec, order_path="queue/order.sh", model=None)
+        cmd_with_caps = render_exec_command(spec, order_path="queue/order.sh", model=None, capabilities=TEXT_ONLY)
         assert cmd_no_caps == cmd_with_caps
 
     def test_claude_stream_capabilities(self):
@@ -821,7 +849,7 @@ class TestRenderExecCommandCapabilities:
         caps = LLMCapabilities(stream=True)
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
-            spec, order_path="queue/order.md", prompt="hello", model="claude-opus-4-6",
+            spec, order_path="queue/order.md", model="claude-opus-4-6",
             capabilities=caps,
         )
         assert "--output-format" in cmd

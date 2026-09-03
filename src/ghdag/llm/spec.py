@@ -8,10 +8,12 @@ from ghdag.core.engine_spec import (
     DangerFlagPosition,
     EngineSpec,
     InputMode,
+    PromptFlag,
 )
 
 __all__ = [
     "InputMode",
+    "PromptFlag",
     "DangerFlagPosition",
     "EngineSpec",
     "ENGINE_SPECS",

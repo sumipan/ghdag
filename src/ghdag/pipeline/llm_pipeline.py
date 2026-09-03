@@ -332,7 +332,6 @@ class LLMPipelineAPI:
             "command": render_exec_command(
                 spec,
                 order_path=f"{self._queue_dir}/{order_filename}",
-                prompt="受け取った内容を実行して",
                 model=model,
                 capabilities=capabilities,
             ),

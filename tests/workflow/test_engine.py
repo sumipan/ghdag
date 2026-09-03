@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ghdag.llm.spec import ENGINE_SPECS
+from ghdag.llm.spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
 from ghdag.workflow.engine import (
     _CUSTOM_ADAPTERS,
     AdapterNotFoundError,
@@ -56,11 +56,10 @@ class TestGenericAdapter:
             "engine": "claude",
             "model": "claude-sonnet-4-6",
             "command": (
-                "cat queue/order.md"
-                " | claude -p '受け取った内容を実行して'"
-                " --model 'claude-sonnet-4-6'"
+                "claude -p --model 'claude-sonnet-4-6'"
                 " --output-format json"
                 " --dangerously-skip-permissions"
+                " < queue/order.md"
             ),
             "depends": ["dep-456"],
             "result_path": "queue/result.md",
@@ -205,17 +204,16 @@ class TestGetAdapter:
 class TestVirtualEngineRegistration:
     def test_virtual_engine_via_engine_specs(self):
         """AC4: ENGINE_SPECS に一時登録した仮想エンジンが get_adapter で動作する"""
-        from ghdag.llm.spec import EngineSpec
-
         test_spec = EngineSpec(
             name="_test_",
             cli="echo",
-            input_mode="cat_pipe",
-            prompt_flag="-p",
+            input_mode=InputMode.STDIN,
+            prompt_flag=PromptFlag.FLAG_ONLY,
+            prompt_flag_token="-p",
             model_flag="--model",
             default_model=None,
             danger_flag=None,
-            danger_flag_position="none",
+            danger_flag_position="trailing",
         )
         ENGINE_SPECS["_test_"] = test_spec
         try:
@@ -295,11 +293,10 @@ class TestBuildExecRecord:
             "engine": "claude",
             "model": "claude-sonnet-4-6",
             "command": (
-                "cat queue/order.md"
-                " | claude -p '受け取った内容を実行して'"
-                " --model 'claude-sonnet-4-6'"
+                "claude -p --model 'claude-sonnet-4-6'"
                 " --output-format json"
                 " --dangerously-skip-permissions"
+                " < queue/order.md"
             ),
             "depends": ["dep-456"],
             "result_path": "queue/result.md",

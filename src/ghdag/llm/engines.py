@@ -25,7 +25,7 @@ from ghdag.exceptions import GhdagError
 from ghdag.llm._config import load_engine_models
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.capabilities import TEXT_ONLY, LLMCapabilities, LLMParseError
-from ghdag.llm.spec import ENGINE_SPECS
+from ghdag.llm.spec import ENGINE_SPECS, InputMode, PromptFlag
 
 __all__ = [
     "EngineModelError",
@@ -308,11 +308,11 @@ def call(
             )
     resolved_model = validate_engine_model(engine, model)
 
-    # prompt_flag がなく cat_pipe エンジン（codex 等）は prompt を stdin に回す。
+    # prompt_flag が NONE かつ STDIN エンジン（codex 等）は prompt を stdin に回す。
     # stdin_text が明示指定済みの場合はそれを優先する。
     spec = ENGINE_SPECS.get(engine)
     effective_stdin = stdin_text
-    if spec and spec.prompt_flag is None and spec.input_mode == "cat_pipe":
+    if spec and spec.prompt_flag is PromptFlag.NONE and spec.input_mode is InputMode.STDIN:
         if effective_stdin is None:
             effective_stdin = prompt
 
