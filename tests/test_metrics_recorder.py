@@ -88,3 +88,25 @@ def test_record_parallel_writes(tmp_path):
     assert len(lines) == 2
     for line in lines:
         json.loads(line)
+
+
+def test_record_expands_additional_tags(tmp_path):
+    """additional_tags がある場合、JSONL レコードに key-value を展開する。"""
+    output = tmp_path / "metrics.jsonl"
+    recorder = MetricsRecorder(output)
+    recorder.record(make_metrics(uuid="t-tags", additional_tags={"template": "b1", "tier": "heavy"}))
+
+    data = json.loads(output.read_text().splitlines()[0])
+    assert data["template"] == "b1"
+    assert data["tier"] == "heavy"
+
+
+def test_record_without_additional_tags_omits_extra_keys(tmp_path):
+    """additional_tags が None のとき既存フィールド以外を増やさない。"""
+    output = tmp_path / "metrics.jsonl"
+    recorder = MetricsRecorder(output)
+    recorder.record(make_metrics(uuid="t-none"))
+
+    data = json.loads(output.read_text().splitlines()[0])
+    assert "template" not in data
+    assert "additional_tags" not in data

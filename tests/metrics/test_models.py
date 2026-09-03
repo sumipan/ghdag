@@ -78,6 +78,24 @@ class TestTaskMetrics:
         assert m.failure_class == FailureClass.TIMEOUT
         assert m.failure_class.value == "TIMEOUT"
 
+    def test_task_metrics_additional_tags_optional(self):
+        """TaskMetrics.additional_tags は optional（デフォルト None）。"""
+        now = time.time()
+        m = TaskMetrics(
+            uuid=UUID, engine=None, model=None,
+            wall_time_sec=1.0, token_count=None, status="success",
+            started_at=now, finished_at=now + 1.0,
+            additional_tags={"template": "b1"},
+        )
+        assert m.additional_tags == {"template": "b1"}
+
+        m2 = TaskMetrics(
+            uuid=UUID, engine=None, model=None,
+            wall_time_sec=1.0, token_count=None, status="success",
+            started_at=now, finished_at=now + 1.0,
+        )
+        assert m2.additional_tags is None
+
 
 # --- Issue #1041 tests ---
 

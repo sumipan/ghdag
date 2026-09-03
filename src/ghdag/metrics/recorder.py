@@ -47,6 +47,8 @@ class MetricsRecorder:
             "cache_read_tokens": metrics.cache_read_tokens,
             "cache_creation_tokens": metrics.cache_creation_tokens,
         }
+        if metrics.additional_tags is not None:
+            record.update(metrics.additional_tags)
         line = json.dumps(record, ensure_ascii=False) + "\n"
         with open(self._output_path, "a", encoding="utf-8") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
