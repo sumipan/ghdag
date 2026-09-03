@@ -85,6 +85,95 @@ def test_cli_missing_token(capsys):
     assert "GITHUB_TOKEN is not set" in capsys.readouterr().err
 
 
+def test_cli_issue_edit_title_only(monkeypatch):
+    """issue edit --title 単体で issue_update に title が渡り、PATCH に含まれる。"""
+    update_calls: list[dict[str, object]] = []
+    patch_calls: list[dict] = []
+
+    class TrackingClient(GitHubClient):
+        def issue_update(self, number, **kwargs):  # type: ignore[no-untyped-def]
+            update_calls.append({"number": number, **kwargs})
+            return super().issue_update(number, **kwargs)
+
+    client = TrackingClient(token="tok", repo="o/r")
+
+    def fake_request(method, path, **kwargs):
+        if method == "PATCH":
+            body = kwargs.get("body")
+            assert isinstance(body, dict)
+            patch_calls.append(body)
+        return {}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    monkeypatch.setattr(
+        "ghdag.github_cli.GitHubClient",
+        lambda *a, **k: client,
+    )
+    with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):
+        rc = cli_main(["issue", "edit", "5", "--title", "新タイトル"])
+    assert rc == 0
+    assert update_calls == [
+        {
+            "number": 5,
+            "title": "新タイトル",
+            "body": None,
+            "labels_add": None,
+            "labels_remove": None,
+        }
+    ]
+    assert patch_calls == [{"title": "新タイトル"}]
+
+
+def test_cli_issue_edit_title_and_body_file(monkeypatch, tmp_path):
+    """--title と --body-file を同時に渡すと両方が issue_update に渡る。"""
+    body_file = tmp_path / "body.md"
+    body_file.write_text("本文内容", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        _token = "tok"
+
+        def issue_update(self, number, **kwargs):
+            captured["number"] = number
+            captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(
+        "ghdag.github_cli.GitHubClient",
+        lambda *a, **k: FakeClient(),
+    )
+    with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):
+        rc = cli_main(
+            ["issue", "edit", "5", "--title", "T", "--body-file", str(body_file)]
+        )
+    assert rc == 0
+    assert captured["number"] == 5
+    assert captured["kwargs"]["title"] == "T"
+    assert captured["kwargs"]["body"] == "本文内容"
+
+
+def test_cli_issue_edit_unknown_arg_warning_excludes_title(monkeypatch, capsys):
+    """未知引数 warning は --foobar のみ。--title は unknown に含まれない。"""
+
+    class FakeClient:
+        _token = "tok"
+
+        def issue_update(self, number, **kwargs):
+            pass
+
+    monkeypatch.setattr(
+        "ghdag.github_cli.GitHubClient",
+        lambda *a, **k: FakeClient(),
+    )
+    with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):
+        rc = cli_main(["issue", "edit", "5", "--foobar", "--title", "T"])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "warning: unknown args ignored:" in err
+    assert "--foobar" in err
+    assert "--title" not in err
+    assert "'T'" not in err
+
+
 def test_pr_diff_raw(monkeypatch):
     client = GitHubClient(token="tok", repo="o/r")
 

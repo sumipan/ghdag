@@ -271,12 +271,15 @@ class GitHubClient:
         self,
         number: int,
         *,
+        title: str | None = None,
         body: str | None = None,
         labels_add: list[str] | None = None,
         labels_remove: list[str] | None = None,
         milestone: int | None = None,
     ) -> None:
         patch: dict[str, Any] = {}
+        if title is not None:
+            patch["title"] = title
         if body is not None:
             patch["body"] = body
         if milestone is not None:

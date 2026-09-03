@@ -155,6 +155,7 @@ def _cli_issue_view(client: GitHubClient, args: list[str]) -> int:
 def _cli_issue_edit(client: GitHubClient, args: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="issue edit", add_help=False)
     parser.add_argument("number", type=int)
+    parser.add_argument("--title")
     parser.add_argument("--body")
     parser.add_argument("--body-file")
     parser.add_argument("--add-label", action="append", default=[])
@@ -169,6 +170,7 @@ def _cli_issue_edit(client: GitHubClient, args: list[str]) -> int:
             body = f.read()
     client.issue_update(
         ns.number,
+        title=ns.title,
         body=body,
         labels_add=ns.add_label or None,
         labels_remove=ns.remove_label or None,
