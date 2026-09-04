@@ -17,7 +17,7 @@ from ghdag.llm.compaction import (
     CompactionResult,
     compact_resume_session,
 )
-from ghdag.llm.engines import TextResult, LLMResult
+from ghdag.llm.engines import LLMResult, TextResult
 from ghdag.llm.session import SessionRecord, SessionStore
 from ghdag.pipeline.audit import write_compaction_audit
 
