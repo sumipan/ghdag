@@ -16,6 +16,9 @@ class SessionRecord:
     engine: str
     session_id: str
     created_at: datetime
+    parent_session_id: str | None = None
+    is_compacted: bool = False
+    summary_tokens: int | None = None
 
 
 class SessionStore:
@@ -25,21 +28,37 @@ class SessionStore:
         self._store_dir = Path(store_dir)
 
     def record(self, key: str, engine: str, session_id: str) -> None:
-        self._store_dir.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "engine": engine,
-            "session_id": session_id,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        target = self._record_path(key)
-        fd, tmp = tempfile.mkstemp(dir=self._store_dir, suffix=".tmp")
-        try:
-            with open(fd, "w", encoding="utf-8") as f:
-                f.write(json.dumps(payload, ensure_ascii=False))
-            Path(tmp).replace(target)
-        except BaseException:
-            Path(tmp).unlink(missing_ok=True)
-            raise
+        self._atomic_write(
+            key,
+            {
+                "engine": engine,
+                "session_id": session_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
+    def record_compacted(
+        self,
+        key: str,
+        engine: str,
+        session_id: str,
+        parent_key: str,
+        summary_tokens: int | None = None,
+    ) -> None:
+        """Record a compaction-generated session with lineage fields."""
+        parent = self.lookup(parent_key)
+        parent_session_id = parent.session_id if parent is not None else None
+        self._atomic_write(
+            key,
+            {
+                "engine": engine,
+                "session_id": session_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "parent_session_id": parent_session_id,
+                "is_compacted": True,
+                "summary_tokens": summary_tokens,
+            },
+        )
 
     def lookup(self, key: str, *, max_age: timedelta | None = None) -> SessionRecord | None:
         path = self._record_path(key)
@@ -69,7 +88,26 @@ class SessionStore:
         if max_age is not None and created_at + max_age <= now:
             return None
 
-        return SessionRecord(engine=engine, session_id=session_id, created_at=created_at)
+        parent_session_id = data.get("parent_session_id")
+        if parent_session_id is not None and not isinstance(parent_session_id, str):
+            parent_session_id = None
+
+        is_compacted = data.get("is_compacted", False)
+        if not isinstance(is_compacted, bool):
+            is_compacted = False
+
+        summary_tokens = data.get("summary_tokens")
+        if summary_tokens is not None and not isinstance(summary_tokens, int):
+            summary_tokens = None
+
+        return SessionRecord(
+            engine=engine,
+            session_id=session_id,
+            created_at=created_at,
+            parent_session_id=parent_session_id,
+            is_compacted=is_compacted,
+            summary_tokens=summary_tokens,
+        )
 
     def invalidate(self, key: str) -> bool:
         path = self._record_path(key)
@@ -91,6 +129,18 @@ class SessionStore:
                 path.unlink(missing_ok=True)
                 deleted += 1
         return deleted
+
+    def _atomic_write(self, key: str, payload: dict) -> None:
+        self._store_dir.mkdir(parents=True, exist_ok=True)
+        target = self._record_path(key)
+        fd, tmp = tempfile.mkstemp(dir=self._store_dir, suffix=".tmp")
+        try:
+            with open(fd, "w", encoding="utf-8") as f:
+                f.write(json.dumps(payload, ensure_ascii=False))
+            Path(tmp).replace(target)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
 
     def _record_path(self, key: str) -> Path:
         return self._store_dir / f"{key}.json"
