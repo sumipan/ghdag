@@ -26,8 +26,17 @@ from ghdag.core.vocabulary import (
     DONE_TIMEOUT,
     DONE_UNKNOWN_FAILURE,
 )
-from ghdag.io.audit import write_quarantine_audit, write_task_retry_audit
+from ghdag.io.audit import (
+    write_compaction_audit,
+    write_quarantine_audit,
+    write_task_retry_audit,
+)
 from ghdag.llm.adapters import get_output_adapter
+from ghdag.llm.compaction import (
+    CompactionPolicy,
+    compact_resume_session,
+    lookup_parent_token_usage,
+)
 from ghdag.llm.session import SessionStore
 from ghdag.metrics.models import FailureClass, TaskMetrics
 from ghdag.metrics.parsers import parse_engine_model
@@ -588,12 +597,31 @@ class TaskLauncher:
     def _queue_audit_path(self) -> Path:
         return self._queue_dir() / "audit.jsonl"
 
+    def _compaction_policy(self) -> CompactionPolicy:
+        """Opt-in: enable via GHDAG_SESSION_COMPACTION=1 (default off)."""
+        enabled = os.environ.get("GHDAG_SESSION_COMPACTION", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        return CompactionPolicy(enabled=enabled)
+
     def _apply_resume_if_available(self, uuid: str, task: Task) -> None:
         resume_from_uuid = task.annotations.get("resume_from_uuid")
         if not resume_from_uuid:
             return
         resolved = self._session_store.lookup(resume_from_uuid)
         if not resolved:
+            write_compaction_audit(
+                self._queue_audit_path(),
+                task_uuid=uuid,
+                status="fallback",
+                reason="session_miss",
+                parent_session_id=None,
+                compacted_session_id=None,
+                engine=task.engine,
+            )
             return
         parent_engine = resolved.engine
         session_id = resolved.session_id
@@ -605,7 +633,58 @@ class TaskLauncher:
                 parent_engine,
                 task.engine,
             )
+            write_compaction_audit(
+                self._queue_audit_path(),
+                task_uuid=uuid,
+                status="fallback",
+                reason="engine_mismatch",
+                parent_session_id=session_id,
+                compacted_session_id=None,
+                engine=task.engine,
+            )
             return
+
+        token_usage = lookup_parent_token_usage(
+            self._queue_dir() / "metrics.jsonl",
+            resume_from_uuid,
+        )
+        raw_anno = task.annotations.get("_parent_token_usage")
+        if raw_anno and token_usage is None:
+            try:
+                token_usage = int(raw_anno)
+            except ValueError:
+                token_usage = None
+
+        compacted_key = f"{resume_from_uuid}__compacted__{uuid}"
+        compact_result = compact_resume_session(
+            store=self._session_store,
+            parent_key=resume_from_uuid,
+            parent_record=resolved,
+            compacted_key=compacted_key,
+            policy=self._compaction_policy(),
+            token_usage=token_usage,
+            cwd=self._config.cwd,
+            model=task.model,
+        )
+        write_compaction_audit(
+            self._queue_audit_path(),
+            task_uuid=uuid,
+            status=compact_result.status,
+            reason=compact_result.reason,
+            parent_session_id=compact_result.parent_session_id,
+            compacted_session_id=(
+                compact_result.session_id
+                if compact_result.status == "compacted"
+                else None
+            ),
+            summary_tokens=compact_result.summary_tokens,
+            tokens_before=compact_result.tokens_before,
+            tokens_after=compact_result.tokens_after,
+            engine=engine,
+        )
+        if compact_result.session_id:
+            session_id = compact_result.session_id
+
         command = self._inject_resume_command(task.command, engine, session_id)
         if command == task.command:
             return
