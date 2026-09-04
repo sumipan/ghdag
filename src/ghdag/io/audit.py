@@ -25,6 +25,7 @@ __all__ = [
     "write_llm_audit_log",
     "write_llm_inference_audit",
     "write_rate_limit_audit",
+    "write_compaction_audit",
     "write_quarantine_audit",
     "write_task_exit_audit",
     "write_task_retry_audit",
@@ -259,6 +260,43 @@ def write_quarantine_audit(
         append_audit_record(audit_path, record)
     except OSError as e:
         print(f"[audit] warning: failed to write quarantine audit: {e}", file=sys.stderr)
+
+
+def write_compaction_audit(
+    audit_path: Path,
+    *,
+    task_uuid: str,
+    status: str,
+    reason: str,
+    parent_session_id: str | None = None,
+    compacted_session_id: str | None = None,
+    summary_tokens: int | None = None,
+    tokens_before: int | None = None,
+    tokens_after: int | None = None,
+    engine: str | None = None,
+    comparison_group: str | None = None,
+) -> None:
+    """Append a session-compaction audit record (lineage + token delta)."""
+    record = {
+        "schema_version": 1,
+        "event_type": "session_compaction",
+        "timestamp": datetime.now(JST).isoformat(),
+        "uuid": task_uuid,
+        "event_id": str(uuid.uuid4()),
+        "status": status,
+        "reason": reason,
+        "parent_session_id": parent_session_id,
+        "compacted_session_id": compacted_session_id,
+        "summary_tokens": summary_tokens,
+        "tokens_before": tokens_before,
+        "tokens_after": tokens_after,
+        "engine": engine,
+        "comparison_group": comparison_group,
+    }
+    try:
+        append_audit_record(audit_path, record)
+    except OSError as e:
+        print(f"[audit] warning: failed to write compaction audit: {e}", file=sys.stderr)
 
 
 def _capture_caller_stack() -> list[str]:

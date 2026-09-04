@@ -26,7 +26,11 @@ from ghdag.core.vocabulary import (
     DONE_TIMEOUT,
     DONE_UNKNOWN_FAILURE,
 )
-from ghdag.io.audit import write_quarantine_audit, write_task_retry_audit
+from ghdag.io.audit import (
+    write_compaction_audit,
+    write_quarantine_audit,
+    write_task_retry_audit,
+)
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.compaction import (
     CompactionPolicy,
@@ -36,7 +40,6 @@ from ghdag.llm.compaction import (
 from ghdag.llm.session import SessionStore
 from ghdag.metrics.models import FailureClass, TaskMetrics
 from ghdag.metrics.parsers import parse_engine_model
-from ghdag.pipeline.audit import write_compaction_audit
 from ghdag.quota import QuotaGate
 
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
