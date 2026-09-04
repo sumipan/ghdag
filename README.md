@@ -1,7 +1,6 @@
 # ghdag
 
-ghdag is a generic DAG execution engine extracted from graph-watcher.
-It combines label-driven GitHub issue dispatch with a local dependency-aware queue runner in one Python package and CLI — unlike CI-centric orchestrators such as GitHub Actions or Dagger.
+ghdag is a GitHub-driven DAG workflow engine: label-based issue dispatch plus a local dependency-aware queue runner in one Python package and CLI. Unlike CI-centric orchestrators such as GitHub Actions or Dagger, intake (`workflow` / `pipeline`) and execution (`dag`) stay separate processes that communicate only through `exec.jsonl` and `jobs/done/` markers.
 
 ## Status
 
@@ -44,7 +43,7 @@ pip install git+https://github.com/sumipan/ghdag.git@v0.36.0
 
 ## Quick Start
 
-Create a queue file and run it (shape used in `tests/test_ghdag_pipeline.py` / `tests/test_ghdag_engine.py`):
+Create a queue file and run it (shape used in `tests/test_ghdag_engine.py`):
 
 ```jsonl
 {"uuid":"demo-0001","command":"echo hello from ghdag","depends":[]}
@@ -153,30 +152,23 @@ Frequently used non-top-level entry points (imported from their modules):
 
 ## Architecture
 
-```
-src/ghdag/
-├── cli/             — CLI entry point (`commands/` subpackage)
-├── core/            — Foundations (exceptions, command adapters, models, ports)
-├── dag/             — Local DAG engine, fanout, circuit breaker, session compaction
-├── files/           — Markdown file ops (append, promote, links)
-├── io/              — Queue / done / audit / exec.jsonl I/O
-├── llm/             — LLM engines, capabilities presets, adapters, compaction
-├── markdown/        — Issue body H2 section editor
-├── metrics/         — Task metrics and FailureClass
-├── pipeline/        — Order submission, audit hooks, pipeline state
-├── tool/            — Tool definitions and ToolRegistry
-├── ui/              — Web dashboard and monitor
-├── workflow/        — YAML loader, dispatcher, gates, state machine
-├── cleanup/         — Queue archival and orphan detection
-├── __init__.py      — Top-level public API
-├── __main__.py      — `python -m ghdag` entry point
-├── exceptions.py    — Re-export shim for `core.exceptions` (backward compat)
-├── github_cli.py    — CLI-compatible wrapper (`GitHubClient`)
-├── github_client.py — GitHub REST/GraphQL client
-├── maintenance.py   — Maintenance helpers
-├── quota.py         — Quota gate (`QuotaGate`)
-└── py.typed         — PEP 561 marker
-```
+| Module | Role |
+|---|---|
+| `cleanup/` | Queue archival, orphan detection, and pruning |
+| `cli/` | CLI entry point and subcommand handlers |
+| `core/` | Foundations: exceptions, command adapters, models, ports |
+| `dag/` | Local DAG engine, fanout, circuit breaker, session compaction |
+| `files/` | Markdown file ops (append, promote, links) |
+| `io/` | Queue / done / audit / `exec.jsonl` I/O |
+| `llm/` | LLM engines, capabilities presets, adapters, compaction |
+| `markdown/` | Issue body H2 section editor |
+| `metrics/` | Task metrics and `FailureClass` |
+| `pipeline/` | Order submission, audit hooks, pipeline state |
+| `tool/` | Tool definitions and `ToolRegistry` |
+| `ui/` | Web dashboard and monitor |
+| `workflow/` | YAML loader, dispatcher, gates, state machine |
+
+Top-level package files: `__init__.py` (public API), `__main__.py` (`python -m ghdag`), `exceptions.py` (re-export shim), `github_cli.py` / `github_client.py`, `maintenance.py`, `quota.py`, `py.typed`.
 
 Two towers communicate only through `exec.jsonl` and `jobs/done/` markers: **intake** (`pipeline` / `workflow`) and **execution** (`dag`). Import-linter contracts enforce that boundary.
 
@@ -238,7 +230,7 @@ GhdagError (core/exceptions.py)
 
 `*` = also inherits `ValueError` (catchable with `except ValueError`).
 
-Outside the `GhdagError` tree: `TemplateVariableError` (`pipeline/order.py` — `ValueError` + `KeyError`).
+Outside the `GhdagError` tree: `TemplateVariableError` (`pipeline/order.py` — `ValueError` + `KeyError`; not yet integrated under `GhdagError`).
 
 `ghdag.exceptions` re-exports `GhdagError`, `GitHubApiError`, `AuthError`, `RateLimitError`, `PermissionDeniedError`, and `NetworkError` for backward compatibility.
 
