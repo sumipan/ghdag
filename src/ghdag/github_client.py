@@ -267,6 +267,25 @@ class GitHubClient:
                 out[field] = raw.get(field)
         return out
 
+    def pr_update(
+        self,
+        number: int,
+        *,
+        title: str | None = None,
+        body: str | None = None,
+    ) -> None:
+        patch: dict[str, Any] = {}
+        if title is not None:
+            patch["title"] = title
+        if body is not None:
+            patch["body"] = body
+        if patch:
+            self._request(
+                "PATCH",
+                f"/repos/{self._owner}/{self._repo}/pulls/{number}",
+                body=patch,
+            )
+
     def issue_update(
         self,
         number: int,
