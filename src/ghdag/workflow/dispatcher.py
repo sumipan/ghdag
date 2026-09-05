@@ -20,12 +20,36 @@ from ghdag.pipeline.audit import (
 )
 from ghdag.pipeline.audit_query import detect_correlation_bursts
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.pipeline.order import OrderBuilder
+from ghdag.workflow.render import build_live_trampoline
 from ghdag.workflow.schema import (
     DispatchResult,
     HandlerConfig,
+    StepConfig,
     TriggerConfig,
     WorkflowConfig,
 )
+
+
+class _LiveRenderOrderBuilder:
+    """Wrap an OrderBuilder so ``render: live`` steps emit a trampoline order."""
+
+    def __init__(
+        self,
+        inner: OrderBuilder,
+        *,
+        template_dir: Path,
+        live_templates: set[str],
+    ) -> None:
+        self._inner = inner
+        self._template_dir = template_dir
+        self._live_templates = live_templates
+
+    def build_order(self, step_id: str, context: dict[str, str]) -> str:
+        if step_id not in self._live_templates:
+            return self._inner.build_order(step_id, context)
+        template_path = (self._template_dir / f"{step_id}.md").resolve()
+        return build_live_trampoline(template_path, context)
 
 _READY_LABEL_RE = re.compile(r"^(.+)([-:])ready$")
 
@@ -181,13 +205,14 @@ class WorkflowDispatcher:
         if handler.context_hook:
             base_context.update(self._run_context_hook(handler.context_hook, issue_number))
 
-        # 5. パイプライン投入
+        # 5. パイプライン投入（render: live は trampoline をインラインオーダーとして渡す）
         audit_ctx = AuditContext(source=workflow.name, correlation_id=idempotency_key)
-        exec_lines = self._pipeline.submit(
+        exec_lines = self._submit_steps(
+            workflow=workflow,
             steps=handler.steps,
             base_context=base_context,
             idempotency_key=idempotency_key,
-            audit_context=audit_ctx,
+            audit_ctx=audit_ctx,
         )
 
         # 6. ラベル遷移（*-ready / *:ready → *-running / *:running）
@@ -198,6 +223,49 @@ class WorkflowDispatcher:
                 github.update_label(issue_number, trigger.label, running_label)
 
         return DispatchResult(status="dispatched", exec_lines=exec_lines)
+
+    def _submit_steps(
+        self,
+        *,
+        workflow: WorkflowConfig,
+        steps: list[StepConfig],
+        base_context: dict[str, str],
+        idempotency_key: str,
+        audit_ctx: AuditContext,
+    ) -> list[str]:
+        """Submit steps, wrapping the order builder when any step uses render: live."""
+        live_templates = {s.template for s in steps if s.render == "live"}
+        if not live_templates:
+            return self._pipeline.submit(
+                steps=steps,
+                base_context=base_context,
+                idempotency_key=idempotency_key,
+                audit_context=audit_ctx,
+            )
+
+        template_dir = Path(workflow.template_dir) if workflow.template_dir else Path("templates")
+        inner = self._pipeline._resolve_order_builder(workflow.name)
+        wrapped = _LiveRenderOrderBuilder(
+            inner,
+            template_dir=template_dir,
+            live_templates=live_templates,
+        )
+        builders = self._pipeline._order_builders
+        had_entry = workflow.name in builders
+        previous = builders.get(workflow.name)
+        builders[workflow.name] = wrapped
+        try:
+            return self._pipeline.submit(
+                steps=steps,
+                base_context=base_context,
+                idempotency_key=idempotency_key,
+                audit_context=audit_ctx,
+            )
+        finally:
+            if had_entry:
+                builders[workflow.name] = previous  # type: ignore[assignment]
+            else:
+                builders.pop(workflow.name, None)
 
     def run(self, max_iterations: int | None = None) -> None:
         """ポーリングループを開始。max_iterations=None で無限ループ。"""

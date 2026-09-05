@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## Unreleased
+
+### Added
+
+- `ghdag.gates` entry-point によるゲート登録（`load_entry_point_gates` / `get_gate`）。`GATE_REGISTRY`（import 副作用）が同名時に優先し、ロード失敗は fail-open
+- `StepConfig.render`（`"frozen"` | `"live"`）と `python -m ghdag.workflow.render`。`render: live` の shell step は enqueue 時に trampoline を凍結し、実行時にテンプレートを再読込・再展開する
+
+
 ## 0.34.3 — 2026-09-02
 
 ### Added

@@ -106,6 +106,12 @@ def _validate(data: dict, filename: str) -> None:
                 raise ValidationError(f"handler '{handler_name}' step[{i}] requires 'template': {filename}")
             if "model" not in step:
                 raise ValidationError(f"handler '{handler_name}' step[{i}] requires 'model': {filename}")
+            render = step.get("render", "frozen")
+            if render not in ("frozen", "live"):
+                raise ValidationError(
+                    f"handler '{handler_name}' step[{i}].render must be 'frozen' or 'live' "
+                    f"(got {render!r}): {filename}"
+                )
             step_id = step.get("id")
             if isinstance(step_id, str):
                 step_engine_by_id[step_id] = str(step.get("engine", "claude"))
@@ -209,6 +215,7 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
                     resume_from=s.get("resume_from"),
                     permission=s.get("permission"),
                     skill_name=s.get("skill_name"),
+                    render=s.get("render", "frozen"),
                 )
             )
 

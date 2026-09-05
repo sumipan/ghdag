@@ -15,6 +15,7 @@ class StepConfig:
     resume_from: str | None = None  # 親ステップのセッション継続元 ID
     permission: str | None = None  # capabilities プリセット名（None = エンジンデフォルト）
     skill_name: str | None = None  # このステップが呼び出すスキル名
+    render: str = "frozen"  # "frozen"（enqueue 時展開）| "live"（実行時再展開 trampoline）
 
 
 @dataclass
