@@ -9,10 +9,10 @@ from pathlib import Path
 
 import yaml
 
+from ghdag.core.models.workflow import NonterminalClosedConfig
 from ghdag.exceptions import GhdagError
 from ghdag.workflow.schema import (
     HandlerConfig,
-    NonterminalClosedConfig,
     OnTriggerConfig,
     StepConfig,
     TriggerConfig,

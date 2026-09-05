@@ -6,13 +6,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ghdag.core.models.workflow import NonterminalClosedConfig
 from ghdag.github_client import GitHubClient, GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.loader import _parse
 from ghdag.workflow.schema import (
     HandlerConfig,
-    NonterminalClosedConfig,
     StepConfig,
     TriggerConfig,
     WorkflowConfig,
