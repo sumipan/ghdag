@@ -5,15 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from ghdag.core.vocabulary import (
-    DONE_EMPTY_RESULT,
-    DONE_ENGINE_ENV_ERROR,
-    DONE_ENGINE_ERROR,
-    DONE_ENGINE_ERROR_FINAL,
-    DONE_REJECTED,
-    DONE_REJECTED_FINAL,
-    DONE_SUCCESS,
-)
 from ghdag.io.done import dep_succeeded, interpret_done, read_done_content
 
 # 状態定数

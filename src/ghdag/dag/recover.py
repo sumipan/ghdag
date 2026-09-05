@@ -8,8 +8,8 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
-from ghdag.io.done import interpret_done, read_done_content
 from ghdag.io import exec_jsonl
+from ghdag.io.done import interpret_done, read_done_content
 
 logger = logging.getLogger(__name__)
 
