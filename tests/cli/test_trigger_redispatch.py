@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -145,10 +144,10 @@ handlers:
         assert redispatch_records[0]["generation"] == 1
 
     def test_redispatch_without_reason_uses_fallback(self, tmp_path):
-        from ghdag.workflow.dispatcher import WorkflowDispatcher
         from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
         from ghdag.pipeline.order import TemplateOrderBuilder
         from ghdag.pipeline.state import PipelineState
+        from ghdag.workflow.dispatcher import WorkflowDispatcher
 
         exec_jsonl = tmp_path / "jobs" / "exec.jsonl"
         exec_jsonl.parent.mkdir(parents=True)

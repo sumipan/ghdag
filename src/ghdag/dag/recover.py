@@ -72,7 +72,6 @@ def plan_recover(
             rerun_uuids=[],
         )
 
-    queue_path = Path(queue_dir)
     done_path = Path(done_dir)
     running = running_uuids or set()
     step_infos: list[RecoverStepInfo] = []
@@ -163,8 +162,8 @@ def execute_recover(
             )
             errors.append(msg)
             errors.append(
-                f"  → Recover is not possible. Start a new run with: "
-                f"ghdag trigger --issue <N> --handler <handler> --redispatch --reason \"...\""
+                "  → Recover is not possible. Start a new run with: "
+                "ghdag trigger --issue <N> --handler <handler> --redispatch --reason \"...\""
             )
             raise RecoverError("\n".join(errors))
 

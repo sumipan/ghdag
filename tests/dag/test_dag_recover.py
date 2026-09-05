@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -15,7 +14,6 @@ from ghdag.dag.recover import (
 )
 from ghdag.io.done import mark_done
 from ghdag.pipeline.state import PipelineState, build_idempotency_key
-
 
 UUID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 UUID_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"

@@ -29,11 +29,11 @@ def _build_parser() -> argparse.ArgumentParser:
         cmd_quota_resume,
         cmd_quota_status,
     )
+    from ghdag.cli.commands.recover import cmd_recover
     from ghdag.cli.commands.run import cmd_run
     from ghdag.cli.commands.trigger import cmd_trigger
     from ghdag.cli.commands.ui import cmd_ui
     from ghdag.cli.commands.watch import cmd_watch
-    from ghdag.cli.commands.recover import cmd_recover
 
     parser = argparse.ArgumentParser(
         prog="ghdag",

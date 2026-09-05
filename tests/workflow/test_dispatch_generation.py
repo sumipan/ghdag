@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
