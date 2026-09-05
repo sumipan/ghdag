@@ -21,6 +21,7 @@ from ghdag.pipeline.audit import (
 from ghdag.pipeline.audit_query import detect_correlation_bursts
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import OrderBuilder
+from ghdag.pipeline.state import build_idempotency_key
 from ghdag.workflow.render import build_live_trampoline
 from ghdag.workflow.schema import (
     DispatchResult,
@@ -149,6 +150,9 @@ class WorkflowDispatcher:
         trigger: TriggerConfig | None = None,
         trigger_rank: int | None = None,
         github: GitHubIssuePort | None = None,
+        *,
+        redispatch: bool = False,
+        redispatch_reason: str | None = None,
     ) -> DispatchResult:
         """Issue に対してハンドラーを実行。
 
@@ -159,6 +163,8 @@ class WorkflowDispatcher:
             trigger: 対応する TriggerConfig（省略時は workflow から解決）
             trigger_rank: triggers リスト内の序列（省略時は workflow から解決）
             github: この Issue を取得したクライアント（省略時は先頭クライアント）
+            redispatch: True のとき世代を +1 して新しい run を開始する
+            redispatch_reason: redispatch 時の理由（audit.jsonl に記録）
 
         Returns:
             DispatchResult: status が "dispatched" | "skipped" | "reset"
@@ -188,8 +194,40 @@ class WorkflowDispatcher:
 
         # 3. 冪等性チェック
         handler_name = trigger.handler if trigger else ""
-        idempotency_key = f"{workflow.name}:{handler_name}:{issue_number}"
+        generation = 0
+        if redispatch:
+            generation = self._pipeline.increment_generation(
+                workflow.name, handler_name, issue_number,
+            )
+            reason = redispatch_reason if redispatch_reason else "(no reason)"
+            self._append_redispatch_audit(
+                workflow_name=workflow.name,
+                handler_name=handler_name,
+                issue_number=issue_number,
+                generation=generation,
+                reason=reason,
+            )
+        else:
+            generation = self._pipeline.get_generation(
+                workflow.name, handler_name, issue_number,
+            )
+
+        idempotency_key = build_idempotency_key(
+            workflow.name, handler_name, issue_number, generation,
+        )
         if not self._pipeline.check_idempotency(idempotency_key):
+            logger.warning(
+                "dispatch skipped (already dispatched) — issue=#%d, handler=%s, key=%s\n"
+                "  → To retry failed steps: ghdag dag recover --issue %d --handler %s --dry-run\n"
+                "  → To start a new run:    ghdag trigger --issue %d --handler %s --redispatch --reason \"...\"",
+                issue_number,
+                handler_name,
+                idempotency_key,
+                issue_number,
+                handler_name,
+                issue_number,
+                handler_name,
+            )
             return DispatchResult(status="skipped", reason="already dispatched")
 
         # 4. Issue コンテキスト取得
@@ -321,6 +359,31 @@ class WorkflowDispatcher:
             count += 1
             if max_iterations is None or count < max_iterations:
                 time.sleep(polling_interval)
+
+    def _append_redispatch_audit(
+        self,
+        *,
+        workflow_name: str,
+        handler_name: str,
+        issue_number: int,
+        generation: int,
+        reason: str,
+    ) -> None:
+        audit_path = Path(self._queue_dir) / "audit.jsonl"
+        record = {
+            "timestamp": datetime.now(_JST).isoformat(),
+            "schema_version": 1,
+            "event_type": "redispatch",
+            "workflow": workflow_name,
+            "handler": handler_name,
+            "issue_number": issue_number,
+            "generation": generation,
+            "reason": reason,
+        }
+        try:
+            append_audit_record(audit_path, record)
+        except OSError:
+            logger.debug("redispatch audit write failed", exc_info=True)
 
     def _append_dispatcher_audit_event(self, *, event: str, reason: str) -> None:
         audit_path = Path(self._queue_dir) / "audit.jsonl"

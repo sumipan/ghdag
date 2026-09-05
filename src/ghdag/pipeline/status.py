@@ -5,16 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from ghdag.core.vocabulary import (
-    DONE_EMPTY_RESULT,
-    DONE_ENGINE_ENV_ERROR,
-    DONE_ENGINE_ERROR,
-    DONE_ENGINE_ERROR_FINAL,
-    DONE_REJECTED,
-    DONE_REJECTED_FINAL,
-    DONE_SUCCESS,
-)
-from ghdag.io.done import dep_succeeded, read_done_content
+from ghdag.io.done import dep_succeeded, interpret_done, read_done_content
 
 # 状態定数
 STATE_PENDING_DEPS = "待機（依存未充足）"
@@ -27,32 +18,6 @@ STATE_REJECTED     = "完了（REJECTED）"
 STATE_EMPTY        = "完了（EMPTY_RESULT）"
 STATE_ENGINE_ERROR = "完了（ENGINE_ERROR）"
 STATE_UNKNOWN_DONE = "完了（その他）"
-
-
-def interpret_done(raw: Optional[str]) -> Optional[str]:
-    """done ファイルの内容を解釈しステータス文字列を返す。
-
-    None 入力 → None。
-    "0" or "" → "success"、"REJECTED"/"REJECTED_FINAL" → "rejected"、
-    "EMPTY_RESULT" → "empty_result"、非ゼロ整数 → "failed_exit"、その他 → "other"。
-    """
-    if raw is None:
-        return None
-    first = raw.strip().splitlines()
-    c = first[0].strip() if first else ""
-    if c == "" or c == DONE_SUCCESS:
-        return "success"
-    if c in (DONE_REJECTED, DONE_REJECTED_FINAL):
-        return "rejected"
-    if c == DONE_EMPTY_RESULT:
-        return "empty_result"
-    if c in (DONE_ENGINE_ERROR, DONE_ENGINE_ERROR_FINAL, DONE_ENGINE_ENV_ERROR):
-        return "engine_error"
-    try:
-        n = int(c)
-        return "success" if n == 0 else "failed_exit"
-    except ValueError:
-        return "other"
 
 
 def label_for_done(raw: Optional[str]) -> Optional[str]:

@@ -1104,7 +1104,8 @@ class TestMetadataBackwardCompat:
         annotations = record.get("annotations", {})
         assert annotations.get("safe_default_applied") is True
         assert annotations.get("safe_default_preset") == "text_only"
-        assert len(annotations) == 2
+        assert "step_name" in annotations
+        assert len(annotations) == 3
 
     def test_no_metadata_does_not_break_existing_behavior(self):
         """metadata なしで既存のテスト項目（uuid, command, result_path）が正常。"""
@@ -1150,7 +1151,8 @@ class TestMetadataEmptyDict:
         annotations = record.get("annotations", {})
         assert annotations.get("safe_default_applied") is True
         assert annotations.get("safe_default_preset") == "text_only"
-        assert len(annotations) == 2
+        assert "step_name" in annotations
+        assert len(annotations) == 3
 
 
 class TestMetadataExplicitNone:
@@ -1165,4 +1167,5 @@ class TestMetadataExplicitNone:
         annotations = record.get("annotations", {})
         assert annotations.get("safe_default_applied") is True
         assert annotations.get("safe_default_preset") == "text_only"
-        assert len(annotations) == 2
+        assert "step_name" in annotations
+        assert len(annotations) == 3

@@ -29,6 +29,7 @@ def _build_parser() -> argparse.ArgumentParser:
         cmd_quota_resume,
         cmd_quota_status,
     )
+    from ghdag.cli.commands.recover import cmd_recover
     from ghdag.cli.commands.run import cmd_run
     from ghdag.cli.commands.trigger import cmd_trigger
     from ghdag.cli.commands.ui import cmd_ui
@@ -273,7 +274,67 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="NAME",
         help="Workflow name (auto-detected if only one workflow exists)",
     )
+    trigger_parser.add_argument(
+        "--redispatch",
+        action="store_true",
+        help="Increment generation and start a new handler run",
+    )
+    trigger_parser.add_argument(
+        "--reason",
+        default=None,
+        help="Reason for redispatch (recorded in audit.jsonl)",
+    )
     trigger_parser.set_defaults(func=cmd_trigger)
+
+    # ghdag dag recover
+    dag_parser = subparsers.add_parser("dag", help="DAG utilities")
+    dag_subparsers = dag_parser.add_subparsers(title="dag subcommands")
+
+    recover_parser = dag_subparsers.add_parser(
+        "recover",
+        help="Recover failed or pending steps from an existing handler run",
+    )
+    recover_parser.add_argument("--issue", type=int, required=True, dest="issue_number")
+    recover_parser.add_argument("--handler", required=True, help="Handler name (e.g. impl)")
+    recover_parser.add_argument(
+        "--from",
+        dest="from_step",
+        default=None,
+        metavar="STEP_NAME",
+        help="Only recover this step and its downstream dependents",
+    )
+    recover_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show recover targets without modifying done markers",
+    )
+    recover_parser.add_argument(
+        "--workflows-dir",
+        default="workflows",
+        dest="workflows_dir",
+        metavar="PATH",
+        help="Path to workflows YAML directory (default: workflows)",
+    )
+    recover_parser.add_argument(
+        "--exec-md",
+        default="jobs/exec.jsonl",
+        dest="exec_jsonl",
+        metavar="PATH",
+        help="Path to exec.jsonl (default: jobs/exec.jsonl)",
+    )
+    recover_parser.add_argument(
+        "--workflow",
+        default=None,
+        metavar="NAME",
+        help="Workflow name (auto-detected if only one workflow exists)",
+    )
+    recover_parser.add_argument(
+        "--state-dir",
+        default=".pipeline-state",
+        metavar="PATH",
+        help="Pipeline state directory (default: .pipeline-state)",
+    )
+    recover_parser.set_defaults(func=cmd_recover)
 
     # ghdag audit-query
     audit_query_parser = subparsers.add_parser(
