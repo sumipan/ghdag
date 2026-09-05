@@ -86,7 +86,13 @@ def cmd_trigger(args) -> None:
     issue = github_client.get_issue(args.issue_number)
 
     result = dispatcher.dispatch(
-        issue, workflow, handler, trigger=trigger, trigger_rank=trigger_rank,
+        issue,
+        workflow,
+        handler,
+        trigger=trigger,
+        trigger_rank=trigger_rank,
+        redispatch=args.redispatch,
+        redispatch_reason=args.reason,
     )
     print(f"trigger: issue #{args.issue_number} handler={handler_name} → {result.status}")
     if result.reason:

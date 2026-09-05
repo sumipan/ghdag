@@ -19,6 +19,7 @@ __all__ = [
     "parse",
     "parse_as_dict",
     "check_idempotency",
+    "find_records_by_idempotency_key",
     "append",
     "remove_by_predicate",
     "remove_by_uuids",
@@ -124,6 +125,34 @@ def check_idempotency(exec_jsonl_path: Path, key: str) -> bool:
             except json.JSONDecodeError:
                 continue
     return True
+
+
+def find_records_by_idempotency_key(exec_jsonl_path: Path, key: str) -> list[dict]:
+    """Return all exec.jsonl records whose idempotency_key exactly matches ``key``.
+
+    Duplicate UUIDs keep the last occurrence (same rule as ``parse``).
+    """
+    path = Path(exec_jsonl_path)
+    if not path.exists():
+        return []
+
+    by_uuid: dict[str, dict] = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                rec = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if rec.get("idempotency_key") != key:
+                continue
+            uuid = rec.get("uuid")
+            if not uuid:
+                continue
+            by_uuid[str(uuid)] = rec
+    return list(by_uuid.values())
 
 
 def append(

@@ -24,6 +24,28 @@ from ghdag.io.audit import AuditContext
 from ghdag.quota import QuotaGate
 
 
+def build_idempotency_key(
+    workflow_name: str,
+    handler_name: str,
+    issue_number: int,
+    generation: int = 0,
+) -> str:
+    """Build a handler idempotency key, preserving generation-0 backward compatibility."""
+    base = f"{workflow_name}:{handler_name}:{issue_number}"
+    if generation == 0:
+        return base
+    return f"{base}:{generation}"
+
+
+def handler_generation_key(
+    workflow_name: str,
+    handler_name: str,
+    issue_number: int,
+) -> str:
+    """Key used in generations.json (no generation suffix)."""
+    return f"{workflow_name}:{handler_name}:{issue_number}"
+
+
 class PipelineState:
     def __init__(self, state_dir: str | Path, exec_jsonl_path: str | Path):
         """
@@ -44,16 +66,79 @@ class PipelineState:
         """
         return exec_jsonl.check_idempotency(self._exec_jsonl_path, key)
 
+    @property
+    def generations_path(self) -> Path:
+        return self._state_dir / "generations.json"
+
+    def get_generation(
+        self,
+        workflow_name: str,
+        handler_name: str,
+        issue_number: int,
+    ) -> int:
+        """Return the current redispatch generation for an Issue × handler (default 0)."""
+        key = handler_generation_key(workflow_name, handler_name, issue_number)
+        data = self._load_generations()
+        value = data.get(key, 0)
+        return int(value) if isinstance(value, int) else 0
+
+    def increment_generation(
+        self,
+        workflow_name: str,
+        handler_name: str,
+        issue_number: int,
+    ) -> int:
+        """Increment and persist the redispatch generation. Returns the new value."""
+        key = handler_generation_key(workflow_name, handler_name, issue_number)
+        self._state_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.generations_path, "a+", encoding="utf-8") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            try:
+                f.seek(0)
+                raw = f.read()
+                data: dict[str, int] = json.loads(raw) if raw.strip() else {}
+                current = int(data.get(key, 0)) if isinstance(data.get(key, 0), int) else 0
+                new_value = current + 1
+                data[key] = new_value
+                f.seek(0)
+                f.truncate()
+                json.dump(data, f, ensure_ascii=False, indent=2)
+                f.write("\n")
+                return new_value
+            finally:
+                fcntl.flock(f, fcntl.LOCK_UN)
+
+    def find_records_by_idempotency_key(self, key: str) -> list[dict]:
+        """Return exec.jsonl records matching the given idempotency key."""
+        return exec_jsonl.find_records_by_idempotency_key(self._exec_jsonl_path, key)
+
+    def _load_generations(self) -> dict[str, int]:
+        path = self.generations_path
+        if not path.exists():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {str(k): int(v) for k, v in data.items() if isinstance(v, int)}
+
     def remove_idempotency_matching(self, workflow_name: str, issue_number: int) -> int:
         """exec.jsonl から workflow_name:*:issue_number にマッチする冪等性記録を削除。
+
+        世代なし (:issue_number 末尾) と世代あり (:issue_number:N) の両方にマッチする。
 
         Returns:
             削除したレコード数
         """
         prefix = f"{workflow_name}:"
-        suffix = f":{issue_number}"
+        suffix_exact = f":{issue_number}"
+        suffix_gen = f":{issue_number}:"
         return self._remove_by_predicate(
-            lambda rec: (k := rec.get("idempotency_key", "")) and k.startswith(prefix) and k.endswith(suffix)
+            lambda rec: (k := rec.get("idempotency_key", ""))
+            and k.startswith(prefix)
+            and (k.endswith(suffix_exact) or suffix_gen in k)
         )
 
     def remove_idempotency_for_handler(

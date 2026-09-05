@@ -150,6 +150,22 @@ class LLMPipelineAPI:
         """冪等性チェックを PipelineState に委譲する。"""
         return self._state.check_idempotency(key)
 
+    def get_generation(
+        self, workflow_name: str, handler_name: str, issue_number: int,
+    ) -> int:
+        """現在の redispatch 世代を返す。"""
+        return self._state.get_generation(workflow_name, handler_name, issue_number)
+
+    def increment_generation(
+        self, workflow_name: str, handler_name: str, issue_number: int,
+    ) -> int:
+        """redispatch 世代を +1 して返す。"""
+        return self._state.increment_generation(workflow_name, handler_name, issue_number)
+
+    def find_records_by_idempotency_key(self, key: str) -> list[dict]:
+        """冪等キーに一致する exec.jsonl レコードを返す。"""
+        return self._state.find_records_by_idempotency_key(key)
+
     def remove_idempotency_matching(self, workflow_name: str, issue_number: int) -> None:
         """冪等キー削除を PipelineState に委譲する。"""
         self._state.remove_idempotency_matching(workflow_name, issue_number)
@@ -254,6 +270,7 @@ class LLMPipelineAPI:
                 model=step.model,
                 permission=step.permission,
             )
+            record.setdefault("annotations", {})["step_name"] = step_id
             if step.resume_from:
                 record.setdefault("annotations", {})["resume_from_uuid"] = step_uuid_map[step.resume_from]
             if metadata:
