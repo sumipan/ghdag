@@ -12,6 +12,7 @@ import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TypedDict
 
 from ghdag.core.vocabulary import (
     DONE_EMPTY_RESULT,
@@ -64,7 +65,12 @@ def _task_request_id(task: Task) -> str | None:
     return task.annotations.get("_request_id")
 
 
-def _quota_role_kwargs(task: Task) -> dict[str, str | list[str] | None]:
+class _QuotaRoleKwargs(TypedDict, total=False):
+    role: str
+    role_engines: list[str] | None
+
+
+def _quota_role_kwargs(task: Task) -> _QuotaRoleKwargs:
     role = task.annotations.get("role")
     role_engines = task.annotations.get("role_engines")
     if role is not None and not isinstance(role, str):
