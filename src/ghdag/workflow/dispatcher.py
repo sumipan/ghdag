@@ -140,6 +140,8 @@ class WorkflowDispatcher:
                                 "_github": github,
                             }
                         )
+                if workflow.nonterminal_closed is not None:
+                    self._poll_nonterminal_closed(github, workflow, results)
         return results
 
     def dispatch(
@@ -456,6 +458,161 @@ class WorkflowDispatcher:
             logger.debug("correlation burst observation failed", exc_info=True)
 
     # --- internal helpers ---
+
+    def _poll_nonterminal_closed(
+        self,
+        github: GitHubIssuePort,
+        workflow: WorkflowConfig,
+        results: list[dict],
+    ) -> None:
+        """CLOSED かつ非終端ラベルの issue を検出し reopen / trigger action を実行する。"""
+        config = workflow.nonterminal_closed
+        if config is None:
+            return
+
+        terminal_labels = set(config.terminal_labels)
+        action = config.action
+
+        for trigger in workflow.triggers:
+            try:
+                issues = github.list_issues(trigger.label, state="closed")
+            except Exception as exc:
+                logger.warning(
+                    "poll_once: nonterminal_closed scan for label=%r in workflow=%r failed "
+                    "(%s: %s) — skipping this trigger and continuing with others",
+                    trigger.label,
+                    workflow.name,
+                    type(exc).__name__,
+                    exc,
+                )
+                continue
+
+            for issue in issues:
+                issue_number = issue["number"]
+                issue_label_names = {lb["name"] for lb in issue.get("labels", [])}
+                if issue_label_names & terminal_labels:
+                    continue
+
+                try:
+                    comments = github.get_issue_comments(issue_number)
+                except Exception as exc:
+                    logger.warning(
+                        "poll_once: get_issue_comments failed for issue #%d (%s: %s) — skipping",
+                        issue_number,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    continue
+
+                if self._has_nonterminal_closed_marker(comments, action, issue_number):
+                    continue
+
+                if action == "reopen":
+                    try:
+                        github.reopen_issue(issue_number)
+                        github.add_comment(
+                            issue_number,
+                            self._nonterminal_closed_comment(action, issue_number, "reopened"),
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "poll_once: reopen failed for issue #%d (%s: %s) — skipping",
+                            issue_number,
+                            type(exc).__name__,
+                            exc,
+                        )
+                    continue
+
+                if action == "trigger":
+                    trigger_label = config.trigger
+                    if not trigger_label:
+                        logger.warning(
+                            "poll_once: nonterminal_closed trigger action missing trigger label "
+                            "in workflow=%r — skipping issue #%d",
+                            workflow.name,
+                            issue_number,
+                        )
+                        continue
+
+                    handler_trigger, handler_rank, handler = self._resolve_trigger_by_label(
+                        workflow, trigger_label,
+                    )
+                    if handler is None or handler_trigger is None or handler_rank is None:
+                        logger.warning(
+                            "poll_once: nonterminal_closed trigger label=%r not found in workflow=%r "
+                            "— skipping issue #%d",
+                            trigger_label,
+                            workflow.name,
+                            issue_number,
+                        )
+                        continue
+
+                    try:
+                        github.add_comment(
+                            issue_number,
+                            self._nonterminal_closed_comment(
+                                action,
+                                issue_number,
+                                f"triggering handler {handler_trigger.handler}",
+                            ),
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "poll_once: add_comment failed for issue #%d (%s: %s) — skipping",
+                            issue_number,
+                            type(exc).__name__,
+                            exc,
+                        )
+                        continue
+
+                    results.append(
+                        {
+                            "issue": issue_number,
+                            "workflow": workflow.name,
+                            "handler": handler_trigger.handler,
+                            "_issue_data": issue,
+                            "_workflow": workflow,
+                            "_handler": handler,
+                            "_trigger": handler_trigger,
+                            "_trigger_rank": handler_rank,
+                            "_github": github,
+                        }
+                    )
+
+    @staticmethod
+    def _nonterminal_closed_marker(action: str, issue_number: int) -> str:
+        return f"<!-- ghdag:nonterminal_closed:{action}:{issue_number} -->"
+
+    @classmethod
+    def _has_nonterminal_closed_marker(
+        cls,
+        comments: list[dict],
+        action: str,
+        issue_number: int,
+    ) -> bool:
+        marker = cls._nonterminal_closed_marker(action, issue_number)
+        return any(marker in (comment.get("body") or "") for comment in comments)
+
+    @staticmethod
+    def _nonterminal_closed_comment(action: str, issue_number: int, detail: str) -> str:
+        return (
+            f"⚠️ Nonterminal closed issue detected: {detail} (labels unchanged).\n"
+            f"{WorkflowDispatcher._nonterminal_closed_marker(action, issue_number)}"
+        )
+
+    @staticmethod
+    def _resolve_trigger_by_label(
+        workflow: WorkflowConfig,
+        trigger_label: str,
+    ) -> tuple[TriggerConfig | None, int | None, HandlerConfig | None]:
+        for rank, trigger in enumerate(workflow.triggers):
+            if trigger.label != trigger_label:
+                continue
+            handler = workflow.handlers.get(trigger.handler)
+            if handler is None:
+                return trigger, rank, None
+            return trigger, rank, handler
+        return None, None, None
 
     def _resolve_trigger(
         self, workflow: WorkflowConfig, handler: HandlerConfig

@@ -378,6 +378,13 @@ class GitHubClient:
             body={"state": "closed"},
         )
 
+    def reopen_issue(self, number: int) -> None:
+        self._request(
+            "PATCH",
+            f"/repos/{self._owner}/{self._repo}/issues/{number}",
+            body={"state": "open"},
+        )
+
     def issue_create(
         self,
         title: str,
