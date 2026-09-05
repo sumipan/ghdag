@@ -65,7 +65,9 @@ def plan_recover(
     idempotency_key = exec_jsonl.build_idempotency_key(
         workflow_name, handler_name, issue_number, generation,
     )
-    records = exec_jsonl.find_records_by_idempotency_key(exec_jsonl_path, idempotency_key)
+    records = exec_jsonl.find_records_by_idempotency_key(
+        Path(exec_jsonl_path), idempotency_key,
+    )
     if not records:
         return RecoverPlan(
             idempotency_key=idempotency_key,
