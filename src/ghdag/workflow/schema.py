@@ -3,7 +3,6 @@
 from ghdag.core.models.workflow import (
     DispatchResult,
     HandlerConfig,
-    NonterminalClosedConfig,
     OnTriggerConfig,
     StepConfig,
     TriggerConfig,
@@ -16,6 +15,5 @@ __all__ = [
     "HandlerConfig",
     "TriggerConfig",
     "DispatchResult",
-    "NonterminalClosedConfig",
     "WorkflowConfig",
 ]
