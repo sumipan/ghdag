@@ -11,9 +11,11 @@ pipeline/state.py — パイプライン状態管理
 
 from __future__ import annotations
 
+import contextlib
 import fcntl
 import json
 import os
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -100,10 +102,16 @@ class PipelineState:
                 current = int(data.get(key, 0)) if isinstance(data.get(key, 0), int) else 0
                 new_value = current + 1
                 data[key] = new_value
-                f.seek(0)
-                f.truncate()
-                json.dump(data, f, ensure_ascii=False, indent=2)
-                f.write("\n")
+                fd, tmp = tempfile.mkstemp(dir=str(self._state_dir), suffix=".tmp")
+                try:
+                    with os.fdopen(fd, "w") as tf:
+                        json.dump(data, tf, ensure_ascii=False, indent=2)
+                        tf.write("\n")
+                    os.replace(tmp, str(self.generations_path))
+                except BaseException:
+                    with contextlib.suppress(OSError):
+                        os.unlink(tmp)
+                    raise
                 return new_value
             finally:
                 fcntl.flock(f, fcntl.LOCK_UN)
