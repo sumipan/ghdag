@@ -46,6 +46,13 @@ class DispatchResult:
 
 
 @dataclass
+class NonterminalClosedConfig:
+    action: str                          # "reopen" | "trigger"
+    terminal_labels: list[str]           # 終端ラベル（いずれかを持つ CLOSED issue は対象外）
+    trigger: str | None = None           # action="trigger" 時に起動する handler のラベル
+
+
+@dataclass
 class WorkflowConfig:
     name: str                              # ワークフロー名
     triggers: list[TriggerConfig]          # トリガー条件リスト（定義順が序列）
@@ -56,6 +63,7 @@ class WorkflowConfig:
     transitions: dict[str, list[str]] | None = None  # 状態遷移マップ
     reset_label: str | None = None         # 任意の状態から遷移可能な特殊ラベル
     roles: dict[str, list[str]] = field(default_factory=dict)  # ロール名 → エンジン名リスト
+    nonterminal_closed: NonterminalClosedConfig | None = None  # CLOSED 非終端 issue 検出設定
 
 
 def validate_workflow_roles(config: WorkflowConfig) -> None:

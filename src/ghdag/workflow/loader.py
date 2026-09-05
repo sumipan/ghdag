@@ -12,6 +12,7 @@ import yaml
 from ghdag.exceptions import GhdagError
 from ghdag.workflow.schema import (
     HandlerConfig,
+    NonterminalClosedConfig,
     OnTriggerConfig,
     StepConfig,
     TriggerConfig,
@@ -147,6 +148,27 @@ def _validate(data: dict, filename: str) -> None:
                 f"(available: {sorted(handler_names)})"
             )
 
+    nonterminal_closed = data.get("nonterminal_closed")
+    if nonterminal_closed is not None:
+        if not isinstance(nonterminal_closed, dict):
+            raise ValidationError(
+                f"'nonterminal_closed' must be a mapping: {filename}"
+            )
+        action = nonterminal_closed.get("action")
+        if action not in ("reopen", "trigger"):
+            raise ValidationError(
+                f"'nonterminal_closed.action' must be 'reopen' or 'trigger': {filename}"
+            )
+        terminal_labels = nonterminal_closed.get("terminal_labels")
+        if not terminal_labels or not isinstance(terminal_labels, list):
+            raise ValidationError(
+                f"'nonterminal_closed.terminal_labels' is required and must be a list: {filename}"
+            )
+        if action == "trigger" and not nonterminal_closed.get("trigger"):
+            raise ValidationError(
+                f"'nonterminal_closed.trigger' is required when action is 'trigger': {filename}"
+            )
+
 
 def _validate_references(config: WorkflowConfig, *, workflow_dir: Path | None = None) -> None:
     """Check template file existence and context_hook executability."""
@@ -233,10 +255,20 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
             td = workflow_dir / td
         resolved_template_dir = str(td)
 
+    nonterminal_closed_data = data.get("nonterminal_closed")
+    nonterminal_closed: NonterminalClosedConfig | None = None
+    if nonterminal_closed_data is not None:
+        nonterminal_closed = NonterminalClosedConfig(
+            action=nonterminal_closed_data["action"],
+            terminal_labels=list(nonterminal_closed_data["terminal_labels"]),
+            trigger=nonterminal_closed_data.get("trigger"),
+        )
+
     return WorkflowConfig(
         name=data["name"],
         triggers=triggers,
         handlers=handlers,
         polling_interval=data.get("polling_interval", 30),
         template_dir=resolved_template_dir,
+        nonterminal_closed=nonterminal_closed,
     )
