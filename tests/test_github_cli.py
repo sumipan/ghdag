@@ -174,6 +174,67 @@ def test_cli_issue_edit_unknown_arg_warning_excludes_title(monkeypatch, capsys):
     assert "'T'" not in err
 
 
+def test_cli_pr_edit_body(monkeypatch):
+    """pr edit <url> --body が pr_update(number, body=...) を呼ぶ。URL からも番号を抽出する。"""
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        _token = "tok"
+
+        def pr_update(self, number, **kwargs):
+            captured["number"] = number
+            captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(
+        "ghdag.github_cli.GitHubClient",
+        lambda *a, **k: FakeClient(),
+    )
+    with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):
+        rc = cli_main(
+            ["pr", "edit", "https://github.com/o/r/pull/2884", "--body", "Refs #1"]
+        )
+    assert rc == 0
+    assert captured["number"] == 2884
+    assert captured["kwargs"] == {"title": None, "body": "Refs #1"}
+
+
+def test_cli_pr_edit_number_and_title(monkeypatch):
+    """素の番号と --title の組み合わせ。"""
+    captured: dict[str, object] = {}
+
+    class FakeClient:
+        _token = "tok"
+
+        def pr_update(self, number, **kwargs):
+            captured["number"] = number
+            captured["kwargs"] = kwargs
+
+    monkeypatch.setattr(
+        "ghdag.github_cli.GitHubClient",
+        lambda *a, **k: FakeClient(),
+    )
+    with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):
+        rc = cli_main(["pr", "edit", "42", "--title", "新タイトル"])
+    assert rc == 0
+    assert captured["number"] == 42
+    assert captured["kwargs"]["title"] == "新タイトル"
+    assert captured["kwargs"]["body"] is None
+
+
+def test_pr_update_patches_pulls_endpoint(monkeypatch):
+    """GitHubClient.pr_update は issues ではなく pulls エンドポイントを PATCH する。"""
+    client = GitHubClient(token="tok", repo="o/r")
+    calls = []
+
+    def fake_request(method, path, **kwargs):
+        calls.append((method, path, kwargs.get("body")))
+        return {}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    client.pr_update(7, body="new body")
+    assert calls == [("PATCH", "/repos/o/r/pulls/7", {"body": "new body"})]
+
+
 def test_pr_diff_raw(monkeypatch):
     client = GitHubClient(token="tok", repo="o/r")
 

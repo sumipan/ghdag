@@ -221,6 +221,20 @@ def _cli_issue_create(client: GitHubClient, args: list[str]) -> int:
     return 0
 
 
+def _cli_pr_edit(client: GitHubClient, args: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="pr edit", add_help=False)
+    parser.add_argument("number")
+    parser.add_argument("--title")
+    parser.add_argument("--body")
+    parser.add_argument("--repo")
+    ns = _parse_with_warning(parser, args)
+    if ns.repo:
+        client = GitHubClient(token=client._token, repo=ns.repo)
+    num = int(ns.number.lstrip("#").split("/")[-1])
+    client.pr_update(num, title=ns.title, body=ns.body)
+    return 0
+
+
 def _cli_pr_list(client: GitHubClient, args: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="pr list", add_help=False)
     parser.add_argument("--head")
@@ -430,6 +444,7 @@ def cli_main(argv: list[str] | None = None) -> int:
         "pr": {
             "list": _cli_pr_list,
             "view": _cli_pr_view,
+            "edit": _cli_pr_edit,
             "diff": _cli_pr_diff,
             "create": _cli_pr_create,
             "merge": _cli_pr_merge,
