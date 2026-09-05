@@ -7,7 +7,15 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from ghdag.core.vocabulary import DONE_SUCCESS
+from ghdag.core.vocabulary import (
+    DONE_EMPTY_RESULT,
+    DONE_ENGINE_ENV_ERROR,
+    DONE_ENGINE_ERROR,
+    DONE_ENGINE_ERROR_FINAL,
+    DONE_REJECTED,
+    DONE_REJECTED_FINAL,
+    DONE_SUCCESS,
+)
 
 
 def is_done(exec_done_dir: str | Path, uuid: str) -> bool:
@@ -53,6 +61,27 @@ def load_succeeded_from_dir(exec_done_dir: str | Path) -> set[str]:
     return succeeded
 
 
+def interpret_done(raw: Optional[str]) -> Optional[str]:
+    """Interpret a done-marker body as a coarse outcome string."""
+    if raw is None:
+        return None
+    first = raw.strip().splitlines()
+    c = first[0].strip() if first else ""
+    if c == "" or c == DONE_SUCCESS:
+        return "success"
+    if c in (DONE_REJECTED, DONE_REJECTED_FINAL):
+        return "rejected"
+    if c == DONE_EMPTY_RESULT:
+        return "empty_result"
+    if c in (DONE_ENGINE_ERROR, DONE_ENGINE_ERROR_FINAL, DONE_ENGINE_ENV_ERROR):
+        return "engine_error"
+    try:
+        n = int(c)
+        return "success" if n == 0 else "failed_exit"
+    except ValueError:
+        return "other"
+
+
 def read_done_content(exec_done_dir: Path, uuid: str) -> Optional[str]:
     """jobs/done/<uuid> の内容を読み取る。存在しなければ None。"""
     p = Path(exec_done_dir) / uuid
@@ -67,17 +96,6 @@ def read_done_content(exec_done_dir: Path, uuid: str) -> Optional[str]:
 def dep_succeeded(exec_done_dir: Path, dep_uuid: str) -> bool:
     """依存タスクが成功完了しているか。
 
-    ``pipeline.status.interpret_done`` の success 判定と同等のロジックを
-    io 層で完結させる（io → pipeline 逆流を避ける）。
+    ``interpret_done`` の success 判定と同等（io 層で完結）。
     """
-    raw = read_done_content(exec_done_dir, dep_uuid)
-    if raw is None:
-        return False
-    first = raw.strip().splitlines()
-    c = first[0].strip() if first else ""
-    if c == "" or c == DONE_SUCCESS:
-        return True
-    try:
-        return int(c) == 0
-    except ValueError:
-        return False
+    return interpret_done(read_done_content(exec_done_dir, dep_uuid)) == "success"

@@ -14,7 +14,54 @@ from ghdag.quota import QuotaGate
 
 logger = logging.getLogger(__name__)
 
+
+def build_idempotency_key(
+    workflow_name: str,
+    handler_name: str,
+    issue_number: int,
+    generation: int = 0,
+) -> str:
+    """Build a handler idempotency key, preserving generation-0 backward compatibility."""
+    base = f"{workflow_name}:{handler_name}:{issue_number}"
+    if generation == 0:
+        return base
+    return f"{base}:{generation}"
+
+
+def handler_generation_key(
+    workflow_name: str,
+    handler_name: str,
+    issue_number: int,
+) -> str:
+    """Key used in generations.json (no generation suffix)."""
+    return f"{workflow_name}:{handler_name}:{issue_number}"
+
+
+def get_generation(
+    state_dir: str | Path,
+    workflow_name: str,
+    handler_name: str,
+    issue_number: int,
+) -> int:
+    """Return the current redispatch generation for an Issue × handler (default 0)."""
+    path = Path(state_dir) / "generations.json"
+    if not path.exists():
+        return 0
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return 0
+    if not isinstance(data, dict):
+        return 0
+    key = handler_generation_key(workflow_name, handler_name, issue_number)
+    value = data.get(key, 0)
+    return int(value) if isinstance(value, int) else 0
+
+
 __all__ = [
+    "build_idempotency_key",
+    "handler_generation_key",
+    "get_generation",
     "read",
     "parse",
     "parse_as_dict",

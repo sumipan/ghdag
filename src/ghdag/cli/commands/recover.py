@@ -14,7 +14,6 @@ def cmd_recover(args) -> None:
         format_recover_plan,
         plan_recover,
     )
-    from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.loader import load_workflows
 
     workflows_path = Path(args.workflows_dir)
@@ -56,14 +55,11 @@ def cmd_recover(args) -> None:
     exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
     queue_dir = exec_jsonl_resolved.parent
     done_dir = queue_dir / "done"
-    pipeline_state = PipelineState(
-        state_dir=args.state_dir,
-        exec_jsonl_path=str(exec_jsonl_resolved),
-    )
 
     try:
         plan = plan_recover(
-            pipeline_state,
+            state_dir=args.state_dir,
+            exec_jsonl_path=str(exec_jsonl_resolved),
             workflow_name=workflow.name,
             handler_name=handler_name,
             issue_number=args.issue_number,

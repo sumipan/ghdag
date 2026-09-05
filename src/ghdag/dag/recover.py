@@ -8,9 +8,8 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
-from ghdag.io.done import read_done_content
-from ghdag.pipeline.state import PipelineState, build_idempotency_key
-from ghdag.pipeline.status import STATE_RUNNING, interpret_done, task_status
+from ghdag.io.done import interpret_done, read_done_content
+from ghdag.io import exec_jsonl
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +47,9 @@ class RecoverError(Exception):
 
 
 def plan_recover(
-    pipeline_state: PipelineState,
     *,
+    state_dir: str | Path,
+    exec_jsonl_path: str | Path,
     workflow_name: str,
     handler_name: str,
     issue_number: int,
@@ -59,11 +59,13 @@ def plan_recover(
     running_uuids: set[str] | None = None,
 ) -> RecoverPlan:
     """Build a recover plan for the current handler generation."""
-    generation = pipeline_state.get_generation(workflow_name, handler_name, issue_number)
-    idempotency_key = build_idempotency_key(
+    generation = exec_jsonl.get_generation(
+        state_dir, workflow_name, handler_name, issue_number,
+    )
+    idempotency_key = exec_jsonl.build_idempotency_key(
         workflow_name, handler_name, issue_number, generation,
     )
-    records = pipeline_state.find_records_by_idempotency_key(idempotency_key)
+    records = exec_jsonl.find_records_by_idempotency_key(exec_jsonl_path, idempotency_key)
     if not records:
         return RecoverPlan(
             idempotency_key=idempotency_key,
@@ -204,19 +206,13 @@ def format_recover_plan(plan: RecoverPlan) -> str:
 
 
 def collect_running_uuids(
-    exec_jsonl_path: str | Path,
     done_dir: str | Path,
     *,
     candidate_uuids: set[str],
+    running_uuids: set[str],
 ) -> set[str]:
-    """Return UUIDs that appear to be in-flight according to task_status."""
-    done_path = Path(done_dir)
-    running: set[str] = set()
-    for uuid in candidate_uuids:
-        status = task_status(uuid, done_path, running_uuids=set())
-        if status == STATE_RUNNING:
-            running.add(uuid)
-    return running
+    """Return candidate UUIDs that are currently marked as running."""
+    return {uuid for uuid in candidate_uuids if uuid in running_uuids}
 
 
 def _find_step_uuid(step_infos: list[RecoverStepInfo], step_name: str) -> str | None:

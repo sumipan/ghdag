@@ -25,27 +25,8 @@ from ghdag.io import exec_jsonl
 from ghdag.io.audit import AuditContext
 from ghdag.quota import QuotaGate
 
-
-def build_idempotency_key(
-    workflow_name: str,
-    handler_name: str,
-    issue_number: int,
-    generation: int = 0,
-) -> str:
-    """Build a handler idempotency key, preserving generation-0 backward compatibility."""
-    base = f"{workflow_name}:{handler_name}:{issue_number}"
-    if generation == 0:
-        return base
-    return f"{base}:{generation}"
-
-
-def handler_generation_key(
-    workflow_name: str,
-    handler_name: str,
-    issue_number: int,
-) -> str:
-    """Key used in generations.json (no generation suffix)."""
-    return f"{workflow_name}:{handler_name}:{issue_number}"
+build_idempotency_key = exec_jsonl.build_idempotency_key
+handler_generation_key = exec_jsonl.handler_generation_key
 
 
 class PipelineState:
@@ -79,10 +60,9 @@ class PipelineState:
         issue_number: int,
     ) -> int:
         """Return the current redispatch generation for an Issue × handler (default 0)."""
-        key = handler_generation_key(workflow_name, handler_name, issue_number)
-        data = self._load_generations()
-        value = data.get(key, 0)
-        return int(value) if isinstance(value, int) else 0
+        return exec_jsonl.get_generation(
+            self._state_dir, workflow_name, handler_name, issue_number,
+        )
 
     def increment_generation(
         self,
