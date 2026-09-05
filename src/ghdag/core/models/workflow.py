@@ -16,6 +16,7 @@ class StepConfig:
     permission: str | None = None  # capabilities プリセット名（None = エンジンデフォルト）
     skill_name: str | None = None  # このステップが呼び出すスキル名
     render: str = "frozen"  # "frozen"（enqueue 時展開）| "live"（実行時再展開 trampoline）
+    role: str | None = None  # QuotaGate ロール名（省略時はエンジン単位チェック）
 
 
 @dataclass
@@ -54,3 +55,17 @@ class WorkflowConfig:
     label_namespace: str | None = None     # ラベルプレフィックス（例: "issuesmith"）
     transitions: dict[str, list[str]] | None = None  # 状態遷移マップ
     reset_label: str | None = None         # 任意の状態から遷移可能な特殊ラベル
+    roles: dict[str, list[str]] = field(default_factory=dict)  # ロール名 → エンジン名リスト
+
+
+def validate_workflow_roles(config: WorkflowConfig) -> None:
+    """Raise ValueError when a step references an undeclared role."""
+    for handler_name, handler in config.handlers.items():
+        for step in handler.steps:
+            if step.role is None:
+                continue
+            if step.role not in config.roles:
+                raise ValueError(
+                    f"handler '{handler_name}' step '{step.id or step.template}': "
+                    f"role '{step.role}' is not declared in workflow roles"
+                )

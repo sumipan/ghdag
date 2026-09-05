@@ -158,12 +158,18 @@ def append(
         for rec in records:
             uuid = rec.get("uuid")
             engine = rec.get("engine")
-            if isinstance(uuid, str) and engine is not None:
-                quota_gate.admit(
-                    task_uuid=uuid,
-                    engine=str(engine),
-                    phase="enqueue",
-                )
+            if not isinstance(uuid, str):
+                continue
+            role, role_engines = _quota_role_fields(rec)
+            if engine is None and role is None:
+                continue
+            quota_gate.admit(
+                task_uuid=uuid,
+                engine=str(engine) if engine is not None else None,
+                phase="enqueue",
+                role=role,
+                role_engines=role_engines,
+            )
 
     uuids = [r["uuid"] for r in records if "uuid" in r]
     dp_uuids = default_permission_uuids
@@ -254,6 +260,25 @@ def remove_by_uuids(exec_jsonl_path: Path, uuids: set[str]) -> int:
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
     return removed
+
+
+def _quota_role_fields(record: dict) -> tuple[str | None, list[str] | None]:
+    annotations = record.get("annotations") or {}
+    role = record.get("role")
+    if role is None and isinstance(annotations, dict):
+        role = annotations.get("role")
+
+    role_engines = record.get("role_engines")
+    if role_engines is None and isinstance(annotations, dict):
+        role_engines = annotations.get("role_engines")
+
+    if role is not None and not isinstance(role, str):
+        role = str(role)
+    if isinstance(role_engines, list):
+        role_engines = [str(engine) for engine in role_engines]
+    else:
+        role_engines = None
+    return role, role_engines
 
 
 def extract_uuid(line: str) -> str | None:

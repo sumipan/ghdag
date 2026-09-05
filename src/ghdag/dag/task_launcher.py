@@ -64,6 +64,20 @@ def _task_request_id(task: Task) -> str | None:
     return task.annotations.get("_request_id")
 
 
+def _quota_role_kwargs(task: Task) -> dict[str, str | list[str] | None]:
+    role = task.annotations.get("role")
+    role_engines = task.annotations.get("role_engines")
+    if role is not None and not isinstance(role, str):
+        role = str(role)
+    if isinstance(role_engines, list):
+        role_engines = [str(engine) for engine in role_engines]
+    else:
+        role_engines = None
+    if role is None:
+        return {}
+    return {"role": role, "role_engines": role_engines}
+
+
 class TaskLauncher:
     """Manage subprocess launch and completion detection for DAG tasks."""
 
@@ -131,7 +145,11 @@ class TaskLauncher:
                 state_mark_done(self._config.exec_done_dir, uuid, DONE_SKIPPED_MISSING_INPUT)
                 return False
 
-        decision = self._quota_gate.begin_run(task_uuid=uuid, engine=launch_engine)
+        decision = self._quota_gate.begin_run(
+            task_uuid=uuid,
+            engine=launch_engine,
+            **_quota_role_kwargs(task),
+        )
         if not decision.allowed:
             logger.info(
                 "Task [%s] launch deferred by quota gate: engine=%s reason=%s",
