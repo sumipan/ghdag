@@ -84,6 +84,18 @@ def _quota_role_kwargs(task: Task) -> _QuotaRoleKwargs:
     return {"role": role, "role_engines": role_engines}
 
 
+def _resolve_task_timeout(task: Task, default: float | None) -> float | None:
+    raw = task.annotations.get("timeout_sec")
+    if raw is not None:
+        try:
+            value = float(raw)
+            if value > 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    return default
+
+
 class TaskLauncher:
     """Manage subprocess launch and completion detection for DAG tasks."""
 
@@ -212,7 +224,7 @@ class TaskLauncher:
         for uuid in list(self._running):
             rt = self._running[uuid]
 
-            task_timeout = self._config.task_timeout
+            task_timeout = _resolve_task_timeout(rt.task, self._config.task_timeout)
             if task_timeout is not None and rt.proc.poll() is None:
                 now = time.monotonic()
                 if rt.term_sent_at is None and (now - rt.started_at_mono) > task_timeout:
