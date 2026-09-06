@@ -193,6 +193,35 @@ def test_pr_list_already_qualified_head_unchanged(monkeypatch: pytest.MonkeyPatc
     assert params.get("head") == "o:feat/issue-1759-abcd1234"
 
 
+def test_pr_get_includes_head_ref_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pr_get() は pr_list() の _normalize_prs と同様に headRefName を含むこと。
+
+    実測: `pr view <n> --json headRefName` は本修正前、pr_get() が headRefName
+    キー自体を持たないため null を返していた
+    （m1-merge.md の local_merge_verify が空の headRefName で
+    `git merge-tree origin/main origin/` を実行し、常に conflict 誤報していた）。
+    """
+    client = GitHubClient(token="tok", repo="o/r")
+
+    def fake_request(method: str, path: str, **kwargs: object) -> dict | list:
+        if path.endswith("/files"):
+            return []
+        return {
+            "number": 42,
+            "title": "title",
+            "body": "body",
+            "state": "open",
+            "html_url": "https://github.com/o/r/pull/42",
+            "head": {"ref": "feat/issue-42-abcd1234"},
+            "mergeable_state": "clean",
+            "mergeable": True,
+        }
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    result = client.pr_get(42)
+    assert result["headRefName"] == "feat/issue-42-abcd1234"
+
+
 def test_pr_ready_sends_graphql_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
     client = GitHubClient(token="tok", repo="o/r")
 

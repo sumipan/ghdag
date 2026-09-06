@@ -478,6 +478,7 @@ class GitHubClient:
             "body": p.get("body"),
             "state": (p.get("state") or "").upper(),
             "url": p.get("html_url"),
+            "headRefName": (p.get("head") or {}).get("ref"),
             "additions": sum(f.get("additions", 0) for f in (files or [])),
             "deletions": sum(f.get("deletions", 0) for f in (files or [])),
             "changedFiles": len(files or []),
