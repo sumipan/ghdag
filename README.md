@@ -1,25 +1,16 @@
 # ghdag
 
-ghdag is a GitHub-driven DAG workflow engine: label-based issue dispatch plus a local dependency-aware queue runner in one Python package and CLI. Unlike CI-centric orchestrators such as GitHub Actions or Dagger, intake (`workflow` / `pipeline`) and execution (`dag`) stay separate processes that communicate only through `exec.jsonl` and `jobs/done/` markers.
+ghdag is a GitHub-driven DAG workflow engine: label-based issue dispatch and a local dependency-aware queue runner in one Python package and CLI. Unlike CI-centric orchestrators (GitHub Actions, Dagger), intake (`workflow` / `pipeline`) and execution (`dag`) stay separate processes that communicate only through `exec.jsonl` and `jobs/done/` markers.
 
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.36.0-blue)
+![version](https://img.shields.io/badge/version-v0.39.0-blue)
 ![ci](https://github.com/sumipan/ghdag/actions/workflows/test.yml/badge.svg?branch=main)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
-Current release is **v0.36.0** (`0.Y.Z`, pre-1.0). Public interfaces may change before `1.0.0`.
-
-## Not
-
-ghdag is **not**:
-
-- A replacement for GitHub Actions, Dagger, or other CI/CD runners
-- A hosted orchestration SaaS
-- An LLM provider SDK (it shells out to installed CLIs such as Claude / Codex / Cursor)
-- A general-purpose workflow language outside its YAML dispatch + `exec.jsonl` queue model
+Current release is **v0.39.0** (`0.Y.Z`, pre-1.0). Public interfaces may change before `1.0.0`.
 
 ## Installation
 
@@ -32,7 +23,7 @@ pip install ghdag
 Install a specific tag:
 
 ```bash
-pip install git+https://github.com/sumipan/ghdag.git@v0.36.0
+pip install git+https://github.com/sumipan/ghdag.git@v0.39.0
 ```
 
 | Item | Value |
@@ -74,6 +65,19 @@ export GITHUB_REPOSITORIES="owner/repo"
 ghdag watch workflows --exec-md jobs/exec.jsonl --once
 ```
 
+Re-dispatch a handler with a new generation:
+
+```bash
+ghdag trigger 123 --handler impl --redispatch --reason "manual retry"
+```
+
+Recover failed or pending steps from an existing handler run:
+
+```bash
+ghdag dag recover --issue 123 --handler impl --dry-run
+ghdag dag recover --issue 123 --handler impl --from p2
+```
+
 ## CLI Reference
 
 Global options: `--verbose` / `-v`, `--quiet` / `-q`.
@@ -85,6 +89,7 @@ Global options: `--verbose` / `-v`, `--quiet` / `-q`.
 | `ghdag run` | Run `exec.jsonl` via `DagEngine` |
 | `ghdag watch` | Poll GitHub issues and dispatch workflow handlers |
 | `ghdag trigger` | Trigger one workflow handler for one issue |
+| `ghdag dag` | DAG utilities (`recover`) |
 | `ghdag llm` | Execute one LLM call without workflow dispatch |
 | `ghdag cleanup` | Archive completed/orphaned queue tasks |
 | `ghdag quota` | Manage quota gate state |
@@ -97,6 +102,7 @@ Global options: `--verbose` / `-v`, `--quiet` / `-q`.
 
 | Command | Description |
 |---|---|
+| `ghdag dag recover` | Reset failed/pending steps for re-execution |
 | `ghdag tools list` | List tool definitions (`--path`, `--json`) |
 | `ghdag quota report` | Report engine quota availability |
 | `ghdag quota clear` | Clear engine quota pause state |
@@ -104,15 +110,14 @@ Global options: `--verbose` / `-v`, `--quiet` / `-q`.
 | `ghdag quota resume` | Release drain mode for one engine |
 | `ghdag quota status` | Print engine-level quota/drain/queue snapshot JSON |
 
-`ghdag quota status` returns per-engine `quota_status`, `draining`, `queued`, `deferred`, `running`, and `idle`.
-
 ### Key options
 
 | Command | Key options / arguments |
 |---|---|
 | `ghdag run` | `exec_jsonl`, `--interval`, `--hooks`, `--max-concurrency` |
 | `ghdag watch` | `workflows_dir`, `--interval`, `--exec-md`, `--once`, `--pause-file` |
-| `ghdag trigger` | `issue_number`, `--handler`, `--workflows-dir`, `--exec-md`, `--workflow` |
+| `ghdag trigger` | `issue_number`, `--handler`, `--workflows-dir`, `--exec-md`, `--workflow`, `--redispatch`, `--reason` |
+| `ghdag dag recover` | `--issue`, `--handler`, `--from`, `--dry-run`, `--workflows-dir`, `--exec-md`, `--workflow`, `--state-dir` |
 | `ghdag llm` | `prompt`, `--engine`, `--model`, `--timeout`, `--dangerously-skip-permissions`, `--permission-mode`, `--capabilities-preset`, `--stdin`, `--list-engines`, `--list-models`, `--audit-path`, `--correlation-id`, `--request-id` |
 | `ghdag cleanup` | `repo_root`, `--dry-run`, `--cutoff-days`, `--orphan-days`, `--auto-repair` |
 | `ghdag audit-query` | `--correlation-id`, `--burst-detect`, `--since`, `--audit-path`, `--window-sec`, `--threshold` |
@@ -123,6 +128,12 @@ Global options: `--verbose` / `-v`, `--quiet` / `-q`.
 | `ghdag quota resume` | `engine`, `--state-path` |
 | `ghdag quota status` | `--state-path`, `--exec-path`, `--done-dir` |
 | `ghdag tools list` | `--path`, `--json` |
+
+`ghdag trigger --redispatch` increments the handler generation and starts a new run; `--reason` is recorded in `audit.jsonl`.
+
+`ghdag dag recover --dry-run` prints the recover plan without modifying `jobs/done/` markers. `--from STEP_NAME` limits recovery to that step and its downstream dependents.
+
+`ghdag quota status` returns per-engine `quota_status`, `draining`, `queued`, `deferred`, `running`, and `idle`.
 
 ## Public API
 
@@ -149,28 +160,51 @@ Frequently used non-top-level entry points (imported from their modules):
 | `build_llm_cmd`, `call`, `call_text`, `call_managed` | `ghdag.llm` |
 | `md_read`, `md_write`, `md_append`, `md_promote` | `ghdag.files` |
 | `cleanup_queue` | `ghdag.cleanup` |
+| `plan_recover`, `execute_recover`, `RecoverPlan`, `RecoverResult`, `RecoverError` | `ghdag.dag.recover` |
+| `validate_workflow_roles` | `ghdag.core.models.workflow` |
+| `get_gate`, `GateRule`, `Violation` | `ghdag.workflow.gates` |
+| `typecheck_dag`, `TypeCheckError` | `ghdag.workflow.typecheck` |
 
 ## Architecture
 
-| Module | Role |
+Two towers communicate only through `exec.jsonl` and `jobs/done/` markers: **intake** (`pipeline` / `workflow`) and **execution** (`dag`). Import-linter contracts enforce that boundary.
+
+| Module / package | Role |
 |---|---|
-| `cleanup/` | Queue archival, orphan detection, and pruning |
-| `cli/` | CLI entry point and subcommand handlers |
-| `core/` | Foundations: exceptions, command adapters, models, ports |
-| `dag/` | Local DAG engine, fanout, circuit breaker, session compaction |
-| `files/` | Markdown file ops (append, promote, links) |
-| `io/` | Queue / done / audit / `exec.jsonl` I/O |
+| `cleanup/` | Queue archival, orphan detection, link rewriting, pruning |
+| `cli/` | CLI entry point (`main.py`) and subcommand handlers |
+| `core/` | Foundations: exceptions, command adapters, models, ports, capabilities |
+| `dag/` | Local DAG engine, fanout, circuit breaker, recover, session compaction |
+| `files/` | Markdown file ops (read, write, append, promote, links) |
+| `io/` | Queue, done, audit, `exec.jsonl`, session I/O |
 | `llm/` | LLM engines, capabilities presets, adapters, compaction |
 | `markdown/` | Issue body H2 section editor |
-| `metrics/` | Task metrics and `FailureClass` |
-| `pipeline/` | Order submission, audit hooks, pipeline state |
-| `tool/` | Tool definitions and `ToolRegistry` |
-| `ui/` | Web dashboard and monitor |
-| `workflow/` | YAML loader, dispatcher, gates, state machine |
+| `metrics/` | Task metrics, token parsing, `FailureClass` |
+| `pipeline/` | Order submission, audit hooks, pipeline state, LLM pipeline API |
+| `tool/` | Tool definitions, registry, CLI helpers |
+| `ui/` | Web dashboard, SSE monitor, static assets |
+| `workflow/` | YAML loader, dispatcher, gates, state machine, typecheck |
 
 Top-level package files: `__init__.py` (public API), `__main__.py` (`python -m ghdag`), `exceptions.py` (re-export shim), `github_cli.py` / `github_client.py`, `maintenance.py`, `quota.py`, `py.typed`.
 
-Two towers communicate only through `exec.jsonl` and `jobs/done/` markers: **intake** (`pipeline` / `workflow`) and **execution** (`dag`). Import-linter contracts enforce that boundary.
+### Workflow gates (entry-points)
+
+Gate rules resolve through `ghdag.workflow.gates.get_gate`:
+
+1. `GATE_REGISTRY` (import-time registration)
+2. `importlib.metadata` entry-points in group `ghdag.gates`
+
+Run a gate against an issue body: `python -m ghdag.workflow.gates --gate NAME --body-file PATH`.
+
+### Role-based quota admission
+
+Workflow YAML may declare `roles` (role name → engine list). Steps reference a `role`; `QuotaGate.check_admission` evaluates all engines in that role. When an engine is paused, `override_until` (TTL pause override) prevents stale pause reports from overwriting a fresher override window.
+
+`validate_workflow_roles(config)` raises `ValueError` when a step references an undeclared role.
+
+### DAG recover
+
+`ghdag.dag.recover` builds a `RecoverPlan` from pipeline state, `exec.jsonl` idempotency keys, and `jobs/done/` markers, then `execute_recover` clears done markers so `DagEngine` re-runs selected steps.
 
 ## Configuration
 
@@ -201,7 +235,7 @@ engines:
 
 ### Quota state file
 
-`ghdag quota` reads/writes JSON state (default path `jobs/quota-gate.json`).
+`ghdag quota` reads/writes JSON state (default path `jobs/quota-gate.json`). Deferred tasks may record `role` and `role_engines` for role-based admission.
 
 ## Error Reference
 
@@ -230,7 +264,13 @@ GhdagError (core/exceptions.py)
 
 `*` = also inherits `ValueError` (catchable with `except ValueError`).
 
-Outside the `GhdagError` tree: `TemplateVariableError` (`pipeline/order.py` — `ValueError` + `KeyError`; not yet integrated under `GhdagError`).
+Outside the `GhdagError` tree:
+
+| Type | Module | Notes |
+|---|---|---|
+| `RecoverError` | `dag/recover.py` | Recover plan/execution failure |
+| `TemplateVariableError` | `pipeline/order.py` | Template variable missing (`ValueError` + `KeyError`) |
+| `TypeCheckError` | `workflow/typecheck.py` | Static skill I/O mismatch (dataclass, not `Exception`) |
 
 `ghdag.exceptions` re-exports `GhdagError`, `GitHubApiError`, `AuthError`, `RateLimitError`, `PermissionDeniedError`, and `NetworkError` for backward compatibility.
 
@@ -256,18 +296,9 @@ Outside the `GhdagError` tree: `TemplateVariableError` (`pipeline/order.py` — 
 | `AppendRecoverError` | `ghdag.files.append` | Markdown append recovery failure (`ValueError`) |
 | `PathTraversalError` | `ghdag.core.models.files` | Path traversal attempt detected (`ValueError`) |
 | `ToolRegistryError` | `ghdag.tool.exceptions` | Tool registry error |
-
-## Public API Stability
-
-ghdag follows SemVer while remaining **pre-1.0** (`0.Y.Z`):
-
-| Kind of change | Version impact |
-|---|---|
-| Breaking change to public CLI flags, `ghdag.__all__` symbols, or documented env vars | Minor bump (`0.Y`) |
-| Backward-compatible feature | Patch or minor, depending on scope |
-| Bug fix without API change | Patch (`0.0.Z`) |
-
-Treat symbols listed in **Public API** and commands in **CLI Reference** as the supported surface. Undocumented private modules (leading underscore) may change without notice. Prefer pinning to a release tag until `1.0.0`.
+| `RecoverError` | `ghdag.dag.recover` | Recover cannot proceed |
+| `TemplateVariableError` | `ghdag.pipeline.order` | Missing template variable |
+| `TypeCheckError` | `ghdag.workflow.typecheck` | Skill I/O typecheck failure (dataclass) |
 
 ## License
 
