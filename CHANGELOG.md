@@ -7,15 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
-### Fixed
-
-- cursor / codex の resume セッション記録: `CursorAdapter` は実測 JSON の `session_id`（`chat_id` 後方互換）・`result`・`usage.inputTokens/outputTokens` を抽出し、`CodexAdapter` は `thread.started.thread_id`（`session_id` 後方互換）を抽出するよう修正。DAG 経路の cursor に `--output-format json` を付与し、stream 指定時は `--output-format stream-json` と重複しないよう dedupe する（#2968）
-
 ### Added
 
+- DAG claude 進捗イベント: エンジン既定を `--output-format stream-json --verbose` に切替。stdout を行単位で `jobs/events/<uuid>.jsonl` に追記し、`on_task_progress` フックと UI SSE の `progress`（tool / path / assistant_text）を配信。result ファイルは従来どおり最終 `result` テキスト（#2966）
 - DAG タスクキャンセル: `jobs/running/<uuid>.json` / `jobs/cancel/<uuid>` 制御ファイル、`DONE_CANCELLED`、`on_task_cancelled` フック、`ghdag dag cancel <uuid>` CLI。UI `/api/stop` は `ps` 直殺しから制御ファイル経路へ置換
 - `ghdag.gates` entry-point によるゲート登録（`load_entry_point_gates` / `get_gate`）。`GATE_REGISTRY`（import 副作用）が同名時に優先し、ロード失敗は fail-open
 - `StepConfig.render`（`"frozen"` | `"live"`）と `python -m ghdag.workflow.render`。`render: live` の shell step は enqueue 時に trampoline を凍結し、実行時にテンプレートを再読込・再展開する
+
+### Fixed
+
+- cursor / codex の resume セッション記録: `CursorAdapter` は実測 JSON の `session_id`（`chat_id` 後方互換）・`result`・`usage.inputTokens/outputTokens` を抽出し、`CodexAdapter` は `thread.started.thread_id`（`session_id` 後方互換）を抽出するよう修正。DAG 経路の cursor に `--output-format json` を付与し、stream 指定時は `--output-format stream-json` と重複しないよう dedupe する（#2968）
 
 
 ## 0.34.3 — 2026-09-02

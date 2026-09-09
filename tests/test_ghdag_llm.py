@@ -644,12 +644,12 @@ class TestRenderExecCommand:
     def test_claude_with_model(self):
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model="claude-opus-4-6")
-        assert cmd == "claude -p --model 'claude-opus-4-6' --output-format json --dangerously-skip-permissions < queue/order.md"
+        assert cmd == "claude -p --model 'claude-opus-4-6' --output-format stream-json --verbose --dangerously-skip-permissions < queue/order.md"
 
     def test_claude_without_model(self):
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model=None)
-        assert cmd == "claude -p --output-format json --dangerously-skip-permissions < queue/order.md"
+        assert cmd == "claude -p --output-format stream-json --verbose --dangerously-skip-permissions < queue/order.md"
 
     def test_gemini_with_model(self):
         spec = ENGINE_SPECS["gemini"]
@@ -727,7 +727,7 @@ class TestAdapterOutputs:
         assert record["uuid"] == "u1"
         cmd = record["command"]
         assert cmd == (
-            "claude -p --model 'claude-sonnet-4-6' --output-format json"
+            "claude -p --model 'claude-sonnet-4-6' --output-format stream-json --verbose"
             " --dangerously-skip-permissions < queue/order.md"
         )
 

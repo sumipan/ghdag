@@ -46,7 +46,7 @@ from ghdag.metrics.models import FailureClass, TaskMetrics
 from ghdag.metrics.parsers import parse_engine_model
 from ghdag.quota import QuotaGate
 
-from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
+from ._util import _extract_tee_target, _stderr_reader, _stdout_line_reader, _stdout_reader
 from .circuit_breaker import CircuitBreakerPolicy
 from .engine_quarantine import EngineQuarantine
 from .fanout import parse_fanout_spec
@@ -62,6 +62,11 @@ _RESUME_ERROR_RE = re.compile(
     r"(resume|session|chat_id|not found|expired|invalid)",
     re.IGNORECASE,
 )
+
+
+def _engine_emits_stream_events(engine: str | None) -> bool:
+    """DAG 経路で jobs/events へ行単位追記するエンジンか。"""
+    return engine == "claude"
 
 
 def _task_request_id(task: Task) -> str | None:
@@ -192,7 +197,23 @@ class TaskLauncher:
                     cwd=cwd,
                 )
                 stdout_buf = io.BytesIO()
-                t_stdout = threading.Thread(target=_stdout_reader, args=(proc, stdout_buf), daemon=True)
+                if _engine_emits_stream_events(launch_engine):
+                    events_path = self._events_path(uuid)
+
+                    def _on_event(event: dict, _uuid: str = uuid) -> None:
+                        cb = getattr(self._hooks, "on_task_progress", None)
+                        if cb is not None:
+                            cb(_uuid, event)
+
+                    t_stdout = threading.Thread(
+                        target=_stdout_line_reader,
+                        args=(proc, stdout_buf, events_path, _on_event),
+                        daemon=True,
+                    )
+                else:
+                    t_stdout = threading.Thread(
+                        target=_stdout_reader, args=(proc, stdout_buf), daemon=True
+                    )
                 t_stdout.start()
             else:
                 proc = subprocess.Popen(
@@ -676,6 +697,9 @@ class TaskLauncher:
 
     def _cancel_path(self, uuid: str) -> Path:
         return self._queue_dir() / "cancel" / uuid
+
+    def _events_path(self, uuid: str) -> Path:
+        return self._queue_dir() / "events" / f"{uuid}.jsonl"
 
     def _write_running_file(
         self,

@@ -67,6 +67,71 @@ def _read_static(filename: str) -> bytes:
     return path.read_bytes()
 
 
+_ASSISTANT_TEXT_PREVIEW = 200
+
+
+def _progress_from_event(event: dict) -> dict:
+    """SSE 向けに tool 名・対象パス・assistant テキスト先頭を抽出する。"""
+    out: dict = {}
+    event_type = event.get("type")
+    if event_type == "assistant":
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            return out
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use":
+                name = block.get("name")
+                if isinstance(name, str) and name:
+                    out["tool"] = name
+                inp = block.get("input")
+                if isinstance(inp, dict):
+                    path = (
+                        inp.get("file_path")
+                        or inp.get("path")
+                        or inp.get("filePath")
+                    )
+                    if isinstance(path, str) and path:
+                        out["path"] = path
+            elif block.get("type") == "text":
+                text = block.get("text")
+                if isinstance(text, str) and text:
+                    out["assistant_text"] = text[:_ASSISTANT_TEXT_PREVIEW]
+    elif event_type == "result":
+        result = event.get("result")
+        if isinstance(result, str) and result:
+            out["assistant_text"] = result[:_ASSISTANT_TEXT_PREVIEW]
+    return out
+
+
+def _latest_progress(repo_root: Path, uuid: str) -> dict | None:
+    """jobs/events/<uuid>.jsonl の最新の意味ある進捗を返す。"""
+    path = repo_root / "jobs" / "events" / f"{uuid}.jsonl"
+    if not path.is_file():
+        return None
+    last: dict | None = None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                try:
+                    obj = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                prog = _progress_from_event(obj)
+                if prog:
+                    last = prog
+    except OSError:
+        return None
+    return last
+
+
 def _build_snapshot(repo_root: Path, max_visible: int = 30) -> list[dict]:
     rows, tasks, file_order = build_rows(repo_root)
     if not rows:
@@ -75,7 +140,14 @@ def _build_snapshot(repo_root: Path, max_visible: int = 30) -> list[dict]:
         rows, tasks, file_order, full=False, max_visible=max_visible,
     )
     rows = relayout_tree_for_visible_rows(rows, tasks, file_order)
-    return [r.to_dict() for r in rows]
+    out: list[dict] = []
+    for row in rows:
+        data = row.to_dict()
+        progress = _latest_progress(repo_root, data["uuid"])
+        if progress:
+            data["progress"] = progress
+        out.append(data)
+    return out
 
 
 def _request_cancel(repo_root: Path, uuid: str) -> tuple[bool, str]:
