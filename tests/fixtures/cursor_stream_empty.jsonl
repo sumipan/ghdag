@@ -1,0 +1,4 @@
+{"type": "system", "subtype": "init", "session_id": "6a62cded-861a-4e6f-9f7d-8f5e0b598831", "model": "Auto", "cwd": "/tmp/fixture"}
+{"type": "thinking", "subtype": "completed", "session_id": "6a62cded-861a-4e6f-9f7d-8f5e0b598831"}
+{"type": "thinking", "subtype": "completed", "session_id": "6a62cded-861a-4e6f-9f7d-8f5e0b598831"}
+{"type": "result", "subtype": "success", "is_error": false, "result": "", "session_id": "6a62cded-861a-4e6f-9f7d-8f5e0b598831", "usage": {"inputTokens": 16872, "outputTokens": 102, "cacheReadTokens": 13568, "cacheWriteTokens": 0}, "duration_ms": 8094}

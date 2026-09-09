@@ -40,18 +40,18 @@ _DEFAULT_ADAPTER = _PassthroughAdapter()
 def get_output_adapter(engine: str | None) -> EngineOutputAdapter:
     """エンジン名から適切な EngineOutputAdapter を返す。
 
-    claude エンジンの output_format デフォルトは json。
-    JSON parse 失敗時は raw stdout を返すフォールバックが ClaudeJsonAdapter に内蔵されている。
+    claude エンジンの output_format デフォルトは json / stream-json。
+    cursor / codex は stream 対応アダプター（単一 JSON / JSONL 両対応）を返す。
     """
     if engine == "claude":
         from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
         return ClaudeJsonAdapter()
     if engine == "cursor":
-        from ghdag.llm.adapters.cursor import CursorAdapter
-        return CursorAdapter()
+        from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
+        return CursorStreamAdapter()
     if engine == "codex":
-        from ghdag.llm.adapters.codex import CodexAdapter
-        return CodexAdapter()
+        from ghdag.llm.adapters.codex_jsonl import CodexJsonlAdapter
+        return CodexJsonlAdapter()
     return _DEFAULT_ADAPTER
 
 

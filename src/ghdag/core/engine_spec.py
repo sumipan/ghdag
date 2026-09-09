@@ -67,7 +67,8 @@ ENGINE_SPECS: dict[str, EngineSpec] = {
         default_model="auto",
         danger_flag="--force",
         danger_flag_position="leading",
-        extra_args=("--output-format", "json"),
+        # DAG 既定は stream-json（#2967）。--print(-p) 必須は prompt_flag で担保。
+        extra_args=("--output-format", "stream-json", "--stream-partial-output"),
     ),
     "shell": EngineSpec(
         name="shell", cli="bash",

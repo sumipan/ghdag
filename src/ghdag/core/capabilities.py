@@ -12,7 +12,7 @@ class LLMCapabilities:
     output_format: str = "text"  # "text" | "json"
     allowed_tools: tuple[str, ...] = ()  # 空 = 指定なし（CLI に渡さない）
     disallowed_tools: tuple[str, ...] = ()  # 空 = 指定なし（CLI に渡さない）
-    stream: bool = False  # True 時 --output-format stream-json（output_format を上書き）
+    stream: bool = False  # True 時 stream 出力（claude/cursor: stream-json、codex: --json）
     sandbox: str = "off"  # "off" | "readonly"
     resume: bool = False  # True 時セッション再開フローを許可
 

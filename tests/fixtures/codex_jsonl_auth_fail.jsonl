@@ -1,0 +1,14 @@
+{"type": "thread.started", "thread_id": "01a085e0-3f5d-7713-821e-ab7a89faa2e9"}
+{"type": "turn.started"}
+{"type": "error", "message": "Reconnecting... 2/5 (unexpected status 401 Unauthorized: {\n  \"error\": {, url: wss://api.openai.com/v1/responses, cf-ray: a385c4e3cb22c255-NRT, request id: req_3c625449ddb541838951f…"}
+{"type": "error", "message": "Reconnecting... 3/5 (unexpected status 401 Unauthorized: {\n  \"error\": {, url: wss://api.openai.com/v1/responses, cf-ray: a385c4ea6aa4d4e7-NRT, request id: req_4a49cddd0a0a49fb9c70c…"}
+{"type": "error", "message": "Reconnecting... 4/5 (unexpected status 401 Unauthorized: {\n  \"error\": {, url: wss://api.openai.com/v1/responses, cf-ray: a385c4f3db15e3b3-NRT, request id: req_dbd44bb5f02d4f3394505…"}
+{"type": "error", "message": "Reconnecting... 5/5 (unexpected status 401 Unauthorized: {\n  \"error\": {, url: wss://api.openai.com/v1/responses, cf-ray: a385c5027da468d3-NRT, request id: req_09ba394e06604cabb9ef8…"}
+{"type": "item.completed", "item": {"id": "item_0", "type": "error", "message": "Falling back from WebSockets to HTTPS transport. unexpected status 401 Unauthorized: {\n  \"error\": {, url: wss://api.openai.com/v1/responses, cf-ray: a385c518cb0fc515-NRT, request i…"}}
+{"type": "error", "message": "Reconnecting... 1/5 (unexpected status 401 Unauthorized: Incorrect API key provided: sk-inval***************2967. You can find your API key at https://platform.openai.com/account/a…"}
+{"type": "error", "message": "Reconnecting... 2/5 (unexpected status 401 Unauthorized: Incorrect API key provided: sk-inval***************2967. You can find your API key at https://platform.openai.com/account/a…"}
+{"type": "error", "message": "Reconnecting... 3/5 (unexpected status 401 Unauthorized: Incorrect API key provided: sk-inval***************2967. You can find your API key at https://platform.openai.com/account/a…"}
+{"type": "error", "message": "Reconnecting... 4/5 (unexpected status 401 Unauthorized: Incorrect API key provided: sk-inval***************2967. You can find your API key at https://platform.openai.com/account/a…"}
+{"type": "error", "message": "Reconnecting... 5/5 (unexpected status 401 Unauthorized: Incorrect API key provided: sk-inval***************2967. You can find your API key at https://platform.openai.com/account/a…"}
+{"type": "error", "message": "unexpected status 401 Unauthorized: Incorrect API key provided: sk-inval***************2967. You can find your API key at https://platform.openai.com/account/api-keys., url: https:…"}
+{"type": "turn.failed", "error": {"message": "unexpected status 401 Unauthorized: Incorrect API key provided: sk-inval***************2967. You can find your API key at https://platform.openai.com/account/api-keys., url: https://api.openai.com/v1/responses, cf-ray: a385c54cdf0beb71-NRT, request id: req_ace64a54adc04a62bbddcd48f9cc78bd, auth error: 401, auth error code: invalid_api_key"}}

@@ -135,7 +135,7 @@ Global options: `--verbose` / `-v`, `--quiet` / `-q`.
 
 `ghdag quota status` returns per-engine `quota_status`, `draining`, `queued`, `deferred`, `running`, and `idle`.
 
-While a claude DAG task runs with `result_path`, stdout is drained line-by-line into `jobs/events/<uuid>.jsonl` (`--output-format stream-json --verbose`). The UI SSE snapshot may include a `progress` object (`tool`, `path`, `assistant_text`) from the latest meaningful event. Non-stream engines do not create events files.
+While a claude / cursor / codex DAG task runs with `result_path`, stdout is drained line-by-line into `jobs/events/<uuid>.jsonl` when the command includes stream flags (`claude`: always; `cursor`: `-p` + `--output-format stream-json`; `codex`: `--json`). The UI SSE snapshot may include a `progress` object (`tool`, `path`, `assistant_text`) from the latest meaningful event. If stream flags are missing for a stream-capable engine, the launcher falls back to bulk stdout reads and records `stream_fallback=true` in task annotations. gemini / shell do not create events files.
 
 ## Public API
 

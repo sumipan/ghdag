@@ -64,9 +64,36 @@ _RESUME_ERROR_RE = re.compile(
 )
 
 
+_STREAM_EVENT_ENGINES = frozenset({"claude", "cursor", "codex"})
+
+
+def _command_supports_streaming(engine: str | None, command: str) -> bool:
+    """コマンドに stream 出力に必要なフラグがあるか。"""
+    if engine == "claude":
+        # DAG 既定は常に stream-json。後方互換で engine 判定のみ（#2966）。
+        return True
+    tokens = command.split()
+    if engine == "cursor":
+        has_print = "-p" in tokens or "--print" in tokens
+        return has_print and "stream-json" in command
+    if engine == "codex":
+        return "--json" in tokens
+    return False
+
+
 def _engine_emits_stream_events(engine: str | None) -> bool:
-    """DAG 経路で jobs/events へ行単位追記するエンジンか。"""
-    return engine == "claude"
+    """DAG 経路で jobs/events へ行単位追記しうるエンジンか。"""
+    return engine in _STREAM_EVENT_ENGINES
+
+
+def _should_use_line_reader(engine: str | None, command: str, annotations: dict) -> bool:
+    """行単位ドレインを使うか。使えない場合は stream_fallback を記録して False。"""
+    if not _engine_emits_stream_events(engine):
+        return False
+    if _command_supports_streaming(engine, command):
+        return True
+    annotations["stream_fallback"] = "true"
+    return False
 
 
 def _task_request_id(task: Task) -> str | None:
@@ -197,7 +224,7 @@ class TaskLauncher:
                     cwd=cwd,
                 )
                 stdout_buf = io.BytesIO()
-                if _engine_emits_stream_events(launch_engine):
+                if _should_use_line_reader(launch_engine, task.command, task.annotations):
                     events_path = self._events_path(uuid)
 
                     def _on_event(event: dict, _uuid: str = uuid) -> None:

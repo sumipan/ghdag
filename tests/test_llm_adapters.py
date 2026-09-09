@@ -10,6 +10,7 @@ from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.adapters.claude_text import ClaudeTextAdapter
 from ghdag.llm.adapters.cursor import CursorAdapter
+from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
 from ghdag.metrics.models import TokenUsage
 
 # ---------------------------------------------------------------------------
@@ -208,9 +209,9 @@ class TestGetOutputAdapter:
         adapter = get_output_adapter("claude")
         assert isinstance(adapter, ClaudeJsonAdapter)
 
-    def test_cursor_returns_cursor_adapter(self):
+    def test_cursor_returns_cursor_stream_adapter(self):
         adapter = get_output_adapter("cursor")
-        assert isinstance(adapter, CursorAdapter)
+        assert isinstance(adapter, CursorStreamAdapter)
 
     def test_none_engine_returns_passthrough(self):
         """engine=None はデフォルトアダプターを返す（stdout パススルー）。"""
