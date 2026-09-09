@@ -250,7 +250,7 @@ class TestStdoutLineReader:
         # Slow-ish line producer so the reader can observe growth
         script = (
             "import sys, time\n"
-            f"data = { _STREAM_TOOLS!r }\n"
+            f"data = {_STREAM_TOOLS!r}\n"
             "for line in data.splitlines(True):\n"
             "    sys.stdout.write(line)\n"
             "    sys.stdout.flush()\n"
