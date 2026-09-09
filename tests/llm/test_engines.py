@@ -180,6 +180,39 @@ class TestCallResumeSessionId:
         assert result.session_id == "sess-abc"
         adapter.extract_session_id.assert_called_once_with(b"ok", b"")
 
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_cursor_extracts_session_id_from_real_json(self, mock_run: MagicMock):
+        """cursor 実測 JSON stdout から session_id を抽出する。"""
+        stdout = (
+            '{"type":"result","subtype":"success","is_error":false,'
+            '"result":"pong",'
+            '"session_id":"85105031-11df-48a2-a791-812a0128b4cf",'
+            '"usage":{"inputTokens":7144,"outputTokens":73}}'
+        )
+        mock_run.return_value = MagicMock(stdout=stdout, stderr="", returncode=0)
+        result = call("hello", engine="cursor", capabilities=LLMCapabilities())
+        assert result.session_id == "85105031-11df-48a2-a791-812a0128b4cf"
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_text_cursor_extracts_result_from_json(self, mock_run: MagicMock):
+        """call_text(cursor) が JSON の result を body にし、session_id を保持する。"""
+        from ghdag.llm.adapters.cursor import CursorAdapter
+        from ghdag.llm.engines import call_text
+
+        stdout = (
+            '{"type":"result","subtype":"success","is_error":false,'
+            '"result":"pong",'
+            '"session_id":"85105031-11df-48a2-a791-812a0128b4cf",'
+            '"usage":{"inputTokens":7144,"outputTokens":73}}'
+        )
+        mock_run.return_value = MagicMock(stdout=stdout, stderr="", returncode=0)
+        result = call_text("hello", engine="cursor", capabilities=LLMCapabilities())
+        assert result.body == "pong"
+        assert result.session_id == "85105031-11df-48a2-a791-812a0128b4cf"
+        usage = CursorAdapter().extract_token_usage(stdout.encode("utf-8"), b"")
+        assert usage is not None
+        assert usage.token_count == 7217
+
 
 class TestCodexUnsupportedCapabilities:
     def test_codex_unsupported_stream(self):
@@ -320,6 +353,25 @@ class TestExtraArgsDedupe:
             model="claude-sonnet-4-6", capabilities=PRESETS["text_only"],
         )
         assert "--output-format json" in cmd
+
+    def test_cursor_text_only_keeps_extra_args_output_format(self):
+        """cursor + text_only でも extra_args の --output-format json が残る。"""
+        from ghdag.llm.capabilities import PRESETS
+        cmd = render_exec_command(
+            ENGINE_SPECS["cursor"], order_path="jobs/order.md",
+            model="auto", capabilities=PRESETS["text_only"],
+        )
+        assert cmd.split().count("--output-format") == 1
+        assert "--output-format json" in cmd
+
+    def test_cursor_stream_dedupes_output_format(self):
+        """cursor + stream は stream-json が優先され json と重複しない。"""
+        cmd = render_exec_command(
+            ENGINE_SPECS["cursor"], order_path="jobs/order.md",
+            model="auto", capabilities=LLMCapabilities(stream=True),
+        )
+        assert cmd.split().count("--output-format") == 1
+        assert "--output-format stream-json" in cmd
 
     def test_gemini_without_builder_keeps_extra_args(self):
         """builder を持たないエンジンの extra_args は変化しない。"""

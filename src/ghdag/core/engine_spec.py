@@ -67,6 +67,7 @@ ENGINE_SPECS: dict[str, EngineSpec] = {
         default_model="auto",
         danger_flag="--force",
         danger_flag_position="leading",
+        extra_args=("--output-format", "json"),
     ),
     "shell": EngineSpec(
         name="shell", cli="bash",

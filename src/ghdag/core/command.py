@@ -94,16 +94,22 @@ def _build_cursor_flags(
     # cursor CLI `--sandbox <enabled|disabled>` は config を上書きする二値モード
     # （agent --help 実測）。enabled 時は Cursor のサンドボックスを強制する。
     # 書き込み・ネットワーク遮断の詳細は CLI/設定依存。--force との同時指定は矛盾。
+    # stream=True 時は --output-format stream-json を出し、EngineSpec.extra_args の
+    # --output-format json と _dedupe_extra_args で重複しないようにする（#2968）。
+    # 行単位進捗イベント処理自体は #2966 / #2967 のスコープ。
+    flags: list[str] = []
     bypass = dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions"
     if capabilities.sandbox == "readonly":
         if bypass:
             raise ValueError(
                 "sandbox='readonly' conflicts with --force (bypass permissions)"
             )
-        return ["--sandbox", "enabled"]
-    if bypass:
-        return ["--force"]
-    return []
+        flags += ["--sandbox", "enabled"]
+    elif bypass:
+        flags.append("--force")
+    if capabilities.stream:
+        flags += ["--output-format", "stream-json"]
+    return flags
 
 
 def _build_codex_flags(

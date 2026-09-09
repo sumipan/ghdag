@@ -666,18 +666,26 @@ class TestRenderExecCommand:
     def test_cursor_with_model(self):
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model="auto")
-        assert cmd == "agent --model 'auto' -p --force < queue/order.md"
+        assert cmd == (
+            "agent --model 'auto' -p --force --output-format json < queue/order.md"
+        )
 
     def test_cursor_without_model(self):
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model=None)
-        assert cmd == "agent -p --force < queue/order.md"
+        assert cmd == "agent -p --force --output-format json < queue/order.md"
 
     def test_cursor_p_force_adjacent(self):
         """-p と --force が隣接していること"""
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model="auto")
         assert "-p --force" in cmd
+
+    def test_cursor_includes_output_format_json(self):
+        """DAG 経路の cursor コマンドに --output-format json が含まれる。"""
+        spec = ENGINE_SPECS["cursor"]
+        cmd = render_exec_command(spec, order_path="queue/order.md", model="auto")
+        assert "--output-format json" in cmd
 
     def test_shell_command(self):
         spec = ENGINE_SPECS["shell"]
@@ -855,3 +863,15 @@ class TestRenderExecCommandCapabilities:
         assert "--output-format" in cmd
         assert "stream-json" in cmd
         assert "--verbose" in cmd
+
+    def test_cursor_stream_prefers_stream_json_without_duplicate(self):
+        """cursor stream 指定時は stream-json が優先され --output-format は 1 回だけ。"""
+        caps = LLMCapabilities(stream=True)
+        spec = ENGINE_SPECS["cursor"]
+        cmd = render_exec_command(
+            spec, order_path="queue/order.md", model="auto",
+            capabilities=caps,
+        )
+        assert cmd.split().count("--output-format") == 1
+        assert "--output-format stream-json" in cmd
+        assert "--output-format json" not in cmd

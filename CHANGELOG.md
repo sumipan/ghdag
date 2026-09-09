@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Fixed
+
+- cursor / codex の resume セッション記録: `CursorAdapter` は実測 JSON の `session_id`（`chat_id` 後方互換）・`result`・`usage.inputTokens/outputTokens` を抽出し、`CodexAdapter` は `thread.started.thread_id`（`session_id` 後方互換）を抽出するよう修正。DAG 経路の cursor に `--output-format json` を付与し、stream 指定時は `--output-format stream-json` と重複しないよう dedupe する（#2968）
+
 ### Added
 
 - DAG タスクキャンセル: `jobs/running/<uuid>.json` / `jobs/cancel/<uuid>` 制御ファイル、`DONE_CANCELLED`、`on_task_cancelled` フック、`ghdag dag cancel <uuid>` CLI。UI `/api/stop` は `ps` 直殺しから制御ファイル経路へ置換

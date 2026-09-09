@@ -152,8 +152,22 @@ class TestCallText:
         assert result.body == "hello"
         assert result.success is True
 
-    def test_cursor_engine_passes_through_stdout(self):
-        """CursorAdapter が stdout をそのまま body にパススルーすること。"""
+    def test_cursor_engine_extracts_json_result(self):
+        """CursorAdapter が JSON stdout の result を body に抽出すること。"""
+        import json
+        payload = json.dumps({
+            "type": "result",
+            "result": "pong",
+            "session_id": "85105031-11df-48a2-a791-812a0128b4cf",
+        })
+        mock_result = _make_llm_result(stdout=payload)
+        with patch("ghdag.llm.engines.call", return_value=mock_result):
+            result = call_text("test prompt", engine="cursor")
+        assert result.body == "pong"
+        assert result.success is True
+
+    def test_cursor_engine_passes_through_plain_text(self):
+        """CursorAdapter が非 JSON stdout をそのまま body にパススルーすること。"""
         mock_result = _make_llm_result(stdout="cursor output")
         with patch("ghdag.llm.engines.call", return_value=mock_result):
             result = call_text("test prompt", engine="cursor")
