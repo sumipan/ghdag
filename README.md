@@ -135,6 +135,8 @@ Global options: `--verbose` / `-v`, `--quiet` / `-q`.
 
 `ghdag quota status` returns per-engine `quota_status`, `draining`, `queued`, `deferred`, `running`, and `idle`.
 
+While a claude DAG task runs with `result_path`, stdout is drained line-by-line into `jobs/events/<uuid>.jsonl` (`--output-format stream-json --verbose`). The UI SSE snapshot may include a `progress` object (`tool`, `path`, `assistant_text`) from the latest meaningful event. Non-stream engines do not create events files.
+
 ## Public API
 
 `ghdag.__all__` exports these top-level symbols:

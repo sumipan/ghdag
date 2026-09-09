@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import io
+import json
 import re
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 from ghdag.core.vocabulary import PIPELINE_STATUS_RE
@@ -51,6 +53,54 @@ def _stdout_reader(proc: subprocess.Popen, buf: io.BytesIO) -> None:
     finally:
         try:
             proc.stdout.close()
+        except (OSError, ValueError):
+            pass
+
+
+def _stdout_line_reader(
+    proc: subprocess.Popen,
+    buf: io.BytesIO,
+    events_path: Path,
+    on_event: Callable[[dict], None] | None = None,
+) -> None:
+    """Read stdout line-by-line into buf, appending each line to events_path.
+
+    Used for stream-json engines (claude). Non-stream engines keep `_stdout_reader`.
+    fsync は不要（追記のみ）。on_event は JSON としてパースできた行だけ呼ばれる。
+    """
+    try:
+        stdout = proc.stdout
+        if stdout is None:
+            return
+        events_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(events_path, "ab") as events_f:
+            while True:
+                line = stdout.readline()
+                if not line:
+                    break
+                buf.write(line)
+                events_f.write(line)
+                events_f.flush()
+                if on_event is None:
+                    continue
+                try:
+                    text = line.decode("utf-8", errors="replace").strip()
+                    if not text:
+                        continue
+                    obj = json.loads(text)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+                if isinstance(obj, dict):
+                    try:
+                        on_event(obj)
+                    except Exception:
+                        pass
+    except (OSError, ValueError):
+        pass
+    finally:
+        try:
+            if proc.stdout is not None:
+                proc.stdout.close()
         except (OSError, ValueError):
             pass
 

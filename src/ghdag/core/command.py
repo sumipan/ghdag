@@ -38,10 +38,15 @@ def _dedupe_extra_args(
     builder 側を優先して extra_args から落とす。
 
     フラグに値が続くか（`--output-format json`）はトークンが `-` で始まるかで判定する。
+
+    claude の DAG 既定 extra_args は `--output-format stream-json --verbose`（#2966）。
+    builder が別の `--output-format`（例: json_only）を出した場合は stream-json ペアを
+    落とすだけでなく、対になる `--verbose` も除去する（stream 専用フラグのため）。
     """
     emitted = {tok for tok in perm_flags if tok.startswith("-")}
     result: list[str] = []
     i = 0
+    stripped_stream_format = False
     while i < len(extra_args):
         tok = extra_args[i]
         takes_value = (
@@ -50,6 +55,12 @@ def _dedupe_extra_args(
             and not extra_args[i + 1].startswith("-")
         )
         if tok.startswith("-") and tok in emitted:
+            if (
+                tok == "--output-format"
+                and takes_value
+                and extra_args[i + 1] == "stream-json"
+            ):
+                stripped_stream_format = True
             i += 2 if takes_value else 1
             continue
         result.append(tok)
@@ -58,6 +69,8 @@ def _dedupe_extra_args(
             i += 2
         else:
             i += 1
+    if stripped_stream_format:
+        result = [tok for tok in result if tok != "--verbose"]
     return result
 
 
@@ -75,6 +88,8 @@ def _build_claude_flags(
         flags = ["--permission-mode", "plan"]
     else:
         flags = ["--permission-mode", capabilities.permission_mode]
+    # stream=True → stream-json --verbose。EngineSpec.extra_args も同フラグのため
+    # render_exec_command では _dedupe_extra_args で重複排除する（#2966）。
     if capabilities.stream:
         flags += ["--output-format", "stream-json", "--verbose"]
     elif capabilities.output_format != "text":

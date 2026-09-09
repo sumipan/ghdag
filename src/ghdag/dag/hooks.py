@@ -38,6 +38,10 @@ class DefaultHooks:
     def on_task_cancelled(self, uuid: str, task: Task) -> None:
         logger.info("Task cancelled: %s", uuid)
 
+    def on_task_progress(self, uuid: str, event: dict) -> None:
+        """stream-json 進捗イベント（行単位）。既定は noop。"""
+        return None
+
     def on_shutdown(self, signum: int) -> None:
         logger.info("Shutdown signal received: %d", signum)
 

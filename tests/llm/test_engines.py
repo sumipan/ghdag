@@ -345,14 +345,17 @@ class TestExtraArgsDedupe:
     def test_claude_text_only_keeps_extra_args_output_format(self):
         """claude + text_only は builder が --output-format を出さないので extra_args 側が残る。
 
-        ここを落とすと ClaudeJsonAdapter が usage を取れなくなる。
+        DAG 既定は stream-json --verbose（#2966）。ClaudeJsonAdapter は JSONL result 行から
+        usage / session_id を取る。
         """
         from ghdag.llm.capabilities import PRESETS
         cmd = render_exec_command(
             ENGINE_SPECS["claude"], order_path="jobs/order.md",
             model="claude-sonnet-4-6", capabilities=PRESETS["text_only"],
         )
-        assert "--output-format json" in cmd
+        assert "--output-format stream-json" in cmd
+        assert "--verbose" in cmd
+        assert cmd.split().count("--output-format") == 1
 
     def test_cursor_text_only_keeps_extra_args_output_format(self):
         """cursor + text_only でも extra_args の --output-format json が残る。"""

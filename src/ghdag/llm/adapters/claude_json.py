@@ -1,4 +1,4 @@
-"""claude --output-format json の stdout から本文テキストと TokenUsage を抽出するアダプター。"""
+"""claude --output-format json / stream-json の stdout から本文・TokenUsage を抽出する。"""
 
 from __future__ import annotations
 
@@ -10,10 +10,69 @@ from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.parsers import parse_token_usage_json
 from ghdag.core.ports.output import EngineError, EngineErrorKind
 from ghdag.llm.adapters.failure_classification import classify_common_failure
+from ghdag.llm.capabilities import LLMParseError
+
+
+def extract_stream_result(stdout: str) -> str:
+    """stream-json JSONL 出力から最終 result テキストを抽出する。
+
+    DAG 経路の result ファイル書き出しと call() の stream 検証で共用する。
+    """
+    last_result: str | None = None
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict) and obj.get("type") == "result":
+            result = obj.get("result", "")
+            last_result = result if isinstance(result, str) else json.dumps(result)
+    if last_result is None:
+        raise LLMParseError(
+            raw=stdout, reason="no result line in stream-json output"
+        )
+    return last_result
+
+
+def parse_claude_result_payload(stdout: bytes) -> dict | None:
+    """単一 JSON または stream-json JSONL から最終 result オブジェクト（dict）を返す。
+
+    JSONL の場合は最後の ``{"type":"result"}`` 行を優先する。
+    従来の ``--output-format json`` 単一オブジェクト（type 無し含む）も受理する。
+    """
+    if not stdout:
+        return None
+    try:
+        text = stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+    last_result: dict | None = None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            obj = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict) and obj.get("type") == "result":
+            last_result = obj
+    if last_result is not None:
+        return last_result
+
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
 
 
 class ClaudeJsonAdapter:
-    """JSON 形式の claude stdout を処理し、result テキストと使用量を取り出す。
+    """JSON / stream-json 形式の claude stdout を処理し、result テキストと使用量を取り出す。
 
     JSON parse に失敗した場合はフォールバックとして raw stdout を返し、
     TokenUsage は None を返す。result_path の中身が壊れない安全弁として機能する。
@@ -22,39 +81,30 @@ class ClaudeJsonAdapter:
     def extract_result_text(self, stdout: bytes, stderr: bytes) -> bytes:
         if not stdout:
             return stdout
-        try:
-            data = json.loads(stdout.decode("utf-8"))
-            return (data.get("result") or "").encode("utf-8")
-        except (json.JSONDecodeError, UnicodeDecodeError, AttributeError):
+        data = parse_claude_result_payload(stdout)
+        if data is None:
             return stdout
+        result = data.get("result") or ""
+        if isinstance(result, str):
+            return result.encode("utf-8")
+        return json.dumps(result).encode("utf-8")
 
     def extract_token_usage(self, stdout: bytes, stderr: bytes) -> TokenUsage | None:
-        if not stdout:
+        data = parse_claude_result_payload(stdout)
+        if data is None:
             return None
-        try:
-            data = json.loads(stdout.decode("utf-8"))
-            return parse_token_usage_json(data)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return None
+        return parse_token_usage_json(data)
 
     def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
-        if not stdout:
+        data = parse_claude_result_payload(stdout)
+        if data is None:
             return None
-        try:
-            data = json.loads(stdout.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return None
-        session_id = data.get("session_id") if isinstance(data, dict) else None
+        session_id = data.get("session_id")
         return session_id if isinstance(session_id, str) and session_id else None
 
     def extract_error(self, stdout: bytes, stderr: bytes) -> EngineError | None:
-        if not stdout:
-            return None
-        try:
-            data = json.loads(stdout.decode("utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return None
-        if not isinstance(data, dict):
+        data = parse_claude_result_payload(stdout)
+        if data is None:
             return None
 
         subtype = data.get("subtype")
@@ -83,9 +133,21 @@ def _extract_error_message(data: dict) -> str:
             return message.strip()
     if isinstance(err, str) and err.strip():
         return err.strip()
+    errors = data.get("errors")
+    if isinstance(errors, list):
+        for item in errors:
+            if isinstance(item, str) and item.strip():
+                return item.strip()
+            if isinstance(item, dict):
+                msg = item.get("message")
+                if isinstance(msg, str) and msg.strip():
+                    return msg.strip()
     message = data.get("message")
     if isinstance(message, str) and message.strip():
         return message.strip()
+    result = data.get("result")
+    if isinstance(result, str) and result.strip():
+        return result.strip()
     subtype = data.get("subtype") or "unknown"
     return f"claude engine error ({subtype})"
 
@@ -122,5 +184,3 @@ def _classify_error(message: str) -> tuple[EngineErrorKind, bool, datetime | Non
     if any(token in lower for token in ("auth", "unauthorized", "forbidden")):
         return EngineErrorKind.AUTH, False, None
     return EngineErrorKind.UNKNOWN, False, None
-
-

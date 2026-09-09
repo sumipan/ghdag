@@ -34,6 +34,7 @@ __all__ = [
     "build_llm_cmd",
     "call",
     "call_text",
+    "extract_stream_result",
     "get_engine_models",
     "list_engines",
     "list_models",
@@ -46,6 +47,7 @@ __all__ = [
     "_build_cursor_flags",
     "_IGNORED_CAPABILITIES",
     "_UNSUPPORTED_CAPABILITIES",
+    "_extract_stream_result",
 ]
 
 
@@ -248,25 +250,15 @@ class TextResult:
         return self.raw.session_id
 
 
-def _extract_stream_result(stdout: str) -> str:
-    """stream-json JSONL 出力から最終 result テキストを抽出する。"""
-    last_result: str | None = None
-    for line in stdout.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if obj.get("type") == "result":
-            result = obj.get("result", "")
-            last_result = result if isinstance(result, str) else json.dumps(result)
-    if last_result is None:
-        raise LLMParseError(
-            raw=stdout, reason="no result line in stream-json output"
-        )
-    return last_result
+def extract_stream_result(stdout: str) -> str:
+    """stream-json JSONL から最終 result テキストを抽出（claude_json と共用）。"""
+    from ghdag.llm.adapters.claude_json import extract_stream_result as _impl
+
+    return _impl(stdout)
+
+
+# 後方互換エイリアス（既存テスト・呼び出し元）
+_extract_stream_result = extract_stream_result
 
 
 def call(
