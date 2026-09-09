@@ -60,7 +60,7 @@ handlers:
 polling_interval: 30
 ```
 
-Place the YAML under `workflows/` with a matching `templates/impl.md`, then poll once:
+Place the YAML under `workflows/` with a matching `workflows/templates/impl.md`, then poll once:
 
 ```bash
 export GITHUB_TOKEN="<token>"           # or GH_TOKEN
