@@ -148,7 +148,32 @@ _RESET_AT_RE = re.compile(
 )
 
 
+# ChatGPT アカウント認証の codex が返す人間向け表記（2026-09-09 実測）:
+#   "You've hit your usage limit. ... or try again at Sep 10th, 2026 2:13 AM."
+# タイムゾーン表記が無いのでローカル時刻として解釈する。
+_HUMAN_RESET_AT_RE = re.compile(
+    r"try again at\s+([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)",
+    re.IGNORECASE,
+)
+
+
+def _parse_human_reset_at(message: str) -> datetime | None:
+    m = _HUMAN_RESET_AT_RE.search(message)
+    if not m:
+        return None
+    month, day, year, hour, minute, ampm = m.groups()
+    text = f"{month[:3].title()} {int(day)} {year} {int(hour)}:{minute} {ampm.upper()}"
+    try:
+        naive = datetime.strptime(text, "%b %d %Y %I:%M %p")
+    except ValueError:
+        return None
+    return naive.replace(tzinfo=datetime.now().astimezone().tzinfo)
+
+
 def _parse_reset_at(message: str) -> datetime | None:
+    human = _parse_human_reset_at(message)
+    if human is not None:
+        return human
     m = _RESET_AT_RE.search(message)
     if not m:
         return None
@@ -165,6 +190,9 @@ def _parse_reset_at(message: str) -> datetime | None:
 def _classify_error(message: str) -> tuple[EngineErrorKind, bool, datetime | None]:
     lower = message.lower()
     if "quota" in lower and "exhaust" in lower:
+        return EngineErrorKind.QUOTA_EXHAUSTED, False, _parse_reset_at(message)
+    if "usage limit" in lower:
+        # "You've hit your usage limit. ... try again at Sep 10th, 2026 2:13 AM."（2026-09-09 実測）
         return EngineErrorKind.QUOTA_EXHAUSTED, False, _parse_reset_at(message)
     if "rate limit" in lower or "ratelimit" in lower:
         return EngineErrorKind.RATE_LIMIT, True, None

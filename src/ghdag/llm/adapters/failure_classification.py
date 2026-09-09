@@ -30,6 +30,11 @@ def _is_quota_exhausted_error(message: str) -> bool:
         return True
     if "you've reached your monthly" in lower:
         return True
+    # codex（ChatGPT アカウント認証）: "You've hit your usage limit. ... try again at Sep 10th, 2026 2:13 AM."
+    # 2026-09-09 実測。quota / rate limit のどの語も含まないため未検知で PROCESS_ERROR 扱いになり、
+    # pause も fallback も効かず後続ステップが連鎖失敗した。
+    if "usage limit" in lower:
+        return True
     return "resets " in lower and "hit your session limit" in lower
 
 
