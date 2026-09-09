@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import subprocess
+import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -332,7 +333,9 @@ class TaskLauncher:
             try:
                 if was_cancelled:
                     state_mark_done(self._config.exec_done_dir, uuid, DONE_CANCELLED)
-                    self._hooks.on_task_cancelled(uuid, task)
+                    on_task_cancelled = getattr(self._hooks, "on_task_cancelled", None)
+                    if on_task_cancelled is not None:
+                        on_task_cancelled(uuid, task)
                     continue
 
                 if was_timeout:
@@ -697,7 +700,14 @@ class TaskLauncher:
             "started_at": datetime.now(timezone.utc).isoformat(),
             "has_resume": "resumed_session_id" in task.annotations,
         }
-        path.write_text(json.dumps(payload), encoding="utf-8")
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
 
     def _cleanup_control_files(self, uuid: str) -> None:
         for path in (self._running_path(uuid), self._cancel_path(uuid)):

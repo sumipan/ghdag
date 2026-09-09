@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -45,7 +46,7 @@ def _read_done(config: DagConfig, uuid: str) -> str:
 
 
 class TestTaskCancel:
-    def test_cancel_running_sleep_marks_cancelled(self, tmp_path):
+    def test_cancel_running_sleep_marks_cancelled(self, tmp_path, monkeypatch):
         """実行中 sleep を cancel → kill_grace 内に CANCELLED done マーカー。"""
         config = _make_config(
             tmp_path,
@@ -56,6 +57,14 @@ class TestTaskCancel:
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = None
         engine = DagEngine(config, hooks)
+        real_replace = os.replace
+        replace_targets = []
+
+        def recording_replace(src, dst):
+            replace_targets.append(Path(dst))
+            real_replace(src, dst)
+
+        monkeypatch.setattr("ghdag.dag.task_launcher.os.replace", recording_replace)
 
         t = threading.Thread(target=engine.run, daemon=True)
         t.start()
@@ -71,6 +80,7 @@ class TestTaskCancel:
         assert isinstance(meta["pgid"], int)
         assert "started_at" in meta
         assert "has_resume" in meta
+        assert running_path in replace_targets
 
         cancel_path = _queue_dir(config) / "cancel" / "uuid-a"
         cancel_path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,6 +101,45 @@ class TestTaskCancel:
         call_uuid, call_task = hooks.on_task_cancelled.call_args[0]
         assert call_uuid == "uuid-a"
         assert call_task.uuid == "uuid-a"
+
+    def test_cancel_supports_legacy_hooks_without_cancel_callback(self, tmp_path):
+        """on_task_cancelled 未実装の旧 hooks でもキャンセル処理は壊れない。"""
+
+        class LegacyHooks:
+            def on_task_start(self, uuid, task):
+                pass
+
+            def check_rejected(self, result_path):
+                return False
+
+            def check_pipeline_status(self, result_path):
+                return None
+
+        config = _make_config(
+            tmp_path,
+            [{"uuid": "uuid-a", "command": "sleep 60", "depends": []}],
+            kill_grace=1.0,
+        )
+        engine = DagEngine(config, LegacyHooks())
+
+        t = threading.Thread(target=engine.run, daemon=True)
+        t.start()
+        deadline = time.time() + 5.0
+        while time.time() < deadline and "uuid-a" not in engine._launcher._running:
+            time.sleep(0.05)
+        assert "uuid-a" in engine._launcher._running
+
+        cancel_path = _queue_dir(config) / "cancel" / "uuid-a"
+        cancel_path.parent.mkdir(parents=True, exist_ok=True)
+        cancel_path.write_text("", encoding="utf-8")
+        done_deadline = time.time() + 5.0
+        while time.time() < done_deadline and not is_done(config.exec_done_dir, "uuid-a"):
+            time.sleep(0.05)
+
+        assert _read_done(config, "uuid-a") == DONE_CANCELLED
+        assert t.is_alive()
+        engine._shutdown = True
+        t.join(timeout=3.0)
 
     def test_cancel_propagates_dep_failed(self, tmp_path):
         """キャンセルされた親に依存する子は DEP_FAILED。"""
