@@ -15,8 +15,8 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.command import render_exec_command
+from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.dag._util import _stdout_line_reader, _stdout_reader
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DefaultHooks
@@ -24,7 +24,6 @@ from ghdag.dag.models import DagConfig
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter, extract_stream_result
 from ghdag.llm.engines import TextResult, _extract_stream_result
 from ghdag.ui.server import _build_snapshot, _latest_progress
-
 
 # --- Real-shape fixtures (captured 2026-09-09, slimmed) ---------------------
 
