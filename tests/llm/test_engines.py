@@ -215,10 +215,13 @@ class TestCallResumeSessionId:
 
 
 class TestCodexUnsupportedCapabilities:
-    def test_codex_unsupported_stream(self):
-        """stream=True で NotImplementedError が送出される。"""
-        with pytest.raises(NotImplementedError, match="stream"):
-            call("test", engine="codex", capabilities=LLMCapabilities(stream=True))
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_codex_stream_accepted(self, mock_run: MagicMock):
+        """stream=True は受理され --json 経路になる（#2967）。"""
+        mock_run.return_value = MagicMock(stdout="{}", stderr="", returncode=0)
+        result = call("test", engine="codex", capabilities=LLMCapabilities(stream=True))
+        assert result.returncode == 0
+        assert "--json" in mock_run.call_args[0][0]
 
     def test_codex_unsupported_output_format_json(self):
         """output_format="json" で NotImplementedError が送出される。"""
@@ -358,23 +361,25 @@ class TestExtraArgsDedupe:
         assert cmd.split().count("--output-format") == 1
 
     def test_cursor_text_only_keeps_extra_args_output_format(self):
-        """cursor + text_only でも extra_args の --output-format json が残る。"""
+        """cursor + text_only でも extra_args の --output-format stream-json が残る。"""
         from ghdag.llm.capabilities import PRESETS
         cmd = render_exec_command(
             ENGINE_SPECS["cursor"], order_path="jobs/order.md",
             model="auto", capabilities=PRESETS["text_only"],
         )
         assert cmd.split().count("--output-format") == 1
-        assert "--output-format json" in cmd
+        assert "--output-format stream-json" in cmd
+        assert "--stream-partial-output" in cmd
 
     def test_cursor_stream_dedupes_output_format(self):
-        """cursor + stream は stream-json が優先され json と重複しない。"""
+        """cursor + stream は stream-json が優先され --output-format は 1 回だけ。"""
         cmd = render_exec_command(
             ENGINE_SPECS["cursor"], order_path="jobs/order.md",
             model="auto", capabilities=LLMCapabilities(stream=True),
         )
         assert cmd.split().count("--output-format") == 1
         assert "--output-format stream-json" in cmd
+        assert cmd.split().count("--stream-partial-output") == 1
 
     def test_gemini_without_builder_keeps_extra_args(self):
         """builder を持たないエンジンの extra_args は変化しない。"""

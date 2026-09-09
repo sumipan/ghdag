@@ -395,9 +395,22 @@ class TestValidateCapabilitiesForEngine:
             call("hello", engine="gemini", capabilities=LLMCapabilities(stream=True))
 
     @patch("ghdag.llm.engines.subprocess.run")
-    def test_cursor_with_stream_raises(self, mock_run):
-        with pytest.raises(NotImplementedError, match="stream"):
-            call("hello", engine="cursor", capabilities=LLMCapabilities(stream=True))
+    def test_cursor_with_stream_builds_flags(self, mock_run):
+        """cursor + stream=True は NotImplementedError にならず stream-json を付与する。"""
+        mock_run.return_value = MagicMock(
+            stdout=(
+                '{"type":"result","subtype":"success","is_error":false,'
+                '"result":"pong","session_id":"sess-1"}\n'
+            ),
+            stderr="",
+            returncode=0,
+        )
+        result = call("hello", engine="cursor", capabilities=LLMCapabilities(stream=True))
+        assert result.ok
+        assert result.stdout == "pong"
+        cmd = mock_run.call_args[0][0]
+        assert cmd[cmd.index("--output-format") + 1] == "stream-json"
+        assert "--stream-partial-output" in cmd
 
 
 # ---------------------------------------------------------------------------
@@ -667,13 +680,17 @@ class TestRenderExecCommand:
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model="auto")
         assert cmd == (
-            "agent --model 'auto' -p --force --output-format json < queue/order.md"
+            "agent --model 'auto' -p --force --output-format stream-json "
+            "--stream-partial-output < queue/order.md"
         )
 
     def test_cursor_without_model(self):
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model=None)
-        assert cmd == "agent -p --force --output-format json < queue/order.md"
+        assert cmd == (
+            "agent -p --force --output-format stream-json "
+            "--stream-partial-output < queue/order.md"
+        )
 
     def test_cursor_p_force_adjacent(self):
         """-p と --force が隣接していること"""
@@ -681,11 +698,12 @@ class TestRenderExecCommand:
         cmd = render_exec_command(spec, order_path="queue/order.md", model="auto")
         assert "-p --force" in cmd
 
-    def test_cursor_includes_output_format_json(self):
-        """DAG 経路の cursor コマンドに --output-format json が含まれる。"""
+    def test_cursor_includes_output_format_stream_json(self):
+        """DAG 経路の cursor コマンドに --output-format stream-json が含まれる。"""
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model="auto")
-        assert "--output-format json" in cmd
+        assert "--output-format stream-json" in cmd
+        assert "--stream-partial-output" in cmd
 
     def test_shell_command(self):
         spec = ENGINE_SPECS["shell"]

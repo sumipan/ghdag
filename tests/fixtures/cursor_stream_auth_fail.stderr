@@ -1,0 +1,2 @@
+Warning: The provided API key is invalid (unauthorized).
+The API key was loaded from the CURSOR_API_KEY environment variable.

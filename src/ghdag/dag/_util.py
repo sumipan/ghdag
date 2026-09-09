@@ -65,8 +65,9 @@ def _stdout_line_reader(
 ) -> None:
     """Read stdout line-by-line into buf, appending each line to events_path.
 
-    Used for stream-json engines (claude). Non-stream engines keep `_stdout_reader`.
+    Used for stream engines (claude / cursor / codex). Non-stream engines keep `_stdout_reader`.
     fsync は不要（追記のみ）。on_event は JSON としてパースできた行だけ呼ばれる。
+    行が最終 result か進捗かは各 EngineOutputAdapter.is_terminal_result_event で判定できる。
     """
     try:
         stdout = proc.stdout

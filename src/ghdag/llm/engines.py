@@ -134,9 +134,10 @@ def validate_engine_model(engine: str, model: str | None) -> str:
 # 非デフォルト値を渡されたら NotImplementedError を送出する未対応 capability。
 _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
     "gemini": {"disallowed_tools", "allowed_tools", "permission_mode", "stream", "sandbox", "resume"},
-    "cursor": {"allowed_tools", "permission_mode", "stream"},
+    "cursor": {"allowed_tools", "permission_mode"},
     "shell": {"stream", "sandbox", "resume"},
-    "codex": {"stream", "permission_mode", "output_format"},
+    # codex の stream は --json JSONL。output_format 非対応は維持（#2967）。
+    "codex": {"permission_mode", "output_format"},
 }
 
 # エンジン側に等価概念がないため noop（値を受理するが CLI フラグに反映しない）で扱う capability。
@@ -207,11 +208,17 @@ class LLMResult:
     def ok(self) -> bool:
         return self.returncode == 0
 
-    def validate(self, capabilities: LLMCapabilities) -> "LLMResult":
+    def validate(
+        self,
+        capabilities: LLMCapabilities,
+        *,
+        engine: str | None = None,
+    ) -> "LLMResult":
         """output_format 契約を検証する。失敗時は LLMParseError を送出。
 
         returncode != 0 の場合は検証をスキップ（エラー出力を優先）。
-        stream=True の場合は JSONL から最終 result を抽出して stdout を置換する。
+        stream=True かつ claude/cursor の場合は JSONL から最終 result を抽出して
+        stdout を置換する。codex は生 JSONL を維持し adapter 側で抽出する。
         Returns:
             self（チェーン呼び出し可能）
         Raises:
@@ -219,7 +226,7 @@ class LLMResult:
         """
         if not self.ok:
             return self
-        if capabilities.stream:
+        if capabilities.stream and engine != "codex":
             self.stdout = _extract_stream_result(self.stdout)
         if capabilities.output_format == "json":
             try:
@@ -342,7 +349,7 @@ def call(
         latency_ms=latency_ms,
         session_id=session_id,
     )
-    return llm_result.validate(capabilities)
+    return llm_result.validate(capabilities, engine=engine)
 
 
 def call_text(

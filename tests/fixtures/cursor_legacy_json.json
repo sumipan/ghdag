@@ -1,0 +1,1 @@
+{"type": "result", "subtype": "success", "is_error": false, "result": "pong", "session_id": "85105031-11df-48a2-a791-812a0128b4cf", "usage": {"inputTokens": 7144, "outputTokens": 73, "cacheReadTokens": 8064, "cacheWriteTokens": 0}}

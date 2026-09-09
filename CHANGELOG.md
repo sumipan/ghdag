@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- DAG cursor / codex 進捗イベント: capability 表から `stream` を解禁。cursor DAG 既定を `--output-format stream-json --stream-partial-output` に切替、`CursorStreamAdapter` / `CodexJsonlAdapter` を追加。stdout を行単位で `jobs/events/<uuid>.jsonl` に追記し、stream 不可時は一括読みにフォールバックして `stream_fallback=true` を annotations に記録（#2967）
 - DAG claude 進捗イベント: エンジン既定を `--output-format stream-json --verbose` に切替。stdout を行単位で `jobs/events/<uuid>.jsonl` に追記し、`on_task_progress` フックと UI SSE の `progress`（tool / path / assistant_text）を配信。result ファイルは従来どおり最終 `result` テキスト（#2966）
 - DAG タスクキャンセル: `jobs/running/<uuid>.json` / `jobs/cancel/<uuid>` 制御ファイル、`DONE_CANCELLED`、`on_task_cancelled` フック、`ghdag dag cancel <uuid>` CLI。UI `/api/stop` は `ps` 直殺しから制御ファイル経路へ置換
 - `ghdag.gates` entry-point によるゲート登録（`load_entry_point_gates` / `get_gate`）。`GATE_REGISTRY`（import 副作用）が同名時に優先し、ロード失敗は fail-open
