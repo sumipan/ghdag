@@ -94,3 +94,35 @@ def test_passthrough_extract_error_always_none() -> None:
     adapter = get_output_adapter("unknown")
     stdout = b'{"type":"error","message":"boom"}\n'
     assert adapter.extract_error(stdout, b"") is None
+
+
+_CODEX_USAGE_LIMIT_STDOUT = (
+    b'{"type":"thread.started","thread_id":"01a08690-c49f-7e12-98aa-dffc0d6a3d3f"}\n'
+    b'{"type":"turn.started"}\n'
+    b'{"type":"error","message":"You\'ve hit your usage limit. Upgrade to Pro '
+    b'(https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage '
+    b'to purchase more credits or try again at Sep 10th, 2026 2:13 AM."}\n'
+    b'{"type":"turn.failed","error":{"message":"You\'ve hit your usage limit. Upgrade to Pro '
+    b'(https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage '
+    b'to purchase more credits or try again at Sep 10th, 2026 2:13 AM."}}\n'
+)
+
+
+def test_codex_usage_limit_is_quota_exhausted_with_local_resume_at() -> None:
+    """2026-09-09 実測: ChatGPT アカウント認証の codex が返す usage limit（nexus #2961 の cp2）。"""
+    adapter = CodexAdapter()
+    err = adapter.extract_error(_CODEX_USAGE_LIMIT_STDOUT, b"")
+    assert err is not None
+    assert err.kind is EngineErrorKind.QUOTA_EXHAUSTED
+    assert err.retryable is False
+    assert err.resume_at is not None
+    assert (err.resume_at.year, err.resume_at.month, err.resume_at.day) == (2026, 9, 10)
+    assert (err.resume_at.hour, err.resume_at.minute) == (2, 13)
+    assert err.resume_at.tzinfo is not None
+
+
+def test_codex_usage_limit_classifies_as_quota_exhausted() -> None:
+    from ghdag.core.models.metrics import FailureClass
+
+    adapter = CodexAdapter()
+    assert adapter.classify_failure(1, _CODEX_USAGE_LIMIT_STDOUT, b"") is FailureClass.QUOTA_EXHAUSTED

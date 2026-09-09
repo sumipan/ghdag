@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- codex の usage limit（"You've hit your usage limit ... try again at Sep 10th, 2026 2:13 AM"）を `QUOTA_EXHAUSTED` として分類し、`try again at` の人間向け日時をローカル時刻の `resume_at` として抽出する。従来は quota / rate limit のどの語も含まないため未検知（`PROCESS_ERROR`）となり、quota gate の pause も call_managed の fallback も効かず後続ステップが連鎖失敗していた（2026-09-09、nexus #2959 / #2961 の CP2）
 - cursor / codex の resume セッション記録: `CursorAdapter` は実測 JSON の `session_id`（`chat_id` 後方互換）・`result`・`usage.inputTokens/outputTokens` を抽出し、`CodexAdapter` は `thread.started.thread_id`（`session_id` 後方互換）を抽出するよう修正。DAG 経路の cursor に `--output-format json` を付与し、stream 指定時は `--output-format stream-json` と重複しないよう dedupe する（#2968）
 
 
