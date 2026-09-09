@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from typing import Any
 
 from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.ports.output import EngineError
@@ -69,7 +71,7 @@ class CursorAdapter:
         return classify_common_failure("cursor", stdout, stderr)
 
 
-def _parse_json_object(stdout: bytes) -> dict | None:
+def _parse_json_object(stdout: bytes) -> dict[Any, Any] | None:
     """単一 JSON オブジェクト、または JSONL 先頭のオブジェクトを返す。"""
     text = stdout.decode("utf-8", errors="replace").strip()
     if not text:
@@ -85,7 +87,7 @@ def _parse_json_object(stdout: bytes) -> dict | None:
     return None
 
 
-def _iter_json_objects(stdout: bytes):
+def _iter_json_objects(stdout: bytes) -> Iterator[dict[Any, Any]]:
     for line in stdout.decode("utf-8", errors="replace").splitlines():
         line = line.strip()
         if not line:
