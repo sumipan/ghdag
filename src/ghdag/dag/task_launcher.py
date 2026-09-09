@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
 import os
 import re
 import subprocess
+import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -15,6 +17,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from ghdag.core.vocabulary import (
+    DONE_CANCELLED,
     DONE_EMPTY_RESULT,
     DONE_ENGINE_ENV_ERROR,
     DONE_ENGINE_ERROR,
@@ -114,6 +117,7 @@ class TaskLauncher:
         self._fanout_manager = fanout_manager
         self._promote_fn = promote_fn
         self._running: dict[str, RunningTask] = {}
+        self._cancelled: set[str] = set()
         self._session_store = SessionStore(self._queue_dir() / ".sessions")
         self._quota_gate = quota_gate or QuotaGate(
             self._queue_dir() / "quota-gate.json",
@@ -215,25 +219,47 @@ class TaskLauncher:
             stderr_thread=t_stderr,
             stdout_thread=t_stdout,
         )
+        self._write_running_file(uuid, proc, task, launch_engine)
         self._hooks.on_task_start(uuid, task)
         return True
+
+    def request_cancel(self, uuid: str) -> None:
+        """Apply a cancel request: SIGTERM now, SIGKILL after kill_grace via check_completions."""
+        rt = self._running.get(uuid)
+        if rt is None:
+            return
+        self._cancelled.add(uuid)
+        if rt.proc.poll() is not None:
+            return
+        if rt.term_sent_at is not None:
+            return
+        logger.warning("Task [%s] cancel requested, sending SIGTERM", uuid)
+        rt.proc.terminate()
+        rt.term_sent_at = time.monotonic()
 
     def check_completions(self) -> None:
         """Inspect running processes and process any that have finished."""
         cwd = str(self._config.cwd) if self._config.cwd else None
         for uuid in list(self._running):
             rt = self._running[uuid]
+            now = time.monotonic()
 
-            task_timeout = _resolve_task_timeout(rt.task, self._config.task_timeout)
-            if task_timeout is not None and rt.proc.poll() is None:
-                now = time.monotonic()
-                if rt.term_sent_at is None and (now - rt.started_at_mono) > task_timeout:
-                    logger.warning(
-                        "Task [%s] exceeded timeout %.1fs, sending SIGTERM", uuid, task_timeout
-                    )
-                    rt.proc.terminate()
-                    rt.term_sent_at = now
-                elif rt.term_sent_at is not None and (now - rt.term_sent_at) > self._config.kill_grace:
+            if rt.proc.poll() is None:
+                if rt.term_sent_at is None:
+                    task_timeout = _resolve_task_timeout(rt.task, self._config.task_timeout)
+                    if (
+                        uuid not in self._cancelled
+                        and task_timeout is not None
+                        and (now - rt.started_at_mono) > task_timeout
+                    ):
+                        logger.warning(
+                            "Task [%s] exceeded timeout %.1fs, sending SIGTERM",
+                            uuid,
+                            task_timeout,
+                        )
+                        rt.proc.terminate()
+                        rt.term_sent_at = now
+                elif (now - rt.term_sent_at) > self._config.kill_grace:
                     logger.warning(
                         "Task [%s] still alive after grace period, sending SIGKILL", uuid
                     )
@@ -242,9 +268,12 @@ class TaskLauncher:
             if rt.proc.poll() is None:
                 continue
 
-            was_timeout = rt.term_sent_at is not None
+            was_cancelled = uuid in self._cancelled
+            was_timeout = rt.term_sent_at is not None and not was_cancelled
             finished_at = time.time()
             del self._running[uuid]
+            self._cancelled.discard(uuid)
+            self._cleanup_control_files(uuid)
             self._join_reader_threads(rt)
             stderr_bytes = rt.stderr_buf.getvalue()
             stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
@@ -260,7 +289,12 @@ class TaskLauncher:
             adapter = get_output_adapter(engine)
 
             try:
-                if returncode != 0 and self._is_resume_fallback_target(task, stderr_text):
+                if (
+                    not was_cancelled
+                    and not was_timeout
+                    and returncode != 0
+                    and self._is_resume_fallback_target(task, stderr_text)
+                ):
                     original_command = task.annotations.get("_command_without_resume")
                     if original_command:
                         logger.info(
@@ -297,6 +331,13 @@ class TaskLauncher:
             cache_creation_tokens = usage.cache_creation_tokens if usage else None
 
             try:
+                if was_cancelled:
+                    state_mark_done(self._config.exec_done_dir, uuid, DONE_CANCELLED)
+                    on_task_cancelled = getattr(self._hooks, "on_task_cancelled", None)
+                    if on_task_cancelled is not None:
+                        on_task_cancelled(uuid, task)
+                    continue
+
                 if was_timeout:
                     state_mark_done(self._config.exec_done_dir, uuid, DONE_TIMEOUT)
                     metrics = TaskMetrics(
@@ -629,6 +670,51 @@ class TaskLauncher:
 
     def _queue_dir(self) -> Path:
         return Path(self._config.exec_done_dir).parent
+
+    def _running_path(self, uuid: str) -> Path:
+        return self._queue_dir() / "running" / f"{uuid}.json"
+
+    def _cancel_path(self, uuid: str) -> Path:
+        return self._queue_dir() / "cancel" / uuid
+
+    def _write_running_file(
+        self,
+        uuid: str,
+        proc: subprocess.Popen,
+        task: Task,
+        engine: str | None,
+    ) -> None:
+        raw_pid = getattr(proc, "pid", None)
+        if not isinstance(raw_pid, int):
+            return
+        path = self._running_path(uuid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            pgid = os.getpgid(raw_pid)
+        except OSError:
+            pgid = raw_pid
+        payload = {
+            "pid": raw_pid,
+            "pgid": pgid,
+            "engine": engine if isinstance(engine, str) else "",
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "has_resume": "resumed_session_id" in task.annotations,
+        }
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+
+    def _cleanup_control_files(self, uuid: str) -> None:
+        for path in (self._running_path(uuid), self._cancel_path(uuid)):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("Failed to remove control file %s", path, exc_info=True)
 
     def _queue_audit_path(self) -> Path:
         return self._queue_dir() / "audit.jsonl"

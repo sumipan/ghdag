@@ -85,3 +85,12 @@ class AuditHooks(DefaultHooks):
                 failure_class=metrics.failure_class,
                 request_id=metrics.request_id,
             )
+
+    def on_task_cancelled(self, uuid: str, task: Task) -> None:
+        super().on_task_cancelled(uuid, task)
+        if self._audit_path:
+            write_task_exit_audit(
+                self._audit_path,
+                event_type="task_cancelled", uuid=uuid, status="cancelled",
+                correlation_id=task.idempotency_key,
+            )

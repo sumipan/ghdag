@@ -81,6 +81,7 @@ class DagEngine:
                 self._tasks = {t.uuid: t for t in task_list}
                 logger.info("Loaded exec file (%d tasks)", len(self._tasks))
 
+            self._apply_pending_cancels()
             self._launcher.check_completions()
             try:
                 self._quota_gate.release_ready()
@@ -188,6 +189,15 @@ class DagEngine:
         return self._launcher._running
 
     # --- Internal ---
+
+    def _apply_pending_cancels(self) -> None:
+        """Detect jobs/cancel/<uuid> for running tasks and ask the launcher to cancel."""
+        cancel_dir = Path(self._config.exec_done_dir).parent / "cancel"
+        if not cancel_dir.is_dir():
+            return
+        for uuid in list(self._launcher._running):
+            if (cancel_dir / uuid).exists():
+                self._launcher.request_cancel(uuid)
 
     def _acquire_lock(self) -> None:
         """Prevent multiple DagEngine instances."""

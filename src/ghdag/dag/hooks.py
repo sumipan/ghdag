@@ -35,6 +35,9 @@ class DefaultHooks:
     def on_task_empty_result(self, uuid: str, task: Task, stderr_text: str, metrics: TaskMetrics) -> None:
         logger.warning("Task empty result: %s", uuid)
 
+    def on_task_cancelled(self, uuid: str, task: Task) -> None:
+        logger.info("Task cancelled: %s", uuid)
+
     def on_shutdown(self, signum: int) -> None:
         logger.info("Shutdown signal received: %d", signum)
 

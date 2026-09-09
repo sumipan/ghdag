@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- DAG タスクキャンセル: `jobs/running/<uuid>.json` / `jobs/cancel/<uuid>` 制御ファイル、`DONE_CANCELLED`、`on_task_cancelled` フック、`ghdag dag cancel <uuid>` CLI。UI `/api/stop` は `ps` 直殺しから制御ファイル経路へ置換
 - `ghdag.gates` entry-point によるゲート登録（`load_entry_point_gates` / `get_gate`）。`GATE_REGISTRY`（import 副作用）が同名時に優先し、ロード失敗は fail-open
 - `StepConfig.render`（`"frozen"` | `"live"`）と `python -m ghdag.workflow.render`。`render: live` の shell step は enqueue 時に trampoline を凍結し、実行時にテンプレートを再読込・再展開する
 

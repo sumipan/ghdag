@@ -5,9 +5,7 @@ from __future__ import annotations
 import importlib.resources
 import json
 import logging
-import os
 import re
-import signal
 import subprocess
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -80,37 +78,18 @@ def _build_snapshot(repo_root: Path, max_visible: int = 30) -> list[dict]:
     return [r.to_dict() for r in rows]
 
 
-def _kill_by_uuid(uuid: str) -> tuple[bool, str]:
-    """Find and SIGTERM all processes whose command line contains the UUID."""
+def _request_cancel(repo_root: Path, uuid: str) -> tuple[bool, str]:
+    """Create jobs/cancel/<uuid> when jobs/running/<uuid>.json exists."""
+    running_path = repo_root / "jobs" / "running" / f"{uuid}.json"
+    if not running_path.is_file():
+        return False, "No running process found for that UUID"
+    cancel_dir = repo_root / "jobs" / "cancel"
     try:
-        result = subprocess.run(
-            ["ps", "auxww"], capture_output=True, text=True, timeout=15, check=False
-        )
-        if result.returncode != 0:
-            return False, "ps command failed"
-        pids = []
-        for line in result.stdout.splitlines():
-            if uuid.lower() in line.lower():
-                parts = line.split()
-                if len(parts) >= 2:
-                    try:
-                        pids.append(int(parts[1]))
-                    except ValueError:
-                        pass
-        if not pids:
-            return False, "No running process found for that UUID"
-        killed = []
-        for pid in pids:
-            try:
-                os.kill(pid, signal.SIGTERM)
-                killed.append(pid)
-                logger.info("Stop: sent SIGTERM to pid %d (uuid=%s)", pid, uuid)
-            except (ProcessLookupError, PermissionError) as e:
-                logger.warning("Stop: could not kill pid %d: %s", pid, e)
-        if killed:
-            return True, ""
-        return False, "Could not send SIGTERM to any process"
-    except Exception as e:
+        cancel_dir.mkdir(parents=True, exist_ok=True)
+        (cancel_dir / uuid).write_text("", encoding="utf-8")
+        logger.info("Stop: wrote jobs/cancel/%s", uuid)
+        return True, ""
+    except OSError as e:
         return False, str(e)
 
 
@@ -249,7 +228,7 @@ class _Handler(BaseHTTPRequestHandler):
         if uuid is None:
             return
 
-        ok, err = _kill_by_uuid(uuid)
+        ok, err = _request_cancel(self.repo_root, uuid)
         if ok:
             self._send_json_response(200, {"ok": True})
         else:
