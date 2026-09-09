@@ -20,6 +20,7 @@ def main(argv: list[str] | None = None) -> None:
 
 def _build_parser() -> argparse.ArgumentParser:
     from ghdag.cli.commands.audit_query import cmd_audit_query
+    from ghdag.cli.commands.cancel import cmd_cancel
     from ghdag.cli.commands.cleanup import cmd_cleanup
     from ghdag.cli.commands.llm import cmd_llm
     from ghdag.cli.commands.quota import (
@@ -335,6 +336,20 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Pipeline state directory (default: .pipeline-state)",
     )
     recover_parser.set_defaults(func=cmd_recover)
+
+    cancel_parser = dag_subparsers.add_parser(
+        "cancel",
+        help="Request cancellation of a running DAG task via jobs/cancel/<uuid>",
+    )
+    cancel_parser.add_argument("uuid", help="Task UUID to cancel")
+    cancel_parser.add_argument(
+        "--queue-dir",
+        default="jobs",
+        dest="queue_dir",
+        metavar="PATH",
+        help="Queue directory containing running/ and cancel/ (default: jobs)",
+    )
+    cancel_parser.set_defaults(func=cmd_cancel)
 
     # ghdag audit-query
     audit_query_parser = subparsers.add_parser(
