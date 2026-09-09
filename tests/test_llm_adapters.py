@@ -163,16 +163,37 @@ class TestClaudeTextAdapterExtractTokenUsage:
 # CursorAdapter
 # ---------------------------------------------------------------------------
 
+_CURSOR_REAL_JSON = (
+    b'{"type":"result","subtype":"success","is_error":false,'
+    b'"result":"pong",'
+    b'"session_id":"85105031-11df-48a2-a791-812a0128b4cf",'
+    b'"usage":{"inputTokens":7144,"outputTokens":73,'
+    b'"cacheReadTokens":8064,"cacheWriteTokens":0}}'
+)
+
+
 class TestCursorAdapter:
-    def test_extract_result_text_passthrough(self):
-        """stdout をそのまま返す（no-op）。"""
-        raw = b"cursor output"
+    def test_extract_result_text_from_json(self):
+        """JSON stdout → result フィールドの bytes を返す。"""
+        adapter = CursorAdapter()
+        assert adapter.extract_result_text(_CURSOR_REAL_JSON, b"") == b"pong"
+
+    def test_extract_result_text_passthrough_for_plain_text(self):
+        """非 JSON stdout は従来通りそのまま返す。"""
+        raw = b"pong"
         adapter = CursorAdapter()
         out = adapter.extract_result_text(raw, b"stderr")
         assert out == raw
 
-    def test_extract_token_usage_returns_none(self):
-        """token_count / cost_usd は常に None（cursor は usage 未対応）。"""
+    def test_extract_token_usage_from_json(self):
+        """usage.inputTokens + usage.outputTokens を token_count にする。"""
+        adapter = CursorAdapter()
+        usage = adapter.extract_token_usage(_CURSOR_REAL_JSON, b"")
+        assert usage is not None
+        assert usage.token_count == 7217
+
+    def test_extract_token_usage_none_for_plain_text(self):
+        """非 JSON stdout → TokenUsage は None。"""
         adapter = CursorAdapter()
         usage = adapter.extract_token_usage(b"stdout", b"stderr")
         assert usage is None

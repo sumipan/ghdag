@@ -67,6 +67,8 @@ class CodexAdapter:
         return None
 
     def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
+        """thread.started.thread_id を優先し、旧形式 session_id を後方互換で受け付ける。"""
+        fallback: str | None = None
         for line in stdout.decode("utf-8", errors="replace").splitlines():
             line = line.strip()
             if not line:
@@ -75,10 +77,16 @@ class CodexAdapter:
                 obj = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            session_id = obj.get("session_id") if isinstance(obj, dict) else None
-            if isinstance(session_id, str) and session_id:
-                return session_id
-        return None
+            if not isinstance(obj, dict):
+                continue
+            if obj.get("type") == "thread.started":
+                thread_id = obj.get("thread_id")
+                if isinstance(thread_id, str) and thread_id:
+                    return thread_id
+            session_id = obj.get("session_id")
+            if isinstance(session_id, str) and session_id and fallback is None:
+                fallback = session_id
+        return fallback
 
     def extract_error(self, stdout: bytes, stderr: bytes) -> EngineError | None:
         for line in stdout.decode("utf-8", errors="replace").splitlines():
