@@ -82,6 +82,7 @@ class TestBuildLlmCmdCodex:
     def test_render_exec_command_codex_with_capabilities(self):
         """capabilities 指定時は _build_codex_flags 経由でフラグ生成される。"""
         from ghdag.llm.capabilities import LLMCapabilities
+
         spec = ENGINE_SPECS["codex"]
         cmd = render_exec_command(
             spec,
@@ -105,6 +106,7 @@ class TestBuildLlmCmdCodex:
         workspace-write のまま起動し、cwd 外（例: 日記リポジトリ）へ書けずに失敗する。
         """
         from ghdag.llm.capabilities import DANGEROUS_FULL_ACCESS
+
         spec = ENGINE_SPECS["codex"]
         cmd = render_exec_command(
             spec,
@@ -119,6 +121,7 @@ class TestBuildLlmCmdCodex:
     def test_render_exec_command_codex_default_keeps_sandbox(self):
         """既定 capabilities ではバイパスフラグを付けない（サンドボックス維持）。"""
         from ghdag.llm.capabilities import LLMCapabilities
+
         spec = ENGINE_SPECS["codex"]
         cmd = render_exec_command(
             spec,
@@ -245,6 +248,7 @@ class TestCodexIgnoredCapabilities:
     def test_codex_with_text_only_does_not_raise(self, mock_run: MagicMock):
         """TEXT_ONLY (disallowed_tools あり) を codex に渡しても NotImplementedError が出ない。"""
         from ghdag.llm.capabilities import TEXT_ONLY
+
         mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
         result = call("test", engine="codex", capabilities=TEXT_ONLY)
         assert result.returncode == 0
@@ -299,37 +303,44 @@ class TestExtraArgsDedupe:
     def test_dedupe_removes_valueless_flag_emitted_by_builder(self):
         """値を取らないフラグが builder 側にあれば extra_args から落ちる。"""
         from ghdag.llm.spec import _dedupe_extra_args
-        assert _dedupe_extra_args(
-            ("--json", "--skip-git-repo-check"), ["--json", "--skip-git-repo-check"]
-        ) == []
+
+        assert _dedupe_extra_args(("--json", "--skip-git-repo-check"), ["--json", "--skip-git-repo-check"]) == []
 
     def test_dedupe_removes_flag_with_value_as_a_pair(self):
         """値付きフラグはフラグと値のペアごと落とす。"""
         from ghdag.llm.spec import _dedupe_extra_args
-        assert _dedupe_extra_args(
-            ("--output-format", "json"), ["--permission-mode", "default", "--output-format", "json"]
-        ) == []
+
+        assert (
+            _dedupe_extra_args(("--output-format", "json"), ["--permission-mode", "default", "--output-format", "json"])
+            == []
+        )
 
     def test_dedupe_keeps_flags_builder_did_not_emit(self):
         """builder が出していないフラグは値ごと残る。"""
         from ghdag.llm.spec import _dedupe_extra_args
-        assert _dedupe_extra_args(
-            ("--output-format", "json"), ["--permission-mode", "default"]
-        ) == ["--output-format", "json"]
+
+        assert _dedupe_extra_args(("--output-format", "json"), ["--permission-mode", "default"]) == [
+            "--output-format",
+            "json",
+        ]
 
     def test_dedupe_noop_when_builder_emits_nothing(self):
         """perm_flags が空なら extra_args はそのまま。"""
         from ghdag.llm.spec import _dedupe_extra_args
+
         assert _dedupe_extra_args(("-o", "pipefail"), []) == ["-o", "pipefail"]
 
     def test_codex_render_has_no_duplicate_flags_for_every_preset(self):
         """どの permission preset でも codex の argv にフラグ重複が出ない。"""
         from ghdag.llm.capabilities import PRESETS
+
         spec = ENGINE_SPECS["codex"]
         for name, caps in PRESETS.items():
             cmd = render_exec_command(
-                spec, order_path="jobs/order.md",
-                model="gpt-5.6-terra", capabilities=caps,
+                spec,
+                order_path="jobs/order.md",
+                model="gpt-5.6-terra",
+                capabilities=caps,
             )
             tokens = cmd.split()
             for flag in ("--json", "--skip-git-repo-check"):
@@ -338,9 +349,12 @@ class TestExtraArgsDedupe:
     def test_claude_json_only_no_duplicate_output_format(self):
         """claude + json_only でも --output-format が重複しない（値付きフラグの回帰）。"""
         from ghdag.llm.capabilities import PRESETS
+
         cmd = render_exec_command(
-            ENGINE_SPECS["claude"], order_path="jobs/order.md",
-            model="claude-sonnet-4-6", capabilities=PRESETS["json_only"],
+            ENGINE_SPECS["claude"],
+            order_path="jobs/order.md",
+            model="claude-sonnet-4-6",
+            capabilities=PRESETS["json_only"],
         )
         assert cmd.split().count("--output-format") == 1
         assert "--output-format json" in cmd
@@ -352,9 +366,12 @@ class TestExtraArgsDedupe:
         usage / session_id を取る。
         """
         from ghdag.llm.capabilities import PRESETS
+
         cmd = render_exec_command(
-            ENGINE_SPECS["claude"], order_path="jobs/order.md",
-            model="claude-sonnet-4-6", capabilities=PRESETS["text_only"],
+            ENGINE_SPECS["claude"],
+            order_path="jobs/order.md",
+            model="claude-sonnet-4-6",
+            capabilities=PRESETS["text_only"],
         )
         assert "--output-format stream-json" in cmd
         assert "--verbose" in cmd
@@ -363,19 +380,39 @@ class TestExtraArgsDedupe:
     def test_cursor_text_only_keeps_extra_args_output_format(self):
         """cursor + text_only でも extra_args の --output-format stream-json が残る。"""
         from ghdag.llm.capabilities import PRESETS
+
         cmd = render_exec_command(
-            ENGINE_SPECS["cursor"], order_path="jobs/order.md",
-            model="auto", capabilities=PRESETS["text_only"],
+            ENGINE_SPECS["cursor"],
+            order_path="jobs/order.md",
+            model="auto",
+            capabilities=PRESETS["text_only"],
         )
         assert cmd.split().count("--output-format") == 1
         assert "--output-format stream-json" in cmd
         assert "--stream-partial-output" in cmd
 
+    def test_cursor_json_only_overrides_stream_default(self):
+        """cursor + json_only は単一 JSON に戻し、stream 専用フラグを残さない。"""
+        from ghdag.llm.capabilities import PRESETS
+
+        cmd = render_exec_command(
+            ENGINE_SPECS["cursor"],
+            order_path="jobs/order.md",
+            model="auto",
+            capabilities=PRESETS["json_only"],
+        )
+        assert cmd.split().count("--output-format") == 1
+        assert "--output-format json" in cmd
+        assert "--output-format stream-json" not in cmd
+        assert "--stream-partial-output" not in cmd
+
     def test_cursor_stream_dedupes_output_format(self):
         """cursor + stream は stream-json が優先され --output-format は 1 回だけ。"""
         cmd = render_exec_command(
-            ENGINE_SPECS["cursor"], order_path="jobs/order.md",
-            model="auto", capabilities=LLMCapabilities(stream=True),
+            ENGINE_SPECS["cursor"],
+            order_path="jobs/order.md",
+            model="auto",
+            capabilities=LLMCapabilities(stream=True),
         )
         assert cmd.split().count("--output-format") == 1
         assert "--output-format stream-json" in cmd
@@ -384,9 +421,12 @@ class TestExtraArgsDedupe:
     def test_gemini_without_builder_keeps_extra_args(self):
         """builder を持たないエンジンの extra_args は変化しない。"""
         from ghdag.llm.capabilities import PRESETS
+
         cmd = render_exec_command(
-            ENGINE_SPECS["gemini"], order_path="jobs/order.md",
-            model="gemini-3-flash", capabilities=PRESETS["text_only"],
+            ENGINE_SPECS["gemini"],
+            order_path="jobs/order.md",
+            model="gemini-3-flash",
+            capabilities=PRESETS["text_only"],
         )
         assert "--approval-mode yolo" in cmd
 

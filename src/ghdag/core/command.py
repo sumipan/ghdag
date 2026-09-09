@@ -26,9 +26,7 @@ __all__ = [
 ]
 
 
-def _dedupe_extra_args(
-    extra_args: tuple[str, ...], perm_flags: list[str]
-) -> list[str]:
+def _dedupe_extra_args(extra_args: tuple[str, ...], perm_flags: list[str]) -> list[str]:
     """perm_flags が既に出しているフラグを extra_args 側から取り除く。
 
     _CAPABILITY_FLAG_BUILDERS 由来のフラグ（perm_flags）と EngineSpec.extra_args は
@@ -49,17 +47,9 @@ def _dedupe_extra_args(
     stripped_stream_format = False
     while i < len(extra_args):
         tok = extra_args[i]
-        takes_value = (
-            tok.startswith("-")
-            and i + 1 < len(extra_args)
-            and not extra_args[i + 1].startswith("-")
-        )
+        takes_value = tok.startswith("-") and i + 1 < len(extra_args) and not extra_args[i + 1].startswith("-")
         if tok.startswith("-") and tok in emitted:
-            if (
-                tok == "--output-format"
-                and takes_value
-                and extra_args[i + 1] == "stream-json"
-            ):
+            if tok == "--output-format" and takes_value and extra_args[i + 1] == "stream-json":
                 stripped_stream_format = True
             i += 2 if takes_value else 1
             continue
@@ -70,13 +60,11 @@ def _dedupe_extra_args(
         else:
             i += 1
     if stripped_stream_format:
-        result = [tok for tok in result if tok != "--verbose"]
+        result = [tok for tok in result if tok not in {"--verbose", "--stream-partial-output"}]
     return result
 
 
-def _build_claude_flags(
-    capabilities: LLMCapabilities, dangerously_skip_permissions: bool
-) -> list[str]:
+def _build_claude_flags(capabilities: LLMCapabilities, dangerously_skip_permissions: bool) -> list[str]:
     # sandbox=readonly → --permission-mode plan（read-only Bash 可・変更系 deny）。
     # permission_mode 明示指定との同時指定は意味が衝突するため拒否する。
     if capabilities.sandbox == "readonly":
@@ -103,9 +91,7 @@ def _build_claude_flags(
     return flags
 
 
-def _build_cursor_flags(
-    capabilities: LLMCapabilities, dangerously_skip_permissions: bool
-) -> list[str]:
+def _build_cursor_flags(capabilities: LLMCapabilities, dangerously_skip_permissions: bool) -> list[str]:
     # cursor CLI `--sandbox <enabled|disabled>` は config を上書きする二値モード
     # （agent --help 実測）。enabled 時は Cursor のサンドボックスを強制する。
     # 書き込み・ネットワーク遮断の詳細は CLI/設定依存。--force との同時指定は矛盾。
@@ -115,20 +101,18 @@ def _build_cursor_flags(
     bypass = dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions"
     if capabilities.sandbox == "readonly":
         if bypass:
-            raise ValueError(
-                "sandbox='readonly' conflicts with --force (bypass permissions)"
-            )
+            raise ValueError("sandbox='readonly' conflicts with --force (bypass permissions)")
         flags += ["--sandbox", "enabled"]
     elif bypass:
         flags.append("--force")
     if capabilities.stream:
         flags += ["--output-format", "stream-json", "--stream-partial-output"]
+    elif capabilities.output_format != "text":
+        flags += ["--output-format", capabilities.output_format]
     return flags
 
 
-def _build_codex_flags(
-    capabilities: LLMCapabilities, dangerously_skip_permissions: bool
-) -> list[str]:
+def _build_codex_flags(capabilities: LLMCapabilities, dangerously_skip_permissions: bool) -> list[str]:
     # permission_mode も見るのは exec.jsonl 経路（render_exec_command）のため。
     # render_exec_command は dangerously_skip_permissions=False 固定で builder を呼ぶので、
     # capabilities を見ないと DANGEROUS_FULL_ACCESS が CLI フラグに落ちず、
@@ -139,9 +123,7 @@ def _build_codex_flags(
     bypass = dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions"
     if capabilities.sandbox == "readonly":
         if bypass:
-            raise ValueError(
-                "sandbox='readonly' conflicts with dangerously-bypass-sandbox"
-            )
+            raise ValueError("sandbox='readonly' conflicts with dangerously-bypass-sandbox")
         flags += ["-s", "read-only"]
     elif bypass:
         flags.append("--dangerously-bypass-approvals-and-sandbox")
@@ -336,7 +318,10 @@ class _GenericAdapter:
             "engine": self._spec.name,
             "model": model if self._spec.model_flag else None,
             "command": render_exec_command(
-                self._spec, order_path=order_path, prompt=prompt, model=model,
+                self._spec,
+                order_path=order_path,
+                prompt=prompt,
+                model=model,
                 capabilities=capabilities,
             ),
             "depends": depends,
