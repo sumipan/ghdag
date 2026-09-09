@@ -371,6 +371,18 @@ class TestExtraArgsDedupe:
         assert "--output-format stream-json" in cmd
         assert "--stream-partial-output" in cmd
 
+    def test_cursor_json_only_overrides_stream_default(self):
+        """cursor + json_only は単一 JSON に戻し、stream 専用フラグを残さない。"""
+        from ghdag.llm.capabilities import PRESETS
+        cmd = render_exec_command(
+            ENGINE_SPECS["cursor"], order_path="jobs/order.md",
+            model="auto", capabilities=PRESETS["json_only"],
+        )
+        assert cmd.split().count("--output-format") == 1
+        assert "--output-format json" in cmd
+        assert "--output-format stream-json" not in cmd
+        assert "--stream-partial-output" not in cmd
+
     def test_cursor_stream_dedupes_output_format(self):
         """cursor + stream は stream-json が優先され --output-format は 1 回だけ。"""
         cmd = render_exec_command(

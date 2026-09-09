@@ -70,7 +70,10 @@ def _dedupe_extra_args(
         else:
             i += 1
     if stripped_stream_format:
-        result = [tok for tok in result if tok != "--verbose"]
+        result = [
+            tok for tok in result
+            if tok not in {"--verbose", "--stream-partial-output"}
+        ]
     return result
 
 
@@ -123,6 +126,8 @@ def _build_cursor_flags(
         flags.append("--force")
     if capabilities.stream:
         flags += ["--output-format", "stream-json", "--stream-partial-output"]
+    elif capabilities.output_format != "text":
+        flags += ["--output-format", capabilities.output_format]
     return flags
 
 
