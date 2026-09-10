@@ -9,6 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `WorkflowDispatcher.poll_once` / `_poll_nonterminal_closed` を `list_all_issues` 一括取得 + ローカルラベルフィルタに変更し、trigger ごとの `list_issues` 呼び出しを廃止。`_observe_rate_limit` は `GET /rate_limit` ではなく応答ヘッダ由来の `get_last_rate_limit()` を使い、remaining 低下時は `polling_interval` を一時的に 2 倍にする（nexus #3070）
+- `GitHubClient._request` に ETag 条件付きリクエスト（`etag=True` / 304 キャッシュ再利用）と rate limit 403 の待機→1 回リトライを追加。`RateLimitError` に `reset_at` を追加。`write_rate_limit_audit` に `used` を追加（nexus #3070）
+
 - `workflow/loader.py` が `label_namespace` / `transitions` / `reset_label` / `roles` / `step.role` を読むようにし、`load_workflows()` で `validate_workflow_roles` を呼ぶ。`state_machine._load_workflow_config` の `replace()` 事後補完を削除（nexus #3029）
 - `LLMPipelineAPI.submit()` に公開引数 `order_builder` / `workflow_roles` を追加。dispatcher の `_order_builders` 一時差し替えをやめ、`submit(order_builder=...)` 経由に統一。`step.role` は exec.jsonl annotations の `role` / `role_engines` に載る（nexus #3029）
 - `dag.audit_hooks` の import を `ghdag.io.audit` へ切替し、二塔契約の `dag.audit_hooks -> pipeline.audit` 免除を削除。`pipeline.hooks -> dag.audit_hooks` 免除は DefaultHooks を core へ移すまでコメント付きで残す（nexus #3029）
@@ -16,6 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Breaking:** audit / metrics タイムスタンプの既定タイムゾーンを JST (`+09:00`) から UTC (`+00:00`) に変更。`now_ts()` / `epoch_ts()` に集約し、`DagConfig.timezone`（既定 `"UTC"`）を `AuditHooks` 経由で参照する。JST が必要なら `DagConfig(timezone="Asia/Tokyo")` または writer の `tz_name=` を指定する（nexus #3028）
 
 ### Added
+
+- `GitHubClient.list_all_issues(state)` / `get_last_rate_limit()` と `GitHubIssuePort` への同メソッド追加。dispatcher の一括ポーリングとヘッダベース rate limit 観測に使用（nexus #3070）
+- ETag / rate-limit retry / batch poll / rate observe のテストを追加（`tests/test_github_client_etag.py` / `tests/test_github_client_ratelimit_retry.py` / `tests/workflow/test_dispatcher_batch_poll.py` / `tests/workflow/test_dispatcher_rate_observe.py`）（nexus #3070）
 
 - `DagConfig.audit_path` を追加し、`exec.jsonl` と同ディレクトリの `audit.jsonl` に解決。`ghdag run` の既定 audit パスを `parent.parent` 計算から `config.audit_path` に統一（nexus #3028）
 - UI `aggregate_task_status` が `task_dep_failed` / `task_cancelled` を終了イベントとしてカウントする（nexus #3028）

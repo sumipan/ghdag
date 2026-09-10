@@ -43,7 +43,9 @@ def _make_issue(number: int) -> dict:
 
 def _make_dispatcher(workflow: WorkflowConfig) -> tuple[WorkflowDispatcher, MagicMock]:
     github_client = MagicMock(spec=GitHubIssuePort)
-    github_client.get_rate_limit.return_value = None  # rate limit 観測をスキップ
+    github_client.list_all_issues.return_value = []
+    github_client.get_last_rate_limit.return_value = None  # rate limit 観測をスキップ
+    github_client.get_rate_limit.return_value = None
     pipeline = MagicMock(spec=LLMPipelineAPI)
     dispatcher = WorkflowDispatcher(
         workflows=[workflow],
@@ -60,7 +62,7 @@ class TestTC7DispatchErrorLogsOnly:
         workflow = _make_workflow()
         dispatcher, github_client = _make_dispatcher(workflow)
         issue = _make_issue(42)
-        github_client.list_issues.return_value = [issue]
+        github_client.list_all_issues.return_value = [issue]
 
         dispatcher.dispatch = MagicMock(side_effect=KeyError("テンプレート展開エラー (brushup.md): 'missing'"))
 
@@ -73,7 +75,7 @@ class TestTC7DispatchErrorLogsOnly:
         workflow = _make_workflow()
         dispatcher, github_client = _make_dispatcher(workflow)
         issue = _make_issue(42)
-        github_client.list_issues.return_value = [issue]
+        github_client.list_all_issues.return_value = [issue]
         dispatcher.dispatch = MagicMock(side_effect=RuntimeError("boom"))
 
         with caplog.at_level(logging.ERROR, logger="ghdag.workflow.dispatcher"):
@@ -87,7 +89,7 @@ class TestTC7DispatchErrorLogsOnly:
         workflow = _make_workflow()
         dispatcher, github_client = _make_dispatcher(workflow)
         issue = _make_issue(42)
-        github_client.list_issues.return_value = [issue]
+        github_client.list_all_issues.return_value = [issue]
         dispatcher.dispatch = MagicMock(side_effect=RuntimeError("dispatch error"))
 
         dispatcher.run(max_iterations=1)

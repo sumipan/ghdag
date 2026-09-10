@@ -51,6 +51,7 @@ _TRANSIENT_EXCEPTIONS = (
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE_SEC = 1.0
 _BACKOFF_CAP_SEC = 8.0
+_RATE_LIMIT_MAX_WAIT_SEC = 900
 
 
 def _backoff_sleep(attempt: int, retry_after: str | None = None) -> None:
@@ -62,6 +63,33 @@ def _backoff_sleep(attempt: int, retry_after: str | None = None) -> None:
             pass
     delay = min(_BACKOFF_BASE_SEC * (2**attempt), _BACKOFF_CAP_SEC)
     time.sleep(delay + random.uniform(0, 0.25))
+
+
+def _rate_limit_wait_seconds(headers: Any, now: float) -> tuple[float, int | None]:
+    """Return (wait_seconds, reset_at) from rate-limit response headers."""
+    reset_at: int | None = None
+    if headers is not None:
+        retry_after = headers.get("Retry-After")
+        if retry_after is not None:
+            try:
+                wait = float(retry_after)
+                reset_raw = headers.get("X-RateLimit-Reset")
+                if reset_raw is not None:
+                    try:
+                        reset_at = int(reset_raw)
+                    except (TypeError, ValueError):
+                        reset_at = None
+                return wait, reset_at
+            except (TypeError, ValueError):
+                pass
+        reset_raw = headers.get("X-RateLimit-Reset")
+        if reset_raw is not None:
+            try:
+                reset_at = int(reset_raw)
+                return float(reset_at) - now, reset_at
+            except (TypeError, ValueError):
+                pass
+    return 0.0, reset_at
 
 
 def _resolve_token(token: str | None = None) -> str:
@@ -140,6 +168,8 @@ class GitHubClient:
         self._token = _resolve_token(token)
         self._owner, self._repo = _resolve_repo(repo)
         self._repo_full = f"{self._owner}/{self._repo}"
+        self._etag_cache: dict[str, tuple[str, Any]] = {}
+        self._last_rate_limit: dict[str, int] | None = None
 
     @property
     def repo(self) -> str:
@@ -152,6 +182,30 @@ class GitHubClient:
             "User-Agent": "ghdag-github-client",
         }
 
+    def _store_rate_limit_from_headers(self, headers: Any) -> None:
+        if headers is None:
+            return
+        remaining = headers.get("X-RateLimit-Remaining")
+        limit = headers.get("X-RateLimit-Limit")
+        reset = headers.get("X-RateLimit-Reset")
+        used = headers.get("X-RateLimit-Used")
+        if remaining is None or limit is None or reset is None:
+            return
+        try:
+            data: dict[str, int] = {
+                "remaining": int(remaining),
+                "limit": int(limit),
+                "reset": int(reset),
+            }
+            if used is not None:
+                data["used"] = int(used)
+            self._last_rate_limit = data
+        except (TypeError, ValueError):
+            return
+
+    def get_last_rate_limit(self) -> dict[str, int] | None:
+        return self._last_rate_limit
+
     def _request(
         self,
         method: str,
@@ -163,6 +217,7 @@ class GitHubClient:
         accept: str = "application/vnd.github+json",
         raw: bool = False,
         return_link_header: bool = False,
+        etag: bool = False,
     ) -> Any:
         if repo:
             owner, repo_name = _resolve_repo(repo)
@@ -184,51 +239,85 @@ class GitHubClient:
         if body is not None:
             data = json.dumps(body).encode("utf-8")
 
-        req = urllib.request.Request(
-            url, data=data, method=method.upper(), headers=self._headers(accept)
-        )
-        if data is not None:
-            req.add_header("Content-Type", "application/json")
+        req_headers = self._headers(accept)
+        if etag and url in self._etag_cache:
+            cached_etag, _ = self._etag_cache[url]
+            req_headers["If-None-Match"] = cached_etag
 
+        payload: bytes = b""
         link_header: str | None = None
-        for attempt in range(_MAX_ATTEMPTS):
-            try:
-                with urllib.request.urlopen(req, timeout=120) as resp:
-                    payload = resp.read()
-                    headers = getattr(resp, "headers", None)
-                    link_header = headers.get("Link") if headers is not None else None
-                break
-            except urllib.error.HTTPError as exc:
-                if exc.code in _TRANSIENT_HTTP_STATUS and attempt < _MAX_ATTEMPTS - 1:
-                    retry_after = exc.headers.get("Retry-After") if exc.headers else None
-                    _backoff_sleep(attempt, retry_after)
-                    continue
-                msg = exc.read().decode("utf-8", errors="replace")
+        response_headers: Any = None
+        succeeded = False
+
+        for rate_attempt in range(2):
+            req = urllib.request.Request(
+                url, data=data, method=method.upper(), headers=req_headers
+            )
+            if data is not None:
+                req.add_header("Content-Type", "application/json")
+
+            for attempt in range(_MAX_ATTEMPTS):
                 try:
-                    detail = json.loads(msg).get("message", msg)
-                except json.JSONDecodeError:
-                    detail = msg or exc.reason
-                error_msg = f"GitHub API {method} {url} failed ({exc.code}): {detail}"
-                if exc.code == 401:
-                    raise AuthError(error_msg, status_code=401) from exc
-                if exc.code == 403:
-                    remaining = exc.headers.get("X-RateLimit-Remaining") if exc.headers else None
-                    if remaining == "0":
-                        raise RateLimitError(error_msg, status_code=403) from exc
-                    raise PermissionDeniedError(error_msg, status_code=403) from exc
-                raise GitHubApiError(error_msg, status_code=exc.code) from exc
-            except _TRANSIENT_EXCEPTIONS as exc:
-                # urlopen は接続断を URLError に包まず素通しすることがある
-                # （nexus#2563: RemoteDisconnected が生で送出された実績）
-                if attempt < _MAX_ATTEMPTS - 1:
-                    _backoff_sleep(attempt)
-                    continue
-                raise NetworkError(f"Network error: {exc}") from exc
-            except urllib.error.URLError as exc:
-                if attempt < _MAX_ATTEMPTS - 1:
-                    _backoff_sleep(attempt)
-                    continue
-                raise NetworkError(f"Network error: {exc.reason}") from exc
+                    with urllib.request.urlopen(req, timeout=120) as resp:
+                        payload = resp.read()
+                        response_headers = getattr(resp, "headers", None)
+                        link_header = (
+                            response_headers.get("Link") if response_headers is not None else None
+                        )
+                    succeeded = True
+                    break
+                except urllib.error.HTTPError as exc:
+                    if exc.code == 304 and etag and url in self._etag_cache:
+                        _, cached_body = self._etag_cache[url]
+                        if return_link_header:
+                            link = exc.headers.get("Link") if exc.headers else None
+                            return cached_body, link
+                        return cached_body
+                    if exc.code in _TRANSIENT_HTTP_STATUS and attempt < _MAX_ATTEMPTS - 1:
+                        retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                        _backoff_sleep(attempt, retry_after)
+                        continue
+                    msg = exc.read().decode("utf-8", errors="replace")
+                    try:
+                        detail = json.loads(msg).get("message", msg)
+                    except json.JSONDecodeError:
+                        detail = msg or exc.reason
+                    error_msg = f"GitHub API {method} {url} failed ({exc.code}): {detail}"
+                    if exc.code == 401:
+                        raise AuthError(error_msg, status_code=401) from exc
+                    if exc.code == 403:
+                        remaining = (
+                            exc.headers.get("X-RateLimit-Remaining") if exc.headers else None
+                        )
+                        if remaining == "0":
+                            wait, reset_at = _rate_limit_wait_seconds(
+                                exc.headers, time.time()
+                            )
+                            if rate_attempt == 0 and wait <= _RATE_LIMIT_MAX_WAIT_SEC:
+                                if wait > 0:
+                                    time.sleep(wait)
+                                break  # outer rate-limit retry
+                            raise RateLimitError(
+                                error_msg, status_code=403, reset_at=reset_at
+                            ) from exc
+                        raise PermissionDeniedError(error_msg, status_code=403) from exc
+                    raise GitHubApiError(error_msg, status_code=exc.code) from exc
+                except _TRANSIENT_EXCEPTIONS as exc:
+                    # urlopen は接続断を URLError に包まず素通しすることがある
+                    # （nexus#2563: RemoteDisconnected が生で送出された実績）
+                    if attempt < _MAX_ATTEMPTS - 1:
+                        _backoff_sleep(attempt)
+                        continue
+                    raise NetworkError(f"Network error: {exc}") from exc
+                except urllib.error.URLError as exc:
+                    if attempt < _MAX_ATTEMPTS - 1:
+                        _backoff_sleep(attempt)
+                        continue
+                    raise NetworkError(f"Network error: {exc.reason}") from exc
+            if succeeded:
+                break
+
+        self._store_rate_limit_from_headers(response_headers)
 
         if raw:
             result: Any = payload.decode("utf-8", errors="replace")
@@ -236,18 +325,30 @@ class GitHubClient:
             result = None
         else:
             result = json.loads(payload.decode("utf-8"))
+
+        if etag and response_headers is not None:
+            etag_value = response_headers.get("ETag")
+            if etag_value:
+                self._etag_cache[url] = (etag_value, result)
+
         if return_link_header:
             return result, link_header
         return result
 
-    def _paginate(self, path: str, *, repo: str | None = None) -> list[Any]:
+    def _paginate(
+        self, path: str, *, repo: str | None = None, etag: bool = False
+    ) -> list[Any]:
         items: list[Any] = []
         url: str | None = path if path.startswith("http") else None
         while True:
             if url:
-                chunk, link = self._request("GET", url, return_link_header=True)
+                chunk, link = self._request(
+                    "GET", url, return_link_header=True, etag=etag
+                )
             else:
-                chunk, link = self._request("GET", path, repo=repo, return_link_header=True)
+                chunk, link = self._request(
+                    "GET", path, repo=repo, return_link_header=True, etag=etag
+                )
             if isinstance(chunk, list):
                 items.extend(chunk)
             elif chunk is not None:
@@ -726,6 +827,11 @@ class GitHubClient:
                 params={"labels": label, "state": state, "per_page": "100"},
             ) or [],
         )
+
+    def list_all_issues(self, state: str = "open") -> list[dict]:
+        qs = urllib.parse.urlencode({"state": state, "per_page": "100"})
+        path = f"/repos/{self._owner}/{self._repo}/issues?{qs}"
+        return cast(list[dict[str, Any]], self._paginate(path, etag=True))
 
     def get_issue_comments(self, number: int) -> list[dict]:
         raw = self._request(
