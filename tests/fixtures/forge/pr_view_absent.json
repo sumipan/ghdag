@@ -1,0 +1,9 @@
+{
+  "meta": {
+    "command": "python -m ghdag.github_cli pr view 999999999 --repo sumipan/ghdag --json number,title,state",
+    "exit_code": 1,
+    "stderr": "GitHub API GET https://api.github.com/repos/sumipan/ghdag/pulls/999999999 failed (404): Not Found",
+    "captured_at": "2026-09-10"
+  },
+  "output": null
+}

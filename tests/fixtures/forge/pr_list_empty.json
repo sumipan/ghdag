@@ -1,0 +1,9 @@
+{
+  "meta": {
+    "command": "python -m ghdag.github_cli pr list --repo sumipan/ghdag --head nonexistent-branch-xyz --json number,title,state",
+    "exit_code": 0,
+    "stderr": "",
+    "captured_at": "2026-09-10"
+  },
+  "output": []
+}

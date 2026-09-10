@@ -1,0 +1,22 @@
+{
+  "meta": {
+    "command": "python -m ghdag.github_cli pr list --repo sumipan/ghdag --limit 3 --json number,title,state,headRefName,mergeable,mergeStateStatus",
+    "exit_code": 0,
+    "stderr": "",
+    "captured_at": "2026-09-10",
+    "note": "normalized via GitHubClient._normalize_prs; live list had 1 open PR"
+  },
+  "output": [
+    {
+      "number": 178,
+      "title": "workflow/dispatcher: _observe_rate_limit を NetworkError に耐性化",
+      "url": "https://github.com/sumipan/ghdag/pull/178",
+      "state": "OPEN",
+      "headRefName": "feat/dispatcher-rate-limit-resilience",
+      "mergeStateStatus": "UNKNOWN",
+      "mergeable": "UNKNOWN",
+      "additions": null,
+      "deletions": null
+    }
+  ]
+}

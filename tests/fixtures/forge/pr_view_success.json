@@ -1,0 +1,18 @@
+{
+  "meta": {
+    "command": "python -m ghdag.github_cli pr view 273 --repo sumipan/ghdag --json number,title,state,headRefName,mergeable,mergeStateStatus,url",
+    "exit_code": 0,
+    "stderr": "",
+    "captured_at": "2026-09-10",
+    "note": "merged PR still reports state CLOSED and mergeable UNKNOWN after _normalize (no merged/mergedAt fields)"
+  },
+  "output": {
+    "number": 273,
+    "title": "実装: sumipan/nexus#3099",
+    "state": "CLOSED",
+    "headRefName": "feat/issue-3099-2980ffb8",
+    "mergeable": "UNKNOWN",
+    "mergeStateStatus": "UNKNOWN",
+    "url": "https://github.com/sumipan/ghdag/pull/273"
+  }
+}
