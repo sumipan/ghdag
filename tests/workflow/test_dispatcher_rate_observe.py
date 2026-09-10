@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-from ghdag.workflow.dispatcher import WorkflowDispatcher, _RATE_LIMIT_THRESHOLD
+from ghdag.workflow.dispatcher import _RATE_LIMIT_THRESHOLD, WorkflowDispatcher
 from ghdag.workflow.schema import (
     HandlerConfig,
     StepConfig,
