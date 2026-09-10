@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
+from ghdag.config.env import ghdag_safe_default_permission
 from ghdag.exceptions import GhdagError
 from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.order import OrderBuilder
@@ -329,7 +330,7 @@ class LLMPipelineAPI:
         if permission is not None:
             capabilities = PRESETS[permission]
         else:
-            safe_default_env = os.environ.get("GHDAG_SAFE_DEFAULT_PERMISSION")
+            safe_default_env = ghdag_safe_default_permission()
             if safe_default_env:
                 if safe_default_env not in PRESETS:
                     raise ValueError(

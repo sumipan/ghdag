@@ -9,7 +9,6 @@ import pytest
 
 from ghdag.dag.fanout import (
     FanoutError,
-    build_child_exec_line,
     build_child_jsonl_record,
     parse_fanout_spec,
 )
@@ -215,17 +214,6 @@ class TestParseFanoutSpec:
         f = tmp_path / "result.md"
         f.write_text("---\nghdag_fanout: plain-string-value\n")
         assert parse_fanout_spec(str(f)) is None
-
-
-class TestBuildChildExecLine:
-    def test_format(self):
-        line = build_child_exec_line("parent--fo--item-001", "bash -c 'process foo'")
-        assert line == "parent--fo--item-001: bash -c 'process foo'"
-
-    def test_uuid_derivation_pattern(self):
-        parent = "inv-20260523-abc"
-        line = build_child_exec_line(f"{parent}--fo--item-001", "echo 1")
-        assert line.startswith(f"{parent}--fo--item-001:")
 
 
 class TestBuildChildJsonlRecord:

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import yaml
 
+from ghdag.config.env import ghdag_llm_models
 from ghdag.exceptions import GhdagError
 from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
 
@@ -41,7 +41,7 @@ def load_engine_models(
         return _load_and_validate(path)
 
     # env var
-    env_path = os.environ.get("GHDAG_LLM_MODELS")
+    env_path = ghdag_llm_models()
     if env_path:
         env_file = Path(env_path)
         if env_file.exists():

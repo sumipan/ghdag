@@ -31,28 +31,34 @@ def check_pipeline_status(result_path: str) -> "str | None":
 
 def _stderr_reader(proc: subprocess.Popen, buf: io.BytesIO) -> None:
     """Read stderr from proc into buf in a daemon thread."""
+    stderr = proc.stderr
+    if stderr is None:
+        return
     try:
-        for chunk in iter(lambda: proc.stderr.read(4096), b""):
+        for chunk in iter(lambda: stderr.read(4096), b""):
             buf.write(chunk)
     except (OSError, ValueError):
         pass
     finally:
         try:
-            proc.stderr.close()
+            stderr.close()
         except (OSError, ValueError):
             pass
 
 
 def _stdout_reader(proc: subprocess.Popen, buf: io.BytesIO) -> None:
     """Read stdout from proc into buf in a daemon thread."""
+    stdout = proc.stdout
+    if stdout is None:
+        return
     try:
-        for chunk in iter(lambda: proc.stdout.read(4096), b""):
+        for chunk in iter(lambda: stdout.read(4096), b""):
             buf.write(chunk)
     except (OSError, ValueError):
         pass
     finally:
         try:
-            proc.stdout.close()
+            stdout.close()
         except (OSError, ValueError):
             pass
 

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import os
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ghdag.config.env import ghdag_audit_path, ghdag_token_warn_threshold
 from ghdag.io.audit_query import read_task_exit_events
 
 __all__ = [
@@ -33,9 +33,9 @@ _DEFAULT_WINDOW_MINUTES = 60
 
 def resolve_audit_path(repo_root: Path) -> Path:
     """Return audit.jsonl path from GHDAG_AUDIT_PATH or jobs/audit.jsonl."""
-    env = os.environ.get("GHDAG_AUDIT_PATH")
-    if env:
-        return Path(env)
+    audit_env = ghdag_audit_path()
+    if audit_env:
+        return Path(audit_env)
     return repo_root / "jobs" / "audit.jsonl"
 
 
@@ -55,7 +55,7 @@ def _parse_timestamp_epoch(ts_str: str | None) -> float | None:
 def _warn_threshold(override: int | None = None) -> int:
     if override is not None:
         return override
-    env_val = os.environ.get("GHDAG_TOKEN_WARN_THRESHOLD")
+    env_val = ghdag_token_warn_threshold()
     if env_val is not None:
         try:
             return int(env_val)

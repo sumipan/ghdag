@@ -66,7 +66,6 @@ def test_genshijin_not_applied_to_result_or_human_outputs():
     """genshijin は compaction プロンプト専用。result / Slack / 日記経路に漏れない。"""
     import ghdag.dag.task_launcher as launcher_mod
     import ghdag.llm.adapters.claude_json as claude_json
-    import ghdag.llm.adapters.claude_text as claude_text
     import ghdag.llm.adapters.codex as codex
     import ghdag.llm.adapters.cursor as cursor
 
@@ -75,7 +74,7 @@ def test_genshijin_not_applied_to_result_or_human_outputs():
     assert "genshijin" not in launcher_src.lower()
 
     # Adapter result extraction must not reference genshijin style
-    for mod in (claude_json, claude_text, cursor, codex):
+    for mod in (claude_json, cursor, codex):
         src = Path(mod.__file__).read_text(encoding="utf-8")
         assert "genshijin" not in src.lower()
 

@@ -9,45 +9,149 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- `WorkflowDispatcher.poll_once` / `_poll_nonterminal_closed` を `list_all_issues` 一括取得 + ローカルラベルフィルタに変更し、trigger ごとの `list_issues` 呼び出しを廃止。`_observe_rate_limit` は `GET /rate_limit` ではなく応答ヘッダ由来の `get_last_rate_limit()` を使い、remaining 低下時は `polling_interval` を一時的に 2 倍にする（nexus #3070）
-- `GitHubClient._request` に ETag 条件付きリクエスト（`etag=True` / 304 キャッシュ再利用）と rate limit 403 の待機→1 回リトライを追加。`RateLimitError` に `reset_at` を追加。`write_rate_limit_audit` に `used` を追加（nexus #3070）
+- Dead-code cleanup, mypy `ignore_errors` removal, env accessors consolidation, and CHANGELOG versioning for 0.35.0–0.48.0 (nexus #3039)
 
-- `workflow/loader.py` が `label_namespace` / `transitions` / `reset_label` / `roles` / `step.role` を読むようにし、`load_workflows()` で `validate_workflow_roles` を呼ぶ。`state_machine._load_workflow_config` の `replace()` 事後補完を削除（nexus #3029）
-- `LLMPipelineAPI.submit()` に公開引数 `order_builder` / `workflow_roles` を追加。dispatcher の `_order_builders` 一時差し替えをやめ、`submit(order_builder=...)` 経由に統一。`step.role` は exec.jsonl annotations の `role` / `role_engines` に載る（nexus #3029）
-- `dag.audit_hooks` の import を `ghdag.io.audit` へ切替し、二塔契約の `dag.audit_hooks -> pipeline.audit` 免除を削除。`pipeline.hooks -> dag.audit_hooks` 免除は DefaultHooks を core へ移すまでコメント付きで残す（nexus #3029）
-
-- **Breaking:** audit / metrics タイムスタンプの既定タイムゾーンを JST (`+09:00`) から UTC (`+00:00`) に変更。`now_ts()` / `epoch_ts()` に集約し、`DagConfig.timezone`（既定 `"UTC"`）を `AuditHooks` 経由で参照する。JST が必要なら `DagConfig(timezone="Asia/Tokyo")` または writer の `tz_name=` を指定する（nexus #3028）
+## 0.48.0 — 2026-09-10
 
 ### Added
 
 - `GitHubClient.list_all_issues(state)` / `get_last_rate_limit()` と `GitHubIssuePort` への同メソッド追加。dispatcher の一括ポーリングとヘッダベース rate limit 観測に使用（nexus #3070）
-- ETag / rate-limit retry / batch poll / rate observe のテストを追加（`tests/test_github_client_etag.py` / `tests/test_github_client_ratelimit_retry.py` / `tests/workflow/test_dispatcher_batch_poll.py` / `tests/workflow/test_dispatcher_rate_observe.py`）（nexus #3070）
+- ETag / rate-limit retry / batch poll / rate observe のテストを追加（nexus #3070）
 
-- `DagConfig.audit_path` を追加し、`exec.jsonl` と同ディレクトリの `audit.jsonl` に解決。`ghdag run` の既定 audit パスを `parent.parent` 計算から `config.audit_path` に統一（nexus #3028）
-- UI `aggregate_task_status` が `task_dep_failed` / `task_cancelled` を終了イベントとしてカウントする（nexus #3028）
+### Changed
 
-- `ghdag.llm.engines.supports_capability(engine, capability)` を公開し、`_UNSUPPORTED_CAPABILITIES - _IGNORED_CAPABILITIES` の判定を閉じた。claude / cursor / codex の `resume` / `stream` / `output_format` をテストで固定（nexus #3034）
-- DAG cursor / codex 進捗イベント: capability 表から `stream` を解禁。cursor DAG 既定を `--output-format stream-json --stream-partial-output` に切替、`CursorStreamAdapter` / `CodexJsonlAdapter` を追加。stdout を行単位で `jobs/events/<uuid>.jsonl` に追記し、stream 不可時は一括読みにフォールバックして `stream_fallback=true` を annotations に記録（#2967）
-- DAG claude 進捗イベント: エンジン既定を `--output-format stream-json --verbose` に切替。stdout を行単位で `jobs/events/<uuid>.jsonl` に追記し、`on_task_progress` フックと UI SSE の `progress`（tool / path / assistant_text）を配信。result ファイルは従来どおり最終 `result` テキスト（#2966）
-- DAG タスクキャンセル: `jobs/running/<uuid>.json` / `jobs/cancel/<uuid>` 制御ファイル、`DONE_CANCELLED`、`on_task_cancelled` フック、`ghdag dag cancel <uuid>` CLI。UI `/api/stop` は `ps` 直殺しから制御ファイル経路へ置換
-- `ghdag.gates` entry-point によるゲート登録（`load_entry_point_gates` / `get_gate`）。`GATE_REGISTRY`（import 副作用）が同名時に優先し、ロード失敗は fail-open
-- `StepConfig.render`（`"frozen"` | `"live"`）と `python -m ghdag.workflow.render`。`render: live` の shell step は enqueue 時に trampoline を凍結し、実行時にテンプレートを再読込・再展開する
+- `WorkflowDispatcher.poll_once` / `_poll_nonterminal_closed` を `list_all_issues` 一括取得 + ローカルラベルフィルタに変更。`_observe_rate_limit` は応答ヘッダ由来の `get_last_rate_limit()` を使い、remaining 低下時は `polling_interval` を一時的に 2 倍にする（nexus #3070）
+- `GitHubClient._request` に ETag 条件付きリクエストと rate limit 403 の待機→1 回リトライを追加。`RateLimitError` に `reset_at` を追加（nexus #3070）
+
+## 0.47.0 — 2026-09-10
+
+### Changed
+
+- `workflow/loader.py` が `label_namespace` / `transitions` / `reset_label` / `roles` / `step.role` を読むようにし、`load_workflows()` で `validate_workflow_roles` を呼ぶ（nexus #3029）
+- `LLMPipelineAPI.submit()` に公開引数 `order_builder` / `workflow_roles` を追加。dispatcher の一時差し替えをやめ `submit(order_builder=...)` 経由に統一（nexus #3029）
+- `dag.audit_hooks` の import を `ghdag.io.audit` へ切替（nexus #3029）
+
+## 0.46.0 — 2026-09-10
 
 ### Fixed
 
 - `ghdag dag recover` が `jobs/running/*.json` から実行中 uuid を集め `running_uuids` に渡し、実行中ステップの done を消さない（nexus #3035）
-- resume フォールバックを同期 `subprocess.run` から `Popen` 非同期再起動へ変更し、メインループの完了チェックをブロックしない。`_resume_fallback_launched` で二重フォールバックを防止（nexus #3035）
-- `PipelineState` が `QuotaGate` を生成時に 1 度だけ作り `append_exec_records` で再利用する（nexus #3035）
+- resume フォールバックを `Popen` 非同期再起動へ変更し、メインループをブロックしない（nexus #3035）
+- `PipelineState` が `QuotaGate` を生成時に 1 度だけ作り再利用する（nexus #3035）
 - `md_read` に write と同じパストラバーサル検査を追加（nexus #3035）
-- UI の running 判定を `jobs/running/<uuid>.json` 基準に変更（`ps` grep はディレクトリ不在時のフォールバック）（nexus #3035）
+- UI の running 判定を `jobs/running/<uuid>.json` 基準に変更（nexus #3035）
 - `llm_pipeline` の到達不能 `default_permission_applied` 分岐を削除（nexus #3035）
 
-- `GitHubClient._paginate` が `Link: rel="next"` を辿らず 1 ページ目で打ち切っていた不具合を修正。実測 Link ヘッダー形式で 1 ページ / 2 ページ / 空をテスト固定（nexus #3034）
-- `GitHubClient()` / `_resolve_repo(None)` が `GITHUB_REPOSITORIES` 未設定時に `DEFAULT_REPO` へ黙ってフォールバックしていた挙動をやめ、`GhdagError` を送出する（nexus #3034）
-- `tests/test_pipeline_status.py` の import を `ghdag.dag._util` から公開パス `ghdag.dag` へ変更（nexus #3034）
-- codex の usage limit（"You've hit your usage limit ... try again at Sep 10th, 2026 2:13 AM"）を `QUOTA_EXHAUSTED` として分類し、`try again at` の人間向け日時をローカル時刻の `resume_at` として抽出する。従来は quota / rate limit のどの語も含まないため未検知（`PROCESS_ERROR`）となり、quota gate の pause も call_managed の fallback も効かず後続ステップが連鎖失敗していた（2026-09-09、nexus #2959 / #2961 の CP2）
-- cursor / codex の resume セッション記録: `CursorAdapter` は実測 JSON の `session_id`（`chat_id` 後方互換）・`result`・`usage.inputTokens/outputTokens` を抽出し、`CodexAdapter` は `thread.started.thread_id`（`session_id` 後方互換）を抽出するよう修正。DAG 経路の cursor に `--output-format json` を付与し、stream 指定時は `--output-format stream-json` と重複しないよう dedupe する（#2968）
+## 0.45.0 — 2026-09-10
 
+### Changed
+
+- **Breaking:** audit / metrics タイムスタンプの既定タイムゾーンを JST から UTC に変更。`now_ts()` / `epoch_ts()` に集約し、`DagConfig.timezone`（既定 `"UTC"`）を参照する（nexus #3028）
+
+### Added
+
+- `DagConfig.audit_path` を追加し、`ghdag run` の既定 audit パスを `config.audit_path` に統一（nexus #3028）
+- UI `aggregate_task_status` が `task_dep_failed` / `task_cancelled` を終了イベントとしてカウントする（nexus #3028）
+
+## 0.44.0 — 2026-09-10
+
+### Added
+
+- `ghdag.llm.engines.supports_capability(engine, capability)` を公開（nexus #3034）
+
+### Fixed
+
+- `GitHubClient._paginate` が `Link: rel="next"` を辿るよう修正（nexus #3034）
+- `GitHubClient()` / `_resolve_repo(None)` が `GITHUB_REPOSITORIES` 未設定時に `GhdagError` を送出する（nexus #3034）
+- codex usage limit を `QUOTA_EXHAUSTED` として分類し `resume_at` を抽出（nexus #2959 / #2961）
+
+## 0.43.0 — 2026-09-09
+
+### Added
+
+- DAG cursor / codex 進捗イベント: `stream` capability 解禁、`CursorStreamAdapter` / `CodexJsonlAdapter`、`stream_fallback` 注釈（#2967）
+
+## 0.42.0 — 2026-09-09
+
+### Added
+
+- DAG claude 進捗イベント: `--output-format stream-json --verbose`、`jobs/events/<uuid>.jsonl`、`on_task_progress`、UI SSE `progress`（#2966）
+
+## 0.41.0 — 2026-09-09
+
+### Fixed
+
+- cursor / codex の resume セッション記録を実 CLI 出力に合わせて修正。DAG 経路の cursor に `--output-format json` を付与（#2968）
+
+## 0.40.0 — 2026-09-09
+
+### Added
+
+- DAG タスクキャンセル: `jobs/running/` / `jobs/cancel/`、`DONE_CANCELLED`、`on_task_cancelled`、`ghdag dag cancel`。UI `/api/stop` を制御ファイル経路へ置換
+- `pr_get` に `headRefName` を追加
+
+## 0.39.1 — 2026-09-06
+
+### Added
+
+- `pr edit` / `pr_update`
+- `nonterminal_closed`（`reopen_issue` Port）
+- `annotations.timeout_sec`
+
+## 0.39.0 — 2026-09-05
+
+### Added
+
+- recover / redispatch（`dag/recover.py`、`ghdag dag recover`、`trigger --redispatch`、世代付き冪等キー）
+
+## 0.38.0 — 2026-09-05
+
+### Added
+
+- role-based admission（`StepConfig.role`、`QuotaGate.admit/begin_run(role, role_engines)`、`clear(ttl_seconds)`）
+
+## 0.37.0 — 2026-09-05
+
+### Added
+
+- `ghdag.gates` entry-point によるゲート登録（`load_entry_point_gates` / `get_gate`）
+- `StepConfig.render`（`"frozen"` | `"live"`）と `python -m ghdag.workflow.render`
+
+## 0.36.0 — 2026-09-04
+
+### Changed
+
+- **EngineSpec 正規化**（`InputMode.STDIN/ARGV`、`cat_pipe` 廃止、全 STDIN エンジンが `< order`）
+
+### Added
+
+- セッション圧縮（`llm/compaction.py`、`GHDAG_SESSION_COMPACTION`）
+- `issue edit --title`
+
+## 0.35.0 — 2026-09-03
+
+### Added
+
+- `call_managed()` / `ManagedResult`
+- `TaskMetrics.additional_tags`
+
+## 0.34.6 — 2026-09-03
+
+### Changed
+
+- 失敗分類ロジックを `llm/adapters/failure_classification.py` に共通化
+
+## 0.34.5 — 2026-09-02
+
+### Added
+
+- stderr 失敗分類（`classify_failure`）、`FailureClass.AUTH / ENGINE_ENVIRONMENT_ERROR`、`EngineQuarantine`（300 秒）
+
+## 0.34.4 — 2026-09-02
+
+### Added
+
+- quota drain / resume、running registry（`begin_run` / `finish_run` / `wait_idle`）、`ghdag quota drain/resume`
 
 ## 0.34.3 — 2026-09-02
 

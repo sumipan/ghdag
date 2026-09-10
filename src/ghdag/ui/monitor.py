@@ -12,7 +12,7 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, cast
 
 from ghdag.io.done import dep_succeeded, read_done_content
 from ghdag.pipeline.status import (
@@ -301,7 +301,7 @@ def _rows_with_tree_layout(
         deps = [d for d in task.depends if d in visible]
         if not deps:
             return None
-        return max(deps, key=lambda d: topo_pos[d])
+        return cast(str, max(deps, key=lambda d: topo_pos[d]))
 
     children: dict[str, list[str]] = defaultdict(list)
     roots: list[str] = []

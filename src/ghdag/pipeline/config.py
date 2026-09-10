@@ -6,7 +6,6 @@ pipeline/config.py — パイプライン設定とモデル解決（Claude 前�
 
 from __future__ import annotations
 
-import shlex
 import sys
 from dataclasses import dataclass
 
@@ -51,28 +50,3 @@ def resolve_models(config: PipelineConfig, overrides: dict[str, str]) -> dict[st
                 )
 
     return result
-
-
-def build_agent_cmd(
-    order_path: str,
-    result_path: str,
-    model: str,
-    agent: str = "claude",
-    prompt: str = "受け取った内容を実行して",
-) -> str:
-    """エージェント CLI コマンド文字列を構築。
-
-    Returns:
-        "cat queue/{order_path} | {agent} --model {model} -p {prompt}
-         --dangerously-skip-permissions | tee -a queue/{result_path}"
-        model, prompt は shlex.quote() でエスケープ
-    """
-    safe_model = shlex.quote(model)
-    safe_prompt = shlex.quote(prompt)
-    return (
-        f"cat queue/{order_path}"
-        f" | {agent} --model {safe_model}"
-        f" -p {safe_prompt}"
-        " --dangerously-skip-permissions"
-        f" | tee -a queue/{result_path}"
-    )

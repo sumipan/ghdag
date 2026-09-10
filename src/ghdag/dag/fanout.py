@@ -101,11 +101,6 @@ def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
     return FanOutSpec(children=children)
 
 
-def build_child_exec_line(child_uuid: str, command: str) -> str:
-    """Build an exec.jsonl-format line for a fan-out child task."""
-    return f"{child_uuid}: {command}"
-
-
 def build_child_jsonl_record(child_uuid: str, command: str) -> str:
     """Build an exec.jsonl-format JSON line for a fan-out child task."""
     return json.dumps({"uuid": child_uuid, "command": command})

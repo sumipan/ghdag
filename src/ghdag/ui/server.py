@@ -270,7 +270,11 @@ class _Handler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, ValueError):
             self._send_json_response(400, {"ok": False, "error": "Invalid JSON"})
             return None
-        uuid = data.get("uuid", "").strip()
+        uuid_val = data.get("uuid", "")
+        if not isinstance(uuid_val, str):
+            self._send_json_response(400, {"ok": False, "error": "Invalid UUID"})
+            return None
+        uuid = uuid_val.strip()
         if not uuid or not all(c in "0123456789abcdefABCDEF-" for c in uuid):
             self._send_json_response(400, {"ok": False, "error": "Invalid UUID"})
             return None
