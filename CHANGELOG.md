@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added
+
+- Engine isolation for DAG LLM launches (nexus #3044): claude always gets `--disable-slash-commands`; codex `call()` sets `CODEX_HOME=/var/tmp/ghdag-dag-codex/`; cursor reports `supports_capability(..., "isolation") == False`
+
 ### Changed
 
 - Dead-code cleanup, mypy `ignore_errors` removal, env accessors consolidation, and CHANGELOG versioning for 0.35.0–0.48.0 (nexus #3039)

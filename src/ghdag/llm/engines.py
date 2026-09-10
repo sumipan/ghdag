@@ -8,6 +8,7 @@ ghdag 側でエンジンごとの許可モデルを管理し、スクリプト�
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from dataclasses import dataclass
@@ -138,13 +139,19 @@ def validate_engine_model(engine: str, model: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 # 非デフォルト値を渡されたら NotImplementedError を送出する未対応 capability。
+# "isolation" は LLMCapabilities 属性ではなく supports_capability 用のメタ capability
+# （グローバル設定隔離の可否）。cursor CLI にスキル/rules 隔離フラグが無いため非対応
+# （nexus #3044。代替は nexus #2972 の物理隔離）。
 _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
     "gemini": {"disallowed_tools", "allowed_tools", "permission_mode", "stream", "sandbox", "resume"},
-    "cursor": {"allowed_tools", "permission_mode"},
+    "cursor": {"allowed_tools", "permission_mode", "isolation"},
     "shell": {"stream", "sandbox", "resume"},
     # codex の stream は --json JSONL。output_format 非対応は維持（#2967）。
     "codex": {"permission_mode", "output_format"},
 }
+
+# call() 経由の codex 起動で使う空 CODEX_HOME（ユーザー ~/.codex を読まない）。
+_CODEX_DAG_HOME = "/var/tmp/ghdag-dag-codex/"
 
 # エンジン側に等価概念がないため noop（値を受理するが CLI フラグに反映しない）で扱う capability。
 # codex: allowed_tools / disallowed_tools は codex-cli には存在せず、権限制御は
@@ -186,6 +193,9 @@ def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities
     if ignored:
         unsupported = unsupported - ignored
     for attr in unsupported:
+        # isolation 等のメタ capability は LLMCapabilities に無い（supports_capability 専用）
+        if not hasattr(capabilities, attr):
+            continue
         val = getattr(capabilities, attr)
         if attr == "permission_mode":
             if val != "default":
@@ -344,14 +354,18 @@ def call(
     )
 
     t0 = time.monotonic()
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        input=effective_stdin,
-        timeout=timeout,
-        cwd=cwd,
-    )
+    run_kwargs: dict = {
+        "capture_output": True,
+        "text": True,
+        "input": effective_stdin,
+        "timeout": timeout,
+        "cwd": cwd,
+    }
+    # codex: ユーザー ~/.codex を読まず空 CODEX_HOME で起動（nexus #3044）
+    if engine == "codex":
+        Path(_CODEX_DAG_HOME).mkdir(parents=True, exist_ok=True)
+        run_kwargs["env"] = {**os.environ, "CODEX_HOME": _CODEX_DAG_HOME}
+    result = subprocess.run(cmd, **run_kwargs)
     latency_ms = (time.monotonic() - t0) * 1000
     session_id: str | None = None
     if result.returncode == 0:
