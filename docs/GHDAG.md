@@ -16,6 +16,26 @@ All reads go through `ghdag.config.env`. Other modules must not call `os.environ
 | `GHDAG_SESSION_COMPACTION` | `session_compaction_enabled()` | off | Opt-in session compaction (`1`/`true`/`yes`/`on`) |
 | `GHDAG_AUDIT_PATH` | `ghdag_audit_path()` | unset | Override audit.jsonl path (`ghdag llm` / UI) |
 | `GHDAG_TOKEN_WARN_THRESHOLD` | `ghdag_token_warn_threshold()` | `500000` | UI token-usage warning threshold |
+| `GHDAG_FORGE` | `ghdag.forge.get_forge` | `github` | Forge backend: `github` (default) or `local` |
+| `GHDAG_FORGE_ROOT` | `ghdag.forge.get_forge` | unset | Data directory for `GHDAG_FORGE=local` (required when local) |
+
+## ForgePort (nexus #3099 / #3100 / #3101)
+
+Issue / PR / label / milestone / Actions 操作は `ghdag.core.ports.forge.ForgePort` に抽象化されている。実装は 2 つ:
+
+| 実装 | 選択 | 役割 |
+|---|---|---|
+| `GitHubClient` | `GHDAG_FORGE=github`（既定） | 本番 GitHub REST。挙動不変 |
+| `LocalForge` | `GHDAG_FORGE=local` + `GHDAG_FORGE_ROOT` | ファイルベース（`<root>/.forge/`）。オフライン実行・契約テスト用 |
+
+`ghdag.forge.get_forge(repo=None)` が実装を返す。`github_cli` と `workflow.state_machine` は factory 経由のみ（`GitHubClient(` 直生成しない）。
+
+### LocalForge の制限
+
+- `reviewDecision` は常に `APPROVED`
+- `pr_checks` は未設定時常に success（`checks_command` で上書き可）
+- Actions（`run_*`）はスタブ（不在 / 空）
+- `api repos/...` のうち milestones / timeline / pulls / repo / issues は型付きメソッドへルーティング。それ以外は LocalForge では未対応
 
 ## Cleanup notes (nexus #3039)
 
