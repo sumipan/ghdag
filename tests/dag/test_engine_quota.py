@@ -168,7 +168,7 @@ def test_resume_fallback_relaunches_async_without_blocking(tmp_path: Path) -> No
     assert popen_cmd == ["bash", "-o", "pipefail", "-c", "claude -p hello"]
     assert task.uuid in engine._launcher._running
     assert engine._launcher._running[task.uuid].proc is fallback_proc
-    assert task.annotations.get("_resume_fallback_launched") is True
+    assert task.annotations.get("_resume_fallback_launched") == "true"
     assert task.command == "claude -p hello"
     assert task.uuid in engine._quota_gate.snapshot().running_tasks
     assert not engine._launcher._is_resume_fallback_target(task, "session not found")

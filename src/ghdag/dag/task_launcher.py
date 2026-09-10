@@ -349,7 +349,7 @@ class TaskLauncher:
                             "Retrying [%s] without --resume due to session-related failure",
                             uuid,
                         )
-                        task.annotations["_resume_fallback_launched"] = True
+                        task.annotations["_resume_fallback_launched"] = "true"
                         task.command = original_command
                         fallback_proc = subprocess.Popen(
                             ["bash", "-o", "pipefail", "-c", original_command],
