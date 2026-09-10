@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import fcntl
+import contextlib
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 from ghdag.files.models import PathTraversalError, WriteResult
@@ -44,14 +46,22 @@ def md_write(
     encoded = content.encode("utf-8")
     bytes_written = len(encoded)
 
-    with open(resolved, "a+", encoding="utf-8") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        try:
-            f.seek(0)
-            f.truncate()
-            f.write(content)
-        finally:
-            fcntl.flock(f, fcntl.LOCK_UN)
+    # Atomic replace: concurrent writers never leave a torn (concatenated) file.
+    # Parent must already exist (matches prior open()-based FileNotFoundError).
+    parent = resolved.parent
+    fd, tmp = tempfile.mkstemp(dir=str(parent), suffix=".tmp")
+    try:
+        os.write(fd, encoded)
+        os.fsync(fd)
+        os.close(fd)
+        fd = -1
+        os.replace(tmp, str(resolved))
+    except BaseException:
+        if fd >= 0:
+            os.close(fd)
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
 
     audit_path = resolved.parent / "audit.jsonl"
     audit_kwargs: dict[str, str] = {}
