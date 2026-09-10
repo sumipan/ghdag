@@ -19,6 +19,7 @@ import zipfile
 from typing import Any, cast
 
 from ghdag.config.env import github_repositories_raw, github_token
+from ghdag.core.ports.forge import ForgePort as ForgePort
 from ghdag.core.ports.github import GitHubIssuePort
 from ghdag.exceptions import (
     AuthError,
@@ -162,7 +163,11 @@ def _api_path(path: str, owner: str, repo: str) -> str:
 
 
 class GitHubClient:
-    """GitHub REST API client backed by urllib."""
+    """GitHub REST API client backed by urllib.
+
+    Structurally satisfies :class:`~ghdag.core.ports.forge.ForgePort` and
+    :class:`~ghdag.core.ports.github.GitHubIssuePort`.
+    """
 
     def __init__(self, token: str | None = None, repo: str | None = None) -> None:
         self._token = _resolve_token(token)
