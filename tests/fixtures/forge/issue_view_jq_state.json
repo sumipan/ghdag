@@ -1,0 +1,9 @@
+{
+  "meta": {
+    "command": "python -m ghdag.github_cli issue view 3100 --json number,title,state --jq '.state' --repo sumipan/nexus",
+    "exit_code": 0,
+    "stderr": "",
+    "captured_at": "2026-09-10"
+  },
+  "output": "OPEN"
+}

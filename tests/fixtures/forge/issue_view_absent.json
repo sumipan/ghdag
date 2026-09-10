@@ -1,0 +1,9 @@
+{
+  "meta": {
+    "command": "python -m ghdag.github_cli issue view 999999999 --json number,title,state --repo sumipan/nexus",
+    "exit_code": 1,
+    "stderr": "GitHub API GET https://api.github.com/repos/sumipan/nexus/issues/999999999 failed (404): Not Found",
+    "captured_at": "2026-09-10"
+  },
+  "output": null
+}
