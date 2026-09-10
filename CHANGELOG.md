@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `FailureClass.INTERACTIVE_PROMPT`（cause `permanent` / retry_policy `forbidden`）を追加。claude / cursor / codex が質問で終了した出力を検出し、DAG は再試行せず done マーカー `INTERACTIVE_PROMPT` と質問文（先頭 200 文字）を audit に記録する（nexus #3046）
 - Engine isolation for DAG LLM launches (nexus #3044): claude always gets `--disable-slash-commands`; codex `call()` sets `CODEX_HOME=/var/tmp/ghdag-dag-codex/`; cursor reports `supports_capability(..., "isolation") == False`
 
 ### Changed

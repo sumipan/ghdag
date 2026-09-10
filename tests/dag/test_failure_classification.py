@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import time
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,6 +12,7 @@ from ghdag.core.vocabulary import (
     DONE_ENGINE_ENV_ERROR,
     DONE_ENGINE_ERROR,
     DONE_ENGINE_ERROR_FINAL,
+    DONE_INTERACTIVE_PROMPT,
 )
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.engine_quarantine import EngineQuarantine
@@ -19,8 +21,17 @@ from ghdag.dag.models import DagConfig, RunningTask, Task
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.adapters.codex import CodexAdapter
+from ghdag.llm.adapters.codex_jsonl import CodexJsonlAdapter
 from ghdag.llm.adapters.cursor import CursorAdapter
+from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
+from ghdag.llm.adapters.failure_classification import looks_like_question
 from ghdag.metrics.models import FailureClass
+
+_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
+
+
+def _load_fixture(name: str) -> bytes:
+    return (_FIXTURES / name).read_bytes()
 
 
 def _make_config(tmp_path):
@@ -321,3 +332,106 @@ def test_retry_and_quarantine_audit_events_are_written(mock_mark_done, tmp_path)
     ]
     assert "task_retry" in events
     assert "engine_quarantine" in events
+
+
+def test_looks_like_question_last_line_endswith_question_mark() -> None:
+    assert looks_like_question("Choose an option?\n") is True
+    assert looks_like_question("Done.\nAll good.") is False
+    assert looks_like_question("") is False
+    assert looks_like_question("   \n  ") is False
+
+
+def test_failure_class_interactive_prompt_meta() -> None:
+    assert FailureClass.INTERACTIVE_PROMPT.value == "INTERACTIVE_PROMPT"
+    assert FailureClass.INTERACTIVE_PROMPT.cause == "permanent"
+    assert FailureClass.INTERACTIVE_PROMPT.retry_policy == "forbidden"
+
+
+@pytest.mark.parametrize(
+    ("adapter", "fixture", "returncode"),
+    [
+        (ClaudeJsonAdapter(), "claude_json_interactive_prompt.json", 0),
+        (ClaudeJsonAdapter(), "claude_json_interactive_prompt.json", 1),
+        (CursorStreamAdapter(), "cursor_stream_interactive_prompt.jsonl", 0),
+        (CursorStreamAdapter(), "cursor_stream_interactive_prompt.jsonl", 1),
+        (CodexJsonlAdapter(), "codex_jsonl_interactive_prompt.jsonl", 1),
+        (CodexAdapter(), "codex_jsonl_interactive_prompt.jsonl", 1),
+    ],
+)
+def test_adapters_detect_interactive_prompt_from_fixtures(
+    adapter, fixture: str, returncode: int
+) -> None:
+    stdout = _load_fixture(fixture)
+    assert adapter.classify_failure(returncode, stdout, b"") == FailureClass.INTERACTIVE_PROMPT
+
+
+@pytest.mark.parametrize(
+    ("adapter", "fixture"),
+    [
+        (ClaudeJsonAdapter(), "claude_json_success.json"),
+        (ClaudeJsonAdapter(), "claude_json_empty.json"),
+        (CursorStreamAdapter(), "cursor_stream_success.jsonl"),
+        (CursorStreamAdapter(), "cursor_stream_empty.jsonl"),
+        (CodexJsonlAdapter(), "codex_jsonl_success.jsonl"),
+        (CodexJsonlAdapter(), "codex_jsonl_empty.jsonl"),
+    ],
+)
+def test_adapters_do_not_classify_normal_or_empty_as_interactive(
+    adapter, fixture: str
+) -> None:
+    stdout = _load_fixture(fixture)
+    assert adapter.classify_failure(0, stdout, b"") is None
+    assert adapter.classify_failure(1, stdout, b"") is None
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_interactive_prompt_exit1_marks_done_without_retry(mock_mark_done, tmp_path) -> None:
+    engine, hooks = _make_engine(tmp_path)
+    task = Task(uuid="interactive-exit1", command="codex exec -p hi", engine="codex", retry=0)
+    stdout = _load_fixture("codex_jsonl_interactive_prompt.jsonl")
+    rt = _make_running_task(task, stdout=stdout, stderr=b"", returncode=1)
+    engine._launcher._running[task.uuid] = rt
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="codex")
+
+    engine._launcher.check_completions()
+
+    mock_mark_done.assert_called_once_with(
+        engine._config.exec_done_dir, task.uuid, DONE_INTERACTIVE_PROMPT
+    )
+    hooks.on_task_failure.assert_called_once()
+    args = hooks.on_task_failure.call_args[0]
+    metrics = args[4]
+    question_excerpt = args[3]
+    assert metrics.failure_class == FailureClass.INTERACTIVE_PROMPT
+    assert len(question_excerpt) <= 200
+    assert "Please choose one?" in question_excerpt or "bugbot" in question_excerpt
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_interactive_prompt_exit0_marks_done_without_success(mock_mark_done, tmp_path) -> None:
+    engine, hooks = _make_engine(tmp_path)
+    result_file = tmp_path / "result.md"
+    task = Task(
+        uuid="interactive-exit0",
+        command="claude -p hi",
+        engine="claude",
+        result_path=str(result_file),
+    )
+    stdout = _load_fixture("claude_json_interactive_prompt.json")
+    rt = _make_running_task(task, stdout=stdout, stderr=b"", returncode=0)
+    engine._launcher._running[task.uuid] = rt
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="claude")
+
+    engine._launcher.check_completions()
+
+    mock_mark_done.assert_called_once_with(
+        engine._config.exec_done_dir, task.uuid, DONE_INTERACTIVE_PROMPT
+    )
+    hooks.on_task_success.assert_not_called()
+    hooks.on_task_failure.assert_called_once()
+    args = hooks.on_task_failure.call_args[0]
+    metrics = args[4]
+    question_excerpt = args[3]
+    assert metrics.failure_class == FailureClass.INTERACTIVE_PROMPT
+    assert len(question_excerpt) <= 200
+    assert "Please choose one?" in question_excerpt

@@ -5,6 +5,15 @@ from __future__ import annotations
 from ghdag.core.models.metrics import FailureClass
 
 
+def looks_like_question(text: str) -> bool:
+    """最終行がユーザーへの質問で終わるかを判定する。"""
+    stripped = text.rstrip()
+    if not stripped:
+        return False
+    last_line = stripped.splitlines()[-1].strip()
+    return last_line.endswith("?")
+
+
 def classify_common_failure(binary: str, stdout: bytes, stderr: bytes) -> FailureClass | None:
     text = _decode_streams(stdout, stderr)
     if _is_environment_error(text, binary):

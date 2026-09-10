@@ -8,7 +8,10 @@ from datetime import datetime
 
 from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.ports.output import EngineError, EngineErrorKind
-from ghdag.llm.adapters.failure_classification import classify_common_failure
+from ghdag.llm.adapters.failure_classification import (
+    classify_common_failure,
+    looks_like_question,
+)
 
 
 class CodexAdapter:
@@ -118,6 +121,9 @@ class CodexAdapter:
         classified = classify_common_failure("codex", stdout, stderr)
         if classified is not None:
             return classified
+        last_agent_message = _last_agent_message_text(stdout)
+        if looks_like_question(last_agent_message):
+            return FailureClass.INTERACTIVE_PROMPT
         text = _decode_streams(stdout, stderr)
         lower = text.lower()
         if "failed to load models cache" in lower:
@@ -127,6 +133,28 @@ class CodexAdapter:
         if "stream" in lower and any(token in lower for token in ("disconnect", "closed", "broken pipe")):
             return FailureClass.ENGINE_ERROR
         return None
+
+
+def _last_agent_message_text(stdout: bytes) -> str:
+    """stdout JSONL の最終 agent_message item の text を返す。"""
+    last = ""
+    for line in stdout.decode("utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if (
+            obj.get("type") == "item.completed"
+            and isinstance(obj.get("item"), dict)
+            and obj["item"].get("type") == "agent_message"
+        ):
+            text = obj["item"].get("text", "")
+            if isinstance(text, str):
+                last = text
+    return last
 
 
 def _extract_error_message(obj: dict) -> str:

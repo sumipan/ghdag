@@ -9,7 +9,10 @@ from datetime import datetime
 from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.parsers import parse_token_usage_json
 from ghdag.core.ports.output import EngineError, EngineErrorKind
-from ghdag.llm.adapters.failure_classification import classify_common_failure
+from ghdag.llm.adapters.failure_classification import (
+    classify_common_failure,
+    looks_like_question,
+)
 from ghdag.llm.capabilities import LLMParseError
 
 
@@ -122,7 +125,13 @@ class ClaudeJsonAdapter:
         stdout: bytes,
         stderr: bytes,
     ) -> FailureClass | None:
-        return classify_common_failure("claude", stdout, stderr)
+        classified = classify_common_failure("claude", stdout, stderr)
+        if classified is not None:
+            return classified
+        text = self.extract_result_text(stdout, stderr).decode("utf-8", errors="replace")
+        if looks_like_question(text):
+            return FailureClass.INTERACTIVE_PROMPT
+        return None
 
 
 def _extract_error_message(data: dict) -> str:

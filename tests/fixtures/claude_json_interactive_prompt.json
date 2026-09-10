@@ -1,0 +1,1 @@
+{"type": "result", "subtype": "success", "is_error": false, "result": "Which review approach should I use?\n\n1. bugbot\n2. security review\n\nPlease choose one?", "session_id": "claude-sess-interactive-001", "usage": {"input_tokens": 1200, "output_tokens": 48}}
