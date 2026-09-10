@@ -45,7 +45,8 @@ def _make_issue(number: int) -> dict:
 
 def _make_client(issues: list[dict]) -> MagicMock:
     client = MagicMock(spec=GitHubIssuePort)
-    client.list_issues.return_value = issues
+    client.list_all_issues.return_value = issues
+    client.get_last_rate_limit.return_value = None
     client.get_rate_limit.return_value = None
     return client
 

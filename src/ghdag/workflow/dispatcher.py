@@ -92,38 +92,69 @@ class WorkflowDispatcher:
         self._burst_warned: dict[str, float] = {}
         self._pause_file = Path(pause_file) if pause_file is not None else None
         self._paused = False
+        self._base_polling_interval = (
+            self._workflows[0].polling_interval if self._workflows else 30
+        )
+        self._current_polling_interval = self._base_polling_interval
 
     def poll_once(self) -> list[dict]:
         """1回のポーリングを実行。マッチした Issue とアクションのリストを返す。
 
-        各 trigger の評価は独立しており、ある trigger で list_issues が失敗しても
-        他の trigger の評価は続行する（per-trigger exception isolation）。失敗した
-        trigger は warning ログを出した上でスキップする。これにより、ある workflow
-        の過渡的な GitHub API 失敗が、別 workflow のディスパッチを巻き添えで停止させる
-        事象を防ぐ。
+        リポジトリごとに open Issue を 1 回一括取得し、trigger ラベル判定はローカルで行う。
+        一括取得が失敗した場合はそのクライアントの全 trigger をスキップする。
+        ラベルフィルタ中の個別例外は trigger 単位でスキップする（per-trigger isolation）。
 
         Returns:
             [{"issue": <number>, "workflow": <name>, "handler": <name>, ...}, ...]
         """
         results: list[dict] = []
         for github in self._githubs:
+            try:
+                all_open = github.list_all_issues("open")
+            except Exception as exc:
+                logger.warning(
+                    "poll_once: list_all_issues(open) failed (%s: %s) — "
+                    "skipping all triggers for this client",
+                    type(exc).__name__,
+                    exc,
+                )
+                continue
+
+            all_closed: list[dict] | None = None
+            if any(wf.nonterminal_closed is not None for wf in self._workflows):
+                try:
+                    all_closed = github.list_all_issues("closed")
+                except Exception as exc:
+                    logger.warning(
+                        "poll_once: list_all_issues(closed) failed (%s: %s) — "
+                        "skipping nonterminal_closed scans for this client",
+                        type(exc).__name__,
+                        exc,
+                    )
+
             for workflow in self._workflows:
                 for trigger_rank, trigger in enumerate(workflow.triggers):
                     handler_name = trigger.handler
                     if handler_name not in workflow.handlers:
                         continue
-                    try:
-                        issues = github.list_issues(trigger.label)
-                    except Exception as exc:
-                        logger.warning(
-                            "poll_once: trigger label=%r in workflow=%r failed "
-                            "(%s: %s) — skipping this trigger and continuing with others",
-                            trigger.label,
-                            workflow.name,
-                            type(exc).__name__,
-                            exc,
-                        )
-                        continue
+                    issues: list[dict] = []
+                    for issue in all_open:
+                        try:
+                            label_names = {
+                                lb["name"] for lb in issue.get("labels", [])
+                            }
+                            if trigger.label in label_names:
+                                issues.append(issue)
+                        except Exception as exc:
+                            logger.warning(
+                                "poll_once: trigger label=%r in workflow=%r failed "
+                                "(%s: %s) — skipping this issue and continuing",
+                                trigger.label,
+                                workflow.name,
+                                type(exc).__name__,
+                                exc,
+                            )
+                            continue
                     handler = workflow.handlers[handler_name]
                     for issue in issues:
                         results.append(
@@ -139,8 +170,8 @@ class WorkflowDispatcher:
                                 "_github": github,
                             }
                         )
-                if workflow.nonterminal_closed is not None:
-                    self._poll_nonterminal_closed(github, workflow, results)
+                if workflow.nonterminal_closed is not None and all_closed is not None:
+                    self._poll_nonterminal_closed(github, workflow, results, all_closed)
         return results
 
     def dispatch(
@@ -302,9 +333,6 @@ class WorkflowDispatcher:
 
     def run(self, max_iterations: int | None = None) -> None:
         """ポーリングループを開始。max_iterations=None で無限ループ。"""
-        polling_interval = (
-            self._workflows[0].polling_interval if self._workflows else 30
-        )
         count = 0
         while max_iterations is None or count < max_iterations:
             if self._pause_file is not None and self._pause_file.exists():
@@ -318,7 +346,7 @@ class WorkflowDispatcher:
                     self._paused = True
                 count += 1
                 if max_iterations is None or count < max_iterations:
-                    time.sleep(polling_interval)
+                    time.sleep(self._current_polling_interval)
                 continue
 
             if self._pause_file is not None and self._paused:
@@ -353,7 +381,7 @@ class WorkflowDispatcher:
                     )
             count += 1
             if max_iterations is None or count < max_iterations:
-                time.sleep(polling_interval)
+                time.sleep(self._current_polling_interval)
 
     def _append_redispatch_audit(
         self,
@@ -401,29 +429,45 @@ class WorkflowDispatcher:
         return reason[:_PAUSE_REASON_MAX_CHARS]
 
     def _observe_rate_limit(self) -> None:
-        """各クライアントの GitHub API rate limit を取得し、audit.jsonl に記録する。"""
+        """各クライアントの直近応答ヘッダ由来 rate limit を audit.jsonl に記録する。
+
+        GET /rate_limit は呼ばない。remaining が閾値以下なら polling_interval を一時的に 2 倍にする。
+        """
+        observed_any = False
+        any_low = False
         for github in self._githubs:
-            rate = github.get_rate_limit()
+            rate = github.get_last_rate_limit()
             if rate is None:
                 continue
             remaining = rate.get("remaining")
             limit = rate.get("limit")
             reset = rate.get("reset")
+            used = rate.get("used")
             if remaining is None or limit is None or reset is None:
                 continue
 
+            observed_any = True
             audit_path = Path(self._queue_dir) / "audit.jsonl"
             write_rate_limit_audit(
                 audit_path,
                 remaining=remaining,
                 limit=limit,
                 reset=reset,
+                used=used,
             )
             if remaining <= _RATE_LIMIT_THRESHOLD:
+                any_low = True
                 logger.warning(
                     "GitHub API rate limit low: %d/%d remaining (resets at %d)",
                     remaining, limit, reset,
                 )
+
+        if observed_any:
+            self._current_polling_interval = (
+                self._base_polling_interval * 2
+                if any_low
+                else self._base_polling_interval
+            )
 
     def _observe_correlation_burst(self) -> None:
         """audit.jsonl から correlation_id バーストを検出し warning を出力する。"""
@@ -457,6 +501,7 @@ class WorkflowDispatcher:
         github: GitHubIssuePort,
         workflow: WorkflowConfig,
         results: list[dict],
+        all_closed: list[dict],
     ) -> None:
         """CLOSED かつ非終端ラベルの issue を検出し reopen / trigger action を実行する。"""
         config = workflow.nonterminal_closed
@@ -467,18 +512,22 @@ class WorkflowDispatcher:
         action = config.action
 
         for trigger in workflow.triggers:
-            try:
-                issues = github.list_issues(trigger.label, state="closed")
-            except Exception as exc:
-                logger.warning(
-                    "poll_once: nonterminal_closed scan for label=%r in workflow=%r failed "
-                    "(%s: %s) — skipping this trigger and continuing with others",
-                    trigger.label,
-                    workflow.name,
-                    type(exc).__name__,
-                    exc,
-                )
-                continue
+            issues: list[dict] = []
+            for issue in all_closed:
+                try:
+                    label_names = {lb["name"] for lb in issue.get("labels", [])}
+                    if trigger.label in label_names:
+                        issues.append(issue)
+                except Exception as exc:
+                    logger.warning(
+                        "poll_once: nonterminal_closed scan for label=%r in workflow=%r failed "
+                        "(%s: %s) — skipping this issue and continuing",
+                        trigger.label,
+                        workflow.name,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    continue
 
             for issue in issues:
                 issue_number = issue["number"]

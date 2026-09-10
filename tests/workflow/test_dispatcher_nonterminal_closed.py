@@ -1,4 +1,7 @@
-"""Tests for nonterminal_closed detection in WorkflowDispatcher — Issue #2870."""
+"""Tests for nonterminal_closed detection in WorkflowDispatcher — Issue #2870.
+
+Updated for nexus #3070: poll uses list_all_issues batch fetch + local label filter.
+"""
 
 from __future__ import annotations
 
@@ -60,7 +63,8 @@ def _make_workflow(
 
 def _make_dispatcher(workflow: WorkflowConfig):
     github_client = MagicMock(spec=GitHubIssuePort)
-    github_client.list_issues.return_value = []
+    github_client.list_all_issues.return_value = []
+    github_client.get_last_rate_limit.return_value = None
     github_client.get_issue_comments.return_value = []
     pipeline_state = MagicMock()
     pipeline_state.check_idempotency.return_value = True
@@ -83,6 +87,18 @@ def _make_dispatcher(workflow: WorkflowConfig):
     return dispatcher, github_client, pipeline_state
 
 
+def _fake_list_all(open_issues=None, closed_issues=None):
+    open_issues = open_issues or []
+    closed_issues = closed_issues or []
+
+    def _impl(state: str = "open"):
+        if state == "closed":
+            return list(closed_issues)
+        return list(open_issues)
+
+    return _impl
+
+
 class TestBackwardCompatibility:
     def test_poll_once_without_nonterminal_closed_uses_open_only(self):
         workflow = _make_workflow()
@@ -90,10 +106,8 @@ class TestBackwardCompatibility:
 
         dispatcher.poll_once()
 
-        for call in github_client.list_issues.call_args_list:
-            assert call.args[1:] == () or call.kwargs.get("state", "open") == "open"
-            if call.args:
-                assert len(call.args) == 1 or call.args[1] == "open"
+        assert github_client.list_all_issues.call_count == 1
+        assert github_client.list_all_issues.call_args.args[0] == "open"
 
     def test_poll_once_without_nonterminal_closed_no_closed_scan(self):
         workflow = _make_workflow()
@@ -101,10 +115,11 @@ class TestBackwardCompatibility:
 
         dispatcher.poll_once()
 
-        assert all(
-            (call.kwargs.get("state") or (call.args[1] if len(call.args) > 1 else "open")) != "closed"
-            for call in github_client.list_issues.call_args_list
-        )
+        states = [
+            (call.args[0] if call.args else call.kwargs.get("state", "open"))
+            for call in github_client.list_all_issues.call_args_list
+        ]
+        assert "closed" not in states
 
 
 class TestReopenAction:
@@ -116,13 +131,9 @@ class TestReopenAction:
         workflow = _make_workflow(nonterminal_closed=config)
         dispatcher, github_client, _ = _make_dispatcher(workflow)
         issue = _make_issue(42, ["issuesmith:develop-done"], state="closed")
-
-        def fake_list_issues(label: str, state: str = "open"):
-            if state == "closed" and label == "issuesmith:develop-done":
-                return [issue]
-            return []
-
-        github_client.list_issues.side_effect = fake_list_issues
+        github_client.list_all_issues.side_effect = _fake_list_all(
+            closed_issues=[issue],
+        )
 
         results = dispatcher.poll_once()
 
@@ -139,13 +150,7 @@ class TestReopenAction:
         workflow = _make_workflow(nonterminal_closed=config)
         dispatcher, github_client, _ = _make_dispatcher(workflow)
         issue = _make_issue(99, ["issuesmith:merge-done"], state="closed")
-
-        def fake_list_issues(label: str, state: str = "open"):
-            if state == "closed":
-                return [issue]
-            return []
-
-        github_client.list_issues.side_effect = fake_list_issues
+        github_client.list_all_issues.side_effect = _fake_list_all(closed_issues=[issue])
 
         dispatcher.poll_once()
 
@@ -163,7 +168,7 @@ class TestReopenAction:
         open_issue = _make_issue(7, ["issuesmith:develop-done"], state="open")
         phase = {"reopened": False}
 
-        def fake_list_issues(label: str, state: str = "open"):
+        def fake_list_all(state: str = "open"):
             if state == "closed" and not phase["reopened"]:
                 return [closed_issue]
             if state == "open":
@@ -173,7 +178,7 @@ class TestReopenAction:
         def fake_reopen(number: int):
             phase["reopened"] = True
 
-        github_client.list_issues.side_effect = fake_list_issues
+        github_client.list_all_issues.side_effect = fake_list_all
         github_client.reopen_issue.side_effect = fake_reopen
 
         dispatcher.poll_once()
@@ -193,9 +198,7 @@ class TestIdempotency:
         workflow = _make_workflow(nonterminal_closed=config)
         dispatcher, github_client, _ = _make_dispatcher(workflow)
         issue = _make_issue(55, ["issuesmith:develop-done"], state="closed")
-        github_client.list_issues.side_effect = lambda label, state="open": (
-            [issue] if state == "closed" else []
-        )
+        github_client.list_all_issues.side_effect = _fake_list_all(closed_issues=[issue])
         github_client.get_issue_comments.return_value = [
             {
                 "author": "bot",
@@ -223,13 +226,7 @@ class TestTriggerAction:
         )
         dispatcher, github_client, _ = _make_dispatcher(workflow)
         issue = _make_issue(88, ["issuesmith:develop-done"], state="closed")
-
-        def fake_list_issues(label: str, state: str = "open"):
-            if state == "closed" and label == "issuesmith:develop-done":
-                return [issue]
-            return []
-
-        github_client.list_issues.side_effect = fake_list_issues
+        github_client.list_all_issues.side_effect = _fake_list_all(closed_issues=[issue])
 
         matches = dispatcher.poll_once()
 

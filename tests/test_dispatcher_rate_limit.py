@@ -1,6 +1,6 @@
 """Tests for WorkflowDispatcher rate limit observation.
 
-ポーリングサイクルごとに GitHub API rate limit を観測し audit.jsonl に記録する。
+ポーリングサイクルごとに応答ヘッダ由来の rate limit を観測し audit.jsonl に記録する。
 残量が閾値以下の場合に warning ログを出力する。取得失敗時はサイレントに続行する。
 """
 
@@ -37,7 +37,8 @@ def _make_workflow(name: str = "wf") -> WorkflowConfig:
 
 def _make_dispatcher(tmp_path: Path) -> tuple[WorkflowDispatcher, MagicMock]:
     github_client = MagicMock(spec=GitHubIssuePort)
-    github_client.list_issues.return_value = []
+    github_client.list_all_issues.return_value = []
+    github_client.get_last_rate_limit.return_value = None
     pipeline = MagicMock(spec=LLMPipelineAPI)
     dispatcher = WorkflowDispatcher(
         workflows=[_make_workflow()],
@@ -50,9 +51,9 @@ def _make_dispatcher(tmp_path: Path) -> tuple[WorkflowDispatcher, MagicMock]:
 
 class TestRateLimitAudit:
     def test_rate_limit_recorded_in_audit(self, tmp_path):
-        """AC1: get_rate_limit() 成功時に audit.jsonl に github_rate_limit イベントが追記される。"""
+        """AC1: get_last_rate_limit() 成功時に audit.jsonl に github_rate_limit イベントが追記される。"""
         dispatcher, github_client = _make_dispatcher(tmp_path)
-        github_client.get_rate_limit.return_value = {
+        github_client.get_last_rate_limit.return_value = {
             "limit": 5000,
             "remaining": 4800,
             "reset": 1700000000,
@@ -74,7 +75,7 @@ class TestRateLimitAudit:
     def test_warning_when_remaining_below_threshold(self, tmp_path, caplog):
         """AC2 正常系: remaining=50 のとき warning ログが出る。"""
         dispatcher, github_client = _make_dispatcher(tmp_path)
-        github_client.get_rate_limit.return_value = {
+        github_client.get_last_rate_limit.return_value = {
             "limit": 5000,
             "remaining": 50,
             "reset": 1700000000,
@@ -91,7 +92,7 @@ class TestRateLimitAudit:
     def test_no_warning_when_remaining_above_threshold(self, tmp_path, caplog):
         """AC2 境界値: remaining=101 のとき warning ログが出ない。"""
         dispatcher, github_client = _make_dispatcher(tmp_path)
-        github_client.get_rate_limit.return_value = {
+        github_client.get_last_rate_limit.return_value = {
             "limit": 5000,
             "remaining": 101,
             "reset": 1700000000,
@@ -106,7 +107,7 @@ class TestRateLimitAudit:
     def test_warning_at_exact_threshold(self, tmp_path, caplog):
         """AC2 境界値: remaining=100 のとき warning ログが出る。"""
         dispatcher, github_client = _make_dispatcher(tmp_path)
-        github_client.get_rate_limit.return_value = {
+        github_client.get_last_rate_limit.return_value = {
             "limit": 5000,
             "remaining": 100,
             "reset": 1700000000,
@@ -119,9 +120,9 @@ class TestRateLimitAudit:
         assert len(warning_records) == 1
 
     def test_silent_continue_on_get_rate_limit_failure(self, tmp_path, caplog):
-        """AC3 異常系1: get_rate_limit() が None を返す場合、audit 書き込みなし・ログなし。"""
+        """AC3 異常系1: get_last_rate_limit() が None を返す場合、audit 書き込みなし・ログなし。"""
         dispatcher, github_client = _make_dispatcher(tmp_path)
-        github_client.get_rate_limit.return_value = None
+        github_client.get_last_rate_limit.return_value = None
 
         with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
             dispatcher._observe_rate_limit()
@@ -131,9 +132,9 @@ class TestRateLimitAudit:
         assert len(caplog.records) == 0
 
     def test_silent_continue_on_incomplete_rate_limit(self, tmp_path, caplog):
-        """AC3 異常系2: get_rate_limit() が不完全な dict を返す場合、audit 書き込みなし・ログなし。"""
+        """AC3 異常系2: get_last_rate_limit() が不完全な dict を返す場合、audit 書き込みなし・ログなし。"""
         dispatcher, github_client = _make_dispatcher(tmp_path)
-        github_client.get_rate_limit.return_value = {"limit": 5000}  # remaining なし
+        github_client.get_last_rate_limit.return_value = {"limit": 5000}  # remaining なし
 
         with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
             dispatcher._observe_rate_limit()
@@ -143,14 +144,14 @@ class TestRateLimitAudit:
         assert len(caplog.records) == 0
 
     def test_dispatch_proceeds_after_rate_limit_failure(self, tmp_path):
-        """AC3: get_rate_limit() 失敗後も _observe_rate_limit() は例外を投げず dispatch は続行できる。"""
+        """AC3: get_last_rate_limit() 失敗後も _observe_rate_limit() は例外を投げず dispatch は続行できる。"""
         dispatcher, github_client = _make_dispatcher(tmp_path)
-        github_client.get_rate_limit.return_value = None
+        github_client.get_last_rate_limit.return_value = None
 
         # _observe_rate_limit() が例外を投げないこと
         dispatcher._observe_rate_limit()
 
         # dispatch も呼べること（mock が存在する）
-        github_client.list_issues.return_value = []
+        github_client.list_all_issues.return_value = []
         matches = dispatcher.poll_once()
         assert matches == []

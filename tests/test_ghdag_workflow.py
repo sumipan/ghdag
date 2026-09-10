@@ -257,6 +257,8 @@ def _make_issue(number: int, labels: list[str] | None = None) -> dict:
 
 def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tuple[WorkflowDispatcher, MagicMock, MagicMock, MagicMock]:
     github_client = MagicMock(spec=GitHubIssuePort)
+    github_client.list_all_issues.return_value = []
+    github_client.get_last_rate_limit.return_value = None
     github_client.get_issue_comments.return_value = []
     pipeline_state = MagicMock()
     pipeline_state.check_idempotency.return_value = True
@@ -642,9 +644,7 @@ class TestTC7Compatibility:
         workflow = _make_extended_workflow()
         dispatcher, github_client, _, _ = _make_dispatcher(workflow)
         issue = _make_issue(1, ["pipeline:draft-ready"])
-        github_client.list_issues.side_effect = lambda label, **kw: (
-            [issue] if label == "pipeline:draft-ready" else []
-        )
+        github_client.list_all_issues.return_value = [issue]
         matches = dispatcher.poll_once()
         assert len(matches) >= 1
         assert matches[0]["issue"] == 1

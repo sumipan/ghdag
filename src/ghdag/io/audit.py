@@ -217,6 +217,7 @@ def write_rate_limit_audit(
     remaining: int,
     limit: int,
     reset: int,
+    used: int | None = None,
     correlation_id: str | None = None,
     tz_name: str = "UTC",
 ) -> None:
@@ -227,6 +228,7 @@ def write_rate_limit_audit(
         "remaining": remaining,
         "limit": limit,
         "reset": reset,
+        "used": used,
         "correlation_id": correlation_id,
     }
     try:

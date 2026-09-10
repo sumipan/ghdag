@@ -22,6 +22,15 @@ class AuthError(GitHubApiError):
 class RateLimitError(GitHubApiError):
     """レート制限超過（403 + X-RateLimit-Remaining: 0）。"""
 
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        reset_at: int | None = None,
+    ):
+        self.reset_at = reset_at
+        super().__init__(message, status_code=status_code)
+
 
 class PermissionDeniedError(GitHubApiError):
     """権限不足（403、404 private repo）。"""
