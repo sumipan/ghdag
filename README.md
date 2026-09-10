@@ -5,12 +5,12 @@ ghdag turns GitHub Issues into a local workflow/pipeline intake tower and a sepa
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.43.0-blue)
+![version](https://img.shields.io/badge/version-v0.55.0-blue)
 ![ci](https://github.com/sumipan/ghdag/actions/workflows/test.yml/badge.svg?branch=main)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
-Current release is **v0.43.0** (`0.Y.Z`, pre-1.0). Public interfaces may change before `1.0.0`. Requires **Python >= 3.10**. License is **MIT** (SPDX: `MIT`).
+Current release is **v0.55.0** (`0.Y.Z`, pre-1.0). Public interfaces may change before `1.0.0`. Requires **Python >= 3.10**. License is **MIT** (SPDX: `MIT`).
 
 ## Installation
 
@@ -21,18 +21,20 @@ pip install ghdag
 Pin a release tag:
 
 ```bash
-pip install git+https://github.com/sumipan/ghdag.git@v0.43.0
+pip install git+https://github.com/sumipan/ghdag.git@v0.55.0
 ```
 
 | Item | Value |
 |---|---|
 | Python requirement | `>=3.10` (`pyproject.toml` `requires-python`) |
-| Runtime dependencies | `watchdog>=4.0.0`, `pyyaml>=6.0`, `requests>=2.28.0` |
+| Runtime dependencies | `watchdog>=4.0.0`, `pyyaml>=6.0` |
 | Dev extras | `pip install "ghdag[dev]"` (`pytest`, `pytest-cov`, `mypy`, `ruff`, `import-linter`, `types-PyYAML`) |
+
+GitHub HTTP uses the Python standard library (`urllib`); there is no `requests` dependency.
 
 ## Quick Start
 
-Minimal queue (shape from `tests/test_ghdag_engine.py`):
+Minimal queue (shape exercised in `tests/test_ghdag_engine.py`):
 
 ```jsonl
 {"uuid":"demo-0001","command":"echo hello from ghdag","depends":[]}
@@ -76,13 +78,15 @@ Related one-shots:
 ghdag trigger 123 --handler impl --redispatch --reason "manual retry"
 ghdag dag recover --issue 123 --handler impl --dry-run
 ghdag dag cancel <uuid>                 # only when jobs/running/<uuid>.json exists
+ghdag status --issue 123 --handler impl --workflow issuesmith --json
+ghdag status --running --json
 ```
 
 ## CLI Reference
 
 Global options: `--verbose` / `-v` (DEBUG), `--quiet` / `-q` (WARNING+). Entry point: `ghdag.cli.main::_build_parser()`.
 
-### Top-level commands (11)
+### Top-level commands (12)
 
 | Command | Description |
 |---|---|
@@ -93,6 +97,7 @@ Global options: `--verbose` / `-v` (DEBUG), `--quiet` / `-q` (WARNING+). Entry p
 | `ghdag version` | Print installed package version |
 | `ghdag cleanup` | Archive completed/orphaned queue tasks |
 | `ghdag trigger` | Trigger one workflow handler for one issue |
+| `ghdag status` | Show Issue DAG status and/or running tasks |
 | `ghdag dag` | DAG utilities (`recover`, `cancel`) |
 | `ghdag audit-query` | Query `audit.jsonl` or detect correlation bursts |
 | `ghdag tools` | Tool definition management |
@@ -121,6 +126,7 @@ Global options: `--verbose` / `-v` (DEBUG), `--quiet` / `-q` (WARNING+). Entry p
 | `llm` | `[prompt]`; `--engine`/`-e` `claude`; `--model`/`-m` engine default; `--timeout` none; `--dangerously-skip-permissions`; `--permission-mode` `{default,plan,bypassPermissions}`; `--capabilities-preset` `{text_only,json_only,web_research,dangerous_full_access}`; `--stdin`; `--list-engines`; `--list-models`; `--audit-path` (`GHDAG_AUDIT_PATH`); `--correlation-id`; `--request-id` |
 | `cleanup` | `repo_root`; `--dry-run`; `--cutoff-days` `1`; `--orphan-days` `7`; `--auto-repair` |
 | `trigger` | `issue_number`; `--handler` (required); `--workflows-dir` `workflows`; `--exec-md` `jobs/exec.jsonl`; `--workflow` auto; `--redispatch`; `--reason` |
+| `status` | `--issue` / `--running` (at least one); with `--issue`: `--handler` + `--workflow` required; `--json`; `--exec-jsonl` (`$GHDAG_EXEC_JSONL` or `jobs/exec.jsonl`); `--state-dir` `.pipeline-state`; `--done-dir` / `--running-dir` derived from exec parent; `--audit-path` optional |
 | `dag recover` | `--issue` (required); `--handler` (required); `--from` STEP; `--dry-run`; `--workflows-dir` `workflows`; `--exec-md` `jobs/exec.jsonl`; `--workflow` auto; `--state-dir` `.pipeline-state` |
 | `dag cancel` | `uuid`; `--queue-dir` `jobs` |
 | `audit-query` | `--correlation-id`; `--burst-detect`; `--since`; `--audit-path` `jobs/audit.jsonl`; `--window-sec` `600`; `--threshold` `10` |
@@ -139,6 +145,8 @@ Global options: `--verbose` / `-v` (DEBUG), `--quiet` / `-q` (WARNING+). Entry p
 
 While a DAG task with `result_path` runs for `claude`, `cursor`, or `codex`, stdout is drained line-by-line into `jobs/events/<uuid>.jsonl` when stream flags are present (`claude`: stream-json path; `cursor`: `-p` + `--output-format stream-json`; `codex`: `--json`). UI SSE snapshots may include `progress` (`tool`, `path`, `assistant_text`). Missing stream flags for a stream-capable engine fall back to bulk stdout reads and set `annotations.stream_fallback=true`. gemini / shell do not create events files. Session IDs and token usage are extracted by engine adapters (cursor: `session_id` / legacy `chat_id`; codex: `thread.started.thread_id` / legacy `session_id`; usage from each adapter’s JSON shape).
 
+Interactive prompts from claude / cursor / codex are classified as `FailureClass.INTERACTIVE_PROMPT` (permanent / no retry). The launcher writes done marker `INTERACTIVE_PROMPT` and records the question text (first 200 characters) in audit.
+
 ## Public API
 
 Import from the public package paths below. Do not treat private modules (`_*`) or internal shims as the recommended surface.
@@ -147,7 +155,7 @@ Import from the public package paths below. Do not treat private modules (`_*`) 
 
 | Symbol | Import | Role |
 |---|---|---|
-| `GhdagError` | `from ghdag import GhdagError` | Base exception (re-export of `ghdag.core.exceptions`) |
+| `GhdagError` | `from ghdag import GhdagError` | Base exception (via `ghdag.exceptions` → `ghdag.core.exceptions`) |
 | `QueueTask` | `from ghdag import QueueTask` | Queue task dataclass |
 | `QueueTaskStore` | `from ghdag import QueueTaskStore` | Queue task store |
 | `LLMPipelineAPI` | `from ghdag import LLMPipelineAPI` | Intake API: submit steps → `exec.jsonl` |
@@ -155,6 +163,11 @@ Import from the public package paths below. Do not treat private modules (`_*`) 
 | `DagEngine` | `from ghdag import DagEngine` | Local DAG runner |
 | `WorkflowDispatcher` | `from ghdag import WorkflowDispatcher` | Label-driven GitHub dispatch |
 | `QuotaGate` | `from ghdag import QuotaGate` | Engine quota / drain admission |
+| `IssueStatus` | `from ghdag import IssueStatus` | Aggregated issue DAG status |
+| `StepStatus` | `from ghdag import StepStatus` | Per-step status row |
+| `RunningTask` | `from ghdag import RunningTask` | Running-task snapshot (`jobs/running`) |
+| `issue_status` | `from ghdag import issue_status` | Build `IssueStatus` from queue/state/done |
+| `running_tasks` | `from ghdag import running_tasks` | List `RunningTask` from a running dir |
 
 Also: `ghdag.__version__` (installed distribution version string).
 
@@ -164,8 +177,11 @@ Also: `ghdag.__version__` (installed distribution version string).
 |---|---|---|
 | `DagEngine` | `(config: DagConfig, hooks: DagHooks \| None = None)` | engine instance; `.run() -> None`, `.append_task(line, audit_context=None)`, `.mark_done(uuid, status)` |
 | `WorkflowDispatcher` | `(workflows, github_client, pipeline, queue_dir="queue", pause_file=None)` | dispatcher; `.poll_once() -> list[dict]`, `.run(max_iterations=None)`, `.dispatch(...) -> DispatchResult` |
-| `LLMPipelineAPI` | `(pipeline_state, order_builder, queue_dir="queue", *, order_builders=None)` | API; `.submit(steps, base_context, *, idempotency_key=None, audit_context, metadata=None) -> list[str]` (exec lines) |
+| `LLMPipelineAPI` | `(pipeline_state, order_builder, queue_dir="queue", *, order_builders=None)` | API; `.submit(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None, workflow_roles=None) -> list[str]` |
 | `QuotaGate` | `(state_path, audit_path=None)` | gate; `.report(...) -> QuotaReportResult`, `.admit(...) -> AdmissionDecision`, `.drain` / `.resume` / `.snapshot` / `.wait_idle` |
+| `issue_status` | `(issue_number, *, handler, workflow, exec_jsonl_path, state_dir, done_dir, …)` | `IssueStatus` |
+| `running_tasks` | `(running_dir)` | `list[RunningTask]` |
+| `get_forge` | `(repo: str \| None = None) -> ForgePort` | GitHub or local forge backend |
 | `call` | `(prompt, *, engine="claude", model=None, timeout=None, …) -> LLMResult` | structured LLM result + optional `session_id` |
 | `call_text` | `(prompt, *, …) -> TextResult` | text-oriented result |
 | `call_managed` | `(prompt, *, fallback_candidates=(), quota_gate=None, …) -> ManagedResult` | managed call with quota/fallback |
@@ -180,24 +196,28 @@ Also: `ghdag.__version__` (installed distribution version string).
 | Package | Notable public symbols |
 |---|---|
 | `ghdag.dag` | `DagConfig`, `DagEngine`, `DagHooks`, `DefaultHooks`, `RunningTask`, `Task`, `check_pipeline_status`, `extract_tee_target`, `parse_jsonl` |
-| `ghdag.workflow` | `WorkflowConfig`, `TriggerConfig`, `HandlerConfig`, `StepConfig`, `OnTriggerConfig`, `DispatchResult`, `load_workflows`, `WorkflowDispatcher`, `GitHubIssueClient`, `create_github_client` |
-| `ghdag.pipeline` | `AuditHooks`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `resolve_models`, `build_agent_cmd`, `status_rank`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `task_status`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `STATE_EMPTY`, `STATE_DEFERRED`, `STATE_ENGINE_ERROR`, `STATE_FAIL`, `STATE_OK`, `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_REJECTED`, `STATE_RUNNING`, `STATE_UNKNOWN_DONE`, `make_order_record`, `submit_order` |
+| `ghdag.workflow` | `WorkflowConfig`, `TriggerConfig`, `HandlerConfig`, `StepConfig`, `OnTriggerConfig`, `DispatchResult`, `load_workflows`, `WorkflowDispatcher`, `GitHubIssueClient`, `create_github_client`, `ForgePort`, `get_forge` |
+| `ghdag.pipeline` | `AuditHooks`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `resolve_models`, `status_rank`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `task_status`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `STATE_*`, `make_order_record`, `submit_order` |
 | `ghdag.llm` | `_config`, `DEFAULT_ENGINE_MODELS`, `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineModelError`, `EngineSpec`, `InputMode`, `PromptFlag`, `LLMCapabilities`, `LLMParseError`, `LLMResult`, `ManagedResult`, `TextResult`, `SessionRecord`, `SessionStore`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `build_llm_cmd`, `call`, `call_managed`, `call_text`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model` |
+| `ghdag.llm.engines` | also `supports_capability(engine, capability)` (not re-exported from `ghdag.llm.__all__`) |
 | `ghdag.files` | `AppendResult`, `AppendStatus`, `MdFile`, `PathTraversalError`, `PromoteResult`, `PromoteStatus`, `WriteResult`, `md_append`, `md_promote`, `md_read`, `md_write` |
 | `ghdag.io` | submodules `audit`, `audit_query`, `done`, `exec_jsonl`, `queue`, `sessions` |
+| `ghdag.config` | `env` (accessors: `github_token`, `github_repositories_raw`, `ghdag_audit_path`, …) |
+| `ghdag.forge` | `get_forge` (also via `ghdag.workflow`); `LocalForge` in `ghdag.forge.local` |
 | `ghdag.github_cli` | `GitHubClient`, `DEFAULT_REPO`, `API_BASE`, `GRAPHQL_URL` |
 | `ghdag.exceptions` | `GhdagError`, `GitHubApiError`, `AuthError`, `RateLimitError`, `PermissionDeniedError`, `NetworkError` |
 | `ghdag.workflow.gates` | `Violation`, `GateRule`, `GATE_REGISTRY`, `get_gate` |
 | `ghdag.metrics` | `MetricsRecorder`, `TaskMetrics` |
 | `ghdag.tool` | `ToolDef`, `ToolRegistry`, `FallbackEntry`, `TOOL_EXIT_CODES`, `write_tool_fallback_audit` |
 | `ghdag.cleanup` | `cleanup_queue`, `CleanupResult`, `file_timestamp`, `QUEUE_FILE_RE` |
+| `ghdag.markdown.body_editor` | `split_h2_sections`, `get_section`, `upsert_section`, `filter_section_by_paths`, `get_subsections`, … |
 
 ## Architecture
 
 ### Towers and contracts
 
 ```
-GitHub Issues / labels
+GitHub Issues / labels  (or LocalForge under GHDAG_FORGE=local)
         │
         ▼
  workflow/ + pipeline/     ──writes──►  exec.jsonl  (task records)
@@ -212,31 +232,35 @@ GitHub Issues / labels
 | Boundary | Producer | Consumer | Contract |
 |---|---|---|---|
 | `exec.jsonl` task record | `workflow` / `pipeline` (`LLMPipelineAPI.submit`, `submit_order`) | `dag` (`parse_jsonl` → `Task`) | JSONL object with at least `uuid`, `command`; optional `depends`, `retry`, `annotations`, `result_path`, `idempotency_key`, `engine`, `model`, `result_finalize` |
-| `jobs/done/<uuid>` | `DagEngine` / launcher | dispatcher wait helpers, recover, UI | file whose contents encode exit/status (`0`, non-zero, `DONE_CANCELLED`, engine-error markers, …) |
-| `jobs/running/<uuid>.json` | launcher on start | `ghdag dag cancel`, UI stop | presence = running; removed on exit |
+| `jobs/done/<uuid>` | `DagEngine` / launcher | dispatcher wait helpers, recover, status, UI | file whose contents encode exit/status (`0`, non-zero, `DONE_CANCELLED`, `INTERACTIVE_PROMPT`, engine-error markers, …) |
+| `jobs/running/<uuid>.json` | launcher on start | `ghdag dag cancel`, `ghdag status --running`, UI stop | presence = running; removed on exit |
 | `jobs/cancel/<uuid>` | CLI / UI | `DagEngine` cancel poll | empty marker file requesting cancel |
 | `jobs/events/<uuid>.jsonl` | launcher stream drain | UI SSE `progress` | line-oriented engine stream events |
 | `jobs/quota-gate.json` | `QuotaGate` / `ghdag quota` | launch admission | engines / deferred / draining / running |
 
 ### Module inventory (`src/ghdag/**/*.py`)
 
-Every Python module under `src/ghdag/` (134 files), grouped by package. Import-linter contracts keep infrastructure (`files`, `llm`, …) from importing orchestration.
+Every Python module under `src/ghdag/` (139 files), grouped by package. Import-linter contracts keep infrastructure (`files`, `llm`, …) from importing orchestration.
 
-**Package root:** `__init__.py`, `__main__.py`, `exceptions.py`, `github_cli.py`, `github_client.py`, `maintenance.py`, `quota.py`
+**Package root:** `__init__.py`, `__main__.py`, `exceptions.py`, `github_cli.py`, `github_client.py`, `maintenance.py`, `quota.py`, `status.py`
 
 **`cleanup/`:** `__init__.py`, `archiver.py`, `link_rewriter.py`, `orchestrator.py`, `orphan_detector.py`, `pruner.py`
 
-**`cli/`:** `__init__.py`, `main.py`; `commands/__init__.py`, `commands/audit_query.py`, `commands/cancel.py`, `commands/cleanup.py`, `commands/llm.py`, `commands/quota.py`, `commands/recover.py`, `commands/run.py`, `commands/trigger.py`, `commands/ui.py`, `commands/watch.py`
+**`cli/`:** `__init__.py`, `main.py`; `commands/__init__.py`, `commands/audit_query.py`, `commands/cancel.py`, `commands/cleanup.py`, `commands/llm.py`, `commands/quota.py`, `commands/recover.py`, `commands/run.py`, `commands/status.py`, `commands/trigger.py`, `commands/ui.py`, `commands/watch.py`
 
-**`core/`:** `__init__.py`, `capabilities.py`, `command.py`, `engine_spec.py`, `exceptions.py`, `parsers.py`, `vocabulary.py`; `models/__init__.py`, `models/dag.py`, `models/files.py`, `models/metrics.py`, `models/workflow.py`; `ports/__init__.py`, `ports/dag_hooks.py`, `ports/gate.py`, `ports/github.py`, `ports/order.py`, `ports/output.py`
+**`config/`:** `__init__.py`, `env.py`
 
-**`dag/`:** `__init__.py`, `_util.py`, `audit_hooks.py`, `circuit_breaker.py`, `engine.py`, `engine_quarantine.py`, `fanout.py`, `fanout_manager.py`, `hooks.py`, `models.py`, `parser.py`, `recover.py`, `state.py`, `task_launcher.py`, `watcher.py`
+**`core/`:** `__init__.py`, `capabilities.py`, `command.py`, `engine_spec.py`, `exceptions.py`, `parsers.py`, `vocabulary.py`; `models/__init__.py`, `models/dag.py`, `models/files.py`, `models/metrics.py`, `models/workflow.py`; `ports/__init__.py`, `ports/dag_hooks.py`, `ports/forge.py`, `ports/gate.py`, `ports/github.py`, `ports/order.py`, `ports/output.py`
+
+**`dag/`:** `__init__.py`, `_util.py`, `audit_hooks.py`, `circuit_breaker.py`, `engine.py`, `engine_quarantine.py`, `fanout.py`, `fanout_manager.py`, `hooks.py`, `models.py`, `parser.py`, `recover.py`, `state.py`, `task_launcher.py`
 
 **`files/`:** `__init__.py`, `_rotate.py`, `append.py`, `models.py`, `promote.py`, `reader.py`, `writer.py`; `links/__init__.py`, `links/obsidian.py`
 
+**`forge/`:** `__init__.py`, `local.py`
+
 **`io/`:** `__init__.py`, `_rotate.py`, `audit.py`, `audit_query.py`, `done.py`, `exec_jsonl.py`, `queue.py`, `sessions.py`
 
-**`llm/`:** `__init__.py`, `_config.py`, `_constants.py`, `capabilities.py`, `compaction.py`, `engines.py`, `managed.py`, `session.py`, `spec.py`; `adapters/__init__.py`, `adapters/claude_json.py`, `adapters/claude_text.py`, `adapters/codex.py`, `adapters/codex_jsonl.py`, `adapters/cursor.py`, `adapters/cursor_stream.py`, `adapters/failure_classification.py`
+**`llm/`:** `__init__.py`, `_config.py`, `_constants.py`, `capabilities.py`, `compaction.py`, `engines.py`, `managed.py`, `session.py`, `spec.py`; `adapters/__init__.py`, `adapters/claude_json.py`, `adapters/codex.py`, `adapters/codex_jsonl.py`, `adapters/cursor.py`, `adapters/cursor_stream.py`, `adapters/failure_classification.py`
 
 **`markdown/`:** `__init__.py`, `body_editor.py`
 
@@ -258,7 +282,16 @@ Package data: `py.typed`, `ui/static/*`.
 
 ### Label transitions
 
-`python -m ghdag.workflow.state_machine transition --workflow <YAML> <issue_number> <target_label>` validates `transitions` / `reset_label` then updates issue labels via `GitHubClient`.
+`python -m ghdag.workflow.state_machine transition --workflow <YAML> <issue_number> <target_label>` validates `transitions` / `reset_label` then updates issue labels via the forge client.
+
+### Forge backends
+
+`get_forge()` (`ghdag.forge` / `ghdag.workflow`) selects the issue/PR backend:
+
+| `GHDAG_FORGE` | Backend | Notes |
+|---|---|---|
+| unset / `github` | `GitHubClient` | Requires `GITHUB_TOKEN` or `GH_TOKEN` |
+| `local` | `LocalForge` (`ghdag.forge.local`) | Requires `GHDAG_FORGE_ROOT`; stores issues/PRs under `<root>/.forge/` |
 
 ## Configuration
 
@@ -297,7 +330,7 @@ Package data: `py.typed`, `ui/static/*`.
 | | `render` | `str` | no | `"frozen"` | `"frozen"` or `"live"` (trampoline re-render) |
 | | `role` | `str \| None` | no | `None` | QuotaGate role name |
 
-When `nonterminal_closed` is set, `WorkflowDispatcher.poll_once` also scans CLOSED issues that lack any `terminal_labels` entry and either reopens them or triggers the configured handler label.
+When `nonterminal_closed` is set, `WorkflowDispatcher.poll_once` also scans CLOSED issues that lack any `terminal_labels` entry and either reopens them or triggers the configured handler label. Role names referenced by steps must appear in `workflow.roles` (`validate_workflow_roles`).
 
 ### `exec.jsonl` task fields (`Task` / `ghdag.io.exec_jsonl.parse`)
 
@@ -326,7 +359,7 @@ Per-task timeout override: set `annotations.timeout_sec` to a positive number (s
 | `launch_stagger` | `float` | `0.5` | Stagger between launches |
 | `max_retry` | `int` | `1` | Engine retry budget |
 | `lock_file` | `str \| Path \| None` | `<queue>/.ghdag.lock` | Process lock |
-| `timezone` | `str` | `UTC` | Timestamp timezone name |
+| `timezone` | `str` | `UTC` | Timestamp timezone name (audit/metrics; default UTC since v0.45.0) |
 | `cwd` | `str \| Path \| None` | `None` | Subprocess cwd |
 | `task_timeout` | `float \| None` | `None` | Default timeout seconds |
 | `kill_grace` | `float` | `10.0` | SIGTERM→SIGKILL grace |
@@ -336,6 +369,7 @@ Per-task timeout override: set `annotations.timeout_sec` to a positive number (s
 | `failure_window_sec` | `float` | `60.0` | Circuit breaker window |
 | `quota_state_path` | `str \| Path \| None` | `<queue>/quota-gate.json` | Quota state file |
 | `quota_audit_path` | `str \| Path \| None` | `<queue>/audit.jsonl` | Quota audit file |
+| `audit_path` | `str \| Path \| None` | `None` | Engine audit path (`ghdag run` default) |
 
 ### `llm-models.yml`
 
@@ -356,13 +390,15 @@ engines:
     - auto
 ```
 
-Top-level key `engines` is required; each value is `list[str]`.
+Top-level key `engines` is required; each value is `list[str]`. Prefer `get_engine_models()` over any module-level cache — the old `ENGINE_MODELS` module attribute was removed.
 
 ### Quota state (`jobs/quota-gate.json`)
 
 Managed by `QuotaGate`. Snapshot includes `engines` (`status`, `observed_at`, `resume_at`, `reason`, `override_until`), `deferred_tasks` (may include `role` / `role_engines`), `draining_engines`, and `running_tasks`. `ghdag quota status` also reports per-engine `queued` / `deferred` / `running` / `idle`.
 
-### Environment variables (8)
+### Environment variables
+
+All ghdag-owned and GitHub auth reads are centralized in `ghdag.config.env` except forge selection and `ghdag status` path override.
 
 | Variable | Required | Default | Meaning |
 |---|---|---|---|
@@ -374,31 +410,49 @@ Managed by `QuotaGate`. Snapshot includes `engines` (`status`, `observed_at`, `r
 | `GHDAG_LLM_MODELS` | no | cwd `llm-models.yml` then built-ins | Engine→model whitelist YAML path |
 | `GHDAG_SAFE_DEFAULT_PERMISSION` | no | `text_only` | Safe default capabilities preset for pipeline steps |
 | `GHDAG_SESSION_COMPACTION` | no (opt-in) | off | Enable session compaction when `1`/`true`/`yes`/`on` |
+| `GHDAG_FORGE` | no | `github` | Forge backend: `github` or `local` |
+| `GHDAG_FORGE_ROOT` | when `GHDAG_FORGE=local` | none | Root directory for `LocalForge` (`.forge/` data) |
+| `GHDAG_EXEC_JSONL` | no | `jobs/exec.jsonl` | Default exec path for `ghdag status` when `--exec-jsonl` omitted |
+
+`CODEX_HOME` is set internally for DAG codex launches (`/var/tmp/ghdag-dag-codex/`); it is not a user-facing configuration variable.
 
 ## Error Reference
 
 ### `GhdagError` hierarchy
 
+Domain subclasses (11 types; verified by `tests/test_exceptions.py::_CUSTOM_EXCEPTIONS`):
+
 ```
 GhdagError (core/exceptions.py)
-├── GitHubApiError
-│   ├── AuthError
-│   ├── RateLimitError
-│   ├── PermissionDeniedError
-│   └── NetworkError
 ├── ModelValidationError (pipeline/config.py)
 ├── DependencyError (pipeline/llm_pipeline.py) *
 ├── EngineModelError (llm/engines.py)
 ├── LLMParseError (llm/capabilities.py)
 ├── ConfigLoadError (llm/_config.py) *
-├── AdapterNotFoundError (core/command.py) *
 ├── FanoutError (dag/fanout.py) *
 ├── ValidationError (workflow/loader.py) *
+├── AdapterNotFoundError (core/command.py; also workflow.engine) *
 ├── ContextHookError (workflow/dispatcher.py) *
-├── AppendRecoverError (files/append.py) *
-├── PathTraversalError (core/models/files.py; also files/models.py re-export) *
-└── ToolRegistryError (tool/exceptions.py)
+├── PathTraversalError (core/models/files.py; files.models re-export) *
+└── AppendRecoverError (files/append.py) *
 ```
+
+GitHub API subclasses (also under `GhdagError`, re-exported from `ghdag.exceptions`):
+
+```
+GhdagError
+└── GitHubApiError
+    ├── AuthError
+    ├── RateLimitError          # has reset_at
+    ├── PermissionDeniedError
+    └── NetworkError
+```
+
+Additional `GhdagError` subclass:
+
+| Type | Module | Notes |
+|---|---|---|
+| `ToolRegistryError` | `tool/exceptions.py` | Tool registry failures |
 
 `*` also subclasses `ValueError` (catchable with `except ValueError`).
 
@@ -415,16 +469,24 @@ GhdagError (core/exceptions.py)
 |---|---|---|
 | `TypeCheckError` | `workflow/typecheck.py` | Dataclass describing skill I/O mismatch (not `BaseException`) |
 | `EngineError` | `core/ports/output.py` | Dataclass for adapter-extracted engine failures (`kind`, `message`, `retryable`, `resume_at`) |
+| `FailureClass` | `core/models/metrics.py` | Enum of failure classifications (includes `INTERACTIVE_PROMPT`) |
 
-`ghdag.exceptions` re-exports the GitHub/`GhdagError` core set for compatibility.
+`ghdag.exceptions` re-exports the GitHub/`GhdagError` core set for compatibility. External code can `except GhdagError` to catch the domain 11 + GitHub API + `ToolRegistryError` hierarchy.
 
 ## Not / API Stability / Deprecated API
 
 **Not in scope:** host-specific personas, Slack bots, secretary agents, or diary-repo workflows. ghdag provides the generic intake + DAG primitives those hosts compose.
 
-**Stability:** pre-1.0 (`0.Y.Z`). Minor versions may change public surfaces; pin `@v0.43.0` for production hosts.
+**Stability:** pre-1.0 (`0.Y.Z`). Minor versions may change public surfaces; pin `@v0.55.0` for production hosts.
 
-**Deprecated / removed in v0.43.0:** none in v0.43.0. Do not reinstate older private shims or deleted CLI flags from prior majors as recommended API.
+**Removed / do not restore as recommended API:**
+
+| Item | Since | Replacement |
+|---|---|---|
+| Module-level `ENGINE_MODELS` | earlier 0.x | `get_engine_models()` |
+| `pipeline.build_agent_cmd` in `ghdag.pipeline.__all__` | — | use `ghdag.llm.build_llm_cmd` |
+| `requests` dependency | — | stdlib `urllib` via `GitHubClient` |
+| JST as default audit/metrics timezone | v0.45.0 | `DagConfig.timezone` default `"UTC"` |
 
 ## License
 
