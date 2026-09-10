@@ -712,7 +712,7 @@ class TestLlmAuditPath:
         assert r["model"] == "claude-sonnet-4-6"
         assert r["exit_code"] == 0
         assert r["correlation_id"] == "slack:1234"
-        assert "+09:00" in r["timestamp"]
+        assert "+00:00" in r["timestamp"]
 
     def test_ac2_correlation_id_unspecified_is_null(self, tmp_path):
         """AC2: correlation_id 未指定 → null。"""

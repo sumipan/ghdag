@@ -6,17 +6,17 @@ import fcntl
 import json
 import traceback
 import warnings
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+from ghdag.io.audit import epoch_ts
 
 from .models import TaskMetrics
 
-_JST = timezone(timedelta(hours=9))
-
 
 class MetricsRecorder:
-    def __init__(self, output_path: str | Path) -> None:
+    def __init__(self, output_path: str | Path, *, tz_name: str = "UTC") -> None:
         self._output_path = Path(output_path)
+        self._tz_name = tz_name
 
     def record(self, metrics: TaskMetrics) -> None:
         """JSONL 1行を追記（fcntl.LOCK_EX で排他ロック）。例外は内部で捕捉。"""
@@ -32,7 +32,7 @@ class MetricsRecorder:
                 pass
 
     def _write(self, metrics: TaskMetrics) -> None:
-        timestamp = datetime.fromtimestamp(metrics.finished_at, tz=_JST).isoformat()
+        timestamp = epoch_ts(metrics.finished_at, self._tz_name)
         record = {
             "uuid": metrics.uuid,
             "engine": metrics.engine,

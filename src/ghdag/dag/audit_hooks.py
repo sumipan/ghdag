@@ -13,8 +13,14 @@ from ghdag.pipeline.audit import write_task_exit_audit
 class AuditHooks(DefaultHooks):
     """DefaultHooks に audit.jsonl 書き込みを追加した実装。"""
 
-    def __init__(self, audit_path: Path | None = None) -> None:
+    def __init__(
+        self,
+        audit_path: Path | None = None,
+        *,
+        tz_name: str = "UTC",
+    ) -> None:
         self._audit_path = audit_path
+        self._tz_name = tz_name
 
     def on_task_start(self, uuid: str, task: Task) -> None:
         super().on_task_start(uuid, task)
@@ -22,6 +28,7 @@ class AuditHooks(DefaultHooks):
             write_task_exit_audit(
                 self._audit_path,
                 event_type="task_started", uuid=uuid, status="running",
+                tz_name=self._tz_name,
             )
 
     def on_task_success(self, uuid: str, task: Task, metrics: TaskMetrics) -> None:
@@ -35,6 +42,7 @@ class AuditHooks(DefaultHooks):
                 correlation_id=metrics.correlation_id,
                 failure_class=metrics.failure_class,
                 request_id=metrics.request_id,
+                tz_name=self._tz_name,
             )
 
     def on_task_failure(self, uuid: str, task: Task, returncode: int, stderr_text: str, metrics: TaskMetrics) -> None:
@@ -48,6 +56,7 @@ class AuditHooks(DefaultHooks):
                 correlation_id=metrics.correlation_id,
                 failure_class=metrics.failure_class,
                 request_id=metrics.request_id,
+                tz_name=self._tz_name,
             )
 
     def on_task_rejected(self, uuid: str, task: Task, retry_depth: int, is_final: bool, metrics: TaskMetrics) -> None:
@@ -61,6 +70,7 @@ class AuditHooks(DefaultHooks):
                 correlation_id=metrics.correlation_id,
                 failure_class=metrics.failure_class,
                 request_id=metrics.request_id,
+                tz_name=self._tz_name,
             )
 
     def on_task_dep_failed(self, uuid: str, task: Task, failed_dep: str) -> None:
@@ -71,6 +81,7 @@ class AuditHooks(DefaultHooks):
                 event_type="task_dep_failed", uuid=uuid, status="dep_failed",
                 correlation_id=task.idempotency_key,
                 failure_class=FailureClass.DEP_FAILED,
+                tz_name=self._tz_name,
             )
 
     def on_task_empty_result(self, uuid: str, task: Task, stderr_text: str, metrics: TaskMetrics) -> None:
@@ -84,6 +95,7 @@ class AuditHooks(DefaultHooks):
                 correlation_id=metrics.correlation_id,
                 failure_class=metrics.failure_class,
                 request_id=metrics.request_id,
+                tz_name=self._tz_name,
             )
 
     def on_task_cancelled(self, uuid: str, task: Task) -> None:
@@ -93,4 +105,5 @@ class AuditHooks(DefaultHooks):
                 self._audit_path,
                 event_type="task_cancelled", uuid=uuid, status="cancelled",
                 correlation_id=task.idempotency_key,
+                tz_name=self._tz_name,
             )

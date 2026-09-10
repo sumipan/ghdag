@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
-JST = timezone(timedelta(hours=9))
 _MAX_AUDIT_BYTES = 64 * 1024 * 1024
 
 
 def _do_rotate(audit_path: Path) -> None:
-    ts = datetime.now(JST).strftime("%Y-%m-%dT%H-%M-%S")
+    ts = datetime.now(ZoneInfo("UTC")).strftime("%Y-%m-%dT%H-%M-%S")
     rotated = audit_path.with_name(f"audit.{ts}.jsonl")
     audit_path.rename(rotated)
 

@@ -36,7 +36,7 @@ class TestWriteTaskExitAudit:
         assert r["token_count"] == 1500
         assert r["model"] == "claude-sonnet-4-6"
         assert r["engine"] == "claude"
-        assert "+09:00" in r["timestamp"]
+        assert "+00:00" in r["timestamp"]
 
     def test_ac2_task_failed(self, tmp_path):
         audit_path = tmp_path / "audit.jsonl"

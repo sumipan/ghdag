@@ -8,19 +8,21 @@ import json
 import sys
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from ghdag.core.models.metrics import FailureClass
 from ghdag.io._rotate import _MAX_AUDIT_BYTES, _do_rotate, _maybe_rotate
 
-JST = timezone(timedelta(hours=9))
 _MAX_FRAMES = 5
 
 __all__ = [
     "AuditContext",
     "append_audit_record",
     "compute_prompt_hash",
+    "now_ts",
+    "epoch_ts",
     "write_audit_log",
     "write_llm_audit_log",
     "write_llm_inference_audit",
@@ -33,6 +35,16 @@ __all__ = [
     "_do_rotate",
     "_maybe_rotate",
 ]
+
+
+def now_ts(tz_name: str = "UTC") -> str:
+    """Return current time as ISO-8601 in the given IANA timezone."""
+    return datetime.now(ZoneInfo(tz_name)).isoformat()
+
+
+def epoch_ts(epoch: float, tz_name: str = "UTC") -> str:
+    """Return epoch seconds as ISO-8601 in the given IANA timezone."""
+    return datetime.fromtimestamp(epoch, tz=ZoneInfo(tz_name)).isoformat()
 
 
 def append_audit_record(audit_path: Path, record: dict) -> None:
@@ -64,13 +76,14 @@ def write_audit_log(
     context: AuditContext,
     idempotency_key: str | None = None,
     default_permission_uuids: list[str] | None = None,
+    tz_name: str = "UTC",
 ) -> None:
     if exec_lines_count == 0:
         return
 
     record = {
         "schema_version": 3,
-        "timestamp": datetime.now(JST).isoformat(),
+        "timestamp": now_ts(tz_name),
         "task_uuids": task_uuids,
         "source": context.source,
         "correlation_id": context.correlation_id,
@@ -103,12 +116,13 @@ def write_llm_inference_audit(
     engine: str,
     model: str,
     correlation_id: str | None = None,
+    tz_name: str = "UTC",
 ) -> None:
     """LLM 推論イベントを audit.jsonl に 1 行追記する。"""
     record = {
         "schema_version": 1,
         "event_type": "llm.inference",
-        "timestamp": datetime.now(JST).isoformat(),
+        "timestamp": now_ts(tz_name),
         "uuid": str(uuid.uuid4()),
         "prompt_hash": prompt_hash,
         "latency_ms": round(latency_ms, 1),
@@ -134,12 +148,13 @@ def write_llm_audit_log(
     correlation_id: str | None = None,
     timeout_sec: int | None = None,
     request_id: str | None = None,
+    tz_name: str = "UTC",
 ) -> None:
     """llm サブコマンド用の監査ログを 1 行追記する。"""
     record = {
         "schema_version": 3,
         "event": "llm_call",
-        "timestamp": datetime.now(JST).isoformat(),
+        "timestamp": now_ts(tz_name),
         "request_id": request_id or str(uuid.uuid4()),
         "source": "llm_cli",
         "correlation_id": correlation_id,
@@ -171,11 +186,12 @@ def write_task_exit_audit(
     request_id: str | None = None,
     parent_correlation_id: str | None = None,
     orchestration_id: str | None = None,
+    tz_name: str = "UTC",
 ) -> None:
     record = {
         "schema_version": schema_version,
         "event_type": event_type,
-        "timestamp": datetime.now(JST).isoformat(),
+        "timestamp": now_ts(tz_name),
         "uuid": uuid,
         "status": status,
         "failure_class": failure_class.value if failure_class else None,
@@ -202,11 +218,12 @@ def write_rate_limit_audit(
     limit: int,
     reset: int,
     correlation_id: str | None = None,
+    tz_name: str = "UTC",
 ) -> None:
     """rate limit snapshot を audit.jsonl に 1 行追記する。"""
     record = {
         "event": "github_rate_limit",
-        "timestamp": datetime.now(JST).isoformat(),
+        "timestamp": now_ts(tz_name),
         "remaining": remaining,
         "limit": limit,
         "reset": reset,
@@ -225,11 +242,12 @@ def write_task_retry_audit(
     attempt: int,
     failure_class: FailureClass,
     stderr_excerpt: str | None = None,
+    tz_name: str = "UTC",
 ) -> None:
     record = {
         "schema_version": 1,
         "event_type": "task_retry",
-        "timestamp": datetime.now(JST).isoformat(),
+        "timestamp": now_ts(tz_name),
         "uuid": uuid,
         "attempt": attempt,
         "failure_class": failure_class.value,
@@ -247,11 +265,12 @@ def write_quarantine_audit(
     engine: str,
     action: str,
     cooldown_sec: int | None = None,
+    tz_name: str = "UTC",
 ) -> None:
     record = {
         "schema_version": 1,
         "event_type": "engine_quarantine",
-        "timestamp": datetime.now(JST).isoformat(),
+        "timestamp": now_ts(tz_name),
         "engine": engine,
         "action": action,
         "cooldown_sec": cooldown_sec,
@@ -275,12 +294,13 @@ def write_compaction_audit(
     tokens_after: int | None = None,
     engine: str | None = None,
     comparison_group: str | None = None,
+    tz_name: str = "UTC",
 ) -> None:
     """Append a session-compaction audit record (lineage + token delta)."""
     record = {
         "schema_version": 1,
         "event_type": "session_compaction",
-        "timestamp": datetime.now(JST).isoformat(),
+        "timestamp": now_ts(tz_name),
         "uuid": task_uuid,
         "event_id": str(uuid.uuid4()),
         "status": status,

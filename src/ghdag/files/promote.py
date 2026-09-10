@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ghdag.files.append import md_append
 from ghdag.files.models import AppendStatus, PathTraversalError, PromoteResult, PromoteStatus
 from ghdag.files.reader import md_read
-from ghdag.io.audit import append_audit_record
-
-JST = timezone(timedelta(hours=9))
+from ghdag.io.audit import append_audit_record, now_ts
 
 
 def _write_promote_audit(
@@ -20,10 +17,11 @@ def _write_promote_audit(
     section: str,
     status: str,
     correlation_id: str | None = None,
+    tz_name: str = "UTC",
 ) -> None:
     record = {
         "event": "md_promote",
-        "timestamp": datetime.now(JST).isoformat(),
+        "timestamp": now_ts(tz_name),
         "source_path": source_path,
         "target_path": target_path,
         "section": section,

@@ -53,7 +53,7 @@ class TestAuditHooks:
         assert r["model"] == "claude-sonnet-4-6"
         assert r["engine"] == "claude"
         assert r["schema_version"] == 3
-        assert "+09:00" in r["timestamp"]
+        assert "+00:00" in r["timestamp"]
 
     def test_on_task_failure(self, tmp_path):
         audit_path = tmp_path / "audit.jsonl"
@@ -259,7 +259,7 @@ class TestAuditHooks:
         assert r["uuid"] == UUID
         assert r["status"] == "running"
         assert r["schema_version"] == 3
-        assert "+09:00" in r["timestamp"]
+        assert "+00:00" in r["timestamp"]
 
     def test_on_task_start_no_audit_path_no_error(self):
         hooks = AuditHooks(audit_path=None)

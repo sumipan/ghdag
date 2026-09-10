@@ -38,6 +38,7 @@ class DagConfig:
     failure_window_sec: float = 60.0
     quota_state_path: str | Path | None = None
     quota_audit_path: str | Path | None = None
+    audit_path: Path | None = None
 
     def __post_init__(self) -> None:
         queue_dir = Path(self.exec_jsonl_path).parent
@@ -53,3 +54,7 @@ class DagConfig:
             self.quota_audit_path = queue_dir / "audit.jsonl"
         else:
             self.quota_audit_path = Path(self.quota_audit_path)
+        if self.audit_path is None:
+            self.audit_path = queue_dir / "audit.jsonl"
+        else:
+            self.audit_path = Path(self.audit_path)
