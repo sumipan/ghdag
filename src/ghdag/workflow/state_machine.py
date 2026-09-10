@@ -11,7 +11,8 @@ from pathlib import Path
 
 import yaml
 
-from ghdag.github_client import GitHubClient
+from ghdag.core.ports.forge import ForgePort
+from ghdag.forge import get_forge
 from ghdag.workflow.loader import _parse
 from ghdag.workflow.schema import WorkflowConfig
 
@@ -54,7 +55,7 @@ def validate_transition(
     )
 
 
-def _label_names(client: GitHubClient, issue_number: int) -> list[str]:
+def _label_names(client: ForgePort, issue_number: int) -> list[str]:
     data = client.issue_get(issue_number, fields=["labels"])
     return [lbl["name"] for lbl in data.get("labels", [])]
 
@@ -66,7 +67,7 @@ def transition(
     reset_label: str | None = None,
 ) -> None:
     """バリデーション → ラベル付替 → 検証 の 3 ステップで遷移する。失敗時は ValueError。"""
-    client = GitHubClient()
+    client = get_forge()
     current_labels = _label_names(client, issue_number)
 
     valid, reason = validate_transition(

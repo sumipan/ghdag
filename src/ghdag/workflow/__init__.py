@@ -1,5 +1,7 @@
 """ghdag.workflow — Layer 2 ワークフローエンジン公開 API"""
 
+from ghdag.core.ports.forge import ForgePort
+from ghdag.forge import get_forge
 from ghdag.github_client import GitHubClient as GitHubIssueClient
 from ghdag.github_client import create_github_client
 from ghdag.workflow import engine as engine  # noqa: F401 — triggers adapter registration
@@ -25,4 +27,6 @@ __all__ = [
     "WorkflowDispatcher",
     "GitHubIssueClient",
     "create_github_client",
+    "ForgePort",
+    "get_forge",
 ]
