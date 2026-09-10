@@ -38,6 +38,10 @@ class PipelineState:
         """
         self._state_dir = Path(state_dir)
         self._exec_jsonl_path = Path(exec_jsonl_path)
+        self._quota_gate = QuotaGate(
+            self._exec_jsonl_path.parent / "quota-gate.json",
+            audit_path=self._exec_jsonl_path.parent / "audit.jsonl",
+        )
 
     # --- 冪等性（exec.jsonl レコード） ---
 
@@ -192,10 +196,7 @@ class PipelineState:
             records,
             audit_context or AuditContext(),
             audit_path=self._exec_jsonl_path.parent / "audit.jsonl",
-            quota_gate=QuotaGate(
-                self._exec_jsonl_path.parent / "quota-gate.json",
-                audit_path=self._exec_jsonl_path.parent / "audit.jsonl",
-            ),
+            quota_gate=self._quota_gate,
         )
 
     def write_order_file(

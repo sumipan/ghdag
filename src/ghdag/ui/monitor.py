@@ -169,6 +169,21 @@ def running_uuids_from_ps(uuids: Iterable[str]) -> set[str]:
     return {u for u in uuids if u.lower() in lower}
 
 
+def running_uuids_from_jobs_dir(
+    jobs_running_dir: Path,
+    uuids: Iterable[str],
+) -> set[str]:
+    """Return uuids that have a ``jobs/running/<uuid>.json`` marker file."""
+    if not jobs_running_dir.is_dir():
+        return set()
+    wanted = set(uuids)
+    return {
+        p.stem
+        for p in jobs_running_dir.glob("*.json")
+        if p.stem in wanted
+    }
+
+
 def extract_engine_model(cmd: str) -> str:
     m = re.search(r'\bclaude\s+--model\s+[\'"]?(\S+?)[\'"]?\s', cmd)
     if m:
@@ -416,7 +431,11 @@ def build_rows(
     if running_uuids_override is not None:
         run_set = running_uuids_override
     elif detect_running:
-        run_set = running_uuids_from_ps(tasks.keys())
+        jobs_running_dir = repo_root / "jobs" / "running"
+        if jobs_running_dir.is_dir():
+            run_set = running_uuids_from_jobs_dir(jobs_running_dir, tasks.keys())
+        else:
+            run_set = running_uuids_from_ps(tasks.keys())
     else:
         run_set = set()
     try:

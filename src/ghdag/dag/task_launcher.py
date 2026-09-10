@@ -321,7 +321,6 @@ class TaskLauncher:
             finished_at = time.time()
             del self._running[uuid]
             self._cancelled.discard(uuid)
-            self._cleanup_control_files(uuid)
             self._join_reader_threads(rt)
             stderr_bytes = rt.stderr_buf.getvalue()
             stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
@@ -336,6 +335,7 @@ class TaskLauncher:
             stdout_data = rt.stdout_buf.getvalue() if rt.stdout_buf else b""
             adapter = get_output_adapter(engine)
 
+            resume_fallback_relaunched = False
             try:
                 if (
                     not was_cancelled
@@ -349,27 +349,66 @@ class TaskLauncher:
                             "Retrying [%s] without --resume due to session-related failure",
                             uuid,
                         )
-                        fallback = subprocess.run(
+                        task.annotations["_resume_fallback_launched"] = "true"
+                        task.command = original_command
+                        fallback_proc = subprocess.Popen(
                             ["bash", "-o", "pipefail", "-c", original_command],
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
                             cwd=cwd,
                         )
-                        returncode = fallback.returncode
-                        stdout_data = fallback.stdout
-                        stderr_bytes = fallback.stderr
-                        stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
-                        usage = adapter.extract_token_usage(stdout_data, stderr_bytes)
-                        token_count = usage.token_count if usage else None
-                        cost_usd = usage.cost_usd if usage else None
-                        cache_read_tokens = usage.cache_read_tokens if usage else None
-                        cache_creation_tokens = usage.cache_creation_tokens if usage else None
-                        task.command = original_command
+                        stdout_buf = io.BytesIO()
+                        stderr_buf = io.BytesIO()
+                        if _should_use_line_reader(engine, original_command, task.annotations):
+                            events_path = self._events_path(uuid)
+
+                            def _on_event(event: dict, _uuid: str = uuid) -> None:
+                                cb = getattr(self._hooks, "on_task_progress", None)
+                                if cb is not None:
+                                    cb(_uuid, event)
+
+                            t_stdout = threading.Thread(
+                                target=_stdout_line_reader,
+                                args=(fallback_proc, stdout_buf, events_path, _on_event),
+                                daemon=True,
+                            )
+                        else:
+                            t_stdout = threading.Thread(
+                                target=_stdout_reader,
+                                args=(fallback_proc, stdout_buf),
+                                daemon=True,
+                            )
+                        t_stdout.start()
+                        t_stderr = threading.Thread(
+                            target=_stderr_reader,
+                            args=(fallback_proc, stderr_buf),
+                            daemon=True,
+                        )
+                        t_stderr.start()
+                        self._running[uuid] = RunningTask(
+                            uuid=uuid,
+                            task=task,
+                            proc=fallback_proc,
+                            started_at=time.time(),
+                            started_at_mono=time.monotonic(),
+                            stderr_buf=stderr_buf,
+                            retry_depth=task.retry,
+                            stdout_buf=stdout_buf,
+                            stderr_thread=t_stderr,
+                            stdout_thread=t_stdout,
+                        )
+                        self._write_running_file(uuid, fallback_proc, task, engine)
+                        resume_fallback_relaunched = True
             finally:
-                try:
-                    self._quota_gate.finish_run(task_uuid=uuid)
-                except ValueError:
-                    logger.exception("Failed to update running registry for [%s]", uuid)
+                if not resume_fallback_relaunched:
+                    self._cleanup_control_files(uuid)
+                    try:
+                        self._quota_gate.finish_run(task_uuid=uuid)
+                    except ValueError:
+                        logger.exception("Failed to update running registry for [%s]", uuid)
+
+            if resume_fallback_relaunched:
+                continue
 
             engine_error = adapter.extract_error(stdout_data, stderr_bytes)
             usage = adapter.extract_token_usage(stdout_data, stderr_bytes)
@@ -884,6 +923,8 @@ class TaskLauncher:
         return command
 
     def _is_resume_fallback_target(self, task: Task, stderr_text: str) -> bool:
+        if task.annotations.get("_resume_fallback_launched"):
+            return False
         if "resumed_session_id" not in task.annotations:
             return False
         if "_command_without_resume" not in task.annotations:

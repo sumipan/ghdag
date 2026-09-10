@@ -177,6 +177,16 @@ class TestPipelineState:
     def make_state(self) -> PipelineState:
         return PipelineState(state_dir=self.state_dir, exec_jsonl_path=self.exec_md)
 
+    def test_quota_gate_reused_across_append_exec_records(self):
+        """AC-3: QuotaGate は PipelineState 生成時に 1 度だけ作られ再利用される。"""
+        st = self.make_state()
+        gate1 = st._quota_gate
+        st.append_exec_records([{"uuid": "u1", "command": "echo 1"}])
+        gate2 = st._quota_gate
+        st.append_exec_records([{"uuid": "u2", "command": "echo 2"}])
+        gate3 = st._quota_gate
+        assert gate1 is gate2 is gate3
+
     # --- 冪等性 ---
 
     def test_s1_idempotency_first_call(self):

@@ -13,6 +13,7 @@ def cmd_recover(args) -> None:
         execute_recover,
         format_recover_plan,
         plan_recover,
+        running_uuids_from_queue_dir,
     )
     from ghdag.workflow.loader import load_workflows
 
@@ -55,6 +56,7 @@ def cmd_recover(args) -> None:
     exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
     queue_dir = exec_jsonl_resolved.parent
     done_dir = queue_dir / "done"
+    running_uuids = running_uuids_from_queue_dir(queue_dir)
 
     try:
         plan = plan_recover(
@@ -66,6 +68,7 @@ def cmd_recover(args) -> None:
             queue_dir=queue_dir,
             done_dir=done_dir,
             from_step=args.from_step,
+            running_uuids=running_uuids,
         )
     except RecoverError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -82,6 +85,7 @@ def cmd_recover(args) -> None:
             queue_dir=queue_dir,
             done_dir=done_dir,
             dry_run=False,
+            running_uuids=running_uuids,
         )
     except RecoverError as exc:
         print(f"error: {exc}", file=sys.stderr)

@@ -207,6 +207,17 @@ def format_recover_plan(plan: RecoverPlan) -> str:
     return "\n".join(lines)
 
 
+def running_uuids_from_queue_dir(queue_dir: str | Path) -> set[str]:
+    """Collect running task UUIDs from ``queue_dir/running/*.json`` stems.
+
+    Missing ``running/`` directory yields an empty set (not an error).
+    """
+    running_dir = Path(queue_dir) / "running"
+    if not running_dir.is_dir():
+        return set()
+    return {p.stem for p in running_dir.glob("*.json")}
+
+
 def collect_running_uuids(
     done_dir: str | Path,
     *,
