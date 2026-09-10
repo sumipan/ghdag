@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from ghdag.io.done import dep_succeeded, interpret_done
+from ghdag.io.done import dep_succeeded, interpret_done, read_done_content
 from ghdag.status import _step_status_core
 
 # 状態定数
