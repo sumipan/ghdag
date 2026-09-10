@@ -399,6 +399,13 @@ class GitHubClient:
                 )
             elif field == "state":
                 out["state"] = raw.get("state", "").upper()
+            elif field == "sub_issues_summary":
+                summary = raw.get("sub_issues_summary")
+                out["sub_issues_summary"] = (
+                    summary
+                    if isinstance(summary, dict)
+                    else {"total": 0, "completed": 0, "percent_completed": 0}
+                )
             else:
                 out[field] = raw.get(field)
         return out
@@ -817,6 +824,58 @@ class GitHubClient:
             return self._paginate(api_path)
         body = dict(fields) if fields else None
         return self._request(method, api_path, body=body, repo=repo)
+
+    # --- Sub-issues (REST) ---
+
+    def add_sub_issue(self, parent_number: int, child_id: int) -> dict | None:
+        """Link ``child_id`` (Issue ``id``, not ``number``) under ``parent_number``.
+
+        201 → parent issue JSON. 422 (duplicate / already has a parent) is treated
+        as idempotent success and returns ``None``. 403 is re-raised with a hint
+        that ``child_id`` must be the Issue ``id`` field (passing ``number`` yields
+        a misleading GitHub 403).
+        """
+        path = f"/repos/{self._owner}/{self._repo}/issues/{parent_number}/sub_issues"
+        try:
+            return cast(
+                dict[str, Any],
+                self._request("POST", path, body={"sub_issue_id": child_id}),
+            )
+        except GitHubApiError as exc:
+            if exc.status_code == 422:
+                return None
+            if isinstance(exc, PermissionDeniedError):
+                raise PermissionDeniedError(
+                    f"{exc}; child_id must be the Issue id field, not number "
+                    f"(got child_id={child_id})",
+                    status_code=403,
+                ) from exc
+            raise
+
+    def list_sub_issues(self, parent_number: int) -> list[dict]:
+        """Paginated GET ``.../issues/{parent}/sub_issues``."""
+        path = f"/repos/{self._owner}/{self._repo}/issues/{parent_number}/sub_issues"
+        return cast(list[dict[str, Any]], self._paginate(path))
+
+    def remove_sub_issue(self, parent_number: int, child_id: int) -> dict | None:
+        """Unlink sub-issue via DELETE ``.../issues/{parent}/sub_issue`` (singular)."""
+        path = f"/repos/{self._owner}/{self._repo}/issues/{parent_number}/sub_issue"
+        return cast(
+            dict[str, Any] | None,
+            self._request("DELETE", path, body={"sub_issue_id": child_id}),
+        )
+
+    def sub_issues_summary(self, parent_number: int) -> dict:
+        """Extract ``sub_issues_summary`` from the parent issue; zeros if unlinked."""
+        raw = self.issue_get(parent_number)
+        summary = raw.get("sub_issues_summary")
+        if isinstance(summary, dict):
+            return {
+                "total": int(summary.get("total", 0) or 0),
+                "completed": int(summary.get("completed", 0) or 0),
+                "percent_completed": int(summary.get("percent_completed", 0) or 0),
+            }
+        return {"total": 0, "completed": 0, "percent_completed": 0}
 
     # --- GitHubIssuePort compatible methods ---
 
