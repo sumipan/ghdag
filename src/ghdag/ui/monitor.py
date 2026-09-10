@@ -141,6 +141,11 @@ def task_state(
     running_uuids: Optional[set[str]] = None,
     deferred_uuids: Optional[set[str]] = None,
 ) -> str:
+    """Return Japanese UI state via ``pipeline.status.task_status``.
+
+    Status judgment is centralized in ``ghdag.status._step_status_core``
+    (shared with ``issue_status``); this wrapper only forwards arguments.
+    """
     return task_status(
         uuid,
         exec_done_dir,

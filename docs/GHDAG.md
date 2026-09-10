@@ -2,6 +2,31 @@
 
 Implementation code under `src/ghdag/` is the source of truth. Nexus host docs live in the nexus repository (`docs/GHDAG.md`); this file tracks package-local reference material.
 
+## Status API (nexus #3084)
+
+公開モジュール `ghdag.status` は Issue × handler の現在世代 DAG 状態を返す。
+
+| シンボル | 役割 |
+|---|---|
+| `issue_status(issue_number, *, handler, workflow, exec_jsonl_path, state_dir, done_dir, ...)` | 世代・各ステップの `status` / `orphan_uuids` / `running` |
+| `running_tasks(running_dir)` | `jobs/running/*.json` から経過時間付き一覧 |
+| `IssueStatus` / `StepStatus` / `RunningTask` | 上記の戻り値 dataclass |
+
+ステップ `status` 語彙: `success | failed | pending | running | skipped | cancelled | dep_failed`。
+
+判定コア `_step_status_core` は `pipeline.status.task_status`（UI `/api/rows`）と共有する。`dag.recover.plan_recover` は `_read_step_records` を共有し、Recover 向けに status を粗くする。
+
+### CLI: `ghdag status`
+
+```bash
+ghdag status --issue N --handler H --workflow W --json \
+  [--exec-jsonl PATH] [--state-dir PATH] [--done-dir PATH] [--running-dir PATH]
+
+ghdag status --running --json [--exec-jsonl PATH] [--running-dir PATH]
+```
+
+`--exec-jsonl` 未指定時は環境変数 `GHDAG_EXEC_JSONL`、それも無ければ `jobs/exec.jsonl`。
+
 ## Environment variables
 
 All reads go through `ghdag.config.env`. Other modules must not call `os.environ.get` for these keys.
@@ -18,6 +43,7 @@ All reads go through `ghdag.config.env`. Other modules must not call `os.environ
 | `GHDAG_TOKEN_WARN_THRESHOLD` | `ghdag_token_warn_threshold()` | `500000` | UI token-usage warning threshold |
 | `GHDAG_FORGE` | `ghdag.forge.get_forge` | `github` | Forge backend: `github` (default) or `local` |
 | `GHDAG_FORGE_ROOT` | `ghdag.forge.get_forge` | unset | Data directory for `GHDAG_FORGE=local` (required when local) |
+| `GHDAG_EXEC_JSONL` | CLI `ghdag status` | `jobs/exec.jsonl` | Default exec.jsonl path for status CLI |
 
 ## ForgePort (nexus #3099 / #3100 / #3101)
 

@@ -8,8 +8,7 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
-from ghdag.io import exec_jsonl
-from ghdag.io.done import interpret_done, read_done_content
+from ghdag.status import _read_step_records, _to_recover_status
 
 logger = logging.getLogger(__name__)
 
@@ -59,14 +58,14 @@ def plan_recover(
     running_uuids: set[str] | None = None,
 ) -> RecoverPlan:
     """Build a recover plan for the current handler generation."""
-    generation = exec_jsonl.get_generation(
-        state_dir, workflow_name, handler_name, issue_number,
-    )
-    idempotency_key = exec_jsonl.build_idempotency_key(
-        workflow_name, handler_name, issue_number, generation,
-    )
-    records = exec_jsonl.find_records_by_idempotency_key(
-        Path(exec_jsonl_path), idempotency_key,
+    generation, idempotency_key, records = _read_step_records(
+        state_dir=state_dir,
+        exec_jsonl_path=exec_jsonl_path,
+        workflow_name=workflow_name,
+        handler_name=handler_name,
+        issue_number=issue_number,
+        done_dir=done_dir,
+        running_uuids=running_uuids,
     )
     if not records:
         return RecoverPlan(
@@ -76,32 +75,16 @@ def plan_recover(
             rerun_uuids=[],
         )
 
-    done_path = Path(done_dir)
-    running = running_uuids or set()
-    step_infos: list[RecoverStepInfo] = []
-    for rec in records:
-        uuid = str(rec["uuid"])
-        annotations = rec.get("annotations") or {}
-        step_name = str(annotations.get("step_name") or uuid)
-        raw_done = read_done_content(done_path, uuid)
-        if uuid in running:
-            status = "running"
-        elif raw_done is None:
-            status = "pending"
-        elif interpret_done(raw_done) == "success":
-            status = "success"
-        else:
-            status = "failed"
-
-        step_infos.append(
-            RecoverStepInfo(
-                uuid=uuid,
-                step_name=step_name,
-                depends=[str(d) for d in rec.get("depends", [])],
-                command=str(rec.get("command", "")),
-                status=status,
-            )
+    step_infos: list[RecoverStepInfo] = [
+        RecoverStepInfo(
+            uuid=rec.uuid,
+            step_name=rec.step_name,
+            depends=list(rec.depends),
+            command=rec.command,
+            status=_to_recover_status(rec.status),
         )
+        for rec in records
+    ]
 
     downstream_uuids: set[str] | None = None
     if from_step is not None:
