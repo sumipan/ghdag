@@ -9,6 +9,7 @@ import os
 import signal
 import time
 from pathlib import Path
+from typing import IO
 
 from ghdag.core.vocabulary import DONE_DEP_FAILED
 from ghdag.io import exec_jsonl
@@ -41,7 +42,7 @@ class DagEngine:
             self._hooks = hooks
         self._tasks: dict[str, Task] = {}
         self._shutdown = False
-        self._lock_fh = None
+        self._lock_fh: IO[str] | None = None
 
         self._circuit_breaker = CircuitBreakerPolicy(
             failure_window_sec=config.failure_window_sec,
@@ -50,10 +51,13 @@ class DagEngine:
         self._fanout_manager = FanOutManager(
             config, self._hooks, self._append_fanout_child, self._run_promote
         )
+        quota_state_path = config.quota_state_path
+        if quota_state_path is None:
+            raise ValueError("DagConfig.quota_state_path must be set")
         self._launcher = TaskLauncher(
             config, self._hooks, self._circuit_breaker,
             self._fanout_manager, self._run_promote,
-            quota_gate=QuotaGate(config.quota_state_path, audit_path=config.quota_audit_path),
+            quota_gate=QuotaGate(quota_state_path, audit_path=config.quota_audit_path),
         )
         self._quota_gate = self._launcher.quota_gate
 
@@ -201,9 +205,10 @@ class DagEngine:
 
     def _acquire_lock(self) -> None:
         """Prevent multiple DagEngine instances."""
-        self._lock_fh = open(str(self._config.lock_file), "w")
+        lock_fh = open(str(self._config.lock_file), "w")
+        self._lock_fh = lock_fh
         try:
-            fcntl.flock(self._lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             logger.error(
                 "Another DagEngine is already running (lock: %s)", self._config.lock_file

@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
 
+from ghdag.config.env import session_compaction_enabled
 from ghdag.core.vocabulary import (
     DONE_CANCELLED,
     DONE_EMPTY_RESULT,
@@ -811,13 +812,7 @@ class TaskLauncher:
 
     def _compaction_policy(self) -> CompactionPolicy:
         """Opt-in: enable via GHDAG_SESSION_COMPACTION=1 (default off)."""
-        enabled = os.environ.get("GHDAG_SESSION_COMPACTION", "").strip().lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
-        return CompactionPolicy(enabled=enabled)
+        return CompactionPolicy(enabled=session_compaction_enabled())
 
     def _apply_resume_if_available(self, uuid: str, task: Task) -> None:
         resume_from_uuid = task.annotations.get("resume_from_uuid")

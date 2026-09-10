@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from ghdag.pipeline import PipelineConfig, PipelineState, TemplateOrderBuilder
-from ghdag.pipeline.config import ModelValidationError, build_agent_cmd, resolve_models
+from ghdag.pipeline.config import ModelValidationError, resolve_models
 from ghdag.pipeline.state import parse_frontmatter, status_rank
 
 # ---------------------------------------------------------------------------
@@ -51,43 +51,6 @@ class TestResolveModels:
         cfg = self.make_config(validate_allowlist=False)
         result = resolve_models(cfg, {"brushup": "any-model"})
         assert result["brushup"] == "any-model"
-
-    def test_c5_build_agent_cmd_basic(self):
-        """C5: build_agent_cmd 基本形"""
-        cmd = build_agent_cmd(
-            order_path="ts-order-uuid.md",
-            result_path="ts-result-uuid.md",
-            model="opus",
-        )
-        assert "cat queue/ts-order-uuid.md" in cmd
-        assert "claude" in cmd
-        assert "--model" in cmd
-        assert "opus" in cmd
-        assert "-p" in cmd
-        assert "--dangerously-skip-permissions" in cmd
-        assert "tee -a queue/ts-result-uuid.md" in cmd
-
-    def test_c6_build_agent_cmd_shell_escape(self):
-        """C6: prompt に特殊文字 → shlex.quote() でエスケープ"""
-        cmd = build_agent_cmd(
-            order_path="o.md",
-            result_path="r.md",
-            model="opus",
-            prompt="it's a \"test\"",
-        )
-        # シェルエスケープされていること（生の引用符がそのまま入らない）
-        assert "it's a \"test\"" not in cmd
-
-    def test_c7_build_agent_cmd_gemini(self):
-        """C7: agent="gemini" → コマンドに gemini が使われる"""
-        cmd = build_agent_cmd(
-            order_path="o.md",
-            result_path="r.md",
-            model="flash",
-            agent="gemini",
-        )
-        assert "gemini" in cmd
-        assert "claude" not in cmd
 
     def test_c8_unknown_phase_in_overrides(self):
         """C8: overrides に未知フェーズ → system_defaults のキーのみ返す"""

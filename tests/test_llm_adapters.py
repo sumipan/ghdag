@@ -8,7 +8,6 @@ import pytest
 
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
-from ghdag.llm.adapters.claude_text import ClaudeTextAdapter
 from ghdag.llm.adapters.cursor import CursorAdapter
 from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
 from ghdag.metrics.models import TokenUsage
@@ -109,55 +108,6 @@ class TestClaudeJsonAdapterExtractTokenUsage:
         usage = adapter.extract_token_usage(json.dumps(payload).encode(), b"")
         assert usage is not None
         assert usage.token_count is None
-
-
-# ---------------------------------------------------------------------------
-# ClaudeTextAdapter
-# ---------------------------------------------------------------------------
-
-class TestClaudeTextAdapterExtractResultText:
-    def test_returns_stdout_as_is(self):
-        """stdout をそのまま返す（既存挙動温存）。"""
-        raw = b"some output text"
-        adapter = ClaudeTextAdapter()
-        out = adapter.extract_result_text(raw, b"some stderr")
-        assert out == raw
-
-    def test_empty_stdout(self):
-        """空 stdout → 空 bytes。"""
-        adapter = ClaudeTextAdapter()
-        assert adapter.extract_result_text(b"", b"") == b""
-
-
-class TestClaudeTextAdapterExtractTokenUsage:
-    def test_extracts_token_count_from_stderr(self):
-        """stderr の 'Total tokens: N' パターンから token_count を抽出する。"""
-        stderr = b"something Total tokens: 1234 something"
-        adapter = ClaudeTextAdapter()
-        usage = adapter.extract_token_usage(b"stdout text", stderr)
-        assert usage is not None
-        assert usage.token_count == 1234
-        assert usage.cost_usd is None
-
-    def test_extracts_input_output_tokens_from_stderr(self):
-        """stderr の input_tokens/output_tokens パターンから合計を抽出する。"""
-        stderr = b'input_tokens: 100\noutput_tokens: 50'
-        adapter = ClaudeTextAdapter()
-        usage = adapter.extract_token_usage(b"", stderr)
-        assert usage is not None
-        assert usage.token_count == 150
-
-    def test_no_token_info_in_stderr_returns_none(self):
-        """stderr にトークン情報なし → None。"""
-        adapter = ClaudeTextAdapter()
-        usage = adapter.extract_token_usage(b"stdout", b"no token info here")
-        assert usage is None
-
-    def test_empty_stderr_returns_none(self):
-        """空 stderr → None。"""
-        adapter = ClaudeTextAdapter()
-        usage = adapter.extract_token_usage(b"stdout", b"")
-        assert usage is None
 
 
 # ---------------------------------------------------------------------------

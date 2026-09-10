@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
+
+from ghdag.config.env import ghdag_audit_path
 
 
 def cmd_llm(args) -> None:
@@ -76,7 +77,7 @@ def cmd_llm(args) -> None:
     if result.stderr:
         print(result.stderr, end="", file=sys.stderr)
 
-    audit_path = args.audit_path or os.environ.get("GHDAG_AUDIT_PATH")
+    audit_path = args.audit_path or ghdag_audit_path()
     if audit_path and result.ok:
         from ghdag.llm.engines import validate_engine_model
         from ghdag.pipeline.audit import (

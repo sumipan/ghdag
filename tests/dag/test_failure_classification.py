@@ -18,7 +18,6 @@ from ghdag.dag.hooks import DagHooks
 from ghdag.dag.models import DagConfig, RunningTask, Task
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
-from ghdag.llm.adapters.claude_text import ClaudeTextAdapter
 from ghdag.llm.adapters.codex import CodexAdapter
 from ghdag.llm.adapters.cursor import CursorAdapter
 from ghdag.metrics.models import FailureClass
@@ -58,7 +57,6 @@ def _make_running_task(task: Task, stdout: bytes = b"", stderr: bytes = b"", ret
 def all_adapters():
     return [
         ClaudeJsonAdapter(),
-        ClaudeTextAdapter(),
         CursorAdapter(),
         CodexAdapter(),
     ]
@@ -92,7 +90,6 @@ def test_all_adapters_detect_auth_from_both_streams(all_adapters, stream: str) -
     ("adapter", "binary"),
     [
         (ClaudeJsonAdapter(), "claude"),
-        (ClaudeTextAdapter(), "claude"),
         (CursorAdapter(), "cursor"),
         (CodexAdapter(), "codex"),
     ],

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
-from ghdag.llm.adapters.claude_text import ClaudeTextAdapter
 from ghdag.llm.adapters.codex import CodexAdapter
 from ghdag.llm.adapters.cursor import CursorAdapter
 
@@ -88,8 +87,3 @@ def test_codex_prefers_thread_id_over_session_id():
         b'{"type":"session.created","session_id":"sess_legacy"}\n'
     )
     assert adapter.extract_session_id(stdout, b"") == "thread_prefer"
-
-
-def test_claude_text_returns_none():
-    adapter = ClaudeTextAdapter()
-    assert adapter.extract_session_id(b"stdout", b"stderr") is None

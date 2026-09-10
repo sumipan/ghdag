@@ -9,7 +9,6 @@ from __future__ import annotations
 import http.client
 import io
 import json
-import os
 import random
 import re
 import time
@@ -19,6 +18,7 @@ import urllib.request
 import zipfile
 from typing import Any, cast
 
+from ghdag.config.env import github_repositories_raw, github_token
 from ghdag.core.ports.github import GitHubIssuePort
 from ghdag.exceptions import (
     AuthError,
@@ -93,7 +93,7 @@ def _rate_limit_wait_seconds(headers: Any, now: float) -> tuple[float, int | Non
 
 
 def _resolve_token(token: str | None = None) -> str:
-    value = token or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    value = token or github_token()
     if not value:
         raise AuthError("GITHUB_TOKEN is not set")
     return value
@@ -101,7 +101,7 @@ def _resolve_token(token: str | None = None) -> str:
 
 def _resolve_repos() -> list[tuple[str, str]]:
     """GITHUB_REPOSITORIES（カンマ区切り owner/repo リスト）を解決する。"""
-    raw = os.environ.get("GITHUB_REPOSITORIES", "")
+    raw = github_repositories_raw()
     repos: list[tuple[str, str]] = []
     for part in raw.split(","):
         part = part.strip()
@@ -137,7 +137,7 @@ def _resolve_repo(repo: str | None = None) -> tuple[str, str]:
         owner, name = (p.strip() for p in repo.split("/", 1))
         return owner, name
 
-    raw = os.environ.get("GITHUB_REPOSITORIES", "").strip()
+    raw = github_repositories_raw().strip()
     if raw:
         first = raw.split(",")[0].strip()
         if "/" in first:

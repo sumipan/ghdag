@@ -173,7 +173,10 @@ class PipelineState:
         if not json_path.exists():
             return None
         with open(json_path, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return None
+        return data
 
     def remove(self, pipeline_id: str) -> bool:
         """state_dir/{pipeline_id}.json を削除。存在しなければ False。"""

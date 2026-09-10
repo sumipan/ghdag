@@ -117,7 +117,12 @@ def validate_engine_model(engine: str, model: str | None) -> str:
         )
 
     if model is None:
-        return ENGINE_DEFAULTS[engine]
+        default = ENGINE_DEFAULTS[engine]
+        if default is None:
+            raise EngineModelError(
+                f"Engine {engine!r} has no default model; specify model explicitly"
+            )
+        return default
 
     allowed = models[engine]
     if model not in allowed:

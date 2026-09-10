@@ -4,7 +4,6 @@ from ghdag.io.audit_query import get_latest_status, read_task_exit_events
 from ghdag.pipeline.config import (
     ModelValidationError,
     PipelineConfig,
-    build_agent_cmd,
     resolve_models,
 )
 from ghdag.pipeline.hooks import AuditHooks
@@ -36,7 +35,6 @@ __all__ = [
     "TemplateOrderBuilder",
     "InlineOrderBuilder",
     "resolve_models",
-    "build_agent_cmd",
     "status_rank",
     "parse_frontmatter",
     "LLMPipelineAPI",
