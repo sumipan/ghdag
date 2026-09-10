@@ -7,7 +7,7 @@ from pathlib import Path
 from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import Task
 from ghdag.metrics.models import FailureClass, TaskMetrics
-from ghdag.pipeline.audit import write_task_exit_audit
+from ghdag.io.audit import write_task_exit_audit
 
 
 class AuditHooks(DefaultHooks):
