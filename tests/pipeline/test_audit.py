@@ -63,7 +63,7 @@ class TestWriteAuditLog:
         assert r["request_id"] is None
         assert r["parent_correlation_id"] is None
         assert r["orchestration_id"] is None
-        assert "+09:00" in r["timestamp"]
+        assert "+00:00" in r["timestamp"]
         assert isinstance(r["caller_stack"], list)
 
     def test_ac5_exec_lines_count_zero_no_write(self, tmp_path):
@@ -393,7 +393,7 @@ class TestWriteLlmAuditLog:
         assert r["correlation_id"] == "slack:1234"
         assert r["timeout_sec"] == 120
         assert r["schema_version"] == 3
-        assert "+09:00" in r["timestamp"]
+        assert "+00:00" in r["timestamp"]
         assert _UUID4_RE.match(r["request_id"])
 
     def test_ac_a3_external_request_id(self, tmp_path):

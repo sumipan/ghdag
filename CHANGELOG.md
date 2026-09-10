@@ -7,7 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed
+
+- **Breaking:** audit / metrics タイムスタンプの既定タイムゾーンを JST (`+09:00`) から UTC (`+00:00`) に変更。`now_ts()` / `epoch_ts()` に集約し、`DagConfig.timezone`（既定 `"UTC"`）を `AuditHooks` 経由で参照する。JST が必要なら `DagConfig(timezone="Asia/Tokyo")` または writer の `tz_name=` を指定する（nexus #3028）
+
 ### Added
+
+- `DagConfig.audit_path` を追加し、`exec.jsonl` と同ディレクトリの `audit.jsonl` に解決。`ghdag run` の既定 audit パスを `parent.parent` 計算から `config.audit_path` に統一（nexus #3028）
+- UI `aggregate_task_status` が `task_dep_failed` / `task_cancelled` を終了イベントとしてカウントする（nexus #3028）
 
 - `ghdag.llm.engines.supports_capability(engine, capability)` を公開し、`_UNSUPPORTED_CAPABILITIES - _IGNORED_CAPABILITIES` の判定を閉じた。claude / cursor / codex の `resume` / `stream` / `output_format` をテストで固定（nexus #3034）
 - DAG cursor / codex 進捗イベント: capability 表から `stream` を解禁。cursor DAG 既定を `--output-format stream-json --stream-partial-output` に切替、`CursorStreamAdapter` / `CodexJsonlAdapter` を追加。stdout を行単位で `jobs/events/<uuid>.jsonl` に追記し、stream 不可時は一括読みにフォールバックして `stream_fallback=true` を annotations に記録（#2967）

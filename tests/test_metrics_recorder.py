@@ -39,7 +39,7 @@ def test_record_single_line(tmp_path):
     for field in ("uuid", "engine", "model", "wall_time_sec", "token_count", "status", "started_at", "finished_at", "timestamp"):
         assert field in data
     assert data["uuid"] == "t1"
-    assert "+09:00" in data["timestamp"]
+    assert "+00:00" in data["timestamp"]
 
 
 def test_record_three_lines(tmp_path):

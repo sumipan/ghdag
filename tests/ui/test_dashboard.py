@@ -98,6 +98,25 @@ class TestAggregateTaskStatus:
         assert result["total"] == 0
         assert result["by_status"] == {}
 
+    def test_counts_task_dep_failed_and_task_cancelled(self, audit_path, fixed_now):
+        """AC-3: task_dep_failed / task_cancelled are task-exit events for UI."""
+        from ghdag.ui.dashboard import aggregate_task_status
+
+        _write_events(audit_path, [
+            {"event_type": "task_dep_failed", "status": "dep_failed", "failure_class": "DEP_FAILED",
+             "timestamp": _ts(-1), "correlation_id": "c1", "uuid": "u1"},
+            {"event_type": "task_cancelled", "status": "cancelled", "failure_class": None,
+             "timestamp": _ts(-2), "correlation_id": "c2", "uuid": "u2"},
+        ])
+
+        with patch("ghdag.ui.dashboard.time.time", return_value=fixed_now):
+            result = aggregate_task_status(audit_path, since_sec=86400.0)
+
+        assert result["total"] == 2
+        assert result["by_status"]["dep_failed"] == 1
+        assert result["by_status"]["cancelled"] == 1
+        assert result["by_failure_class"]["DEP_FAILED"] == 1
+
 
 class TestAggregateTokenUsage:
     def test_aggregates_by_correlation_and_flags_threshold(self, audit_path, fixed_now):

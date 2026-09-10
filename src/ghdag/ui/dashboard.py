@@ -22,6 +22,8 @@ _TASK_EXIT_EVENT_TYPES = frozenset({
     "task_failed",
     "task_rejected",
     "task_empty_result",
+    "task_dep_failed",
+    "task_cancelled",
 })
 
 _DEFAULT_SINCE_SEC = 86400.0

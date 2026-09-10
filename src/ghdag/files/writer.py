@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import fcntl
 import sys
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ghdag.files.models import PathTraversalError, WriteResult
-from ghdag.io.audit import append_audit_record
-
-JST = timezone(timedelta(hours=9))
+from ghdag.io.audit import append_audit_record, now_ts
 
 
 def write_md_write_audit(
@@ -18,10 +15,11 @@ def write_md_write_audit(
     bytes_written: int,
     source: str = "md_write",
     correlation_id: str | None = None,
+    tz_name: str = "UTC",
 ) -> None:
     record = {
         "event": "md_write",
-        "timestamp": datetime.now(JST).isoformat(),
+        "timestamp": now_ts(tz_name),
         "path": path,
         "bytes_written": bytes_written,
         "source": source,

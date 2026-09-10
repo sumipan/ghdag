@@ -52,7 +52,7 @@ class TestWriteLlmInferenceAudit:
         r = json.loads(audit_path.read_text().strip())
         assert r["schema_version"] == 1
         assert r["event_type"] == "llm.inference"
-        assert "+09:00" in r["timestamp"]
+        assert "+00:00" in r["timestamp"]
         assert _UUID4_RE.match(r["uuid"])
         assert r["prompt_hash"] == "abc123"
         assert r["latency_ms"] == 2345.7

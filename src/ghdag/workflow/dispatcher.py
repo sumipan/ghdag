@@ -8,11 +8,11 @@ import re
 import shlex
 import subprocess
 import time
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ghdag.exceptions import GhdagError
 from ghdag.github_client import GitHubIssuePort
+from ghdag.io.audit import now_ts
 from ghdag.pipeline.audit import (
     AuditContext,
     append_audit_record,
@@ -61,7 +61,6 @@ _BURST_WINDOW_SEC = 600
 _BURST_THRESHOLD = 10
 _BURST_COOLDOWN_SEC = 3600
 _PAUSE_REASON_MAX_CHARS = 500
-_JST = timezone(timedelta(hours=9))
 
 
 class ContextHookError(GhdagError, ValueError):
@@ -373,7 +372,7 @@ class WorkflowDispatcher:
     ) -> None:
         audit_path = Path(self._queue_dir) / "audit.jsonl"
         record = {
-            "timestamp": datetime.now(_JST).isoformat(),
+            "timestamp": now_ts(),
             "schema_version": 1,
             "event_type": "redispatch",
             "workflow": workflow_name,
@@ -390,7 +389,7 @@ class WorkflowDispatcher:
     def _append_dispatcher_audit_event(self, *, event: str, reason: str) -> None:
         audit_path = Path(self._queue_dir) / "audit.jsonl"
         record = {
-            "timestamp": datetime.now(_JST).isoformat(),
+            "timestamp": now_ts(),
             "schema_version": 1,
             "event": event,
             "reason": reason,
