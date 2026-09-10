@@ -657,12 +657,12 @@ class TestRenderExecCommand:
     def test_claude_with_model(self):
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model="claude-opus-4-6")
-        assert cmd == "claude -p --model 'claude-opus-4-6' --output-format stream-json --verbose --dangerously-skip-permissions < queue/order.md"
+        assert cmd == "claude -p --model 'claude-opus-4-6' --output-format stream-json --verbose --disable-slash-commands --dangerously-skip-permissions < queue/order.md"
 
     def test_claude_without_model(self):
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model=None)
-        assert cmd == "claude -p --output-format stream-json --verbose --dangerously-skip-permissions < queue/order.md"
+        assert cmd == "claude -p --output-format stream-json --verbose --disable-slash-commands --dangerously-skip-permissions < queue/order.md"
 
     def test_gemini_with_model(self):
         spec = ENGINE_SPECS["gemini"]
@@ -746,7 +746,7 @@ class TestAdapterOutputs:
         cmd = record["command"]
         assert cmd == (
             "claude -p --model 'claude-sonnet-4-6' --output-format stream-json --verbose"
-            " --dangerously-skip-permissions < queue/order.md"
+            " --disable-slash-commands --dangerously-skip-permissions < queue/order.md"
         )
 
     def test_claude_adapter_prompt_optional(self):
@@ -910,6 +910,10 @@ class TestSupportsCapability:
             ("codex", "resume", True),
             ("codex", "stream", True),
             ("codex", "output_format", False),
+            # nexus #3044 — isolation（グローバル設定隔離）
+            ("claude", "isolation", True),
+            ("codex", "isolation", True),
+            ("cursor", "isolation", False),
         ],
     )
     def test_three_engines_core_capabilities(
@@ -931,3 +935,38 @@ class TestSupportsCapability:
 
         assert supports_capability("codex", "allowed_tools") is True
         assert supports_capability("cursor", "disallowed_tools") is True
+
+    def test_cursor_unsupported_includes_isolation_with_reason(self) -> None:
+        """_UNSUPPORTED_CAPABILITIES['cursor'] に isolation があること（nexus #3044）。"""
+        from ghdag.llm.engines import _UNSUPPORTED_CAPABILITIES
+
+        assert "isolation" in _UNSUPPORTED_CAPABILITIES["cursor"]
+
+
+class TestEngineIsolation:
+    """DAG 経路のグローバル設定隔離 — nexus #3044 AC-2 / AC-3。"""
+
+    def test_claude_cmd_includes_disable_slash_commands(self) -> None:
+        """build_llm_cmd('claude', ...) に --disable-slash-commands が含まれる。"""
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello")
+        assert "--disable-slash-commands" in cmd
+        assert "--disable-slash-commands" in ENGINE_SPECS["claude"].extra_args
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_codex_call_sets_codex_home_env(self, mock_run: MagicMock) -> None:
+        """call('codex', ...) の subprocess.run env に CODEX_HOME が含まれる。"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("hello", engine="codex", capabilities=TEXT_ONLY)
+        assert mock_run.called
+        kwargs = mock_run.call_args.kwargs
+        assert "env" in kwargs
+        assert kwargs["env"]["CODEX_HOME"] == "/var/tmp/ghdag-dag-codex/"
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_cursor_call_unaffected_by_isolation_meta_capability(
+        self, mock_run: MagicMock
+    ) -> None:
+        """isolation は LLMCapabilities 属性ではないので cursor call が壊れない。"""
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        result = call("hello", engine="cursor", capabilities=TEXT_ONLY)
+        assert result.ok

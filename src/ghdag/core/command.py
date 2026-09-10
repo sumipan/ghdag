@@ -101,6 +101,11 @@ def _build_claude_flags(
         flags += ["--allowed-tools", ",".join(capabilities.allowed_tools)]
     if capabilities.disallowed_tools:
         flags += ["--disallowed-tools", ",".join(capabilities.disallowed_tools)]
+    # グローバルスキル（~/.agents/skills）自動起動を防ぐ（nexus #3044）。
+    # EngineSpec.extra_args にも同フラグがあり、render_exec_command では
+    # _dedupe_extra_args で重複排除される。build_llm_cmd は extra_args を
+    # 使わないため、ここでも常時付与する。
+    flags.append("--disable-slash-commands")
     if dangerously_skip_permissions:
         flags += ["--dangerously-skip-permissions"]
     return flags

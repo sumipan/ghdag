@@ -297,10 +297,13 @@ class TestStdoutLineReader:
 class TestClaudeDagEvents:
     def test_claude_extra_args_are_stream_json(self):
         spec = ENGINE_SPECS["claude"]
-        assert spec.extra_args == ("--output-format", "stream-json", "--verbose")
+        assert spec.extra_args == (
+            "--output-format", "stream-json", "--verbose", "--disable-slash-commands",
+        )
         cmd = render_exec_command(spec, order_path="jobs/o.md", model=None)
         assert "--output-format stream-json" in cmd
         assert "--verbose" in cmd
+        assert "--disable-slash-commands" in cmd
         assert "--output-format json" not in cmd
 
     def test_claude_task_writes_events_and_compatible_result(self, tmp_path):
