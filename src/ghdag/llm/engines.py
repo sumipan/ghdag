@@ -48,6 +48,7 @@ __all__ = [
     "_IGNORED_CAPABILITIES",
     "_UNSUPPORTED_CAPABILITIES",
     "_extract_stream_result",
+    "supports_capability",
 ]
 
 
@@ -152,6 +153,19 @@ _IGNORED_CAPABILITIES: dict[str, set[str]] = {
     "codex": {"allowed_tools", "disallowed_tools"},
     "cursor": {"disallowed_tools"},
 }
+
+
+def supports_capability(engine: str, capability: str) -> bool:
+    """エンジンが capability をサポートするか（公開 API）。
+
+    effective_unsupported = _UNSUPPORTED_CAPABILITIES - _IGNORED_CAPABILITIES。
+    capability がそこに含まれるなら False、さもなくば True。
+    未知のエンジン・未知の capability は True（conservative: 弾かない）。
+    """
+    unsupported = _UNSUPPORTED_CAPABILITIES.get(engine, set())
+    ignored = _IGNORED_CAPABILITIES.get(engine, set())
+    effective_unsupported = unsupported - ignored
+    return capability not in effective_unsupported
 
 
 def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities) -> None:

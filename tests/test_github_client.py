@@ -53,6 +53,86 @@ def test_resolve_repo_invalid_format() -> None:
         _resolve_repo("not-a-repo")
 
 
+def test_resolve_repo_missing_env_raises_ghdag_error() -> None:
+    """GITHUB_REPOSITORIES 未設定かつ repo=None → DEFAULT_REPO へ黙って落ちず GhdagError。"""
+    from ghdag.exceptions import GhdagError
+
+    with mock.patch.dict(os.environ, {}, clear=True):
+        with pytest.raises(
+            GhdagError,
+            match="GITHUB_REPOSITORIES is not set and no repo was specified",
+        ):
+            _resolve_repo(None)
+        with pytest.raises(
+            GhdagError,
+            match="GITHUB_REPOSITORIES is not set and no repo was specified",
+        ):
+            GitHubClient(token="t")
+
+
+def test_resolve_repo_from_github_repositories_env() -> None:
+    with mock.patch.dict(
+        os.environ, {"GITHUB_REPOSITORIES": "acme/widgets,other/repo"}, clear=False
+    ):
+        assert _resolve_repo(None) == ("acme", "widgets")
+
+
+# Real Link header shape (2026-09-10 probe via urllib against api.github.com):
+#   '<https://api.github.com/repositories/1206558072/issues?per_page=1&state=all&after=...&page=2>; rel="next"'
+_REAL_LINK_NEXT = (
+    '<https://api.github.com/repositories/1206558072/issues?'
+    'per_page=1&state=all&after=Y3Vyc29yOnYyOpLPAAABoIdganDPAAAAAUINI3I%3D&page=2>; '
+    'rel="next"'
+)
+_NEXT_URL = (
+    "https://api.github.com/repositories/1206558072/issues?"
+    "per_page=1&state=all&after=Y3Vyc29yOnYyOpLPAAABoIdganDPAAAAAUINI3I%3D&page=2"
+)
+
+
+def test_paginate_single_page_no_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = GitHubClient(token="tok", repo="o/r")
+    calls: list[str] = []
+
+    def fake_request(method: str, path: str, **kwargs: object) -> object:
+        calls.append(path)
+        assert kwargs.get("return_link_header") is True
+        return [{"number": 1}], None
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    assert client._paginate("/repos/o/r/issues") == [{"number": 1}]
+    assert len(calls) == 1
+
+
+def test_paginate_two_pages_follows_link_next(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = GitHubClient(token="tok", repo="o/r")
+    calls: list[str] = []
+
+    def fake_request(method: str, path: str, **kwargs: object) -> object:
+        calls.append(path)
+        assert kwargs.get("return_link_header") is True
+        if path == "/repos/o/r/issues" or path.endswith("/issues"):
+            return [{"number": 1}], _REAL_LINK_NEXT
+        if path == _NEXT_URL:
+            return [{"number": 2}], None
+        raise AssertionError(f"unexpected path: {path}")
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    assert client._paginate("/repos/o/r/issues") == [{"number": 1}, {"number": 2}]
+    assert calls == ["/repos/o/r/issues", _NEXT_URL]
+
+
+def test_paginate_empty_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = GitHubClient(token="tok", repo="o/r")
+
+    def fake_request(method: str, path: str, **kwargs: object) -> object:
+        assert kwargs.get("return_link_header") is True
+        return [], None
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    assert client._paginate("/repos/o/r/issues") == []
+
+
 def test_issue_get_fields_body(monkeypatch: pytest.MonkeyPatch) -> None:
     client = GitHubClient(token="tok", repo="o/r")
 

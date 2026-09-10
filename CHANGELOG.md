@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `ghdag.llm.engines.supports_capability(engine, capability)` を公開し、`_UNSUPPORTED_CAPABILITIES - _IGNORED_CAPABILITIES` の判定を閉じた。claude / cursor / codex の `resume` / `stream` / `output_format` をテストで固定（nexus #3034）
 - DAG cursor / codex 進捗イベント: capability 表から `stream` を解禁。cursor DAG 既定を `--output-format stream-json --stream-partial-output` に切替、`CursorStreamAdapter` / `CodexJsonlAdapter` を追加。stdout を行単位で `jobs/events/<uuid>.jsonl` に追記し、stream 不可時は一括読みにフォールバックして `stream_fallback=true` を annotations に記録（#2967）
 - DAG claude 進捗イベント: エンジン既定を `--output-format stream-json --verbose` に切替。stdout を行単位で `jobs/events/<uuid>.jsonl` に追記し、`on_task_progress` フックと UI SSE の `progress`（tool / path / assistant_text）を配信。result ファイルは従来どおり最終 `result` テキスト（#2966）
 - DAG タスクキャンセル: `jobs/running/<uuid>.json` / `jobs/cancel/<uuid>` 制御ファイル、`DONE_CANCELLED`、`on_task_cancelled` フック、`ghdag dag cancel <uuid>` CLI。UI `/api/stop` は `ps` 直殺しから制御ファイル経路へ置換
@@ -17,6 +18,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `GitHubClient._paginate` が `Link: rel="next"` を辿らず 1 ページ目で打ち切っていた不具合を修正。実測 Link ヘッダー形式で 1 ページ / 2 ページ / 空をテスト固定（nexus #3034）
+- `GitHubClient()` / `_resolve_repo(None)` が `GITHUB_REPOSITORIES` 未設定時に `DEFAULT_REPO` へ黙ってフォールバックしていた挙動をやめ、`GhdagError` を送出する（nexus #3034）
+- `tests/test_pipeline_status.py` の import を `ghdag.dag._util` から公開パス `ghdag.dag` へ変更（nexus #3034）
 - codex の usage limit（"You've hit your usage limit ... try again at Sep 10th, 2026 2:13 AM"）を `QUOTA_EXHAUSTED` として分類し、`try again at` の人間向け日時をローカル時刻の `resume_at` として抽出する。従来は quota / rate limit のどの語も含まないため未検知（`PROCESS_ERROR`）となり、quota gate の pause も call_managed の fallback も効かず後続ステップが連鎖失敗していた（2026-09-09、nexus #2959 / #2961 の CP2）
 - cursor / codex の resume セッション記録: `CursorAdapter` は実測 JSON の `session_id`（`chat_id` 後方互換）・`result`・`usage.inputTokens/outputTokens` を抽出し、`CodexAdapter` は `thread.started.thread_id`（`session_id` 後方互換）を抽出するよう修正。DAG 経路の cursor に `--output-format json` を付与し、stream 指定時は `--output-format stream-json` と重複しないよう dedupe する（#2968）
 
