@@ -23,6 +23,7 @@ class FailureClass(Enum):
     QUOTA_EXHAUSTED = ("QUOTA_EXHAUSTED", "transient", "forbidden")
     AUTH = ("AUTH", "permanent", "forbidden")
     ENGINE_ENVIRONMENT_ERROR = ("ENGINE_ENVIRONMENT_ERROR", "permanent", "forbidden")
+    INTERACTIVE_PROMPT = ("INTERACTIVE_PROMPT", "permanent", "forbidden")
     PROCESS_ERROR = ("PROCESS_ERROR", "permanent", "requires_review")
     PIPELINE_FAILED = ("PIPELINE_FAILED", "permanent", "requires_review")
     EMPTY_RESULT = ("EMPTY_RESULT", "unknown", "requires_review")

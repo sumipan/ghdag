@@ -8,7 +8,10 @@ from typing import Any
 
 from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.ports.output import EngineError
-from ghdag.llm.adapters.failure_classification import classify_common_failure
+from ghdag.llm.adapters.failure_classification import (
+    classify_common_failure,
+    looks_like_question,
+)
 
 
 class CursorStreamAdapter:
@@ -104,7 +107,15 @@ class CursorStreamAdapter:
         stdout: bytes,
         stderr: bytes,
     ) -> FailureClass | None:
-        return classify_common_failure("cursor", stdout, stderr)
+        classified = classify_common_failure("cursor", stdout, stderr)
+        if classified is not None:
+            return classified
+        data = parse_cursor_result_payload(stdout)
+        if data is not None:
+            result = data.get("result", "")
+            if isinstance(result, str) and looks_like_question(result):
+                return FailureClass.INTERACTIVE_PROMPT
+        return None
 
     def is_terminal_result_event(self, event: dict[str, Any]) -> bool:
         """このイベント行が最終 result か（進捗イベントか）を判定する。"""

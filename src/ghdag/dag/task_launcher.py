@@ -24,6 +24,7 @@ from ghdag.core.vocabulary import (
     DONE_ENGINE_ERROR,
     DONE_ENGINE_ERROR_FINAL,
     DONE_FANOUT_PARSE_FAILED,
+    DONE_INTERACTIVE_PROMPT,
     DONE_PIPELINE_FAILED_PREFIX,
     DONE_REJECTED,
     DONE_REJECTED_FINAL,
@@ -504,8 +505,8 @@ class TaskLauncher:
                     session_id = adapter.extract_session_id(stdout_data, stderr_bytes)
                     if session_id and isinstance(engine, str):
                         self._session_store.record(uuid, engine, session_id)
+                    transformed = adapter.extract_result_text(stdout_data, stderr_bytes)
                     if task.result_path is not None:
-                        transformed = adapter.extract_result_text(stdout_data, stderr_bytes)
                         rp = Path(task.result_path)
                         policy = task.result_finalize or "preserve_nonempty"
                         if policy == "stdout_only" or not (rp.exists() and rp.stat().st_size > 0):
@@ -513,6 +514,25 @@ class TaskLauncher:
                         effective_result_path: str | None = task.result_path
                     else:
                         effective_result_path = _extract_tee_target(task.command)
+
+                    if adapter.classify_failure(0, stdout_data, stderr_bytes) == FailureClass.INTERACTIVE_PROMPT:
+                        question_text = transformed.decode("utf-8", errors="replace")[:200]
+                        state_mark_done(self._config.exec_done_dir, uuid, DONE_INTERACTIVE_PROMPT)
+                        metrics = TaskMetrics(
+                            uuid=uuid, engine=engine, model=model,
+                            wall_time_sec=round(finished_at - rt.started_at, 3),
+                            token_count=token_count, status="failure",
+                            started_at=rt.started_at, finished_at=finished_at,
+                            correlation_id=task.idempotency_key,
+                            failure_class=FailureClass.INTERACTIVE_PROMPT,
+                            request_id=_task_request_id(task),
+                            cost_usd=cost_usd,
+                            cache_read_tokens=cache_read_tokens,
+                            cache_creation_tokens=cache_creation_tokens,
+                        )
+                        self._hooks.on_task_failure(uuid, task, 0, question_text, metrics)
+                        self._circuit_breaker.record_failure()
+                        continue
 
                     if effective_result_path and self._hooks.check_rejected(effective_result_path):
                         retry_depth = task.retry
@@ -668,6 +688,27 @@ class TaskLauncher:
                             cache_creation_tokens=cache_creation_tokens,
                         )
                         self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
+                        self._circuit_breaker.record_failure()
+                        continue
+
+                    if classified == FailureClass.INTERACTIVE_PROMPT:
+                        question_text = adapter.extract_result_text(
+                            stdout_data, stderr_bytes
+                        ).decode("utf-8", errors="replace")[:200]
+                        state_mark_done(self._config.exec_done_dir, uuid, DONE_INTERACTIVE_PROMPT)
+                        metrics = TaskMetrics(
+                            uuid=uuid, engine=engine, model=model,
+                            wall_time_sec=round(finished_at - rt.started_at, 3),
+                            token_count=token_count, status="failure",
+                            started_at=rt.started_at, finished_at=finished_at,
+                            correlation_id=task.idempotency_key,
+                            failure_class=FailureClass.INTERACTIVE_PROMPT,
+                            request_id=_task_request_id(task),
+                            cost_usd=cost_usd,
+                            cache_read_tokens=cache_read_tokens,
+                            cache_creation_tokens=cache_creation_tokens,
+                        )
+                        self._hooks.on_task_failure(uuid, task, returncode, question_text, metrics)
                         self._circuit_breaker.record_failure()
                         continue
 

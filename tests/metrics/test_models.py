@@ -101,18 +101,24 @@ class TestTaskMetrics:
 
 
 class TestFailureClass:
-    def test_all_13_values_exist(self):
-        """FailureClass enum が 13 値を持つ。"""
+    def test_all_14_values_exist(self):
+        """FailureClass enum が 14 値を持つ。"""
         expected = {
             "ENGINE_ERROR",
             "QUOTA_EXHAUSTED",
             "AUTH",
             "ENGINE_ENVIRONMENT_ERROR",
+            "INTERACTIVE_PROMPT",
             "TIMEOUT", "REJECTED", "PROCESS_ERROR", "PIPELINE_FAILED",
             "EMPTY_RESULT", "FANOUT_CHILD_FAILED", "FANOUT_PARSE_FAILED",
             "DEP_FAILED", "UNKNOWN_FAILURE",
         }
         assert {fc.value for fc in FailureClass} == expected
+
+    def test_interactive_prompt_meta(self):
+        assert FailureClass.INTERACTIVE_PROMPT.value == "INTERACTIVE_PROMPT"
+        assert FailureClass.INTERACTIVE_PROMPT.cause == "permanent"
+        assert FailureClass.INTERACTIVE_PROMPT.retry_policy == "forbidden"
 
     def test_engine_error_meta(self):
         assert FailureClass.ENGINE_ERROR.value == "ENGINE_ERROR"
