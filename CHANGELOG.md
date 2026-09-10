@@ -9,11 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `ghdag.status` 公開 API（`issue_status` / `running_tasks` と `IssueStatus` / `StepStatus` / `RunningTask`）および CLI `ghdag status --issue N --json` / `ghdag status --running --json`（nexus #3084）
 - `FailureClass.INTERACTIVE_PROMPT`（cause `permanent` / retry_policy `forbidden`）を追加。claude / cursor / codex が質問で終了した出力を検出し、DAG は再試行せず done マーカー `INTERACTIVE_PROMPT` と質問文（先頭 200 文字）を audit に記録する（nexus #3046）
 - Engine isolation for DAG LLM launches (nexus #3044): claude always gets `--disable-slash-commands`; codex `call()` sets `CODEX_HOME=/var/tmp/ghdag-dag-codex/`; cursor reports `supports_capability(..., "isolation") == False`
 
 ### Changed
 
+- `pipeline.status.task_status` / `dag.recover.plan_recover` の状態判定を `ghdag.status._step_status_core` / `_read_step_records` に一本化（nexus #3084）
 - Dead-code cleanup, mypy `ignore_errors` removal, env accessors consolidation, and CHANGELOG versioning for 0.35.0–0.48.0 (nexus #3039)
 
 ## 0.48.0 — 2026-09-10

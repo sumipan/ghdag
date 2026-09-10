@@ -1,11 +1,13 @@
-"""pipeline/status.py — タスク状態判定ロジック（ui/monitor.py から移動）"""
+"""pipeline/status.py — タスク状態の日本語表示（判定コアは ghdag.status）"""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
 
-from ghdag.io.done import dep_succeeded, interpret_done, read_done_content
+from ghdag.io.done import dep_succeeded, interpret_done
+from ghdag.io.done import read_done_content as read_done_content  # re-export for shim compat
+from ghdag.status import _step_status_core
 
 # 状態定数
 STATE_PENDING_DEPS = "待機（依存未充足）"
@@ -37,6 +39,21 @@ def label_for_done(raw: Optional[str]) -> Optional[str]:
     return STATE_UNKNOWN_DONE
 
 
+_CORE_TO_JP = {
+    "success": STATE_OK,
+    "failed_exit": STATE_FAIL,
+    "rejected": STATE_REJECTED,
+    "empty_result": STATE_EMPTY,
+    "engine_error": STATE_ENGINE_ERROR,
+    "other": STATE_UNKNOWN_DONE,
+    "cancelled": STATE_UNKNOWN_DONE,
+    "skipped": STATE_UNKNOWN_DONE,
+    "running": STATE_RUNNING,
+    "deferred": STATE_DEFERRED,
+    "dep_failed": STATE_PENDING_DEPS,
+}
+
+
 def task_status(
     uuid: str,
     exec_done_dir: Path,
@@ -45,27 +62,26 @@ def task_status(
     running_uuids: set[str] | None = None,
     deferred_uuids: set[str] | None = None,
 ) -> str:
-    """タスクの現在状態を判定して状態定数を返す。
+    """タスクの現在状態を判定して日本語状態定数を返す。
 
-    1. jobs/done/<uuid> が存在 → label_for_done で完了状態を判定
-    2. 依存タスクが未完了 → STATE_PENDING_DEPS
-    3. running_uuids に含まれる → STATE_RUNNING
-    4. それ以外 → STATE_PENDING_RUN
+    判定コアは ``ghdag.status._step_status_core``（UI / issue_status と共有）。
     """
-    raw = read_done_content(exec_done_dir, uuid)
-    if raw is not None:
-        lbl = label_for_done(raw)
-        return lbl if lbl else STATE_UNKNOWN_DONE
-
-    if running_uuids and uuid in running_uuids:
-        return STATE_RUNNING
-
-    if deferred_uuids and uuid in deferred_uuids:
-        return STATE_DEFERRED
-
-    if task_depends:
-        for d in task_depends:
-            if not dep_succeeded(exec_done_dir, d):
-                return STATE_PENDING_DEPS
-
-    return STATE_PENDING_RUN
+    core = _step_status_core(
+        uuid,
+        exec_done_dir,
+        depends=task_depends,
+        running_uuids=running_uuids,
+        deferred_uuids=deferred_uuids,
+    )
+    if core in _CORE_TO_JP:
+        return _CORE_TO_JP[core]
+    if core == "pending":
+        # Distinguish ready-to-run vs waiting on incomplete (non-failed) deps.
+        if task_depends:
+            for d in task_depends:
+                if not dep_succeeded(exec_done_dir, d):
+                    return STATE_PENDING_DEPS
+        return STATE_PENDING_RUN
+    if core == "failed":
+        return STATE_FAIL
+    return STATE_UNKNOWN_DONE

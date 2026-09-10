@@ -13,6 +13,7 @@ from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.result import QueueTask, QueueTaskStore
 from ghdag.pipeline.state import PipelineState
 from ghdag.quota import QuotaGate
+from ghdag.status import IssueStatus, RunningTask, StepStatus, issue_status, running_tasks
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 
 __all__ = [
@@ -24,4 +25,9 @@ __all__ = [
     "DagEngine",
     "WorkflowDispatcher",
     "QuotaGate",
+    "IssueStatus",
+    "StepStatus",
+    "RunningTask",
+    "issue_status",
+    "running_tasks",
 ]

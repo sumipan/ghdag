@@ -32,6 +32,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     from ghdag.cli.commands.recover import cmd_recover
     from ghdag.cli.commands.run import cmd_run
+    from ghdag.cli.commands.status import cmd_status
     from ghdag.cli.commands.trigger import cmd_trigger
     from ghdag.cli.commands.ui import cmd_ui
     from ghdag.cli.commands.watch import cmd_watch
@@ -286,6 +287,72 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Reason for redispatch (recorded in audit.jsonl)",
     )
     trigger_parser.set_defaults(func=cmd_trigger)
+
+    # ghdag status
+    status_parser = subparsers.add_parser(
+        "status",
+        help="Show Issue DAG status or running tasks (JSON-friendly)",
+    )
+    status_parser.add_argument(
+        "--issue",
+        type=int,
+        default=None,
+        dest="issue_number",
+        metavar="N",
+        help="Issue number to inspect",
+    )
+    status_parser.add_argument(
+        "--handler",
+        default=None,
+        help="Handler name (required with --issue, e.g. impl)",
+    )
+    status_parser.add_argument(
+        "--workflow",
+        default=None,
+        help="Workflow name (required with --issue, e.g. issuesmith)",
+    )
+    status_parser.add_argument(
+        "--running",
+        action="store_true",
+        help="List tasks from jobs/running (alone or with --issue)",
+    )
+    status_parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit JSON",
+    )
+    status_parser.add_argument(
+        "--exec-jsonl",
+        default=None,
+        dest="exec_jsonl",
+        metavar="PATH",
+        help="Path to exec.jsonl (default: $GHDAG_EXEC_JSONL or jobs/exec.jsonl)",
+    )
+    status_parser.add_argument(
+        "--state-dir",
+        default=".pipeline-state",
+        metavar="PATH",
+        help="Pipeline state directory (default: .pipeline-state)",
+    )
+    status_parser.add_argument(
+        "--done-dir",
+        default=None,
+        metavar="PATH",
+        help="Done directory (default: <exec.jsonl parent>/done)",
+    )
+    status_parser.add_argument(
+        "--running-dir",
+        default=None,
+        metavar="PATH",
+        help="Running directory (default: <exec.jsonl parent>/running)",
+    )
+    status_parser.add_argument(
+        "--audit-path",
+        default=None,
+        metavar="PATH",
+        help="Optional audit.jsonl for started_at / elapsed_sec on completed steps",
+    )
+    status_parser.set_defaults(func=cmd_status)
 
     # ghdag dag recover
     dag_parser = subparsers.add_parser("dag", help="DAG utilities")
