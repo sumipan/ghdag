@@ -25,8 +25,11 @@ def _make_client() -> GitHubClient:
 def _mock_urlopen(payload: object, status: int = 200, headers: dict | None = None):
     """Return a context-manager mock that simulates urllib.request.urlopen."""
     body = json.dumps(payload).encode()
+    hdrs = headers or {}
 
     class _FakeResp:
+        headers = hdrs
+
         def read(self):
             return body
 

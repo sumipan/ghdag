@@ -11,6 +11,7 @@ import io
 import json
 import os
 import random
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -21,11 +22,16 @@ from typing import Any, cast
 from ghdag.core.ports.github import GitHubIssuePort
 from ghdag.exceptions import (
     AuthError,
+    GhdagError,
     GitHubApiError,
     NetworkError,
     PermissionDeniedError,
     RateLimitError,
 )
+
+# GitHub Link ヘッダーの rel="next"（実測 2026-09-10）:
+#   <https://api.github.com/repositories/.../issues?per_page=1&...&page=2>; rel="next"
+_LINK_NEXT_RE = re.compile(r'<([^>]+)>\s*;\s*rel="next"', re.IGNORECASE)
 
 API_BASE = "https://api.github.com"
 GRAPHQL_URL = "https://api.github.com/graphql"
@@ -84,6 +90,17 @@ def _resolve_repos() -> list[tuple[str, str]]:
     return repos
 
 
+def _parse_link_next(link_header: str | None) -> str | None:
+    """Link レスポンスヘッダーから rel=\"next\" URL を抽出する。"""
+    if not link_header:
+        return None
+    for part in link_header.split(","):
+        match = _LINK_NEXT_RE.search(part)
+        if match:
+            return match.group(1)
+    return None
+
+
 def _resolve_repo(repo: str | None = None) -> tuple[str, str]:
     if repo:
         repo = repo.strip()
@@ -100,8 +117,10 @@ def _resolve_repo(repo: str | None = None) -> tuple[str, str]:
             if owner and name:
                 return owner, name
 
-    owner, name = (p.strip() for p in DEFAULT_REPO.split("/", 1))
-    return owner, name
+    raise GhdagError(
+        "GITHUB_REPOSITORIES is not set and no repo was specified. "
+        "Pass repo='owner/repo' or set GITHUB_REPOSITORIES."
+    )
 
 
 def _api_path(path: str, owner: str, repo: str) -> str:
@@ -143,6 +162,7 @@ class GitHubClient:
         body: dict[str, Any] | list[Any] | None = None,
         accept: str = "application/vnd.github+json",
         raw: bool = False,
+        return_link_header: bool = False,
     ) -> Any:
         if repo:
             owner, repo_name = _resolve_repo(repo)
@@ -170,10 +190,13 @@ class GitHubClient:
         if data is not None:
             req.add_header("Content-Type", "application/json")
 
+        link_header: str | None = None
         for attempt in range(_MAX_ATTEMPTS):
             try:
                 with urllib.request.urlopen(req, timeout=120) as resp:
                     payload = resp.read()
+                    headers = getattr(resp, "headers", None)
+                    link_header = headers.get("Link") if headers is not None else None
                 break
             except urllib.error.HTTPError as exc:
                 if exc.code in _TRANSIENT_HTTP_STATUS and attempt < _MAX_ATTEMPTS - 1:
@@ -208,24 +231,31 @@ class GitHubClient:
                 raise NetworkError(f"Network error: {exc.reason}") from exc
 
         if raw:
-            return payload.decode("utf-8", errors="replace")
-        if not payload:
-            return None
-        return json.loads(payload.decode("utf-8"))
+            result: Any = payload.decode("utf-8", errors="replace")
+        elif not payload:
+            result = None
+        else:
+            result = json.loads(payload.decode("utf-8"))
+        if return_link_header:
+            return result, link_header
+        return result
 
     def _paginate(self, path: str, *, repo: str | None = None) -> list[Any]:
         items: list[Any] = []
         url: str | None = path if path.startswith("http") else None
         while True:
             if url:
-                chunk = self._request("GET", url)
+                chunk, link = self._request("GET", url, return_link_header=True)
             else:
-                chunk = self._request("GET", path, repo=repo)
+                chunk, link = self._request("GET", path, repo=repo, return_link_header=True)
             if isinstance(chunk, list):
                 items.extend(chunk)
-            else:
+            elif chunk is not None:
                 items.append(chunk)
-            break
+            next_url = _parse_link_next(link if isinstance(link, str) else None)
+            if not next_url:
+                break
+            url = next_url
         return items
 
     def issue_get(self, number: int, fields: list[str] | None = None) -> dict:

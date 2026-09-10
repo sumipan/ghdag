@@ -893,3 +893,41 @@ class TestRenderExecCommandCapabilities:
         assert cmd.split().count("--output-format") == 1
         assert "--output-format stream-json" in cmd
         assert "--output-format json" not in cmd
+
+
+class TestSupportsCapability:
+    """supports_capability(engine, capability) — nexus #3034 AC-1 / CLAUDE.md §11."""
+
+    @pytest.mark.parametrize(
+        "engine,capability,expected",
+        [
+            ("claude", "resume", True),
+            ("claude", "stream", True),
+            ("claude", "output_format", True),
+            ("cursor", "resume", True),
+            ("cursor", "stream", True),
+            ("cursor", "output_format", True),
+            ("codex", "resume", True),
+            ("codex", "stream", True),
+            ("codex", "output_format", False),
+        ],
+    )
+    def test_three_engines_core_capabilities(
+        self, engine: str, capability: str, expected: bool
+    ) -> None:
+        from ghdag.llm.engines import supports_capability
+
+        assert supports_capability(engine, capability) is expected
+
+    def test_unknown_engine_and_capability_are_conservative_true(self) -> None:
+        from ghdag.llm.engines import supports_capability
+
+        assert supports_capability("unknown-engine", "resume") is True
+        assert supports_capability("claude", "unknown_capability") is True
+
+    def test_ignored_capability_not_counted_as_unsupported(self) -> None:
+        """_IGNORED に入る attr は effective_unsupported から除外され True。"""
+        from ghdag.llm.engines import supports_capability
+
+        assert supports_capability("codex", "allowed_tools") is True
+        assert supports_capability("cursor", "disallowed_tools") is True
