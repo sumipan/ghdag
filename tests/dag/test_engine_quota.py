@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import io
 import json
-import subprocess
-import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -120,7 +118,8 @@ def test_launch_popen_failure_rolls_back_running_reservation(tmp_path: Path) -> 
     assert engine._quota_gate.wait_idle("claude", timeout=0.1, poll_interval=0.01) is True
 
 
-def test_resume_fallback_remains_running_until_fallback_exits(tmp_path: Path) -> None:
+def test_resume_fallback_relaunches_async_without_blocking(tmp_path: Path) -> None:
+    """resume フォールバックは Popen で非同期再起動し、check_completions をブロックしない。"""
     config = DagConfig(
         exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl",
         exec_done_dir=tmp_path / "jobs" / "done",
@@ -151,26 +150,86 @@ def test_resume_fallback_remains_running_until_fallback_exits(tmp_path: Path) ->
     )
     engine._quota_gate.begin_run(task_uuid=task.uuid, engine="claude")
 
-    fallback_started = threading.Event()
-    release_fallback = threading.Event()
+    fallback_proc = MagicMock()
+    fallback_proc.poll.return_value = None
+    fallback_proc.stdout = io.BytesIO(b"")
+    fallback_proc.stderr = io.BytesIO(b"")
 
-    def run_fallback(*_args, **_kwargs):
-        fallback_started.set()
-        assert release_fallback.wait(timeout=1)
-        return subprocess.CompletedProcess([], 0, stdout=b"", stderr=b"")
+    with patch(
+        "ghdag.dag.task_launcher.subprocess.Popen", return_value=fallback_proc
+    ) as mock_popen, patch("ghdag.dag.task_launcher.state_mark_done"):
+        started = time.monotonic()
+        engine._launcher.check_completions()
+        elapsed = time.monotonic() - started
 
-    with patch("ghdag.dag.task_launcher.subprocess.run", side_effect=run_fallback), patch(
-        "ghdag.dag.task_launcher.state_mark_done"
-    ):
-        worker = threading.Thread(target=engine._launcher.check_completions, daemon=True)
-        worker.start()
-        assert fallback_started.wait(timeout=1)
-        assert task.uuid in engine._quota_gate.snapshot().running_tasks
-        release_fallback.set()
-        worker.join(timeout=1)
+    assert elapsed < 0.5
+    mock_popen.assert_called_once()
+    popen_cmd = mock_popen.call_args[0][0]
+    assert popen_cmd == ["bash", "-o", "pipefail", "-c", "claude -p hello"]
+    assert task.uuid in engine._launcher._running
+    assert engine._launcher._running[task.uuid].proc is fallback_proc
+    assert task.annotations.get("_resume_fallback_launched") is True
+    assert task.command == "claude -p hello"
+    assert task.uuid in engine._quota_gate.snapshot().running_tasks
+    assert not engine._launcher._is_resume_fallback_target(task, "session not found")
 
-    assert not worker.is_alive()
-    assert task.uuid not in engine._quota_gate.snapshot().running_tasks
+
+@pytest.mark.parametrize(
+    ("engine_name", "resumed_cmd", "original_cmd"),
+    [
+        ("claude", "claude -p hello --resume 'sid'", "claude -p hello"),
+        ("cursor", "agent -p --force --resume 'sid' < order.md", "agent -p --force < order.md"),
+        ("codex", "codex exec resume 'sid' --json -", "codex exec --json -"),
+    ],
+)
+def test_resume_fallback_command_forms_unchanged_across_engines(
+    tmp_path: Path,
+    engine_name: str,
+    resumed_cmd: str,
+    original_cmd: str,
+) -> None:
+    """claude / cursor / codex のフォールバック起動コマンド形は _command_without_resume のまま。"""
+    config = DagConfig(
+        exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl",
+        exec_done_dir=tmp_path / "jobs" / "done",
+    )
+    hooks = MagicMock()
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = None
+    engine = DagEngine(config, hooks)
+    task = Task(
+        uuid=f"task-{engine_name}",
+        command=resumed_cmd,
+        engine=engine_name,
+        annotations={
+            "resumed_session_id": "sid",
+            "_command_without_resume": original_cmd,
+        },
+    )
+    proc = MagicMock()
+    proc.poll.return_value = 1
+    proc.returncode = 1
+    engine._launcher._running[task.uuid] = RunningTask(
+        uuid=task.uuid,
+        task=task,
+        proc=proc,
+        started_at=time.time() - 0.1,
+        started_at_mono=time.monotonic() - 0.1,
+        stderr_buf=io.BytesIO(b"session not found"),
+    )
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine=engine_name)
+
+    fallback_proc = MagicMock()
+    fallback_proc.poll.return_value = None
+    fallback_proc.stdout = io.BytesIO(b"")
+    fallback_proc.stderr = io.BytesIO(b"")
+
+    with patch(
+        "ghdag.dag.task_launcher.subprocess.Popen", return_value=fallback_proc
+    ) as mock_popen, patch("ghdag.dag.task_launcher.state_mark_done"):
+        engine._launcher.check_completions()
+
+    assert mock_popen.call_args[0][0] == ["bash", "-o", "pipefail", "-c", original_cmd]
 
 
 def test_enqueue_records_are_kept_and_deferred_registry_updated(tmp_path: Path) -> None:

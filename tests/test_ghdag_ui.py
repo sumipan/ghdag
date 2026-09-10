@@ -90,6 +90,25 @@ class TestMonitor:
         )
         assert rows[0].state == STATE_RUNNING
 
+    def test_build_rows_running_from_jobs_running_dir(self, tmp_path):
+        """jobs/running/<uuid>.json があるとき build_rows が running と判定する。"""
+        import json as _json
+
+        from ghdag.ui.monitor import STATE_RUNNING, build_rows, running_uuids_from_jobs_dir
+
+        uuid = "aaaa-bbbb-cccc-dddd"
+        content = _json.dumps({"uuid": uuid, "command": "echo hello", "depends": []})
+        repo = self._make_repo(tmp_path, content + "\n")
+        running_dir = repo / "jobs" / "running"
+        running_dir.mkdir(parents=True, exist_ok=True)
+        (running_dir / f"{uuid}.json").write_text("{}", encoding="utf-8")
+
+        assert running_uuids_from_jobs_dir(running_dir, {uuid}) == {uuid}
+        with patch("ghdag.ui.monitor.running_uuids_from_ps") as mock_ps:
+            rows, _, _ = build_rows(repo, detect_running=True)
+            mock_ps.assert_not_called()
+        assert rows[0].state == STATE_RUNNING
+
     def test_build_rows_deferred_from_quota_gate(self, tmp_path):
         import json as _json
 

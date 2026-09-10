@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from ghdag.files import MdFile, md_read
+from ghdag.files.models import PathTraversalError
 
 
 @pytest.fixture
@@ -87,6 +88,16 @@ class TestMdReadFrontmatter:
         result = md_read("order/empty_fm.md", repo_root=repo_root)
         assert result.frontmatter == {}
         assert result.content == "content here\n"
+
+
+class TestMdReadPathTraversal:
+    def test_parent_traversal_raises(self, repo_root: Path) -> None:
+        with pytest.raises(PathTraversalError, match="Path traversal detected"):
+            md_read("../outside.md", repo_root=repo_root)
+
+    def test_nested_traversal_raises(self, repo_root: Path) -> None:
+        with pytest.raises(PathTraversalError, match="Path traversal detected"):
+            md_read("order/../../outside.md", repo_root=repo_root)
 
 
 class TestMdReadWikilink:

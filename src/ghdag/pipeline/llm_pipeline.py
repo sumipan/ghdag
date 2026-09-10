@@ -334,13 +334,9 @@ class LLMPipelineAPI:
 
         spec = ENGINE_SPECS[engine]
         annotations: dict[str, object] = {}
-        if permission is None:
-            if safe_default_applied:
-                annotations["safe_default_applied"] = True
-                annotations["safe_default_preset"] = safe_default_env
-            elif spec.danger_flag:
-                annotations["default_permission_applied"] = True
-                annotations["injected_danger_flag"] = spec.danger_flag
+        if permission is None and safe_default_applied:
+            annotations["safe_default_applied"] = True
+            annotations["safe_default_preset"] = safe_default_env
 
         return {
             "uuid": step_uuid,

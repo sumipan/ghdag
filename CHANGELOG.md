@@ -25,6 +25,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `ghdag dag recover` が `jobs/running/*.json` から実行中 uuid を集め `running_uuids` に渡し、実行中ステップの done を消さない（nexus #3035）
+- resume フォールバックを同期 `subprocess.run` から `Popen` 非同期再起動へ変更し、メインループの完了チェックをブロックしない。`_resume_fallback_launched` で二重フォールバックを防止（nexus #3035）
+- `PipelineState` が `QuotaGate` を生成時に 1 度だけ作り `append_exec_records` で再利用する（nexus #3035）
+- `md_read` に write と同じパストラバーサル検査を追加（nexus #3035）
+- UI の running 判定を `jobs/running/<uuid>.json` 基準に変更（`ps` grep はディレクトリ不在時のフォールバック）（nexus #3035）
+- `llm_pipeline` の到達不能 `default_permission_applied` 分岐を削除（nexus #3035）
+
 - `GitHubClient._paginate` が `Link: rel="next"` を辿らず 1 ページ目で打ち切っていた不具合を修正。実測 Link ヘッダー形式で 1 ページ / 2 ページ / 空をテスト固定（nexus #3034）
 - `GitHubClient()` / `_resolve_repo(None)` が `GITHUB_REPOSITORIES` 未設定時に `DEFAULT_REPO` へ黙ってフォールバックしていた挙動をやめ、`GhdagError` を送出する（nexus #3034）
 - `tests/test_pipeline_status.py` の import を `ghdag.dag._util` から公開パス `ghdag.dag` へ変更（nexus #3034）

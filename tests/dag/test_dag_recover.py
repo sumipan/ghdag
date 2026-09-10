@@ -199,3 +199,37 @@ class TestExecuteRecover:
         plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
         assert plan.idempotency_key == gen_key
         assert plan.generation == 1
+
+    def test_running_uuids_protects_done_markers(self, tmp_path):
+        """実行中 uuid は rerun 対象外とし、done マーカーを消さない。"""
+        state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
+        _write_order(jobs, UUID_A)
+        state.append_exec_records([_record(UUID_A, "p1")])
+        mark_done(done, UUID_A, "1")
+
+        plan = plan_recover(
+            **_plan_kwargs(state_dir, exec_jsonl, jobs, done),
+            running_uuids={UUID_A},
+        )
+        assert UUID_A not in plan.rerun_uuids
+        assert next(s for s in plan.steps if s.uuid == UUID_A).status == "running"
+
+        result = execute_recover(
+            plan, queue_dir=jobs, done_dir=done, running_uuids={UUID_A},
+        )
+        assert result.recovered == 0
+        assert (done / UUID_A).exists()
+
+    def test_collect_running_uuids_from_jobs_running_dir(self, tmp_path):
+        """jobs/running/*.json の stem を running_uuids として収集できる。"""
+        from ghdag.dag.recover import running_uuids_from_queue_dir
+
+        jobs = tmp_path / "jobs"
+        running = jobs / "running"
+        running.mkdir(parents=True)
+        (running / f"{UUID_A}.json").write_text("{}", encoding="utf-8")
+        (running / f"{UUID_B}.json").write_text("{}", encoding="utf-8")
+        (running / "not-a-json.txt").write_text("x", encoding="utf-8")
+
+        assert running_uuids_from_queue_dir(jobs) == {UUID_A, UUID_B}
+        assert running_uuids_from_queue_dir(tmp_path / "missing") == set()
