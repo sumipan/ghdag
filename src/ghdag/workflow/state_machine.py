@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from dataclasses import replace
 from pathlib import Path
 
 import yaml
@@ -98,13 +97,7 @@ def _load_workflow_config(path: Path) -> WorkflowConfig:
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         raise ValueError(f"Invalid workflow YAML: {path}")
-    config = _parse(data, workflow_dir=path.parent.resolve())
-    return replace(
-        config,
-        label_namespace=data.get("label_namespace"),
-        transitions=data.get("transitions"),
-        reset_label=data.get("reset_label"),
-    )
+    return _parse(data, workflow_dir=path.parent.resolve())
 
 
 def main() -> int:

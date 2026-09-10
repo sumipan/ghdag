@@ -418,6 +418,124 @@ class TestPerWorkflowOrderBuilder:
 
 
 # ---------------------------------------------------------------------------
+# Issue #3029: submit(order_builder=..., workflow_roles=...) 公開引数
+# ---------------------------------------------------------------------------
+
+
+class TestSubmitOrderBuilderAndWorkflowRoles:
+    def test_submit_order_builder_kwarg_skips_resolve(self):
+        """submit(order_builder=wrapped) 時は _resolve_order_builder を呼ばない。"""
+        api, pipeline_state, default_builder = _make_api()
+        wrapped = MagicMock()
+        wrapped.build_order.return_value = "wrapped order"
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+
+        with patch.object(
+            api, "_resolve_order_builder", wraps=api._resolve_order_builder
+        ) as resolve:
+            api.submit(
+                steps,
+                {"workflow_name": "issuesmith", "issue_number": "1"},
+                audit_context=_TEST_AUDIT_CTX,
+                order_builder=wrapped,
+            )
+
+        resolve.assert_not_called()
+        wrapped.build_order.assert_called_once()
+        default_builder.build_order.assert_not_called()
+        pipeline_state.append_exec_records.assert_called_once()
+
+    def test_workflow_roles_set_role_annotations(self):
+        """workflow_roles ありで step.role が annotations に設定される。"""
+        import json as _json
+
+        api, pipeline_state, _ = _make_api()
+        steps = [
+            StepConfig(
+                id="cp2",
+                template="brushup",
+                model="claude-opus-4-6",
+                role="design",
+            )
+        ]
+        lines = api.submit(
+            steps,
+            {"workflow_name": "issuesmith", "issue_number": "1"},
+            audit_context=_TEST_AUDIT_CTX,
+            workflow_roles={"design": ["claude", "codex"]},
+        )
+        records = pipeline_state.append_exec_records.call_args[0][0]
+        assert records[0]["annotations"]["role"] == "design"
+        assert records[0]["annotations"]["role_engines"] == ["claude", "codex"]
+        parsed = _json.loads(lines[0])
+        assert parsed["annotations"]["role"] == "design"
+        assert parsed["annotations"]["role_engines"] == ["claude", "codex"]
+
+    def test_role_annotations_drive_quota_gate_admit(self, tmp_path):
+        """AC-2: 読み込んだ roles 由来の annotations が QuotaGate.admit(role, role_engines) に効く。"""
+        from datetime import datetime, timedelta, timezone
+
+        from ghdag.io import exec_jsonl
+        from ghdag.quota import QuotaGate
+
+        api, pipeline_state, _ = _make_api(queue_dir=str(tmp_path / "queue"))
+        captured: list[dict] = []
+
+        def _capture_append(records, **kwargs):
+            captured.extend(records)
+
+        pipeline_state.append_exec_records.side_effect = _capture_append
+
+        steps = [
+            StepConfig(
+                id="cp2",
+                template="brushup",
+                model="claude-opus-4-6",
+                engine="claude",
+                role="design",
+            )
+        ]
+        api.submit(
+            steps,
+            {"workflow_name": "issuesmith"},
+            audit_context=_TEST_AUDIT_CTX,
+            workflow_roles={"design": ["claude", "codex"]},
+        )
+        assert captured[0]["annotations"]["role"] == "design"
+
+        jst = timezone(timedelta(hours=9))
+        gate = QuotaGate(tmp_path / "quota-gate.json")
+        gate.report(
+            engine="claude",
+            status="paused",
+            observed_at=datetime(2026, 9, 5, 12, tzinfo=jst),
+        )
+        gate.report(
+            engine="codex",
+            status="paused",
+            observed_at=datetime(2026, 9, 5, 12, tzinfo=jst),
+        )
+        exec_path = tmp_path / "jobs" / "exec.jsonl"
+        exec_jsonl.append(
+            exec_path,
+            [
+                {
+                    "uuid": "task-1",
+                    "command": "claude -p hi",
+                    "engine": "claude",
+                    "depends": [],
+                    "annotations": captured[0]["annotations"],
+                }
+            ],
+            _TEST_AUDIT_CTX,
+            audit_path=tmp_path / "audit.jsonl",
+            quota_gate=gate,
+        )
+        deferred = gate.snapshot().deferred_tasks["task-1"]
+        assert deferred.role == "design"
+
+
+# ---------------------------------------------------------------------------
 # AC3: depends 事前検証 (Issue #766)
 # ---------------------------------------------------------------------------
 

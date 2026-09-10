@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghdag"
-version = "0.46.0"
+version = "0.47.0"
 description = "Generic DAG execution engine extracted from graph-watcher"
 readme = "README.md"
 license = "MIT"
@@ -115,6 +115,9 @@ type = "forbidden"
 source_modules = ["ghdag.pipeline", "ghdag.workflow"]
 forbidden_modules = ["ghdag.dag"]
 ignore_imports = [
+  # AuditHooks extends dag.DefaultHooks — implementation must live in the dag layer.
+  # pipeline.hooks is a re-export shim for public API backward-compat (pipeline.__init__).
+  # Resolving this requires moving DefaultHooks to core — deferred to a separate issue.
   "ghdag.pipeline.hooks -> ghdag.dag.audit_hooks",
 ]
 
@@ -123,9 +126,6 @@ name = "実行塔は投入塔を import しない"
 type = "forbidden"
 source_modules = ["ghdag.dag"]
 forbidden_modules = ["ghdag.pipeline", "ghdag.workflow"]
-ignore_imports = [
-  "ghdag.dag.audit_hooks -> ghdag.pipeline.audit",
-]
 
 [[tool.importlinter.contracts]]
 name = "io / effects は塔と入口を知らない"

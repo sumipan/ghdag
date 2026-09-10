@@ -224,3 +224,58 @@ def test_render_cli_module_undefined_variable_exits_2(tmp_path: Path) -> None:
         cwd=str(Path(__file__).resolve().parents[2]),
     )
     assert proc.returncode == 2
+
+
+def test_live_submit_does_not_mutate_pipeline_order_builders(tmp_path: Path) -> None:
+    """AC-3: dispatcher は _pipeline._order_builders を直接変更しない。"""
+    queue = tmp_path / "queue"
+    queue.mkdir()
+    _write_workflow(tmp_path, render="live", engine="shell")
+    configs = load_workflows(tmp_path)
+    workflow = configs[0]
+
+    pipeline_state = MagicMock()
+    pipeline_state.check_idempotency.return_value = True
+    pipeline_state.write_order_file.return_value = "ts-shell-order-u.md"
+    pipeline = LLMPipelineAPI(
+        pipeline_state=pipeline_state,
+        order_builder=TemplateOrderBuilder(tmp_path / "templates"),
+        queue_dir=str(queue),
+    )
+
+    mutations: list[object] = []
+
+    class _TrackingBuilders(dict):
+        def __setitem__(self, key, value):  # type: ignore[no-untyped-def]
+            mutations.append(("set", key))
+            return super().__setitem__(key, value)
+
+        def pop(self, key, *args):  # type: ignore[no-untyped-def]
+            mutations.append(("pop", key))
+            return super().pop(key, *args)
+
+    pipeline._order_builders = _TrackingBuilders(pipeline._order_builders)
+
+    github = MagicMock(spec=GitHubIssuePort)
+    dispatcher = WorkflowDispatcher(
+        workflows=[workflow],
+        github_client=github,
+        pipeline=pipeline,
+        queue_dir=str(queue),
+    )
+    issue = {
+        "number": 7,
+        "title": "t",
+        "body": "",
+        "labels": [{"name": "pipe:ready"}],
+        "url": "https://example/issues/7",
+    }
+    result = dispatcher.dispatch(
+        issue,
+        workflow,
+        workflow.handlers["run"],
+        trigger=workflow.triggers[0],
+        trigger_rank=0,
+    )
+    assert result.status == "dispatched"
+    assert mutations == [], f"dispatcher mutated _order_builders: {mutations}"

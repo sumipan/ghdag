@@ -184,6 +184,8 @@ class LLMPipelineAPI:
         idempotency_key: str | None = None,
         audit_context: AuditContext,
         metadata: dict[str, str] | None = None,
+        order_builder: OrderBuilder | None = None,
+        workflow_roles: dict[str, list[str]] | None = None,
     ) -> list[str]:
         """ステップ群を order/exec.jsonl ファイルに投入する。
 
@@ -193,6 +195,8 @@ class LLMPipelineAPI:
             idempotency_key: 冪等性キー（省略時は記録しない）
             audit_context: enqueue audit に記録するコンテキスト
             metadata: 全ステップ共通のメタデータ（exec.jsonl の annotations に格納）
+            order_builder: 指定時は `_resolve_order_builder` を使わずこちらを使う
+            workflow_roles: ロール名 → エンジン名リスト（step.role の annotations 用）
 
         Returns:
             書き込んだ JSON レコードを文字列化したリスト（DispatchResult 用）
@@ -200,7 +204,8 @@ class LLMPipelineAPI:
         _validate_depends(steps)
 
         ts = datetime.now(tz=ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d%H%M%S")
-        order_builder = self._resolve_order_builder(base_context.get("workflow_name"))
+        if order_builder is None:
+            order_builder = self._resolve_order_builder(base_context.get("workflow_name"))
         step_uuid_map: dict[str, str] = {}
         step_engine_map: dict[str, str] = {}
 
@@ -208,6 +213,7 @@ class LLMPipelineAPI:
             steps, base_context, idempotency_key, ts, order_builder,
             step_uuid_map, step_engine_map, audit_context,
             metadata=metadata,
+            workflow_roles=workflow_roles,
         )
 
     def _submit_jsonl(
@@ -222,6 +228,7 @@ class LLMPipelineAPI:
         audit_context: AuditContext,
         *,
         metadata: dict[str, str] | None = None,
+        workflow_roles: dict[str, list[str]] | None = None,
     ) -> list[str]:
         """JSONL 形式（exec.jsonl）への書き込み。"""
         import json as _json
@@ -273,6 +280,10 @@ class LLMPipelineAPI:
             record.setdefault("annotations", {})["step_name"] = step_id
             if step.resume_from:
                 record.setdefault("annotations", {})["resume_from_uuid"] = step_uuid_map[step.resume_from]
+            if step.role is not None:
+                role_engines = list((workflow_roles or {}).get(step.role, []))
+                record.setdefault("annotations", {})["role"] = step.role
+                record.setdefault("annotations", {})["role_engines"] = role_engines
             if metadata:
                 record.setdefault("annotations", {}).update(metadata)
             if idempotency_key:

@@ -273,6 +273,7 @@ class WorkflowDispatcher:
         audit_ctx: AuditContext,
     ) -> list[str]:
         """Submit steps, wrapping the order builder when any step uses render: live."""
+        workflow_roles = workflow.roles or None
         live_templates = {s.template for s in steps if s.render == "live"}
         if not live_templates:
             return self._pipeline.submit(
@@ -280,6 +281,7 @@ class WorkflowDispatcher:
                 base_context=base_context,
                 idempotency_key=idempotency_key,
                 audit_context=audit_ctx,
+                workflow_roles=workflow_roles,
             )
 
         template_dir = Path(workflow.template_dir) if workflow.template_dir else Path("templates")
@@ -289,22 +291,14 @@ class WorkflowDispatcher:
             template_dir=template_dir,
             live_templates=live_templates,
         )
-        builders = self._pipeline._order_builders
-        had_entry = workflow.name in builders
-        previous = builders.get(workflow.name)
-        builders[workflow.name] = wrapped
-        try:
-            return self._pipeline.submit(
-                steps=steps,
-                base_context=base_context,
-                idempotency_key=idempotency_key,
-                audit_context=audit_ctx,
-            )
-        finally:
-            if had_entry:
-                builders[workflow.name] = previous  # type: ignore[assignment]
-            else:
-                builders.pop(workflow.name, None)
+        return self._pipeline.submit(
+            steps=steps,
+            base_context=base_context,
+            idempotency_key=idempotency_key,
+            audit_context=audit_ctx,
+            order_builder=wrapped,
+            workflow_roles=workflow_roles,
+        )
 
     def run(self, max_iterations: int | None = None) -> None:
         """ポーリングループを開始。max_iterations=None で無限ループ。"""

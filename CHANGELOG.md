@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `workflow/loader.py` が `label_namespace` / `transitions` / `reset_label` / `roles` / `step.role` を読むようにし、`load_workflows()` で `validate_workflow_roles` を呼ぶ。`state_machine._load_workflow_config` の `replace()` 事後補完を削除（nexus #3029）
+- `LLMPipelineAPI.submit()` に公開引数 `order_builder` / `workflow_roles` を追加。dispatcher の `_order_builders` 一時差し替えをやめ、`submit(order_builder=...)` 経由に統一。`step.role` は exec.jsonl annotations の `role` / `role_engines` に載る（nexus #3029）
+- `dag.audit_hooks` の import を `ghdag.io.audit` へ切替し、二塔契約の `dag.audit_hooks -> pipeline.audit` 免除を削除。`pipeline.hooks -> dag.audit_hooks` 免除は DefaultHooks を core へ移すまでコメント付きで残す（nexus #3029）
+
 - **Breaking:** audit / metrics タイムスタンプの既定タイムゾーンを JST (`+09:00`) から UTC (`+00:00`) に変更。`now_ts()` / `epoch_ts()` に集約し、`DagConfig.timezone`（既定 `"UTC"`）を `AuditHooks` 経由で参照する。JST が必要なら `DagConfig(timezone="Asia/Tokyo")` または writer の `tz_name=` を指定する（nexus #3028）
 
 ### Added

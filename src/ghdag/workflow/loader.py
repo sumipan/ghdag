@@ -9,7 +9,7 @@ from pathlib import Path
 
 import yaml
 
-from ghdag.core.models.workflow import NonterminalClosedConfig
+from ghdag.core.models.workflow import NonterminalClosedConfig, validate_workflow_roles
 from ghdag.exceptions import GhdagError
 from ghdag.workflow.schema import (
     HandlerConfig,
@@ -55,6 +55,7 @@ def load_workflows(directory: str | Path) -> list[WorkflowConfig]:
 
         _validate(data, path.name)
         config = _parse(data, workflow_dir=directory.resolve())
+        validate_workflow_roles(config)
         _validate_references(config, workflow_dir=directory.resolve())
         configs.append(config)
 
@@ -238,6 +239,7 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
                     permission=s.get("permission"),
                     skill_name=s.get("skill_name"),
                     render=s.get("render", "frozen"),
+                    role=s.get("role"),
                 )
             )
 
@@ -270,5 +272,9 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
         handlers=handlers,
         polling_interval=data.get("polling_interval", 30),
         template_dir=resolved_template_dir,
+        label_namespace=data.get("label_namespace"),
+        transitions=data.get("transitions"),
+        reset_label=data.get("reset_label"),
+        roles=data.get("roles") or {},
         nonterminal_closed=nonterminal_closed,
     )
