@@ -11,9 +11,11 @@ Data layout under ``<root>/.forge/``:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -75,10 +77,20 @@ class LocalForge:
 
     def _write_json(self, path: Path, data: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+        fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
+        try:
+            os.write(fd, content.encode("utf-8"))
+            os.fsync(fd)
+            os.close(fd)
+            fd = -1
+            os.replace(tmp, str(path))
+        except BaseException:
+            if fd >= 0:
+                os.close(fd)
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            raise
 
     def _allocate_number(self) -> int:
         """Allocate the next Issue/PR number using O_CREAT|O_EXCL lock."""
