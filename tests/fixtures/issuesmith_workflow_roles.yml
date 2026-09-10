@@ -1,0 +1,37 @@
+# Slimmed real-shape fixture captured from nexus workflows/issuesmith.yml
+# (Issue #3029). Used when nexus checkout is not available (ghdag CI).
+name: issuesmith
+template_dir: templates
+label_namespace: issuesmith
+reset_label: issuesmith:reset
+transitions:
+  issuesmith:draft-running:
+  - issuesmith:draft-done
+  - issuesmith:develop-ready
+  issuesmith:draft-done:
+  - issuesmith:develop-ready
+  issuesmith:develop-running:
+  - issuesmith:develop-done
+  - issuesmith:merge-ready
+  - issuesmith:draft-done
+  issuesmith:develop-done:
+  - issuesmith:merge-ready
+  - issuesmith:merge-done
+  issuesmith:merge-running:
+  - issuesmith:merge-done
+  - issuesmith:migrate-ready
+  issuesmith:migrate-running:
+  - issuesmith:merge-ready
+  - issuesmith:reset
+  issuesmith:sub-running:
+  - issuesmith:sub-done
+triggers:
+- label: issuesmith:draft-ready
+  handler: brushup
+handlers:
+  brushup:
+    steps:
+    - id: b1
+      template: b1-conditional-live
+      engine: shell
+      model: bash

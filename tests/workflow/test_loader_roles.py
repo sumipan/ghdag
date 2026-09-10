@@ -11,11 +11,24 @@ import yaml
 from ghdag.workflow.loader import _parse, load_workflows
 from ghdag.workflow.state_machine import _load_workflow_config
 
-# worktree: .../nexus/.claude/external/ghdag/worktrees/<id>/tests/workflow/this_file
-# parents[7] == nexus リポジトリルート（CLAUDE.md §10: 実ファイルの形を使う）
-_NEXUS_ISSUESMITH_YML = (
-    Path(__file__).resolve().parents[7] / "workflows" / "issuesmith.yml"
-)
+
+def _resolve_issuesmith_yml() -> Path:
+    """nexus 実ファイルを優先し、無ければ slimmed fixture にフォールバック。
+
+    worktree 下では .../nexus/workflows/issuesmith.yml が見つかる。
+    ghdag 単独 CI では parents 深さが異なり実ファイルが無いため、
+    tests/fixtures/issuesmith_workflow_roles.yml（実形の縮約）を使う。
+    """
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = parent / "workflows" / "issuesmith.yml"
+        if candidate.is_file():
+            return candidate
+    fixture = here.parents[1] / "fixtures" / "issuesmith_workflow_roles.yml"
+    return fixture
+
+
+_NEXUS_ISSUESMITH_YML = _resolve_issuesmith_yml()
 
 
 def _stub_templates(workflow_dir: Path, yml_text: str) -> None:
@@ -29,7 +42,7 @@ def _stub_templates(workflow_dir: Path, yml_text: str) -> None:
 
 
 def _issuesmith_fixture(tmp_path: Path, *, inject_roles: bool = False) -> Path:
-    """実 issuesmith.yml を tmp にコピーし、必要なら roles / step.role を注入する。"""
+    """実 issuesmith.yml（または同等 fixture）を tmp にコピーし、必要なら roles / step.role を注入する。"""
     assert _NEXUS_ISSUESMITH_YML.is_file(), f"missing fixture: {_NEXUS_ISSUESMITH_YML}"
     text = _NEXUS_ISSUESMITH_YML.read_text(encoding="utf-8")
     if inject_roles:
