@@ -359,6 +359,7 @@ class LLMPipelineAPI:
                 order_path=f"{self._queue_dir}/{order_filename}",
                 model=model,
                 capabilities=capabilities,
+                isolation=bool(os.environ.get("GHDAG_ENGINE_ISOLATION")),
             ),
             "depends": depends,
             "result_path": f"{self._queue_dir}/{result_filename}",

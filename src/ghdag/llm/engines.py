@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -150,8 +151,16 @@ _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
     "codex": {"permission_mode", "output_format"},
 }
 
-# call() 経由の codex 起動で使う空 CODEX_HOME（ユーザー ~/.codex を読まない）。
+# call() 経由の codex 隔離用 CODEX_HOME（ユーザー ~/.codex を読まない）。
+# GHDAG_ENGINE_ISOLATION=1 かつ auth.json が存在するときだけ注入する（nexus #3174）。
 _CODEX_DAG_HOME = "/var/tmp/ghdag-dag-codex/"
+
+
+def _resolve_isolation(isolation: bool | None) -> bool:
+    """isolation 明示値、無ければ環境変数 GHDAG_ENGINE_ISOLATION で解決する。"""
+    if isolation is not None:
+        return isolation
+    return bool(os.environ.get("GHDAG_ENGINE_ISOLATION"))
 
 # エンジン側に等価概念がないため noop（値を受理するが CLI フラグに反映しない）で扱う capability。
 # codex: allowed_tools / disallowed_tools は codex-cli には存在せず、権限制御は
@@ -308,6 +317,7 @@ def call(
     capabilities: LLMCapabilities = TEXT_ONLY,
     dangerously_skip_permissions: bool = False,
     resume_session_id: str | None = None,
+    isolation: bool | None = None,
 ) -> LLMResult:
     """ワンショットで LLM を呼び出し、結果を返す。
 
@@ -319,6 +329,7 @@ def call(
         stdin_text: 標準入力として渡すテキスト（None で stdin なし）
         cwd: サブプロセスの作業ディレクトリ（None で現行プロセス cwd）
         capabilities: 能力制約値オブジェクト（デフォルト: TEXT_ONLY）
+        isolation: エンジン隔離。None のとき GHDAG_ENGINE_ISOLATION 環境変数で解決（既定 False）
     Returns:
         LLMResult
     Raises:
@@ -335,6 +346,7 @@ def call(
                 f"{engine} engine does not support resume (got {resume_session_id!r})"
             )
     resolved_model = validate_engine_model(engine, model)
+    resolved_isolation = _resolve_isolation(isolation)
 
     # prompt_flag が NONE かつ STDIN エンジン（codex 等）は prompt を stdin に回す。
     # stdin_text が明示指定済みの場合はそれを優先する。
@@ -351,6 +363,7 @@ def call(
         capabilities=capabilities,
         dangerously_skip_permissions=dangerously_skip_permissions,
         resume_session_id=resume_session_id,
+        isolation=resolved_isolation,
     )
 
     t0 = time.monotonic()
@@ -361,10 +374,18 @@ def call(
         "timeout": timeout,
         "cwd": cwd,
     }
-    # codex: ユーザー ~/.codex を読まず空 CODEX_HOME で起動（nexus #3044）
-    if engine == "codex":
-        Path(_CODEX_DAG_HOME).mkdir(parents=True, exist_ok=True)
-        run_kwargs["env"] = {**os.environ, "CODEX_HOME": _CODEX_DAG_HOME}
+    # codex: isolation=True かつ auth.json があるときだけ空 CODEX_HOME で起動（nexus #3174）
+    if engine == "codex" and resolved_isolation:
+        auth_path = Path(_CODEX_DAG_HOME) / "auth.json"
+        if auth_path.exists():
+            Path(_CODEX_DAG_HOME).mkdir(parents=True, exist_ok=True)
+            run_kwargs["env"] = {**os.environ, "CODEX_HOME": _CODEX_DAG_HOME}
+        else:
+            print(
+                "warning: codex isolation skipped "
+                f"(auth.json missing at {auth_path})",
+                file=sys.stderr,
+            )
     result = subprocess.run(cmd, **run_kwargs)
     latency_ms = (time.monotonic() - t0) * 1000
     session_id: str | None = None
@@ -396,6 +417,7 @@ def call_text(
     capabilities: LLMCapabilities = TEXT_ONLY,
     dangerously_skip_permissions: bool = False,
     resume_session_id: str | None = None,
+    isolation: bool | None = None,
 ) -> TextResult:
     """ワンショットで LLM を呼び出し、adapter でテキスト抽出した TextResult を返す。
 
@@ -412,6 +434,7 @@ def call_text(
         capabilities=capabilities,
         dangerously_skip_permissions=dangerously_skip_permissions,
         resume_session_id=resume_session_id,
+        isolation=isolation,
     )
     adapter = get_output_adapter(engine)
     stdout_bytes = result.stdout.encode("utf-8")
