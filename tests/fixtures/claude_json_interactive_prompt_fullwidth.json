@@ -1,0 +1,1 @@
+{"type": "result", "subtype": "success", "is_error": false, "result": "どのレビュー方針で進めますか？\n\n1. bugbot\n2. security review\n\n選択してください？", "session_id": "claude-sess-interactive-fullwidth-001", "usage": {"input_tokens": 1200, "output_tokens": 48}}

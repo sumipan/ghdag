@@ -53,6 +53,7 @@ class TaskMetrics:
     finished_at: float
     correlation_id: str | None = None
     failure_class: FailureClass | None = None
+    failure_class_reason: str | None = None
     request_id: str | None = None
     cost_usd: float | None = None
     cache_read_tokens: int | None = None

@@ -121,9 +121,10 @@ class CodexAdapter:
         classified = classify_common_failure("codex", stdout, stderr)
         if classified is not None:
             return classified
-        last_agent_message = _last_agent_message_text(stdout)
-        if looks_like_question(last_agent_message):
-            return FailureClass.INTERACTIVE_PROMPT
+        if returncode != 0:
+            last_agent_message = _last_agent_message_text(stdout)
+            if looks_like_question(last_agent_message):
+                return FailureClass.INTERACTIVE_PROMPT
         text = _decode_streams(stdout, stderr)
         lower = text.lower()
         if "failed to load models cache" in lower:

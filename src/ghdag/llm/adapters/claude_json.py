@@ -128,9 +128,10 @@ class ClaudeJsonAdapter:
         classified = classify_common_failure("claude", stdout, stderr)
         if classified is not None:
             return classified
-        text = self.extract_result_text(stdout, stderr).decode("utf-8", errors="replace")
-        if looks_like_question(text):
-            return FailureClass.INTERACTIVE_PROMPT
+        if returncode != 0:
+            text = self.extract_result_text(stdout, stderr).decode("utf-8", errors="replace")
+            if looks_like_question(text):
+                return FailureClass.INTERACTIVE_PROMPT
         return None
 
 
