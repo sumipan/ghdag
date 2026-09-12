@@ -101,11 +101,8 @@ def _build_claude_flags(
         flags += ["--allowed-tools", ",".join(capabilities.allowed_tools)]
     if capabilities.disallowed_tools:
         flags += ["--disallowed-tools", ",".join(capabilities.disallowed_tools)]
-    # グローバルスキル（~/.agents/skills）自動起動を防ぐ（nexus #3044）。
-    # EngineSpec.extra_args にも同フラグがあり、render_exec_command では
-    # _dedupe_extra_args で重複排除される。build_llm_cmd は extra_args を
-    # 使わないため、ここでも常時付与する。
-    flags.append("--disable-slash-commands")
+    # --disable-slash-commands は isolation=True 時のみ
+    # build_llm_cmd / render_exec_command が付与する（nexus #3174）。
     if dangerously_skip_permissions:
         flags += ["--dangerously-skip-permissions"]
     return flags
@@ -173,6 +170,7 @@ def render_exec_command(
     prompt: str | None = None,
     capabilities: LLMCapabilities | None = None,
     resume_session_id: str | None = None,
+    isolation: bool = False,
 ) -> str:
     """exec.jsonl の command フィールド用（tee パイプを含まない）。
 
@@ -180,6 +178,7 @@ def render_exec_command(
     capabilities が None の場合は従来通り EngineSpec.danger_flag を使用。
     capabilities が指定された場合は _CAPABILITY_FLAG_BUILDERS 経由でフラグを生成し、
     builder が出したフラグは extra_args 側から除去する（_dedupe_extra_args）。
+    isolation=True かつ claude のとき --disable-slash-commands を付与する（nexus #3174）。
     """
     del prompt  # FLAG_ONLY / NONE では argv に載せない
 
@@ -190,6 +189,8 @@ def render_exec_command(
             perm_flags = builder(capabilities, False)
 
     effective_extra_args = _dedupe_extra_args(spec.extra_args, perm_flags)
+    if isolation and spec.name == "claude":
+        effective_extra_args = [*effective_extra_args, "--disable-slash-commands"]
     resume_flags: list[str] = []
     subcommand = list(spec.subcommand)
     if resume_session_id:
@@ -256,6 +257,7 @@ def build_llm_cmd(
     capabilities: LLMCapabilities = TEXT_ONLY,
     dangerously_skip_permissions: bool = False,
     resume_session_id: str | None = None,
+    isolation: bool = False,
 ) -> list[str]:
     """LLM CLI コマンドのリストを構築する。
 
@@ -266,6 +268,7 @@ def build_llm_cmd(
         capabilities: 能力制約値オブジェクト（デフォルト: TEXT_ONLY）
         dangerously_skip_permissions: claude エンジン時に --dangerously-skip-permissions を付与
         resume_session_id: 再開対象セッションID（対応エンジンのみ）
+        isolation: True かつ claude のとき --disable-slash-commands を付与（nexus #3174）
     Returns:
         subprocess 用のコマンドリスト
     """
@@ -291,6 +294,9 @@ def build_llm_cmd(
         cmd += builder(capabilities, dangerously_skip_permissions)
     elif dangerously_skip_permissions and spec and spec.danger_flag:
         cmd.append(spec.danger_flag)
+
+    if isolation and engine == "claude":
+        cmd.append("--disable-slash-commands")
 
     return cmd
 

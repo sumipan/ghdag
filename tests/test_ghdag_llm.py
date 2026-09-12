@@ -657,12 +657,12 @@ class TestRenderExecCommand:
     def test_claude_with_model(self):
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model="claude-opus-4-6")
-        assert cmd == "claude -p --model 'claude-opus-4-6' --output-format stream-json --verbose --disable-slash-commands --dangerously-skip-permissions < queue/order.md"
+        assert cmd == "claude -p --model 'claude-opus-4-6' --output-format stream-json --verbose --dangerously-skip-permissions < queue/order.md"
 
     def test_claude_without_model(self):
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model=None)
-        assert cmd == "claude -p --output-format stream-json --verbose --disable-slash-commands --dangerously-skip-permissions < queue/order.md"
+        assert cmd == "claude -p --output-format stream-json --verbose --dangerously-skip-permissions < queue/order.md"
 
     def test_gemini_with_model(self):
         spec = ENGINE_SPECS["gemini"]
@@ -746,7 +746,7 @@ class TestAdapterOutputs:
         cmd = record["command"]
         assert cmd == (
             "claude -p --model 'claude-sonnet-4-6' --output-format stream-json --verbose"
-            " --disable-slash-commands --dangerously-skip-permissions < queue/order.md"
+            " --dangerously-skip-permissions < queue/order.md"
         )
 
     def test_claude_adapter_prompt_optional(self):
@@ -944,23 +944,61 @@ class TestSupportsCapability:
 
 
 class TestEngineIsolation:
-    """DAG 経路のグローバル設定隔離 — nexus #3044 AC-2 / AC-3。"""
+    """エンジン隔離の opt-in — nexus #3174（旧 #3044 常時隔離を条件化）。"""
 
-    def test_claude_cmd_includes_disable_slash_commands(self) -> None:
-        """build_llm_cmd('claude', ...) に --disable-slash-commands が含まれる。"""
+    def test_claude_cmd_omits_disable_slash_commands_by_default(self) -> None:
+        """既定では --disable-slash-commands を付けない（skills 利用可能）。"""
         cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello")
+        assert "--disable-slash-commands" not in cmd
+        assert "--disable-slash-commands" not in ENGINE_SPECS["claude"].extra_args
+
+    def test_claude_cmd_includes_disable_slash_commands_when_isolation_true(
+        self,
+    ) -> None:
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", isolation=True)
         assert "--disable-slash-commands" in cmd
-        assert "--disable-slash-commands" in ENGINE_SPECS["claude"].extra_args
 
     @patch("ghdag.llm.engines.subprocess.run")
-    def test_codex_call_sets_codex_home_env(self, mock_run: MagicMock) -> None:
-        """call('codex', ...) の subprocess.run env に CODEX_HOME が含まれる。"""
+    def test_codex_call_sets_codex_home_when_isolation_and_auth(
+        self, mock_run: MagicMock, tmp_path, monkeypatch
+    ) -> None:
+        """isolation=True かつ auth.json があるときだけ CODEX_HOME を注入する。"""
+        import ghdag.llm.engines as engines_mod
+
+        monkeypatch.setattr(engines_mod, "_CODEX_DAG_HOME", str(tmp_path) + "/")
+        (tmp_path / "auth.json").write_text("{}", encoding="utf-8")
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("hello", engine="codex", capabilities=TEXT_ONLY)
+        call("hello", engine="codex", capabilities=TEXT_ONLY, isolation=True)
         assert mock_run.called
         kwargs = mock_run.call_args.kwargs
         assert "env" in kwargs
-        assert kwargs["env"]["CODEX_HOME"] == "/var/tmp/ghdag-dag-codex/"
+        assert kwargs["env"]["CODEX_HOME"] == str(tmp_path) + "/"
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_codex_isolation_skipped_without_auth(
+        self, mock_run: MagicMock, tmp_path, monkeypatch, capsys
+    ) -> None:
+        """isolation=True でも auth.json が無ければ CODEX_HOME を注入せず警告する。"""
+        import ghdag.llm.engines as engines_mod
+
+        monkeypatch.setattr(engines_mod, "_CODEX_DAG_HOME", str(tmp_path) + "/")
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("hello", engine="codex", capabilities=TEXT_ONLY, isolation=True)
+        kwargs = mock_run.call_args.kwargs
+        assert "env" not in kwargs or "CODEX_HOME" not in kwargs.get("env", {})
+        err = capsys.readouterr().err
+        assert "codex isolation skipped" in err
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_codex_call_no_codex_home_by_default(
+        self, mock_run: MagicMock, monkeypatch
+    ) -> None:
+        """isolation=None かつ GHDAG_ENGINE_ISOLATION 未設定では CODEX_HOME を注入しない。"""
+        monkeypatch.delenv("GHDAG_ENGINE_ISOLATION", raising=False)
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("hello", engine="codex", capabilities=TEXT_ONLY, isolation=None)
+        kwargs = mock_run.call_args.kwargs
+        assert "env" not in kwargs or "CODEX_HOME" not in kwargs.get("env", {})
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_cursor_call_unaffected_by_isolation_meta_capability(

@@ -45,8 +45,8 @@ ENGINE_SPECS: dict[str, EngineSpec] = {
         default_model="claude-sonnet-4-6",
         danger_flag="--dangerously-skip-permissions",
         danger_flag_position="trailing",
-        # --disable-slash-commands: ~/.agents/skills 等のグローバルスキル自動起動を防ぐ（nexus #3044）
-        extra_args=("--output-format", "stream-json", "--verbose", "--disable-slash-commands"),
+        # --disable-slash-commands は isolation=True（GHDAG_ENGINE_ISOLATION）時のみ付与（nexus #3174）
+        extra_args=("--output-format", "stream-json", "--verbose"),
     ),
     "gemini": EngineSpec(
         name="gemini", cli="gemini",

@@ -58,7 +58,6 @@ class TestGenericAdapter:
             "command": (
                 "claude -p --model 'claude-sonnet-4-6'"
                 " --output-format stream-json --verbose"
-                " --disable-slash-commands"
                 " --dangerously-skip-permissions"
                 " < queue/order.md"
             ),
@@ -296,7 +295,6 @@ class TestBuildExecRecord:
             "command": (
                 "claude -p --model 'claude-sonnet-4-6'"
                 " --output-format stream-json --verbose"
-                " --disable-slash-commands"
                 " --dangerously-skip-permissions"
                 " < queue/order.md"
             ),
