@@ -1,0 +1,4 @@
+{"type": "thread.started", "thread_id": "codex-thread-interactive-fullwidth-001"}
+{"type": "turn.started"}
+{"type": "item.completed", "item": {"id": "item_0", "type": "agent_message", "text": "どのレビュー方針で進めますか？\n\n1. bugbot\n2. security review\n\n選択してください？"}}
+{"type": "turn.completed", "usage": {"input_tokens": 9800, "cached_input_tokens": 0, "cache_write_input_tokens": 0, "output_tokens": 52, "reasoning_output_tokens": 0}}

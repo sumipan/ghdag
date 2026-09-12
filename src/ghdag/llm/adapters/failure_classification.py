@@ -5,13 +5,20 @@ from __future__ import annotations
 from ghdag.core.models.metrics import FailureClass
 
 
-def looks_like_question(text: str) -> bool:
-    """最終行がユーザーへの質問で終わるかを判定する。"""
+def last_nonempty_line(text: str) -> str:
+    """末尾の非空行を返す（無ければ空文字）。"""
     stripped = text.rstrip()
     if not stripped:
+        return ""
+    return stripped.splitlines()[-1].strip()
+
+
+def looks_like_question(text: str) -> bool:
+    """最終行がユーザーへの質問で終わるかを判定する（ASCII `?` / 全角 `？`）。"""
+    last_line = last_nonempty_line(text)
+    if not last_line:
         return False
-    last_line = stripped.splitlines()[-1].strip()
-    return last_line.endswith("?")
+    return last_line.endswith(("?", "？"))
 
 
 def classify_common_failure(binary: str, stdout: bytes, stderr: bytes) -> FailureClass | None:

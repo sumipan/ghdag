@@ -110,11 +110,12 @@ class CursorStreamAdapter:
         classified = classify_common_failure("cursor", stdout, stderr)
         if classified is not None:
             return classified
-        data = parse_cursor_result_payload(stdout)
-        if data is not None:
-            result = data.get("result", "")
-            if isinstance(result, str) and looks_like_question(result):
-                return FailureClass.INTERACTIVE_PROMPT
+        if returncode != 0:
+            data = parse_cursor_result_payload(stdout)
+            if data is not None:
+                result = data.get("result", "")
+                if isinstance(result, str) and looks_like_question(result):
+                    return FailureClass.INTERACTIVE_PROMPT
         return None
 
     def is_terminal_result_event(self, event: dict[str, Any]) -> bool:

@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `FailureClass.INTERACTIVE_PROMPT` の判定を exit ≠ 0 のときのみに限定し、成功応答末尾の `?` / `？` では permanent 失敗にしない。`looks_like_question` は全角 `？` も検出する。`TaskMetrics.failure_class_reason` に判定元末尾行を記録する（nexus #3175）
 - Engine isolation is opt-in via `GHDAG_ENGINE_ISOLATION=1`（nexus #3174）: claude gets `--disable-slash-commands` only when isolation is on; codex `call()` sets `CODEX_HOME=/var/tmp/ghdag-dag-codex/` only when isolation is on **and** `auth.json` exists there (otherwise skips with a stderr warning). Default (env unset) restores pre-v0.50.0 behavior so nexus skills / `~/.codex` auth work. cursor still reports `supports_capability(..., "isolation") == False`
 - `pipeline.status.task_status` / `dag.recover.plan_recover` の状態判定を `ghdag.status._step_status_core` / `_read_step_records` に一本化（nexus #3084）
 - Dead-code cleanup, mypy `ignore_errors` removal, env accessors consolidation, and CHANGELOG versioning for 0.35.0–0.48.0 (nexus #3039)

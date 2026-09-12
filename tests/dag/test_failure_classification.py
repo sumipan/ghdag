@@ -336,6 +336,7 @@ def test_retry_and_quarantine_audit_events_are_written(mock_mark_done, tmp_path)
 
 def test_looks_like_question_last_line_endswith_question_mark() -> None:
     assert looks_like_question("Choose an option?\n") is True
+    assert looks_like_question("選択してください？") is True
     assert looks_like_question("Done.\nAll good.") is False
     assert looks_like_question("") is False
     assert looks_like_question("   \n  ") is False
@@ -348,21 +349,41 @@ def test_failure_class_interactive_prompt_meta() -> None:
 
 
 @pytest.mark.parametrize(
-    ("adapter", "fixture", "returncode"),
+    ("adapter", "fixture"),
     [
-        (ClaudeJsonAdapter(), "claude_json_interactive_prompt.json", 0),
-        (ClaudeJsonAdapter(), "claude_json_interactive_prompt.json", 1),
-        (CursorStreamAdapter(), "cursor_stream_interactive_prompt.jsonl", 0),
-        (CursorStreamAdapter(), "cursor_stream_interactive_prompt.jsonl", 1),
-        (CodexJsonlAdapter(), "codex_jsonl_interactive_prompt.jsonl", 1),
-        (CodexAdapter(), "codex_jsonl_interactive_prompt.jsonl", 1),
+        (ClaudeJsonAdapter(), "claude_json_interactive_prompt.json"),
+        (CursorStreamAdapter(), "cursor_stream_interactive_prompt.jsonl"),
+        (CodexJsonlAdapter(), "codex_jsonl_interactive_prompt.jsonl"),
+        (CodexAdapter(), "codex_jsonl_interactive_prompt.jsonl"),
+        (ClaudeJsonAdapter(), "claude_json_interactive_prompt_fullwidth.json"),
+        (CursorStreamAdapter(), "cursor_stream_interactive_prompt_fullwidth.jsonl"),
+        (CodexJsonlAdapter(), "codex_jsonl_interactive_prompt_fullwidth.jsonl"),
+        (CodexAdapter(), "codex_jsonl_interactive_prompt_fullwidth.jsonl"),
     ],
 )
-def test_adapters_detect_interactive_prompt_from_fixtures(
-    adapter, fixture: str, returncode: int
-) -> None:
+def test_adapters_exit0_question_is_not_interactive_prompt(adapter, fixture: str) -> None:
+    """AC-1 / AC-2: exit 0 では ASCII/全角 ? 終端でも INTERACTIVE_PROMPT にしない。"""
     stdout = _load_fixture(fixture)
-    assert adapter.classify_failure(returncode, stdout, b"") == FailureClass.INTERACTIVE_PROMPT
+    assert adapter.classify_failure(0, stdout, b"") is None
+
+
+@pytest.mark.parametrize(
+    ("adapter", "fixture"),
+    [
+        (ClaudeJsonAdapter(), "claude_json_interactive_prompt.json"),
+        (CursorStreamAdapter(), "cursor_stream_interactive_prompt.jsonl"),
+        (CodexJsonlAdapter(), "codex_jsonl_interactive_prompt.jsonl"),
+        (CodexAdapter(), "codex_jsonl_interactive_prompt.jsonl"),
+        (ClaudeJsonAdapter(), "claude_json_interactive_prompt_fullwidth.json"),
+        (CursorStreamAdapter(), "cursor_stream_interactive_prompt_fullwidth.jsonl"),
+        (CodexJsonlAdapter(), "codex_jsonl_interactive_prompt_fullwidth.jsonl"),
+        (CodexAdapter(), "codex_jsonl_interactive_prompt_fullwidth.jsonl"),
+    ],
+)
+def test_adapters_exit_nonzero_question_is_interactive_prompt(adapter, fixture: str) -> None:
+    """AC-3 / AC-4: exit ≠ 0 かつ末尾 ? / ？ なら INTERACTIVE_PROMPT。"""
+    stdout = _load_fixture(fixture)
+    assert adapter.classify_failure(1, stdout, b"") == FailureClass.INTERACTIVE_PROMPT
 
 
 @pytest.mark.parametrize(
@@ -403,12 +424,14 @@ def test_interactive_prompt_exit1_marks_done_without_retry(mock_mark_done, tmp_p
     metrics = args[4]
     question_excerpt = args[3]
     assert metrics.failure_class == FailureClass.INTERACTIVE_PROMPT
+    assert metrics.failure_class_reason == "Please choose one?"
     assert len(question_excerpt) <= 200
     assert "Please choose one?" in question_excerpt or "bugbot" in question_excerpt
 
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
-def test_interactive_prompt_exit0_marks_done_without_success(mock_mark_done, tmp_path) -> None:
+def test_interactive_prompt_exit0_succeeds_as_normal(mock_mark_done, tmp_path) -> None:
+    """AC-7: exit 0 の質問終端は成功扱い（INTERACTIVE_PROMPT 分岐なし）。"""
     engine, hooks = _make_engine(tmp_path)
     result_file = tmp_path / "result.md"
     task = Task(
@@ -424,14 +447,7 @@ def test_interactive_prompt_exit0_marks_done_without_success(mock_mark_done, tmp
 
     engine._launcher.check_completions()
 
-    mock_mark_done.assert_called_once_with(
-        engine._config.exec_done_dir, task.uuid, DONE_INTERACTIVE_PROMPT
-    )
-    hooks.on_task_success.assert_not_called()
-    hooks.on_task_failure.assert_called_once()
-    args = hooks.on_task_failure.call_args[0]
-    metrics = args[4]
-    question_excerpt = args[3]
-    assert metrics.failure_class == FailureClass.INTERACTIVE_PROMPT
-    assert len(question_excerpt) <= 200
-    assert "Please choose one?" in question_excerpt
+    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, 0)
+    hooks.on_task_success.assert_called_once()
+    hooks.on_task_failure.assert_not_called()
+    assert "Please choose one?" in result_file.read_text(encoding="utf-8")

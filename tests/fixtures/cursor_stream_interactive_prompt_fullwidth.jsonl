@@ -1,0 +1,3 @@
+{"type": "system", "subtype": "init", "session_id": "cursor-sess-interactive-fullwidth-001", "model": "Auto", "cwd": "/tmp/fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "どのレビュー方針で進めますか？"}]}, "session_id": "cursor-sess-interactive-fullwidth-001"}
+{"type": "result", "subtype": "success", "is_error": false, "result": "どのレビュー方針で進めますか？\n\n1. bugbot\n2. security review\n\n選択してください？", "session_id": "cursor-sess-interactive-fullwidth-001", "usage": {"inputTokens": 4200, "outputTokens": 64, "cacheReadTokens": 0, "cacheWriteTokens": 0}, "duration_ms": 3100}

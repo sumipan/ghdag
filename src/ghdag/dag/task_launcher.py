@@ -38,6 +38,7 @@ from ghdag.io.audit import (
     write_task_retry_audit,
 )
 from ghdag.llm.adapters import get_output_adapter
+from ghdag.llm.adapters.failure_classification import last_nonempty_line
 from ghdag.llm.compaction import (
     CompactionPolicy,
     compact_resume_session,
@@ -515,25 +516,6 @@ class TaskLauncher:
                     else:
                         effective_result_path = _extract_tee_target(task.command)
 
-                    if adapter.classify_failure(0, stdout_data, stderr_bytes) == FailureClass.INTERACTIVE_PROMPT:
-                        question_text = transformed.decode("utf-8", errors="replace")[:200]
-                        state_mark_done(self._config.exec_done_dir, uuid, DONE_INTERACTIVE_PROMPT)
-                        metrics = TaskMetrics(
-                            uuid=uuid, engine=engine, model=model,
-                            wall_time_sec=round(finished_at - rt.started_at, 3),
-                            token_count=token_count, status="failure",
-                            started_at=rt.started_at, finished_at=finished_at,
-                            correlation_id=task.idempotency_key,
-                            failure_class=FailureClass.INTERACTIVE_PROMPT,
-                            request_id=_task_request_id(task),
-                            cost_usd=cost_usd,
-                            cache_read_tokens=cache_read_tokens,
-                            cache_creation_tokens=cache_creation_tokens,
-                        )
-                        self._hooks.on_task_failure(uuid, task, 0, question_text, metrics)
-                        self._circuit_breaker.record_failure()
-                        continue
-
                     if effective_result_path and self._hooks.check_rejected(effective_result_path):
                         retry_depth = task.retry
                         is_final = retry_depth >= self._config.max_retry
@@ -692,9 +674,11 @@ class TaskLauncher:
                         continue
 
                     if classified == FailureClass.INTERACTIVE_PROMPT:
-                        question_text = adapter.extract_result_text(
+                        full_question = adapter.extract_result_text(
                             stdout_data, stderr_bytes
-                        ).decode("utf-8", errors="replace")[:200]
+                        ).decode("utf-8", errors="replace")
+                        question_text = full_question[:200]
+                        reason = last_nonempty_line(full_question) or None
                         state_mark_done(self._config.exec_done_dir, uuid, DONE_INTERACTIVE_PROMPT)
                         metrics = TaskMetrics(
                             uuid=uuid, engine=engine, model=model,
@@ -703,6 +687,7 @@ class TaskLauncher:
                             started_at=rt.started_at, finished_at=finished_at,
                             correlation_id=task.idempotency_key,
                             failure_class=FailureClass.INTERACTIVE_PROMPT,
+                            failure_class_reason=reason,
                             request_id=_task_request_id(task),
                             cost_usd=cost_usd,
                             cache_read_tokens=cache_read_tokens,
