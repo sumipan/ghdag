@@ -14,16 +14,100 @@ from ghdag.llm.adapters.failure_classification import (
 )
 
 
+def extract_final_assistant_text(stdout: bytes) -> str | None:
+    """stream-json JSONL から最後の完結 assistant 本文を返す。
+
+    完結イベントは ``type == "assistant"`` かつ非空 text で、
+    (a) 非空のトップレベル ``model_call_id`` がある、または
+    (b) ``model_call_id`` が無く、text が直前から蓄積した部分出力の連結と完全一致する。
+
+    ``tool_call``（started / completed を問わず）より前の候補と部分バッファは破棄する。
+    候補が無ければ ``None``。空 text は本文に採用しない。
+    """
+    if not stdout:
+        return None
+    try:
+        text = stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+    partials: list[str] = []
+    last_complete: str | None = None
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            obj = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(obj, dict):
+            continue
+
+        event_type = obj.get("type")
+        if event_type == "tool_call":
+            partials = []
+            last_complete = None
+            continue
+        if event_type != "assistant":
+            continue
+
+        piece = _assistant_text_content(obj)
+        if not piece:
+            continue
+
+        model_call_id = obj.get("model_call_id")
+        if isinstance(model_call_id, str) and model_call_id:
+            last_complete = piece
+            partials = []
+            continue
+
+        concat = "".join(partials)
+        if concat and piece == concat:
+            last_complete = piece
+            partials = []
+            continue
+
+        partials.append(piece)
+
+    return last_complete
+
+
+def _assistant_text_content(obj: dict[Any, Any]) -> str:
+    """assistant イベントの text content だけを連結する（非 text / 非 str は無視）。"""
+    message = obj.get("message")
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") != "text":
+            continue
+        value = item.get("text")
+        if isinstance(value, str) and value:
+            parts.append(value)
+    return "".join(parts)
+
+
 class CursorStreamAdapter:
     """stream-json / 単一 JSON の両方を処理する cursor 用アダプター。
 
-    最終 ``{"type":"result"}`` 行から result テキスト・session_id・usage を取る。
+    完結 assistant 本文があればそれを優先し、無ければ最終 ``{"type":"result"}``
+    行の result・単一 JSON・生 stdout へフォールバックする。
     従来の ``--output-format json`` 単一オブジェクトも受理する。
     """
 
     def extract_result_text(self, stdout: bytes, stderr: bytes) -> bytes:
         if not stdout:
             return stdout
+        final = extract_final_assistant_text(stdout)
+        if final:
+            return final.encode("utf-8")
         data = parse_cursor_result_payload(stdout)
         if data is None:
             return stdout
