@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import signal
 import subprocess
 import tempfile
 import threading
@@ -134,6 +135,47 @@ def _resolve_task_timeout(task: Task, default: float | None) -> float | None:
     return default
 
 
+def _process_group_exists(pgid: int) -> bool:
+    """Return True if any process in the group is still alive."""
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _signal_process_tree(proc: subprocess.Popen[bytes], sig: signal.Signals) -> None:
+    """Send *sig* to the task process group, falling back to the leader only."""
+    pgid = proc.pid
+    runner_pgid = os.getpgrp()
+    if isinstance(pgid, int) and pgid == runner_pgid:
+        logger.warning(
+            "Refusing to signal runner process group %s; falling back to leader",
+            pgid,
+        )
+    elif isinstance(pgid, int):
+        try:
+            os.killpg(pgid, sig)
+            return
+        except ProcessLookupError:
+            return
+        except OSError:
+            logger.warning(
+                "Failed to signal process group %s with %s; falling back to leader",
+                pgid,
+                sig,
+                exc_info=True,
+            )
+    if proc.poll() is not None:
+        return
+    if sig == signal.SIGKILL:
+        proc.kill()
+    else:
+        proc.terminate()
+
+
 class TaskLauncher:
     """Manage subprocess launch and completion detection for DAG tasks."""
 
@@ -225,6 +267,7 @@ class TaskLauncher:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     cwd=cwd,
+                    start_new_session=True,
                 )
                 stdout_buf = io.BytesIO()
                 if _should_use_line_reader(launch_engine, task.command, task.annotations):
@@ -250,6 +293,7 @@ class TaskLauncher:
                     ["bash", "-o", "pipefail", "-c", task.command],
                     stderr=subprocess.PIPE,
                     cwd=cwd,
+                    start_new_session=True,
                 )
         except Exception:
             self._quota_gate.finish_run(task_uuid=uuid)
@@ -280,12 +324,10 @@ class TaskLauncher:
         if rt is None:
             return
         self._cancelled.add(uuid)
-        if rt.proc.poll() is not None:
-            return
         if rt.term_sent_at is not None:
             return
         logger.warning("Task [%s] cancel requested, sending SIGTERM", uuid)
-        rt.proc.terminate()
+        _signal_process_tree(rt.proc, signal.SIGTERM)
         rt.term_sent_at = time.monotonic()
 
     def check_completions(self) -> None:
@@ -295,8 +337,8 @@ class TaskLauncher:
             rt = self._running[uuid]
             now = time.monotonic()
 
-            if rt.proc.poll() is None:
-                if rt.term_sent_at is None:
+            if rt.term_sent_at is None:
+                if rt.proc.poll() is None:
                     task_timeout = _resolve_task_timeout(rt.task, self._config.task_timeout)
                     if (
                         uuid not in self._cancelled
@@ -308,15 +350,34 @@ class TaskLauncher:
                             uuid,
                             task_timeout,
                         )
-                        rt.proc.terminate()
+                        _signal_process_tree(rt.proc, signal.SIGTERM)
                         rt.term_sent_at = now
-                elif (now - rt.term_sent_at) > self._config.kill_grace:
-                    logger.warning(
-                        "Task [%s] still alive after grace period, sending SIGKILL", uuid
-                    )
-                    rt.proc.kill()
+                    else:
+                        continue
 
-            if rt.proc.poll() is None:
+            if rt.term_sent_at is not None:
+                # Reap the leader first so a zombie session leader does not keep
+                # the process group appearing alive after SIGTERM wiped real work.
+                leader_exited = rt.proc.poll() is not None
+                group_alive = (
+                    _process_group_exists(rt.proc.pid)
+                    if isinstance(rt.proc.pid, int)
+                    else (not leader_exited)
+                )
+                if group_alive:
+                    if (now - rt.term_sent_at) > self._config.kill_grace:
+                        logger.warning(
+                            "Task [%s] still alive after grace period, sending SIGKILL",
+                            uuid,
+                        )
+                        _signal_process_tree(rt.proc, signal.SIGKILL)
+                        if rt.proc.poll() is None:
+                            continue
+                    else:
+                        continue
+                elif not leader_exited:
+                    continue
+            elif rt.proc.poll() is None:
                 continue
 
             was_cancelled = uuid in self._cancelled
@@ -359,6 +420,7 @@ class TaskLauncher:
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
                             cwd=cwd,
+                            start_new_session=True,
                         )
                         stdout_buf = io.BytesIO()
                         stderr_buf = io.BytesIO()
@@ -806,10 +868,18 @@ class TaskLauncher:
             return
         path = self._running_path(uuid)
         path.parent.mkdir(parents=True, exist_ok=True)
+        pgid = raw_pid
         try:
-            pgid = os.getpgid(raw_pid)
+            actual_pgid = os.getpgid(raw_pid)
+            if actual_pgid != raw_pid:
+                logger.warning(
+                    "Task [%s] process group mismatch: pid=%s getpgid=%s",
+                    uuid,
+                    raw_pid,
+                    actual_pgid,
+                )
         except OSError:
-            pgid = raw_pid
+            pass
         payload = {
             "pid": raw_pid,
             "pgid": pgid,

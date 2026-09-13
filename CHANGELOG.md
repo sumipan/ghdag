@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Fixed
+
+- DAG timeout / cancel がタスクごとの process group（`start_new_session=True`）へ SIGTERM→SIGKILL するよう変更し、shell leader 終了後に残る子孫プロセスの孤児化を防ぐ（nexus #3257）
+
 ### Added
 
 - `ghdag.status` 公開 API（`issue_status` / `running_tasks` と `IssueStatus` / `StepStatus` / `RunningTask`）および CLI `ghdag status --issue N --json` / `ghdag status --running --json`（nexus #3084）
