@@ -166,6 +166,7 @@ def test_resume_fallback_relaunches_async_without_blocking(tmp_path: Path) -> No
     mock_popen.assert_called_once()
     popen_cmd = mock_popen.call_args[0][0]
     assert popen_cmd == ["bash", "-o", "pipefail", "-c", "claude -p hello"]
+    assert mock_popen.call_args.kwargs.get("start_new_session") is True
     assert task.uuid in engine._launcher._running
     assert engine._launcher._running[task.uuid].proc is fallback_proc
     assert task.annotations.get("_resume_fallback_launched") == "true"
@@ -230,6 +231,7 @@ def test_resume_fallback_command_forms_unchanged_across_engines(
         engine._launcher.check_completions()
 
     assert mock_popen.call_args[0][0] == ["bash", "-o", "pipefail", "-c", original_cmd]
+    assert mock_popen.call_args.kwargs.get("start_new_session") is True
 
 
 def test_enqueue_records_are_kept_and_deferred_registry_updated(tmp_path: Path) -> None:
