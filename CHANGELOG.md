@@ -7,9 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed
+
+- cursor stream-json の result / `call_text` 本文を、v0.60.0（nexus #3255）の「最後の tool_call 以降の完結 assistant 本文だけ」から、各 assistant ターンを `"\n\n"` で連結するターン再構成へ変更（nexus #3260）。events JSONL は生のまま維持する
+
 ### Fixed
 
-- cursor stream-json の result / `call_text` 本文が途中実況（tool_call 前の完結メッセージ）を連結した `result` ではなく、最後の tool_call 以降の完結 assistant 本文だけを返すよう修正（nexus #3255）
 - DAG timeout / cancel がタスクごとの process group（`start_new_session=True`）へ SIGTERM→SIGKILL するよう変更し、shell leader 終了後に残る子孫プロセスの孤児化を防ぐ（nexus #3257）
 
 ### Added

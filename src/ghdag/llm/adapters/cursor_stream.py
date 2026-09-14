@@ -14,15 +14,16 @@ from ghdag.llm.adapters.failure_classification import (
 )
 
 
-def extract_final_assistant_text(stdout: bytes) -> str | None:
-    """stream-json JSONL から最後の完結 assistant 本文を返す。
+def reconstruct_assistant_turns(stdout: bytes) -> str | None:
+    """stream-json JSONL から各 assistant ターン本文を空行区切りで再構成する。
 
-    完結イベントは ``type == "assistant"`` かつ非空 text で、
-    (a) 非空のトップレベル ``model_call_id`` がある、または
-    (b) ``model_call_id`` が無く、text が直前から蓄積した部分出力の連結と完全一致する。
+    ターン境界は ``type == "tool_call"``。直前ターンを確定し、assistant text を
+    挟まない連続 tool_call は空ターンを生成しない。末尾は ``type == "result"``
+    または入力終端で確定する。
 
-    ``tool_call``（started / completed を問わず）より前の候補と部分バッファは破棄する。
-    候補が無ければ ``None``。空 text は本文に採用しない。
+    ターン内では完結全文（非空 ``model_call_id``、または直前 delta 連結と完全一致
+    する assistant text）があれば最後の 1 件を採用し、無ければ delta を順に連結する。
+    空でないターン本文が 1 件も無ければ ``None``。
     """
     if not stdout:
         return None
@@ -31,8 +32,20 @@ def extract_final_assistant_text(stdout: bytes) -> str | None:
     except UnicodeDecodeError:
         return None
 
+    turns: list[str] = []
     partials: list[str] = []
     last_complete: str | None = None
+
+    def finalize_turn() -> None:
+        nonlocal partials, last_complete
+        if last_complete is not None:
+            turns.append(last_complete)
+        else:
+            joined = "".join(partials)
+            if joined:
+                turns.append(joined)
+        partials = []
+        last_complete = None
 
     for line in text.splitlines():
         stripped = line.strip()
@@ -47,9 +60,11 @@ def extract_final_assistant_text(stdout: bytes) -> str | None:
 
         event_type = obj.get("type")
         if event_type == "tool_call":
-            partials = []
-            last_complete = None
+            finalize_turn()
             continue
+        if event_type == "result":
+            finalize_turn()
+            break
         if event_type != "assistant":
             continue
 
@@ -71,7 +86,12 @@ def extract_final_assistant_text(stdout: bytes) -> str | None:
 
         partials.append(piece)
 
-    return last_complete
+    else:
+        finalize_turn()
+
+    if not turns:
+        return None
+    return "\n\n".join(turns)
 
 
 def _assistant_text_content(obj: dict[Any, Any]) -> str:
@@ -97,17 +117,17 @@ def _assistant_text_content(obj: dict[Any, Any]) -> str:
 class CursorStreamAdapter:
     """stream-json / 単一 JSON の両方を処理する cursor 用アダプター。
 
-    完結 assistant 本文があればそれを優先し、無ければ最終 ``{"type":"result"}``
-    行の result・単一 JSON・生 stdout へフォールバックする。
+    assistant ターン再構成本文があればそれを優先し、無ければ最終
+    ``{"type":"result"}`` 行の result・単一 JSON・生 stdout へフォールバックする。
     従来の ``--output-format json`` 単一オブジェクトも受理する。
     """
 
     def extract_result_text(self, stdout: bytes, stderr: bytes) -> bytes:
         if not stdout:
             return stdout
-        final = extract_final_assistant_text(stdout)
-        if final:
-            return final.encode("utf-8")
+        reconstructed = reconstruct_assistant_turns(stdout)
+        if reconstructed:
+            return reconstructed.encode("utf-8")
         data = parse_cursor_result_payload(stdout)
         if data is None:
             return stdout
