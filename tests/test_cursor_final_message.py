@@ -1,7 +1,8 @@
-"""cursor stream-json から完結 assistant 本文だけを抽出する（nexus #3255）。
+"""cursor stream-json から assistant ターンを空行区切りで再構成する（nexus #3260）。
 
-途中実況（tool_call 前の完結メッセージ）が result / call_text に混入しないこと、
-および DAG result / events の契約を表形式で検証する。
+tool_call 境界で各ターンを確定し、完結全文の重複を除いた本文が
+result / call_text / DAG result に揃うこと、および events が生 JSONL のまま
+であることを検証する。
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig
 from ghdag.llm.adapters.cursor_stream import (
     CursorStreamAdapter,
-    extract_final_assistant_text,
+    reconstruct_assistant_turns,
 )
 from ghdag.llm.engines import LLMResult
 
@@ -32,6 +33,7 @@ _B = (
     "終日は休肝日。\n\n持ち越しは粗大ゴミやOlive連携、あたり。"
     "てろんとした隙間も少し残しておこうねー。"
 )
+_JOINED = f"{_A}\n\n{_B}"
 
 
 def _assistant(text: str, *, model_call_id: str | None = None) -> dict:
@@ -61,10 +63,10 @@ def _partials(text: str, size: int = 3) -> list[dict]:
     return [_assistant(text[i : i + size]) for i in range(0, len(text), size)]
 
 
-class TestExtractFinalAssistantText:
-    def test_ac1_returns_only_b_after_tool_call(self):
+class TestReconstructAssistantTurns:
+    def test_ac1_joins_turns_with_blank_line(self):
         stdout = _FINAL_MESSAGE.encode("utf-8")
-        assert extract_final_assistant_text(stdout) == _B
+        assert reconstruct_assistant_turns(stdout) == _JOINED
 
     def test_ac2_complete_without_model_call_id_matching_partials(self):
         events = [
@@ -72,7 +74,15 @@ class TestExtractFinalAssistantText:
             _assistant("hello world"),  # no model_call_id
             _result("hello world"),
         ]
-        assert extract_final_assistant_text(_jsonl(*events).encode()) == "hello world"
+        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "hello world"
+
+    def test_ac2_model_call_id_complete_dedupes_partials(self):
+        events = [
+            *_partials("hello", 2),
+            _assistant("hello", model_call_id="c1"),
+            _result("hello"),
+        ]
+        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "hello"
 
     @pytest.mark.parametrize(
         "stdout,expected",
@@ -86,42 +96,47 @@ class TestExtractFinalAssistantText:
                 "second",
             ),
             (b"", None),
-            (_jsonl(_assistant("only-partial")).encode(), None),
+            (_jsonl(_assistant("only-partial")).encode(), "only-partial"),
             (
                 _jsonl(
                     *_partials("abc", 1),
-                    # no complete event
                     _result("abc"),
                 ).encode(),
-                None,
+                "abc",
+            ),
+            (
+                _jsonl(_assistant("solo", model_call_id="c1"), _result("solo")).encode(),
+                "solo",
             ),
             (b"not json\n{broken", None),
             (_jsonl({"type": "assistant", "message": {"content": []}}).encode(), None),
+            (b"[1, 2, 3]\n", None),
         ],
         ids=[
-            "last_of_multiple_completes",
+            "last_of_multiple_completes_same_turn",
             "empty",
             "single_partial_only",
             "partials_without_complete",
+            "complete_only_no_deltas",
             "broken_jsonl",
             "empty_content",
+            "non_dict_json",
         ],
     )
     def test_ac3_boundaries(self, stdout: bytes, expected: str | None):
-        assert extract_final_assistant_text(stdout) == expected
+        assert reconstruct_assistant_turns(stdout) == expected
 
-    def test_ac4_does_not_join_partials_across_tool_call(self):
+    def test_ac4_consecutive_tool_calls_do_not_create_empty_turns(self):
         # チャンクが互いに一致しない文言を使い、途中片が誤って完結判定されないようにする
         events = [
-            *_partials("AAAA", 2),
+            *_partials("ABCD", 2),
             _tool_call("started"),
             _tool_call("completed"),
             *_partials("WXYZ", 2),
-            # tool_call をまたいだ連結 "AAAAWXYZ" ではなく、以降の "WXYZ" だけ
             _assistant("WXYZ"),
-            _result("AAAAWXYZ"),
+            _result("ABCDWXYZ"),
         ]
-        assert extract_final_assistant_text(_jsonl(*events).encode()) == "WXYZ"
+        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "ABCD\n\nWXYZ"
 
     def test_ac4_ignores_non_text_content_and_empty_text(self):
         events = [
@@ -140,19 +155,20 @@ class TestExtractFinalAssistantText:
             _assistant("ok"),
             _result("ok"),
         ]
-        assert extract_final_assistant_text(_jsonl(*events).encode()) == "ok"
+        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "ok"
 
-    def test_ac9_anonymized_evening_fixture(self):
-        text = extract_final_assistant_text(_FINAL_MESSAGE.encode())
+    def test_ac9_anonymized_evening_fixture_keeps_both_turns(self):
+        text = reconstruct_assistant_turns(_FINAL_MESSAGE.encode())
         assert text is not None
+        assert "秘書フローを進めます" in text
         assert "夜だねー" in text
-        assert "秘書フローを進めます" not in text
+        assert "\n\n" in text
 
 
 class TestCursorStreamAdapterFinalMessage:
-    def test_ac5_adapter_prefers_final_assistant(self):
+    def test_ac5_adapter_prefers_reconstructed_turns(self):
         adapter = CursorStreamAdapter()
-        assert adapter.extract_result_text(_FINAL_MESSAGE.encode(), b"") == _B.encode()
+        assert adapter.extract_result_text(_FINAL_MESSAGE.encode(), b"") == _JOINED.encode()
 
     def test_ac5_fallback_typed_result(self):
         adapter = CursorStreamAdapter()
@@ -170,15 +186,14 @@ class TestCursorStreamAdapterFinalMessage:
 
 
 class TestLLMResultValidateCursor:
-    def test_ac6_cursor_stream_replaces_stdout_with_b(self):
+    def test_ac6_cursor_stream_replaces_stdout_with_joined_turns(self):
         caps = LLMCapabilities(stream=True)
         result = LLMResult(stdout=_FINAL_MESSAGE, stderr="", returncode=0)
         validated = result.validate(caps, engine="cursor")
-        assert validated.stdout == _B
-        # call_text 相当: validate 後の stdout を再度 adapter に渡しても B のまま
+        assert validated.stdout == _JOINED
         adapter = CursorStreamAdapter()
         body = adapter.extract_result_text(validated.stdout.encode(), b"").decode()
-        assert body == _B
+        assert body == _JOINED
 
     def test_ac7_claude_keeps_last_result(self):
         caps = LLMCapabilities(stream=True)
@@ -216,8 +231,8 @@ def _make_config(tmp_path: Path, records: list[dict]) -> DagConfig:
     )
 
 
-class TestDagResultUsesFinalMessage:
-    def test_ac8_result_is_b_events_preserve_jsonl(self, tmp_path: Path):
+class TestDagResultUsesReconstructedTurns:
+    def test_ac8_result_is_joined_events_preserve_jsonl(self, tmp_path: Path):
         result_file = tmp_path / "result.md"
         fixture = tmp_path / "fixture.jsonl"
         fixture.write_text(_FINAL_MESSAGE, encoding="utf-8")
@@ -248,4 +263,4 @@ class TestDagResultUsesFinalMessage:
         events_path = tmp_path / "jobs" / "events" / "evt-final.jsonl"
         assert events_path.is_file()
         assert events_path.read_text(encoding="utf-8") == _FINAL_MESSAGE
-        assert result_file.read_text(encoding="utf-8") == _B
+        assert result_file.read_text(encoding="utf-8") == _JOINED

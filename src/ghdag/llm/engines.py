@@ -255,7 +255,7 @@ class LLMResult:
         """output_format 契約を検証する。失敗時は LLMParseError を送出。
 
         returncode != 0 の場合は検証をスキップ（エラー出力を優先）。
-        stream=True かつ cursor の場合は完結 assistant 本文を優先抽出し、
+        stream=True かつ cursor の場合は assistant ターン再構成本文を優先し、
         無ければ従来の stream result へフォールバックする。claude は JSONL の
         最終 result を抽出して stdout を置換する。codex は生 JSONL を維持する。
         Returns:
@@ -267,11 +267,11 @@ class LLMResult:
             return self
         if capabilities.stream and engine != "codex":
             if engine == "cursor":
-                from ghdag.llm.adapters.cursor_stream import extract_final_assistant_text
+                from ghdag.llm.adapters.cursor_stream import reconstruct_assistant_turns
 
-                final = extract_final_assistant_text(self.stdout.encode("utf-8"))
-                if final:
-                    self.stdout = final
+                reconstructed = reconstruct_assistant_turns(self.stdout.encode("utf-8"))
+                if reconstructed:
+                    self.stdout = reconstructed
                 else:
                     self.stdout = _extract_stream_result(self.stdout)
             else:
