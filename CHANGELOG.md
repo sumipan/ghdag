@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added
+
+- `ghdag.audit.span` 公開 API（`emit_span` / `make_span_id`）。`jobs/latency_span.jsonl` の 1 行 1 span 形式と `LATENCY_SPAN_PATH` を nexus `tools.measurement.latency_span` と同一のまま監査 envelope へ移設（nexus #3323 / #3301 サブ8）
+
 ### Changed
 
 - cursor stream-json の result / `call_text` 本文を、v0.60.0（nexus #3255）の「最後の tool_call 以降の完結 assistant 本文だけ」から、各 assistant ターンを `"\n\n"` で連結するターン再構成へ変更（nexus #3260）。events JSONL は生のまま維持する

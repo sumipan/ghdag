@@ -39,6 +39,13 @@ def test_ghdag_audit_path(monkeypatch: pytest.MonkeyPatch) -> None:
     assert env.ghdag_audit_path() is None
 
 
+def test_latency_span_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LATENCY_SPAN_PATH", "/tmp/latency_span.jsonl")
+    assert env.latency_span_path() == "/tmp/latency_span.jsonl"
+    monkeypatch.delenv("LATENCY_SPAN_PATH", raising=False)
+    assert env.latency_span_path() is None
+
+
 def test_ghdag_token_warn_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GHDAG_TOKEN_WARN_THRESHOLD", "12345")
     assert env.ghdag_token_warn_threshold() == "12345"
