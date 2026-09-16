@@ -40,6 +40,7 @@ All reads go through `ghdag.config.env`. Other modules must not call `os.environ
 | `GHDAG_SAFE_DEFAULT_PERMISSION` | `ghdag_safe_default_permission()` | unset → `text_only` | Permission preset when step has none |
 | `GHDAG_SESSION_COMPACTION` | `session_compaction_enabled()` | off | Opt-in session compaction (`1`/`true`/`yes`/`on`) |
 | `GHDAG_AUDIT_PATH` | `ghdag_audit_path()` | unset | Override audit.jsonl path (`ghdag llm` / UI) |
+| `LATENCY_SPAN_PATH` | `latency_span_path()` | unset → `jobs/latency_span.jsonl` | Override latency span JSONL path (`ghdag.audit.span`) |
 | `GHDAG_TOKEN_WARN_THRESHOLD` | `ghdag_token_warn_threshold()` | `500000` | UI token-usage warning threshold |
 | `GHDAG_FORGE` | `ghdag.forge.get_forge` | `github` | Forge backend: `github` (default) or `local` |
 | `GHDAG_FORGE_ROOT` | `ghdag.forge.get_forge` | unset | Data directory for `GHDAG_FORGE=local` (required when local) |
