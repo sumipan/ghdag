@@ -38,7 +38,7 @@ class TestValidateCodexModel:
         assert result == "gpt-5.6-terra"
 
     def test_validate_codex_invalid_model(self):
-        """An disallowed model raises EngineModelError."""
+        """A disallowed model raises EngineModelError."""
         with pytest.raises(EngineModelError, match="gpt-5.6-pro"):
             validate_engine_model("codex", "gpt-5.6-pro")
 
