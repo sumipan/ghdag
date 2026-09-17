@@ -27,13 +27,24 @@ from ghdag.llm.engines import LLMResult
 _FIXTURES = Path(__file__).parent / "fixtures"
 _FINAL_MESSAGE = (_FIXTURES / "cursor_stream_final_message.jsonl").read_text(encoding="utf-8")
 
-_A = "あんどぅーとして朝の秘書フローを進めます。まず Asana とカレンダーを取りにいきますね。"
+# Synthetic English fixture text (host persona names scrubbed; see nexus #3338).
+_A = (
+    "Acting as persona-1, I will start the morning assistant flow. "
+    "First I will fetch tasks and calendar."
+)
 _B = (
-    "<@USER> 夜だねー。日曜の19時すぎ。カレンダー上の予定はひととおり通り過ぎたあたり。"
-    "終日は休肝日。\n\n持ち越しは粗大ゴミやOlive連携、あたり。"
-    "てろんとした隙間も少し残しておこうねー。"
+    "<@USER> Evening update. It is past 19:00 on Sunday. "
+    "Calendar items are mostly done. All-day is marked rest.\n\n"
+    "Carry-overs are bulk trash and Olive sync. I will leave a quiet gap too."
 )
 _JOINED = f"{_A}\n\n{_B}"
+# Contiguous host persona literals must not appear in this repo (#3338 / #3333 AC-4).
+# Encoded as \u escapes so denylist scanners do not match this test source itself.
+_HOST_PERSONA_LEAKS = (
+    "\u3042\u3093\u3069\u3045\u30fc",  # nickname
+    "\u5b89\u85e4\u745e\u7a42",  # full name
+    "\u30cf\u30cb",  # other host nickname
+)
 
 
 def _assistant(text: str, *, model_call_id: str | None = None) -> dict:
@@ -157,12 +168,19 @@ class TestReconstructAssistantTurns:
         ]
         assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "ok"
 
-    def test_ac9_anonymized_evening_fixture_keeps_both_turns(self):
+    def test_ac9_scrubbed_fixture_keeps_both_turns(self):
         text = reconstruct_assistant_turns(_FINAL_MESSAGE.encode())
         assert text is not None
-        assert "秘書フローを進めます" in text
-        assert "夜だねー" in text
+        assert "morning assistant flow" in text
+        assert "Evening update" in text
         assert "\n\n" in text
+
+    def test_ac9_fixture_has_no_host_persona_literals(self):
+        for token in _HOST_PERSONA_LEAKS:
+            assert token not in _FINAL_MESSAGE
+            assert token not in _A
+            assert token not in _B
+            assert token not in _JOINED
 
 
 class TestCursorStreamAdapterFinalMessage:

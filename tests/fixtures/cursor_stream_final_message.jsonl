@@ -1,27 +1,42 @@
 {"type": "system", "subtype": "init", "session_id": "sess-fixture", "model": "Auto"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "あんどぅーと"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "して朝の秘書"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "フローを進め"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ます。まず "}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Asana "}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "とカレンダー"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "を取りにいき"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ますね。"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "あんどぅーとして朝の秘書フローを進めます。まず Asana とカレンダーを取りにいきますね。"}]}, "session_id": "sess-fixture", "model_call_id": "call-A"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Acting a"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "s person"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "a-1, I w"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ill star"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "t the mo"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "rning as"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "sistant "}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "flow. Fi"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "rst I wi"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ll fetch"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": " tasks a"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "nd calen"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "dar."}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Acting as persona-1, I will start the morning assistant flow. First I will fetch tasks and calendar."}]}, "session_id": "sess-fixture", "model_call_id": "call-A"}
 {"type": "tool_call", "subtype": "started", "call_id": "t1", "tool_call": {"readToolCall": {"args": {"path": "/tmp/x"}}}}
 {"type": "tool_call", "subtype": "completed", "call_id": "t1", "tool_call": {"readToolCall": {"result": {"success": {}}}}}
 {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "<@USER> "}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "夜だねー。日曜の"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "19時すぎ。カレ"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ンダー上の予定は"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ひととおり通り過"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ぎたあたり。終日"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "は休肝日。\n\n持"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ち越しは粗大ゴミ"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "やOlive連携"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "、あたり。てろん"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "とした隙間も少し"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "残しておこうねー"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "。"}]}, "session_id": "sess-fixture"}
-{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "<@USER> 夜だねー。日曜の19時すぎ。カレンダー上の予定はひととおり通り過ぎたあたり。終日は休肝日。\n\n持ち越しは粗大ゴミやOlive連携、あたり。てろんとした隙間も少し残しておこうねー。"}]}, "session_id": "sess-fixture"}
-{"type": "result", "subtype": "success", "is_error": false, "result": "あんどぅーとして朝の秘書フローを進めます。まず Asana とカレンダーを取りにいきますね。<@USER> 夜だねー。日曜の19時すぎ。カレンダー上の予定はひととおり通り過ぎたあたり。終日は休肝日。\n\n持ち越しは粗大ゴミやOlive連携、あたり。てろんとした隙間も少し残しておこうねー。", "session_id": "sess-fixture", "usage": {"inputTokens": 100, "outputTokens": 50, "cacheReadTokens": 0, "cacheWriteTokens": 0}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Evening "}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "update. "}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "It is pa"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "st 19:00"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": " on Sund"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ay. Cale"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ndar ite"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ms are m"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ostly do"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ne. All-"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "day is m"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "arked re"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "st.\n\nCar"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "ry-overs"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": " are bul"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "k trash "}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "and Oliv"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "e sync. "}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "I will l"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "eave a q"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "uiet gap"}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": " too."}]}, "session_id": "sess-fixture"}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "<@USER> Evening update. It is past 19:00 on Sunday. Calendar items are mostly done. All-day is marked rest.\n\nCarry-overs are bulk trash and Olive sync. I will leave a quiet gap too."}]}, "session_id": "sess-fixture"}
+{"type": "result", "subtype": "success", "is_error": false, "result": "Acting as persona-1, I will start the morning assistant flow. First I will fetch tasks and calendar.<@USER> Evening update. It is past 19:00 on Sunday. Calendar items are mostly done. All-day is marked rest.\n\nCarry-overs are bulk trash and Olive sync. I will leave a quiet gap too.", "session_id": "sess-fixture", "usage": {"inputTokens": 100, "outputTokens": 50, "cacheReadTokens": 0, "cacheWriteTokens": 0}}
