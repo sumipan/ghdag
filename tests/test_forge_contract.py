@@ -29,7 +29,7 @@ def _seed_issue_3100(forge: LocalForge) -> None:
     # Allocate up to 3099 unused numbers then create 3100 with exact fields.
     forge._force_next_number(3100)  # noqa: SLF001 — test seam for fixture parity
     n = forge.issue_create(
-        "LocalForge 実装と契約テスト",
+        "LocalForge implementation and contract tests",
         "body",
         labels=["issuesmith:draft-done", "issuesmith:develop-running"],
     )
@@ -41,7 +41,7 @@ def _seed_pr_178_open(forge: LocalForge) -> None:
     forge._write_pull(  # noqa: SLF001
         {
             "number": 178,
-            "title": "workflow/dispatcher: _observe_rate_limit を NetworkError に耐性化",
+            "title": "workflow/dispatcher: harden _observe_rate_limit against NetworkError",
             "body": "",
             "state": "open",
             "head": "feat/dispatcher-rate-limit-resilience",
@@ -61,8 +61,8 @@ def _seed_pr_273_closed(forge: LocalForge) -> None:
     forge._write_pull(  # noqa: SLF001
         {
             "number": 273,
-            "title": "実装: sumipan/nexus#3099",
-            "body": "P1/P2 result より自動生成。\n\nRefs sumipan/nexus#3099",
+            "title": "Implement: sumipan/nexus#3099",
+            "body": "Auto-generated from P1/P2 result.\n\nRefs sumipan/nexus#3099",
             "state": "closed",
             "head": "feat/issue-3099-2980ffb8",
             "base": "main",
@@ -82,7 +82,7 @@ def forge(tmp_path: Path) -> LocalForge:
 
 
 def test_contract_issue_view_success_json(forge: LocalForge) -> None:
-    """成功: issue view --json fields が fixture と一致."""
+    """Success: issue view --json fields match the fixture."""
     fixture = _load("issue_view_success.json")
     assert fixture["meta"]["exit_code"] == 0
     _seed_issue_3100(forge)
@@ -92,7 +92,7 @@ def test_contract_issue_view_success_json(forge: LocalForge) -> None:
 
 
 def test_contract_issue_view_jq_state(forge: LocalForge) -> None:
-    """成功: --jq '.state' が GitHub fixture と一致."""
+    """Success: --jq '.state' matches the GitHub fixture."""
     fixture = _load("issue_view_jq_state.json")
     _seed_issue_3100(forge)
     data = forge.issue_get(3100, fields=["number", "title", "state"])
@@ -100,7 +100,7 @@ def test_contract_issue_view_jq_state(forge: LocalForge) -> None:
 
 
 def test_contract_issue_view_absent_404(forge: LocalForge) -> None:
-    """不在/失敗: 存在しない Issue は 404（CLI exit 1 相当）."""
+    """Missing/failure: nonexistent Issue returns 404 (CLI exit 1 equivalent)."""
     fixture = _load("issue_view_absent.json")
     assert fixture["meta"]["exit_code"] == 1
     assert "404" in fixture["meta"]["stderr"]
@@ -110,7 +110,7 @@ def test_contract_issue_view_absent_404(forge: LocalForge) -> None:
 
 
 def test_contract_pr_list_success_normalized(forge: LocalForge) -> None:
-    """成功: pr list 正規化形 (_normalize_prs) が fixture と一致."""
+    """Success: pr list normalized shape (_normalize_prs) matches the fixture."""
     fixture = _load("pr_list_success.json")
     _seed_pr_178_open(forge)
     data = forge.pr_list(state="open", limit=3)
@@ -118,7 +118,7 @@ def test_contract_pr_list_success_normalized(forge: LocalForge) -> None:
 
 
 def test_contract_pr_list_empty_head_filter(forge: LocalForge) -> None:
-    """成功(空): 存在しない head は []."""
+    """Success (empty): nonexistent head returns []."""
     fixture = _load("pr_list_empty.json")
     _seed_pr_178_open(forge)
     data = forge.pr_list(head="nonexistent-branch-xyz", state="open")
@@ -126,10 +126,10 @@ def test_contract_pr_list_empty_head_filter(forge: LocalForge) -> None:
 
 
 def test_contract_pr_view_success_json_fields(forge: LocalForge) -> None:
-    """成功: pr view --json フィールド部分集合が fixture と一致.
+    """Success: pr view --json field subset matches the fixture.
 
-    実測どおり merge 済みでも state は CLOSED、mergeable は UNKNOWN
-    （正規化層に merged / mergedAt は無い）。
+    As measured, even after merge state is CLOSED and mergeable is UNKNOWN
+    (normalization layer has no merged / mergedAt).
     """
     fixture = _load("pr_view_success.json")
     _seed_pr_273_closed(forge)
@@ -140,7 +140,7 @@ def test_contract_pr_view_success_json_fields(forge: LocalForge) -> None:
 
 
 def test_contract_pr_view_absent_404(forge: LocalForge) -> None:
-    """不在/失敗: 存在しない PR は 404."""
+    """Missing/failure: nonexistent PR returns 404."""
     fixture = _load("pr_view_absent.json")
     assert fixture["meta"]["exit_code"] == 1
     assert "404" in fixture["meta"]["stderr"]

@@ -1,4 +1,4 @@
-"""移行検証: extract_engine_model が旧形式・新形式の command で同じ結果を返すこと。"""
+"""Migration check: extract_engine_model returns the same result for old and new command forms."""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ from ghdag.ui.monitor import extract_engine_model
     ("old_cmd", "new_cmd", "expected"),
     [
         (
-            "cat jobs/o.md | claude -p '受け取った内容を実行して' --model 'claude-sonnet-4-6' --output-format json --dangerously-skip-permissions",
+            "cat jobs/o.md | claude -p 'Execute the received content' --model 'claude-sonnet-4-6' --output-format json --dangerously-skip-permissions",
             "claude -p --model 'claude-sonnet-4-6' --output-format json --dangerously-skip-permissions < jobs/o.md",
             "claude",
         ),
         (
-            "cat jobs/o.md | gemini -p '受け取った内容を実行して' --model 'gemini-2.5-flash' --approval-mode yolo",
+            "cat jobs/o.md | gemini -p 'Execute the received content' --model 'gemini-2.5-flash' --approval-mode yolo",
             "gemini -p --model 'gemini-2.5-flash' --approval-mode yolo < jobs/o.md",
             "gemini",
         ),

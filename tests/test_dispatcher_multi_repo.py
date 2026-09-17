@@ -1,8 +1,8 @@
 """Tests for WorkflowDispatcher multi-repo support (GITHUB_REPOSITORIES).
 
-複数の GitHub クライアント（リポジトリごと）を渡したとき、poll_once が各リポを
-横断して Issue を集め、dispatch が「その Issue を取得したクライアント」に対して
-ラベル遷移・コメント等を行うこと（per-repo routing）を担保する。
+When multiple per-repo GitHub clients are passed, poll_once collects Issues
+across repos and dispatch performs label transitions / comments against the
+client that fetched that Issue (per-repo routing).
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def _make_client(issues: list[dict]) -> MagicMock:
 
 
 def test_poll_once_collects_issues_from_all_clients():
-    """poll_once は各クライアントの Issue を集め、由来クライアントを _github に付与する。"""
+    """poll_once collects Issues from each client and attaches the source client as _github."""
     issue_a = _make_issue(1)
     issue_b = _make_issue(2)
     client_a = _make_client([issue_a])
@@ -74,7 +74,7 @@ def test_poll_once_collects_issues_from_all_clients():
 
 
 def test_dispatch_label_transition_routed_to_originating_client():
-    """dispatch の *-ready→*-running ラベル遷移は、その Issue を取得したクライアントに対して行う。"""
+    """dispatch *-ready→*-running label transitions use the client that fetched the Issue."""
     issue_a = _make_issue(1)
     issue_b = _make_issue(2)
     client_a = _make_client([issue_a])
@@ -91,13 +91,13 @@ def test_dispatch_label_transition_routed_to_originating_client():
 
     dispatcher.run(max_iterations=1)
 
-    # それぞれのリポの Issue 番号に対し、対応するクライアントだけが update_label される
+    # Only the matching client calls update_label for each repo Issue number
     client_a.update_label.assert_called_once_with(1, "wf:draft-ready", "wf:draft-running")
     client_b.update_label.assert_called_once_with(2, "wf:draft-ready", "wf:draft-running")
 
 
 def test_single_client_still_accepted():
-    """後方互換: 単一クライアントを渡しても従来通り動く。"""
+    """Backward compatible: a single client still works as before."""
     issue = _make_issue(7)
     client = _make_client([issue])
     pipeline = MagicMock(spec=LLMPipelineAPI)

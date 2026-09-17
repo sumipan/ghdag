@@ -29,31 +29,31 @@ MULTI_MESSAGE_JSONL = "\n".join([
 
 class TestCodexAdapterExtractText:
     def test_extract_text_normal(self):
-        """正常系 JSONL から agent_message の text を抽出する。"""
+        """Extract agent_message text from a normal JSONL stream."""
         adapter = CodexAdapter()
         result = adapter.extract_result_text(SAMPLE_JSONL.encode(), b"")
         assert result == b"PONG"
 
     def test_extract_text_multi_messages(self):
-        """複数の agent_message が連結される。"""
+        """Multiple agent_message texts are concatenated."""
         adapter = CodexAdapter()
         result = adapter.extract_result_text(MULTI_MESSAGE_JSONL.encode(), b"")
         assert result == b"Hello\nWorld"
 
     def test_extract_text_turn_failed(self):
-        """turn.failed のみの JSONL でテキスト抽出が空文字列を返す。"""
+        """JSONL with only turn.failed yields empty extracted text."""
         adapter = CodexAdapter()
         result = adapter.extract_result_text(TURN_FAILED_JSONL.encode(), b"")
         assert result == b""
 
     def test_extract_text_empty_stdout(self):
-        """空の stdout では空 bytes を返す。"""
+        """Empty stdout yields empty bytes."""
         adapter = CodexAdapter()
         result = adapter.extract_result_text(b"", b"")
         assert result == b""
 
     def test_extract_text_ignores_non_agent_message(self):
-        """agent_message 以外の item type は無視される。"""
+        """Non-agent_message item types are ignored."""
         jsonl = "\n".join([
             json.dumps({"type": "item.completed", "item": {"id": "item_0", "type": "reasoning", "text": "Thinking..."}}),
             json.dumps({"type": "item.completed", "item": {"id": "item_1", "type": "agent_message", "text": "Answer"}}),
@@ -65,7 +65,7 @@ class TestCodexAdapterExtractText:
 
 class TestCodexAdapterExtractUsage:
     def test_extract_usage_normal(self):
-        """turn.completed から TokenUsage を抽出する。"""
+        """Extract TokenUsage from turn.completed."""
         adapter = CodexAdapter()
         usage = adapter.extract_token_usage(SAMPLE_JSONL.encode(), b"")
         assert usage == TokenUsage(
@@ -76,19 +76,19 @@ class TestCodexAdapterExtractUsage:
         )
 
     def test_extract_usage_turn_failed(self):
-        """turn.failed では usage が None。"""
+        """turn.failed yields None usage."""
         adapter = CodexAdapter()
         usage = adapter.extract_token_usage(TURN_FAILED_JSONL.encode(), b"")
         assert usage is None
 
     def test_extract_usage_empty(self):
-        """空の stdout では None。"""
+        """Empty stdout yields None usage."""
         adapter = CodexAdapter()
         usage = adapter.extract_token_usage(b"", b"")
         assert usage is None
 
     def test_extract_usage_cost_usd_always_none(self):
-        """codex は cost_usd を出力しないため常に None。"""
+        """codex never emits cost_usd, so it is always None."""
         adapter = CodexAdapter()
         usage = adapter.extract_token_usage(SAMPLE_JSONL.encode(), b"")
         assert usage is not None

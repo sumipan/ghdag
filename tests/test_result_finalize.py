@@ -49,14 +49,14 @@ def _make_hooks(*, rejected: bool = False) -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
-# AC1: result_finalize ポリシー分岐テスト
+# AC1: result_finalize policy branch tests
 # ---------------------------------------------------------------------------
 
 class TestResultFinalizePolicy:
-    """AC1: preserve_nonempty / stdout_only の動作確認"""
+    """AC1: verify preserve_nonempty / stdout_only behavior"""
 
     def test_preserve_nonempty_keeps_existing_content(self, tmp_path):
-        """preserve_nonempty + 非空ファイル → stdout を捨ててファイルを維持する"""
+        """preserve_nonempty + nonempty file → discard stdout and keep the file"""
         result_path = tmp_path / "result.md"
         long_content = "X" * 500
         result_path.write_text(long_content, encoding="utf-8")
@@ -64,7 +64,7 @@ class TestResultFinalizePolicy:
         config = _make_config(tmp_path, [
             {
                 "uuid": "uuid-a",
-                "command": "echo '完了しました'",
+                "command": "echo 'Completed'",
                 "depends": [],
                 "result_path": str(result_path),
                 "retry": 0,
@@ -79,14 +79,14 @@ class TestResultFinalizePolicy:
         assert result_path.read_text(encoding="utf-8") == long_content
 
     def test_preserve_nonempty_empty_file_writes_stdout(self, tmp_path):
-        """preserve_nonempty + 空ファイル → stdout で書き込む"""
+        """preserve_nonempty + empty file → write from stdout"""
         result_path = tmp_path / "result.md"
         result_path.write_text("", encoding="utf-8")
 
         config = _make_config(tmp_path, [
             {
                 "uuid": "uuid-a",
-                "command": "printf '分析結果...'",
+                "command": "printf 'Analysis result...'",
                 "depends": [],
                 "result_path": str(result_path),
                 "retry": 0,
@@ -99,17 +99,17 @@ class TestResultFinalizePolicy:
         _run_engine(engine, timeout=5.0)
 
         content = result_path.read_text(encoding="utf-8")
-        assert "分析結果..." in content
+        assert "Analysis result..." in content
 
     def test_preserve_nonempty_missing_file_writes_stdout(self, tmp_path):
-        """preserve_nonempty + ファイルなし → stdout でファイルを作成する"""
+        """preserve_nonempty + missing file → create file from stdout"""
         result_path = tmp_path / "result.md"
         assert not result_path.exists()
 
         config = _make_config(tmp_path, [
             {
                 "uuid": "uuid-a",
-                "command": "printf '分析結果...'",
+                "command": "printf 'Analysis result...'",
                 "depends": [],
                 "result_path": str(result_path),
                 "retry": 0,
@@ -123,17 +123,17 @@ class TestResultFinalizePolicy:
 
         assert result_path.exists()
         content = result_path.read_text(encoding="utf-8")
-        assert "分析結果..." in content
+        assert "Analysis result..." in content
 
     def test_stdout_only_overwrites_existing_content(self, tmp_path):
-        """stdout_only + 非空ファイル → stdout で上書きする"""
+        """stdout_only + nonempty file → overwrite from stdout"""
         result_path = tmp_path / "result.md"
         result_path.write_text("X" * 500, encoding="utf-8")
 
         config = _make_config(tmp_path, [
             {
                 "uuid": "uuid-a",
-                "command": "printf '新結果'",
+                "command": "printf 'New result'",
                 "depends": [],
                 "result_path": str(result_path),
                 "retry": 0,
@@ -146,10 +146,10 @@ class TestResultFinalizePolicy:
         _run_engine(engine, timeout=5.0)
 
         content = result_path.read_text(encoding="utf-8")
-        assert content == "新結果"
+        assert content == "New result"
 
     def test_result_finalize_none_defaults_to_preserve_nonempty(self, tmp_path):
-        """result_finalize 未指定（None）→ preserve_nonempty と同じ動作"""
+        """result_finalize omitted (None) → same behavior as preserve_nonempty"""
         result_path = tmp_path / "result.md"
         long_content = "Y" * 500
         result_path.write_text(long_content, encoding="utf-8")
@@ -157,12 +157,12 @@ class TestResultFinalizePolicy:
         config = _make_config(tmp_path, [
             {
                 "uuid": "uuid-a",
-                "command": "echo '完了'",
+                "command": "echo 'Done'",
                 "depends": [],
                 "result_path": str(result_path),
                 "retry": 0,
                 "annotations": {},
-                # result_finalize を省略
+                # omit result_finalize
             }
         ])
         hooks = _make_hooks()
@@ -173,28 +173,28 @@ class TestResultFinalizePolicy:
 
 
 # ---------------------------------------------------------------------------
-# AC2: parser が result_finalize をパースできる
+# AC2: parser can parse result_finalize
 # ---------------------------------------------------------------------------
 
 class TestParserResultFinalize:
-    """AC2: JSONL パーサが result_finalize フィールドを読み取れる"""
+    """AC2: JSONL parser reads the result_finalize field"""
 
     def test_parse_stdout_only(self):
-        """result_finalize: "stdout_only" をパースできる"""
+        """Can parse result_finalize: \"stdout_only\""""
         text = '{"uuid":"x","command":"echo hi","result_finalize":"stdout_only"}\n'
         tasks = parse_jsonl(text)
         assert len(tasks) == 1
         assert tasks[0].result_finalize == "stdout_only"
 
     def test_parse_preserve_nonempty(self):
-        """result_finalize: "preserve_nonempty" をパースできる"""
+        """Can parse result_finalize: \"preserve_nonempty\""""
         text = '{"uuid":"x","command":"echo hi","result_finalize":"preserve_nonempty"}\n'
         tasks = parse_jsonl(text)
         assert len(tasks) == 1
         assert tasks[0].result_finalize == "preserve_nonempty"
 
     def test_parse_missing_field_is_none(self):
-        """result_finalize キーなし → task.result_finalize is None"""
+        """No result_finalize key → task.result_finalize is None"""
         text = '{"uuid":"x","command":"echo hi"}\n'
         tasks = parse_jsonl(text)
         assert len(tasks) == 1
@@ -202,16 +202,16 @@ class TestParserResultFinalize:
 
 
 # ---------------------------------------------------------------------------
-# AC3: リトライ時の result_path 削除
+# AC3: result_path deletion on retry
 # ---------------------------------------------------------------------------
 
 class TestRetryResultPathCleanup:
-    """AC3: rejected タスクがリトライされる前に result_path が削除される"""
+    """AC3: result_path is deleted before a rejected task is retried"""
 
     def test_retry_clears_result_path_before_callback(self, tmp_path):
-        """rejected (is_final=False) 時に result_path が削除される"""
+        """On rejected (is_final=False), result_path is deleted"""
         result_path = tmp_path / "result.md"
-        result_path.write_text("REJECTED: 理由\n古いコンテンツ", encoding="utf-8")
+        result_path.write_text("REJECTED: reason\nold content", encoding="utf-8")
 
         result_path_at_callback: list[bool] = []
 
@@ -221,7 +221,7 @@ class TestRetryResultPathCleanup:
         config = _make_config(tmp_path, [
             {
                 "uuid": "uuid-a",
-                "command": "printf 'REJECTED: 理由'",
+                "command": "printf 'REJECTED: reason'",
                 "depends": [],
                 "result_path": str(result_path),
                 "retry": 0,
@@ -237,15 +237,15 @@ class TestRetryResultPathCleanup:
         hooks.on_task_rejected.assert_called_once()
         _, kwargs_call = hooks.on_task_rejected.call_args
         args_call = hooks.on_task_rejected.call_args[0]
-        # is_final=False のはず（retry_depth=0 < max_retry=1）
+        # expect is_final=False (retry_depth=0 < max_retry=1)
         assert args_call[3] is False  # is_final
-        # コールバック時点で result_path が削除されているはず
+        # result_path should already be deleted at callback time
         assert result_path_at_callback == [False]
 
     def test_final_rejected_does_not_clear_result_path(self, tmp_path):
-        """REJECTED_FINAL 時は result_path を削除しない"""
+        """On REJECTED_FINAL, do not delete result_path"""
         result_path = tmp_path / "result.md"
-        original_content = "REJECTED: 最終\n古いコンテンツ"
+        original_content = "REJECTED: final\nold content"
         result_path.write_text(original_content, encoding="utf-8")
 
         result_path_at_callback: list[bool] = []
@@ -256,10 +256,10 @@ class TestRetryResultPathCleanup:
         config = _make_config(tmp_path, [
             {
                 "uuid": "uuid-a",
-                "command": "printf 'REJECTED: 最終'",
+                "command": "printf 'REJECTED: final'",
                 "depends": [],
                 "result_path": str(result_path),
-                "retry": 1,  # すでにリトライ済み
+                "retry": 1,  # already retried
                 "annotations": {},
             }
         ], max_retry=1)
@@ -270,5 +270,5 @@ class TestRetryResultPathCleanup:
         _run_engine(engine, timeout=5.0)
 
         hooks.on_task_rejected.assert_called_once()
-        # REJECTED_FINAL なのでファイルは残っているはず
+        # REJECTED_FINAL so the file should still exist
         assert result_path_at_callback == [True]

@@ -201,7 +201,7 @@ class TestExecuteRecover:
         assert plan.generation == 1
 
     def test_running_uuids_protects_done_markers(self, tmp_path):
-        """実行中 uuid は rerun 対象外とし、done マーカーを消さない。"""
+        """Running uuids are excluded from rerun; done markers are not removed."""
         state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
         _write_order(jobs, UUID_A)
         state.append_exec_records([_record(UUID_A, "p1")])
@@ -221,7 +221,7 @@ class TestExecuteRecover:
         assert (done / UUID_A).exists()
 
     def test_collect_running_uuids_from_jobs_running_dir(self, tmp_path):
-        """jobs/running/*.json の stem を running_uuids として収集できる。"""
+        """Stems of jobs/running/*.json can be collected as running_uuids."""
         from ghdag.dag.recover import running_uuids_from_queue_dir
 
         jobs = tmp_path / "jobs"

@@ -1,4 +1,4 @@
-"""旧 import パスの互換性テスト（nexus Issue #2655）。"""
+"""Compatibility tests for legacy import paths (nexus Issue #2655)."""
 
 from __future__ import annotations
 
@@ -156,7 +156,7 @@ def test_workflow_gates_import_compat() -> None:
 
 
 def test_workflow_import_side_effect_get_output_adapter() -> None:
-    """import ghdag.workflow 直後に get_output_adapter が解決できること。"""
+    """get_output_adapter resolves immediately after importing ghdag.workflow."""
     import ghdag.workflow  # noqa: F401
     from ghdag.llm.adapters import get_output_adapter
 

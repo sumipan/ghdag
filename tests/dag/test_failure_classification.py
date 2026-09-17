@@ -336,6 +336,7 @@ def test_retry_and_quarantine_audit_events_are_written(mock_mark_done, tmp_path)
 
 def test_looks_like_question_last_line_endswith_question_mark() -> None:
     assert looks_like_question("Choose an option?\n") is True
+    # Japanese text intentionally kept for CJK processing test
     assert looks_like_question("選択してください？") is True
     assert looks_like_question("Done.\nAll good.") is False
     assert looks_like_question("") is False
@@ -362,7 +363,7 @@ def test_failure_class_interactive_prompt_meta() -> None:
     ],
 )
 def test_adapters_exit0_question_is_not_interactive_prompt(adapter, fixture: str) -> None:
-    """AC-1 / AC-2: exit 0 では ASCII/全角 ? 終端でも INTERACTIVE_PROMPT にしない。"""
+    """AC-1 / AC-2: exit 0 must not become INTERACTIVE_PROMPT even with ASCII/fullwidth ? ending."""
     stdout = _load_fixture(fixture)
     assert adapter.classify_failure(0, stdout, b"") is None
 
@@ -381,7 +382,7 @@ def test_adapters_exit0_question_is_not_interactive_prompt(adapter, fixture: str
     ],
 )
 def test_adapters_exit_nonzero_question_is_interactive_prompt(adapter, fixture: str) -> None:
-    """AC-3 / AC-4: exit ≠ 0 かつ末尾 ? / ？ なら INTERACTIVE_PROMPT。"""
+    """AC-3 / AC-4: exit != 0 with trailing ? / fullwidth ? is INTERACTIVE_PROMPT."""
     stdout = _load_fixture(fixture)
     assert adapter.classify_failure(1, stdout, b"") == FailureClass.INTERACTIVE_PROMPT
 
@@ -431,7 +432,7 @@ def test_interactive_prompt_exit1_marks_done_without_retry(mock_mark_done, tmp_p
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
 def test_interactive_prompt_exit0_succeeds_as_normal(mock_mark_done, tmp_path) -> None:
-    """AC-7: exit 0 の質問終端は成功扱い（INTERACTIVE_PROMPT 分岐なし）。"""
+    """AC-7: exit 0 with a question ending is success (no INTERACTIVE_PROMPT branch)."""
     engine, hooks = _make_engine(tmp_path)
     result_file = tmp_path / "result.md"
     task = Task(

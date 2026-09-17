@@ -54,7 +54,7 @@ def test_resolve_repo_invalid_format() -> None:
 
 
 def test_resolve_repo_missing_env_raises_ghdag_error() -> None:
-    """GITHUB_REPOSITORIES 未設定かつ repo=None → DEFAULT_REPO へ黙って落ちず GhdagError。"""
+    """GITHUB_REPOSITORIES unset and repo=None → GhdagError (no silent fallback to DEFAULT_REPO)."""
     from ghdag.exceptions import GhdagError
 
     with mock.patch.dict(os.environ, {}, clear=True):
@@ -223,7 +223,7 @@ def test_pr_create_builds_owner_head_ref(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_pr_create_slash_branch_builds_owner_head_ref(monkeypatch: pytest.MonkeyPatch) -> None:
-    """feat/xxx ブランチ（/を含む）でも owner: prefix が付与されること。"""
+    """feat/xxx branch (contains /) still gets the owner: prefix."""
     client = GitHubClient(token="tok", repo="o/r")
     captured: dict[str, object] = {}
 
@@ -242,7 +242,7 @@ def test_pr_create_slash_branch_builds_owner_head_ref(monkeypatch: pytest.Monkey
 
 
 def test_pr_list_slash_branch_passes_owner_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
-    """feat/xxx ブランチで pr_list を呼ぶと owner:branch 形式で API に渡ること。"""
+    """pr_list on feat/xxx passes owner:branch form to the API."""
     client = GitHubClient(token="tok", repo="o/r")
     captured: dict[str, object] = {}
 
@@ -258,7 +258,7 @@ def test_pr_list_slash_branch_passes_owner_prefix(monkeypatch: pytest.MonkeyPatc
 
 
 def test_pr_list_already_qualified_head_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
-    """owner:branch 形式は二重に prefix されないこと。"""
+    """owner:branch form is not double-prefixed."""
     client = GitHubClient(token="tok", repo="o/r")
     captured: dict[str, object] = {}
 
@@ -274,12 +274,12 @@ def test_pr_list_already_qualified_head_unchanged(monkeypatch: pytest.MonkeyPatc
 
 
 def test_pr_get_includes_head_ref_name(monkeypatch: pytest.MonkeyPatch) -> None:
-    """pr_get() は pr_list() の _normalize_prs と同様に headRefName を含むこと。
+    """pr_get() includes headRefName like pr_list()'s _normalize_prs.
 
-    実測: `pr view <n> --json headRefName` は本修正前、pr_get() が headRefName
-    キー自体を持たないため null を返していた
-    （m1-merge.md の local_merge_verify が空の headRefName で
-    `git merge-tree origin/main origin/` を実行し、常に conflict 誤報していた）。
+    Measured: before this fix, `pr view <n> --json headRefName` returned null
+    because pr_get() lacked the headRefName key itself
+    (m1-merge.md local_merge_verify ran `git merge-tree origin/main origin/`
+    with an empty headRefName and always false-reported conflicts).
     """
     client = GitHubClient(token="tok", repo="o/r")
 
@@ -457,7 +457,7 @@ def test_url_error_raises_network_error(monkeypatch: pytest.MonkeyPatch) -> None
     assert isinstance(exc_info.value, GhdagError)
 
 
-# --- 一過性障害の限定再試行 + ラベル冪等収束（nexus#2563） ---
+# --- limited retry on transient faults + label idempotent convergence (nexus#2563) ---
 
 
 def _no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -589,7 +589,7 @@ def test_issue_update_tolerates_delete_404(monkeypatch: pytest.MonkeyPatch) -> N
 def test_issue_update_converges_after_lost_delete_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """DELETE はサーバーで適用されたが応答を喪失 → 再取得して残作業（POST）のみ実行"""
+    """DELETE applied on server but response lost → refetch and run only remaining work (POST)"""
     from ghdag.exceptions import NetworkError
 
     client = GitHubClient(token="tok", repo="o/r")
@@ -602,21 +602,21 @@ def test_issue_update_converges_after_lost_delete_response(
         return None
 
     monkeypatch.setattr(client, "_request", fake_request)
-    # 再取得時: old は既にサーバーで除去済み、new も未付与
+    # On refetch: old already removed on server, new not yet added
     monkeypatch.setattr(
         client, "issue_get", lambda n, fields=None: {"labels": [{"name": "other"}]}
     )
     client.issue_update(1, labels_remove=["old"], labels_add=["new"])
     deletes = [s for s in seen if s[0] == "DELETE"]
     posts = [s for s in seen if s[0] == "POST"]
-    assert len(deletes) == 1  # 再収束パスでは DELETE を再実行しない
+    assert len(deletes) == 1  # reconvergence path does not re-run DELETE
     assert len(posts) == 1
 
 
 def test_issue_update_converges_when_target_already_applied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """POST まで適用済みで応答だけ喪失 → 再取得で目標状態を確認して成功扱い"""
+    """POST already applied and only response lost → refetch confirms target state as success"""
     from ghdag.exceptions import NetworkError
 
     client = GitHubClient(token="tok", repo="o/r")
@@ -630,7 +630,7 @@ def test_issue_update_converges_when_target_already_applied(
     monkeypatch.setattr(
         client, "issue_get", lambda n, fields=None: {"labels": [{"name": "new"}]}
     )
-    client.issue_update(1, labels_remove=["old"], labels_add=["new"])  # raise しない
+    client.issue_update(1, labels_remove=["old"], labels_add=["new"])  # must not raise
 
 
 def test_issue_update_reraises_when_not_converged(monkeypatch: pytest.MonkeyPatch) -> None:

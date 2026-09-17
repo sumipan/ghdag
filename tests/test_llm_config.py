@@ -1,4 +1,4 @@
-"""Tests for ghdag.llm._config — YAML 設定読み込み"""
+"""Tests for ghdag.llm._config — YAML config loading"""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ from ghdag.llm._config import ConfigLoadError, load_engine_models
 from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
 
 # ---------------------------------------------------------------------------
-# 正常系
+# Happy path
 # ---------------------------------------------------------------------------
 
 class TestLoadEngineModelsNormal:
     def test_load_from_yaml_file(self, tmp_path: Path):
-        """YAML ファイルからの読み込み"""
+        """Load from a YAML file"""
         config = tmp_path / "llm-models.yml"
         config.write_text(
             "engines:\n  claude:\n    - opus-4-6\n",
@@ -26,7 +26,7 @@ class TestLoadEngineModelsNormal:
         assert result == {"claude": ["opus-4-6"]}
 
     def test_load_from_env_var(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-        """環境変数によるパス指定"""
+        """Path specified via environment variable"""
         config = tmp_path / "custom.yml"
         config.write_text(
             "engines:\n  gemini:\n    - 2.5-pro\n    - 2.5-flash\n",
@@ -39,14 +39,14 @@ class TestLoadEngineModelsNormal:
     def test_fallback_when_no_file_no_env(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """設定ファイルなし + 環境変数未設定 → DEFAULT_ENGINE_MODELS"""
+        """No config file + env unset → DEFAULT_ENGINE_MODELS"""
         monkeypatch.delenv("GHDAG_LLM_MODELS", raising=False)
         monkeypatch.chdir(tmp_path)
         result = load_engine_models()
         assert result == DEFAULT_ENGINE_MODELS
 
     def test_empty_model_list(self, tmp_path: Path):
-        """空リストのエンジン定義は有効"""
+        """Empty-list engine definitions are valid"""
         config = tmp_path / "llm-models.yml"
         config.write_text(
             "engines:\n  claude: []\n",
@@ -58,7 +58,7 @@ class TestLoadEngineModelsNormal:
     def test_cwd_file_takes_precedence_over_fallback(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """カレントディレクトリの llm-models.yml が存在する場合はそちらを使う"""
+        """Prefer cwd llm-models.yml when it exists"""
         monkeypatch.delenv("GHDAG_LLM_MODELS", raising=False)
         config = tmp_path / "llm-models.yml"
         config.write_text(
@@ -72,7 +72,7 @@ class TestLoadEngineModelsNormal:
     def test_env_var_takes_precedence_over_cwd(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """環境変数が指定されていれば cwd の llm-models.yml より優先"""
+        """Env path takes precedence over cwd llm-models.yml"""
         cwd_config = tmp_path / "llm-models.yml"
         cwd_config.write_text(
             "engines:\n  claude:\n    - cwd-model\n",
@@ -90,12 +90,12 @@ class TestLoadEngineModelsNormal:
 
 
 # ---------------------------------------------------------------------------
-# 異常系
+# Error cases
 # ---------------------------------------------------------------------------
 
 class TestLoadEngineModelsErrors:
     def test_missing_engines_key(self, tmp_path: Path):
-        """engines キーが欠落 → ValueError（メッセージに 'engines' とパスを含む）"""
+        """Missing engines key → ValueError (message includes 'engines' and path)"""
         config = tmp_path / "bad.yml"
         config.write_text(
             "models:\n  claude:\n    - opus-4-6\n",
@@ -108,7 +108,7 @@ class TestLoadEngineModelsErrors:
         assert str(config) in msg
 
     def test_invalid_value_type_str_instead_of_list(self, tmp_path: Path):
-        """list でなく str の値 → ValueError"""
+        """str value instead of list → ValueError"""
         config = tmp_path / "bad.yml"
         config.write_text(
             "engines:\n  claude: opus-4-6\n",
@@ -118,7 +118,7 @@ class TestLoadEngineModelsErrors:
             load_engine_models(config)
 
     def test_yaml_parse_error(self, tmp_path: Path):
-        """壊れた YAML → yaml.YAMLError"""
+        """Broken YAML → yaml.YAMLError"""
         config = tmp_path / "broken.yml"
         config.write_text(
             "engines: {\n  invalid yaml\n",
@@ -128,12 +128,12 @@ class TestLoadEngineModelsErrors:
             load_engine_models(config)
 
     def test_nonexistent_explicit_path(self):
-        """存在しないパスの明示指定 → FileNotFoundError"""
+        """Explicit nonexistent path → FileNotFoundError"""
         with pytest.raises(FileNotFoundError):
             load_engine_models("/nonexistent/path/llm-models.yml")
 
     def test_invalid_value_type_dict_inside_list(self, tmp_path: Path):
-        """list の要素が str でない（dict） → ValueError"""
+        """list element is not str (dict) → ValueError"""
         config = tmp_path / "bad.yml"
         config.write_text(
             "engines:\n  claude:\n    - name: opus\n",
@@ -144,21 +144,21 @@ class TestLoadEngineModelsErrors:
 
 
 # ---------------------------------------------------------------------------
-# call() 経由のバリデーション
+# Validation via call()
 # ---------------------------------------------------------------------------
 
 class TestCallWithConfig:
     def test_call_validates_model_from_yaml(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """YAML に定義されていないエンジン/モデルで call() → EngineModelError"""
+        """call() with engine/model not in YAML → EngineModelError"""
         config = tmp_path / "llm-models.yml"
         config.write_text(
             "engines:\n  claude:\n    - claude-opus-4-6\n",
             encoding="utf-8",
         )
         monkeypatch.setenv("GHDAG_LLM_MODELS", str(config))
-        # モジュールの ENGINE_MODELS を再ロードするため _config を直接テスト
+        # Test _config directly so module ENGINE_MODELS is reloaded
         from ghdag.llm import _config
         result = _config.load_engine_models()
         assert result == {"claude": ["claude-opus-4-6"]}
@@ -166,7 +166,7 @@ class TestCallWithConfig:
     def test_unknown_engine_raises_engine_model_error(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        """YAML に定義されていないエンジンで call() → EngineModelError"""
+        """call() with engine not in YAML → EngineModelError"""
         from ghdag.llm import EngineModelError
         from ghdag.llm.engines import validate_engine_model
 

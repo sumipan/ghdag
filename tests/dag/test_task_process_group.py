@@ -237,7 +237,7 @@ class TestCancelKillsOrphanTree:
 
 class TestEarlyCompleteWithoutSigkill:
     def test_sigterm_alone_completes_before_kill_grace(self, tmp_path: Path) -> None:
-        """SIGTERM で group が消える場合は kill_grace を待たず、SIGKILL しない。"""
+        """If the group vanishes on SIGTERM, do not wait for kill_grace or send SIGKILL."""
         launcher = _make_launcher(tmp_path, task_timeout=0.2, kill_grace=5.0)
         uuid = "early-term"
         task = Task(uuid=uuid, command="sleep 60")
@@ -251,7 +251,7 @@ class TestEarlyCompleteWithoutSigkill:
                 _poll_until_done(launcher, uuid, timeout=6.0)
                 elapsed = time.monotonic() - started
 
-            assert elapsed < 3.0  # kill_grace=5 を待ち切らない
+            assert elapsed < 3.0  # must not wait out the full kill_grace=5
             assert is_done(launcher._config.exec_done_dir, uuid)
             assert _read_done(Path(launcher._config.exec_done_dir), uuid) == DONE_TIMEOUT
             # signal 0 probes may also call killpg; only require SIGTERM was used for stop.

@@ -1,7 +1,7 @@
 """Tests for WorkflowDispatcher.poll_once exception isolation after batch fetch.
 
-一括取得 (list_all_issues) 失敗時は当該クライアントの全 trigger をスキップする。
-ラベルフィルタ中の例外は trigger 単位でスキップする（per-trigger isolation）。
+On bulk fetch (list_all_issues) failure, skip all triggers for that client.
+Exceptions during label filtering skip at trigger granularity (per-trigger isolation).
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def _make_dispatcher(workflows: list[WorkflowConfig]) -> tuple[WorkflowDispatche
 
 class TestPollOncePerTriggerIsolation:
     def test_batch_failure_skips_all_triggers(self, caplog):
-        """一括取得失敗時は全 trigger をスキップし warning。"""
+        """On bulk fetch failure, skip all triggers and warn."""
         wf = _make_workflow("wf", ["a:ready", "b:ready"])
         dispatcher, github_client = _make_dispatcher([wf])
         github_client.list_all_issues.side_effect = RuntimeError("api down")
@@ -72,11 +72,11 @@ class TestPollOncePerTriggerIsolation:
         assert any("list_all_issues" in r.message for r in caplog.records)
 
     def test_filter_failure_in_one_issue_does_not_skip_subsequent(self):
-        """ラベルフィルタ中の個別 issue 例外が他 issue / trigger を止めないこと。"""
+        """A per-issue exception during label filtering must not stop other issues/triggers."""
         wf = _make_workflow("wf", ["a:ready", "b:ready"])
         dispatcher, github_client = _make_dispatcher([wf])
 
-        bad = {"number": 1, "labels": "not-a-list"}  # labels が iterable of dict でない
+        bad = {"number": 1, "labels": "not-a-list"}  # labels is not an iterable of dict
         good_a = _make_issue(10, "a:ready")
         good_b = _make_issue(99, "b:ready")
         github_client.list_all_issues.return_value = [bad, good_a, good_b]
@@ -86,7 +86,7 @@ class TestPollOncePerTriggerIsolation:
         assert {r["issue"] for r in results} == {10, 99}
 
     def test_warning_logged_for_failed_batch(self, caplog):
-        """一括取得失敗について warning ログが出ること。"""
+        """Bulk fetch failure emits a warning log."""
         wf = _make_workflow("wf", ["a:ready"])
         dispatcher, github_client = _make_dispatcher([wf])
         github_client.list_all_issues.side_effect = RuntimeError("boom")
@@ -100,7 +100,7 @@ class TestPollOncePerTriggerIsolation:
         ) or any("list_all_issues" in r.message for r in caplog.records)
 
     def test_no_exception_propagates_when_batch_fails(self):
-        """一括取得失敗が呼び出し元に例外として伝播しないこと。"""
+        """Bulk fetch failure must not propagate as an exception to the caller."""
         wf = _make_workflow("wf", ["a:ready", "b:ready"])
         dispatcher, github_client = _make_dispatcher([wf])
         github_client.list_all_issues.side_effect = RuntimeError("boom")
@@ -109,7 +109,7 @@ class TestPollOncePerTriggerIsolation:
         assert results == []
 
     def test_all_triggers_succeed_unchanged_behavior(self):
-        """全 trigger 成功時はマッチした Issue がすべて results に入る。"""
+        """When all triggers succeed, every matched Issue appears in results."""
         wf = _make_workflow("wf", ["a:ready", "b:ready"])
         dispatcher, github_client = _make_dispatcher([wf])
 

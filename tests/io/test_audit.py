@@ -20,7 +20,7 @@ class TestAppendAuditRecord:
         assert json.loads(lines[0]) == {"event": "test", "value": 1}
 
     def test_does_not_inject_extra_fields(self, tmp_path: Path) -> None:
-        """スキーマ不変: append は渡された record 以外のキーを追加しない。"""
+        """Schema invariant: append adds no keys beyond the given record."""
         from ghdag.io.audit import append_audit_record
 
         audit_path = tmp_path / "audit.jsonl"
@@ -48,7 +48,7 @@ class TestAppendAuditRecord:
 
 
 class TestCompatImports:
-    """旧 import パスが shim 経由で解決すること。"""
+    """Legacy import path resolves via the shim."""
 
     def test_pipeline_audit_context(self) -> None:
         from ghdag.pipeline.audit import AuditContext

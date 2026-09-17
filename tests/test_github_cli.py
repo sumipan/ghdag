@@ -86,7 +86,7 @@ def test_cli_missing_token(capsys):
 
 
 def test_cli_issue_edit_title_only(monkeypatch):
-    """issue edit --title 単体で issue_update に title が渡り、PATCH に含まれる。"""
+    """issue edit --title alone passes title to issue_update and into PATCH."""
     update_calls: list[dict[str, object]] = []
     patch_calls: list[dict] = []
 
@@ -110,24 +110,24 @@ def test_cli_issue_edit_title_only(monkeypatch):
         lambda *a, **k: client,
     )
     with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):
-        rc = cli_main(["issue", "edit", "5", "--title", "新タイトル"])
+        rc = cli_main(["issue", "edit", "5", "--title", "New title"])
     assert rc == 0
     assert update_calls == [
         {
             "number": 5,
-            "title": "新タイトル",
+            "title": "New title",
             "body": None,
             "labels_add": None,
             "labels_remove": None,
         }
     ]
-    assert patch_calls == [{"title": "新タイトル"}]
+    assert patch_calls == [{"title": "New title"}]
 
 
 def test_cli_issue_edit_title_and_body_file(monkeypatch, tmp_path):
-    """--title と --body-file を同時に渡すと両方が issue_update に渡る。"""
+    """Passing --title and --body-file together forwards both to issue_update."""
     body_file = tmp_path / "body.md"
-    body_file.write_text("本文内容", encoding="utf-8")
+    body_file.write_text("Body content", encoding="utf-8")
     captured: dict[str, object] = {}
 
     class FakeClient:
@@ -148,11 +148,11 @@ def test_cli_issue_edit_title_and_body_file(monkeypatch, tmp_path):
     assert rc == 0
     assert captured["number"] == 5
     assert captured["kwargs"]["title"] == "T"
-    assert captured["kwargs"]["body"] == "本文内容"
+    assert captured["kwargs"]["body"] == "Body content"
 
 
 def test_cli_issue_edit_unknown_arg_warning_excludes_title(monkeypatch, capsys):
-    """未知引数 warning は --foobar のみ。--title は unknown に含まれない。"""
+    """Unknown-arg warning covers --foobar only; --title is not unknown."""
 
     class FakeClient:
         _token = "tok"
@@ -175,7 +175,7 @@ def test_cli_issue_edit_unknown_arg_warning_excludes_title(monkeypatch, capsys):
 
 
 def test_cli_pr_edit_body(monkeypatch):
-    """pr edit <url> --body が pr_update(number, body=...) を呼ぶ。URL からも番号を抽出する。"""
+    """pr edit <url> --body calls pr_update(number, body=...); number is extracted from URL."""
     captured: dict[str, object] = {}
 
     class FakeClient:
@@ -199,7 +199,7 @@ def test_cli_pr_edit_body(monkeypatch):
 
 
 def test_cli_pr_edit_number_and_title(monkeypatch):
-    """素の番号と --title の組み合わせ。"""
+    """Bare number combined with --title."""
     captured: dict[str, object] = {}
 
     class FakeClient:
@@ -214,15 +214,15 @@ def test_cli_pr_edit_number_and_title(monkeypatch):
         lambda *a, **k: FakeClient(),
     )
     with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):
-        rc = cli_main(["pr", "edit", "42", "--title", "新タイトル"])
+        rc = cli_main(["pr", "edit", "42", "--title", "New title"])
     assert rc == 0
     assert captured["number"] == 42
-    assert captured["kwargs"]["title"] == "新タイトル"
+    assert captured["kwargs"]["title"] == "New title"
     assert captured["kwargs"]["body"] is None
 
 
 def test_pr_update_patches_pulls_endpoint(monkeypatch):
-    """GitHubClient.pr_update は issues ではなく pulls エンドポイントを PATCH する。"""
+    """GitHubClient.pr_update PATCHes pulls, not issues."""
     client = GitHubClient(token="tok", repo="o/r")
     calls = []
 

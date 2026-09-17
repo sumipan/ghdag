@@ -68,7 +68,7 @@ class TestWriteOrderFileFooter:
 
 class TestSubmitWithoutAuditContext:
     def test_ac7_submit_without_audit_context_raises_type_error(self):
-        """AC7: 必須化 — LLMPipelineAPI.submit() の audit_context 省略で TypeError。"""
+        """AC7: required — omitting audit_context on LLMPipelineAPI.submit() raises TypeError."""
         from unittest.mock import MagicMock
 
         from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
@@ -95,12 +95,12 @@ def jsonl_pipeline(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# JSONL モード: parse_exec_tasks / remove_exec_entries
+# JSONL mode: parse_exec_tasks / remove_exec_entries
 # ---------------------------------------------------------------------------
 
 class TestParseExecTasksJsonl:
     def test_returns_uuid_command_map(self, jsonl_pipeline):
-        """JSONL モード: parse_exec_tasks が {uuid: command} を返す。"""
+        """JSONL mode: parse_exec_tasks returns {uuid: command}."""
         records = [
             {"uuid": UUID1, "command": "claude -p order.md", "depends": []},
             {"uuid": UUID2, "command": "agent --force < order2.md", "depends": []},
@@ -114,7 +114,7 @@ class TestParseExecTasksJsonl:
         assert result == {UUID1: "claude -p order.md", UUID2: "agent --force < order2.md"}
 
     def test_skips_invalid_json_lines(self, jsonl_pipeline):
-        """JSONL モード: 不正行はスキップされ例外が発生しない。"""
+        """JSONL mode: invalid lines are skipped without raising."""
         jsonl_pipeline._exec_jsonl_path.write_text(
             f'{{"uuid": "{UUID1}", "command": "cmd"}}\n'
             "this-is-not-json\n"
@@ -127,7 +127,7 @@ class TestParseExecTasksJsonl:
         assert UUID2 in result
 
     def test_skips_missing_fields(self, jsonl_pipeline):
-        """JSONL モード: uuid または command が欠けている行はスキップ。"""
+        """JSONL mode: lines missing uuid or command are skipped."""
         jsonl_pipeline._exec_jsonl_path.write_text(
             f'{{"uuid": "{UUID1}", "command": "cmd"}}\n'
             f'{{"command": "no-uuid"}}\n'
@@ -139,14 +139,14 @@ class TestParseExecTasksJsonl:
         assert result == {UUID1: "cmd"}
 
     def test_empty_file_returns_empty_dict(self, jsonl_pipeline):
-        """JSONL モード: 空ファイル → 空辞書。"""
+        """JSONL mode: empty file → empty dict."""
         assert jsonl_pipeline.parse_exec_tasks() == {}
 
 
 
 class TestRemoveExecEntriesJsonl:
     def test_removes_matching_uuid(self, jsonl_pipeline):
-        """JSONL モード: 指定 UUID のエントリが削除される。"""
+        """JSONL mode: entries for the given UUID are removed."""
         records = [
             {"uuid": UUID1, "command": "cmd1"},
             {"uuid": UUID2, "command": "cmd2"},
@@ -165,7 +165,7 @@ class TestRemoveExecEntriesJsonl:
         assert UUID2 in remaining
 
     def test_returns_zero_when_no_match(self, jsonl_pipeline):
-        """JSONL モード: 一致 UUID なし → 0 を返しファイルは変更されない。"""
+        """JSONL mode: no matching UUID → returns 0 and leaves file unchanged."""
         content = f'{{"uuid": "{UUID1}", "command": "cmd"}}\n'
         jsonl_pipeline._exec_jsonl_path.write_text(content)
 
@@ -175,7 +175,7 @@ class TestRemoveExecEntriesJsonl:
         assert jsonl_pipeline._exec_jsonl_path.read_text() == content
 
     def test_preserves_empty_lines(self, jsonl_pipeline):
-        """JSONL モード: 空行は保持される。"""
+        """JSONL mode: blank lines are preserved."""
         jsonl_pipeline._exec_jsonl_path.write_text(
             f'{{"uuid": "{UUID1}", "command": "cmd"}}\n'
             "\n"
@@ -191,12 +191,12 @@ class TestRemoveExecEntriesJsonl:
 
 
 # ---------------------------------------------------------------------------
-# JSONL モード: append_exec_records
+# JSONL mode: append_exec_records
 # ---------------------------------------------------------------------------
 
 class TestAppendExecRecordsJsonl:
     def test_writes_valid_jsonl(self, pipeline_jsonl):
-        """append_exec_records が valid JSON 行のみを書き込む。"""
+        """append_exec_records writes only valid JSON lines."""
         records = [
             {"uuid": UUID1, "command": "cat order.md | claude -p 'x'", "result_path": "jobs/r.md"},
         ]
@@ -208,7 +208,7 @@ class TestAppendExecRecordsJsonl:
         assert parsed["uuid"] == UUID1
 
     def test_no_comment_lines(self, pipeline_jsonl):
-        """append_exec_records が # idempotency: 行を一切書かない。"""
+        """append_exec_records never writes # idempotency: comment lines."""
         records = [
             {"uuid": UUID1, "command": "cmd", "idempotency_key": "scheduler:job:ts"},
         ]
@@ -218,7 +218,7 @@ class TestAppendExecRecordsJsonl:
         assert "# idempotency:" not in content
 
     def test_multiple_records_separate_lines(self, pipeline_jsonl):
-        """複数レコードが個別の行として書き込まれ、各行が独立した valid JSON。"""
+        """Multiple records are written as separate lines, each independently valid JSON."""
         records = [
             {"uuid": UUID1, "command": "cmd1"},
             {"uuid": UUID2, "command": "cmd2"},
@@ -231,7 +231,7 @@ class TestAppendExecRecordsJsonl:
         assert json.loads(lines[1])["uuid"] == UUID2
 
     def test_idempotency_key_embedded_in_record(self, pipeline_jsonl):
-        """idempotency_key がレコードフィールドとして埋め込まれる。"""
+        """idempotency_key is embedded as a record field."""
         key = "scheduler:diary_review:2026-05-08T23:00:00+09:00"
         records = [{"uuid": UUID1, "command": "cmd", "idempotency_key": key}]
         pipeline_jsonl.append_exec_records(records)
@@ -241,7 +241,7 @@ class TestAppendExecRecordsJsonl:
         assert parsed["idempotency_key"] == key
 
     def test_appends_to_existing_content(self, pipeline_jsonl):
-        """既存 JSON 行を壊さずに追記する。"""
+        """Appends without corrupting existing JSON lines."""
         existing = json.dumps({"uuid": UUID2, "command": "existing"})
         pipeline_jsonl._exec_jsonl_path.write_text(existing + "\n", encoding="utf-8")
 
@@ -254,12 +254,12 @@ class TestAppendExecRecordsJsonl:
 
 
 # ---------------------------------------------------------------------------
-# JSONL モード: check_idempotency
+# JSONL mode: check_idempotency
 # ---------------------------------------------------------------------------
 
 class TestCheckIdempotencyJsonlMode:
     def test_key_present_returns_false(self, pipeline_jsonl):
-        """idempotency_key を含む JSON 行が存在するとき False を返す。"""
+        """Returns False when a JSON line containing the idempotency_key exists."""
         key = "scheduler:diary_review:2026-05-08T23:00:00+09:00"
         record = json.dumps({"uuid": UUID1, "command": "cmd", "idempotency_key": key})
         pipeline_jsonl._exec_jsonl_path.write_text(record + "\n", encoding="utf-8")
@@ -267,18 +267,18 @@ class TestCheckIdempotencyJsonlMode:
         assert pipeline_jsonl.check_idempotency(key) is False
 
     def test_key_absent_returns_true(self, pipeline_jsonl):
-        """idempotency_key が存在しないとき True を返す。"""
+        """Returns True when the idempotency_key is absent."""
         record = json.dumps({"uuid": UUID1, "command": "cmd"})
         pipeline_jsonl._exec_jsonl_path.write_text(record + "\n", encoding="utf-8")
 
         assert pipeline_jsonl.check_idempotency("scheduler:new-job:ts") is True
 
     def test_empty_file_returns_true(self, pipeline_jsonl):
-        """空ファイルのとき True を返す。"""
+        """Returns True for an empty file."""
         assert pipeline_jsonl.check_idempotency("any-key") is True
 
     def test_nonexistent_file_returns_true(self, tmp_path):
-        """ファイルが存在しないとき True を返す。"""
+        """Returns True when the file does not exist."""
         state = PipelineState(
             state_dir=tmp_path / "state",
             exec_jsonl_path=tmp_path / "nonexistent.jsonl",
@@ -286,9 +286,9 @@ class TestCheckIdempotencyJsonlMode:
         assert state.check_idempotency("any-key") is True
 
     def test_text_comment_not_matched_in_jsonl_mode(self, pipeline_jsonl):
-        """exec.jsonl に # idempotency: テキスト行があっても JSONL モードでは一致しない。
+        """A legacy # idempotency: text line in exec.jsonl does not match in JSONL mode.
 
-        テキスト形式の古い行が混入したシナリオ。JSONL モードは JSON フィールドのみを見る。
+        Scenario with mixed-in legacy text-format lines. JSONL mode looks at JSON fields only.
         """
         key = "scheduler:diary_review:2026-05-07T23:00:00+09:00"
         pipeline_jsonl._exec_jsonl_path.write_text(
@@ -298,14 +298,14 @@ class TestCheckIdempotencyJsonlMode:
         assert pipeline_jsonl.check_idempotency(key) is True
 
     def test_different_key_does_not_match(self, pipeline_jsonl):
-        """異なる idempotency_key では一致しない。"""
+        """A different idempotency_key does not match."""
         record = json.dumps({"uuid": UUID1, "command": "cmd", "idempotency_key": "other:key"})
         pipeline_jsonl._exec_jsonl_path.write_text(record + "\n", encoding="utf-8")
 
         assert pipeline_jsonl.check_idempotency("scheduler:diary_review:ts") is True
 
     def test_invalid_json_line_skipped(self, pipeline_jsonl):
-        """JSON パース失敗行はスキップし正常行のみ判定する（A1-2）。"""
+        """JSON parse failures are skipped; only valid lines are evaluated (A1-2)."""
         key = "scheduler:diary_review:2026-05-08T23:00:00+09:00"
         valid_record = json.dumps({"uuid": UUID1, "command": "cmd", "idempotency_key": key})
         pipeline_jsonl._exec_jsonl_path.write_text(
@@ -316,7 +316,7 @@ class TestCheckIdempotencyJsonlMode:
         assert pipeline_jsonl.check_idempotency(key) is False
 
     def test_record_without_idempotency_key_does_not_match(self, pipeline_jsonl):
-        """idempotency_key フィールドを持たないレコードはマッチしない（A1-2）。"""
+        """Records without an idempotency_key field do not match (A1-2)."""
         key = "some:key:value"
         record = json.dumps({"uuid": UUID1, "command": "cmd"})
         pipeline_jsonl._exec_jsonl_path.write_text(record + "\n", encoding="utf-8")
@@ -325,7 +325,7 @@ class TestCheckIdempotencyJsonlMode:
 
 
 # ---------------------------------------------------------------------------
-# JSONL モード: remove_idempotency_matching (AC2)
+# JSONL mode: remove_idempotency_matching (AC2)
 # ---------------------------------------------------------------------------
 
 
@@ -337,7 +337,7 @@ class TestRemoveIdempotencyMatchingJsonl:
         return PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
 
     def test_removes_two_matching_records(self, jsonl_state):
-        """AC2-1: workflow_name と issue_number にマッチする 2 レコードを削除、返り値 2。"""
+        """AC2-1: deletes 2 records matching workflow_name and issue_number; returns 2."""
         jsonl_state._exec_jsonl_path.write_text(
             json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:42"}) + "\n"
             + json.dumps({"uuid": UUID2, "idempotency_key": "wf:handler_b:42"}) + "\n",
@@ -350,7 +350,7 @@ class TestRemoveIdempotencyMatchingJsonl:
         assert "handler_b" not in content
 
     def test_no_match_returns_zero_and_file_unchanged(self, jsonl_state):
-        """AC2-2: マッチなし（issue_number 違い）→ 返り値 0、ファイル変更なし。"""
+        """AC2-2: no match (different issue_number) → returns 0, file unchanged."""
         original = json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:99"}) + "\n"
         jsonl_state._exec_jsonl_path.write_text(original, encoding="utf-8")
         removed = jsonl_state.remove_idempotency_matching("wf", 42)
@@ -358,7 +358,7 @@ class TestRemoveIdempotencyMatchingJsonl:
         assert jsonl_state._exec_jsonl_path.read_text() == original
 
     def test_keyless_and_non_matching_records_preserved(self, jsonl_state):
-        """AC2-3: idempotency_key なし・非マッチレコードは残る。"""
+        """AC2-3: records without idempotency_key / non-matching remain."""
         jsonl_state._exec_jsonl_path.write_text(
             json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:42"}) + "\n"
             + json.dumps({"uuid": UUID2, "idempotency_key": "wf:handler_b:99"}) + "\n"
@@ -373,7 +373,7 @@ class TestRemoveIdempotencyMatchingJsonl:
         assert UUID3 in content
 
     def test_file_not_exists_returns_zero(self, tmp_path):
-        """AC2-4: ファイル不在 → 返り値 0、エラーなし。"""
+        """AC2-4: missing file → returns 0, no error."""
         state = PipelineState(
             state_dir=tmp_path / "state",
             exec_jsonl_path=tmp_path / "nonexistent.jsonl",
@@ -381,7 +381,7 @@ class TestRemoveIdempotencyMatchingJsonl:
         assert state.remove_idempotency_matching("wf", 42) == 0
 
     def test_empty_lines_preserved(self, jsonl_state):
-        """AC2-5: 空行は保持される。"""
+        """AC2-5: blank lines are preserved."""
         jsonl_state._exec_jsonl_path.write_text(
             json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:42"}) + "\n"
             + "\n"
@@ -396,7 +396,7 @@ class TestRemoveIdempotencyMatchingJsonl:
 
 
 # ---------------------------------------------------------------------------
-# JSONL モード: remove_idempotency_for_handler (Issue #2258)
+# JSONL mode: remove_idempotency_for_handler (Issue #2258)
 # ---------------------------------------------------------------------------
 
 
@@ -408,7 +408,7 @@ class TestRemoveIdempotencyForHandler:
         return PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
 
     def test_removes_only_matched_handler(self, state):
-        """pipeline_retry のみ削除、pipeline は残存。"""
+        """Only pipeline_retry is removed; pipeline remains."""
         state._exec_jsonl_path.write_text(
             json.dumps({"uuid": UUID1, "idempotency_key": "research:pipeline_retry:42"}) + "\n"
             + json.dumps({"uuid": UUID2, "idempotency_key": "research:pipeline:42"}) + "\n",
@@ -421,7 +421,7 @@ class TestRemoveIdempotencyForHandler:
         assert "pipeline:42" in content
 
     def test_returns_count_for_multiple_matches(self, state):
-        """同一キー 2 件 → 戻り値 2。"""
+        """Two records with the same key → returns 2."""
         state._exec_jsonl_path.write_text(
             json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:42"}) + "\n"
             + json.dumps({"uuid": UUID2, "idempotency_key": "wf:handler_a:42"}) + "\n",
@@ -431,7 +431,7 @@ class TestRemoveIdempotencyForHandler:
         assert removed == 2
 
     def test_no_match_returns_zero_and_file_unchanged(self, state):
-        """マッチなし → 戻り値 0、ファイル内容不変。"""
+        """No match → returns 0, file content unchanged."""
         original = json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_b:42"}) + "\n"
         state._exec_jsonl_path.write_text(original, encoding="utf-8")
         removed = state.remove_idempotency_for_handler("wf", "handler_a", 42)
@@ -439,7 +439,7 @@ class TestRemoveIdempotencyForHandler:
         assert state._exec_jsonl_path.read_text() == original
 
     def test_remove_idempotency_matching_unchanged_after_refactor(self, state):
-        """既存 remove_idempotency_matching が wf:*:42 パターンの全件削除を継続（回帰防止）。"""
+        """Existing remove_idempotency_matching still deletes all wf:*:42 matches (regression)."""
         state._exec_jsonl_path.write_text(
             json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:42"}) + "\n"
             + json.dumps({"uuid": UUID2, "idempotency_key": "wf:handler_b:42"}) + "\n",
@@ -452,7 +452,7 @@ class TestRemoveIdempotencyForHandler:
         assert "handler_b" not in content
 
     def test_concurrent_write_safe(self, state, tmp_path):
-        """2 スレッドから同時書き込みしても fcntl ロックにより排他実行される。"""
+        """Concurrent writes from two threads are serialized by fcntl locking."""
         import threading
 
         state._exec_jsonl_path.write_text(

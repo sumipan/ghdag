@@ -109,7 +109,7 @@ _CODEX_USAGE_LIMIT_STDOUT = (
 
 
 def test_codex_usage_limit_is_quota_exhausted_with_local_resume_at() -> None:
-    """2026-09-09 実測: ChatGPT アカウント認証の codex が返す usage limit（nexus #2961 の cp2）。"""
+    """2026-09-09 measured: usage limit returned by ChatGPT-account-auth codex (nexus #2961 cp2)."""
     adapter = CodexAdapter()
     err = adapter.extract_error(_CODEX_USAGE_LIMIT_STDOUT, b"")
     assert err is not None

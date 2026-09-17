@@ -116,7 +116,7 @@ class TestDepSucceeded:
         assert dep_succeeded(tmp_path, "dep") is False
 
     def test_matches_interpret_done_success(self, tmp_path: Path) -> None:
-        """io.done.dep_succeeded は pipeline.status.interpret_done の success 判定と一致する。"""
+        """io.done.dep_succeeded matches pipeline.status.interpret_done success judgment."""
         from ghdag.io.done import dep_succeeded
         from ghdag.pipeline.status import interpret_done, read_done_content
 
@@ -162,7 +162,7 @@ class TestShimCompat:
 
 class TestNoDuplicateDoneIo:
     def test_direct_done_io_only_in_io_done(self) -> None:
-        """Acceptance: jobs/done の直接 I/O は io/done.py のみ。"""
+        """Acceptance: direct I/O on jobs/done is only in io/done.py."""
         import ast
 
         import ghdag

@@ -9,7 +9,7 @@
   "output": [
     {
       "number": 178,
-      "title": "workflow/dispatcher: _observe_rate_limit を NetworkError に耐性化",
+      "title": "workflow/dispatcher: harden _observe_rate_limit against NetworkError",
       "url": "https://github.com/sumipan/ghdag/pull/178",
       "state": "OPEN",
       "headRefName": "feat/dispatcher-rate-limit-resilience",

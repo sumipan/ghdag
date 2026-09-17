@@ -173,7 +173,7 @@ class TestGetLatestStatus:
              "correlation_id": "issuesmith:B1:123", "timestamp": "2026-01-01T00:00:00+09:00"},
         ])
 
-        result = get_latest_status(audit_path, "存在しないID")
+        result = get_latest_status(audit_path, "nonexistent-id")
 
         assert result is None
 

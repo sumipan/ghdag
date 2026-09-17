@@ -14,7 +14,7 @@ from ghdag.workflow.engine import (
 )
 
 # ---------------------------------------------------------------------------
-# _GenericAdapter — AC3 統合テスト
+# _GenericAdapter — AC3 integration tests
 # ---------------------------------------------------------------------------
 
 class TestGenericAdapter:
@@ -28,7 +28,7 @@ class TestGenericAdapter:
             assert adapter.name == name
 
     def test_shell_model_is_none_in_record(self):
-        """AC3: shell の build_exec_record の model フィールドが None"""
+        """AC3: shell build_exec_record model field is None"""
         adapter = _GenericAdapter(ENGINE_SPECS["shell"])
         record = adapter.build_exec_record(
             uuid="x",
@@ -41,13 +41,13 @@ class TestGenericAdapter:
         assert record["model"] is None
 
     def test_build_exec_record_matches_expected_claude(self):
-        """AC3: _GenericAdapter(claude) の build_exec_record 出力"""
+        """AC3: _GenericAdapter(claude) build_exec_record output"""
         adapter = _GenericAdapter(ENGINE_SPECS["claude"])
         record = adapter.build_exec_record(
             uuid="abc-123",
             order_path="queue/order.md",
             result_path="queue/result.md",
-            prompt="受け取った内容を実行して",
+            prompt="Execute the received content",
             model="claude-sonnet-4-6",
             depends=["dep-456"],
         )
@@ -68,7 +68,7 @@ class TestGenericAdapter:
         }
 
     def test_build_exec_record_all_four_engines(self):
-        """AC3: 4 エンジン全てで build_exec_record が正常動作"""
+        """AC3: build_exec_record works for all 4 engines"""
         kwargs = dict(
             uuid="u1",
             order_path="q/o.md",
@@ -113,7 +113,7 @@ class TestShellAdapterViaGetAdapter:
         self.base_kwargs = dict(
             order_path="queue/ts-shell-order-abc123.md",
             result_path="queue/ts-shell-result-abc123.md",
-            prompt="受け取った内容を実行して",
+            prompt="Execute the received content",
         )
 
     def test_build_exec_record(self):
@@ -150,7 +150,7 @@ class TestShellAdapterViaGetAdapter:
 
 class TestGetAdapter:
     def test_get_claude_returns_generic_adapter_with_correct_name(self):
-        """AC3: get_adapter("claude") は _GenericAdapter を返す"""
+        """AC3: get_adapter(\"claude\") returns _GenericAdapter"""
         adapter = get_adapter("claude")
         assert isinstance(adapter, _GenericAdapter)
         assert adapter.name == "claude"
@@ -181,7 +181,7 @@ class TestGetAdapter:
         assert "claude" in msg or "gemini" in msg
 
     def test_register_custom_adapter(self):
-        """カスタムアダプターを register_adapter で登録し get_adapter で取得できる"""
+        """Custom adapter can be registered via register_adapter and retrieved via get_adapter"""
         class TestAdapter:
             name = "_test_engine_"
             def build_exec_record(self, **kwargs):
@@ -198,12 +198,12 @@ class TestGetAdapter:
 
 
 # ---------------------------------------------------------------------------
-# AC4: 仮想エンジン登録テスト
+# AC4: virtual engine registration tests
 # ---------------------------------------------------------------------------
 
 class TestVirtualEngineRegistration:
     def test_virtual_engine_via_engine_specs(self):
-        """AC4: ENGINE_SPECS に一時登録した仮想エンジンが get_adapter で動作する"""
+        """AC4: virtual engine temporarily registered in ENGINE_SPECS works via get_adapter"""
         test_spec = EngineSpec(
             name="_test_",
             cli="echo",
@@ -235,7 +235,7 @@ class TestVirtualEngineRegistration:
             del ENGINE_SPECS["_test_"]
 
     def test_custom_adapter_takes_precedence_for_unregistered_engine(self):
-        """カスタム Adapter は _CUSTOM_ADAPTERS から取得できる"""
+        """Custom Adapter can be retrieved from _CUSTOM_ADAPTERS"""
         class MyAdapter:
             name = "_my_custom_"
             def build_exec_record(self, **kwargs):
@@ -253,12 +253,12 @@ class TestVirtualEngineRegistration:
 
 
 # ---------------------------------------------------------------------------
-# AC1: pipeline → workflow 逆依存の解消
+# AC1: remove reverse dependency pipeline → workflow
 # ---------------------------------------------------------------------------
 
 class TestPipelineLayerIndependence:
     def test_llm_pipeline_does_not_import_workflow_engine(self):
-        """AC1: llm_pipeline.py のソースに workflow.engine への import がない"""
+        """AC1: llm_pipeline.py source has no import of workflow.engine"""
         import inspect
 
         import ghdag.pipeline.llm_pipeline as mod
@@ -277,7 +277,7 @@ class TestBuildExecRecord:
         uuid="abc-123",
         order_path="queue/order.md",
         result_path="queue/result.md",
-        prompt="受け取った内容を実行して",
+        prompt="Execute the received content",
         depends=["dep-456"],
     )
 
@@ -321,7 +321,7 @@ class TestBuildExecRecord:
         )
         assert result["uuid"] == "abc-123"
         assert "gemini -p" in result["command"]
-        assert "--model 'flash'" in result["command"]  # -m から --model に統一（#985）
+        assert "--model 'flash'" in result["command"]  # unified from -m to --model (#985)
         assert "--approval-mode yolo" in result["command"]
         assert "tee" not in result["command"]
         assert result["result_path"] == "queue/result.md"
@@ -374,7 +374,7 @@ class TestBuildExecRecord:
         assert result["model"] is None
 
     def test_all_adapters_existing_keys_preserved_ac1(self):
-        """AC1: 全エンジンで既存キー（command, uuid, depends, result_path, retry, annotations）が維持される"""
+        """AC1: existing keys (command, uuid, depends, result_path, retry, annotations) preserved for all engines"""
         for name in ("claude", "gemini", "cursor", "shell"):
             result = self._adapter(name).build_exec_record(**self.BASE_KWARGS, model=None)
             for key in ("uuid", "command", "depends", "result_path", "retry", "annotations"):
@@ -390,13 +390,13 @@ class TestGenericAdapterCapabilities:
         uuid="abc-123",
         order_path="queue/order.md",
         result_path="queue/result.md",
-        prompt="受け取った内容を実行して",
+        prompt="Execute the received content",
         depends=[],
         model="claude-sonnet-4-6",
     )
 
     def test_ac4_claude_text_only_command_contains_permission_mode(self):
-        """AC4: _GenericAdapter(claude) + capabilities=TEXT_ONLY → command に --permission-mode default"""
+        """AC4: _GenericAdapter(claude) + capabilities=TEXT_ONLY → command includes --permission-mode default"""
         from ghdag.llm.capabilities import TEXT_ONLY
         adapter = _GenericAdapter(ENGINE_SPECS["claude"])
         record = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=TEXT_ONLY)
@@ -404,14 +404,14 @@ class TestGenericAdapterCapabilities:
         assert "default" in record["command"]
 
     def test_ac4_claude_text_only_no_dangerously(self):
-        """AC4: TEXT_ONLY → --dangerously-skip-permissions なし"""
+        """AC4: TEXT_ONLY → no --dangerously-skip-permissions"""
         from ghdag.llm.capabilities import TEXT_ONLY
         adapter = _GenericAdapter(ENGINE_SPECS["claude"])
         record = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=TEXT_ONLY)
         assert "--dangerously-skip-permissions" not in record["command"]
 
     def test_ac9_capabilities_none_default_behavior(self):
-        """AC9: capabilities 引数なし → 従来と同一の dict"""
+        """AC9: no capabilities arg → same dict as before"""
         adapter = _GenericAdapter(ENGINE_SPECS["claude"])
         record_default = adapter.build_exec_record(**self.BASE_KWARGS)
         record_none = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=None)
@@ -419,7 +419,7 @@ class TestGenericAdapterCapabilities:
         assert "--dangerously-skip-permissions" in record_default["command"]
 
     def test_cursor_capabilities_text_only_no_force(self):
-        """cursor + capabilities=TEXT_ONLY → --force なし"""
+        """cursor + capabilities=TEXT_ONLY → no --force"""
         from ghdag.llm.capabilities import TEXT_ONLY
         adapter = _GenericAdapter(ENGINE_SPECS["cursor"])
         record = adapter.build_exec_record(

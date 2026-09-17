@@ -21,7 +21,7 @@ def write_file(path: Path, content: str) -> None:
 
 class TestMdPromoteBasic:
     def test_p1_promote_returns_promoted(self, repo_root: Path) -> None:
-        """P1: 昇格成功時に PromoteResult(status=PROMOTED) が返る"""
+        """P1: successful promote returns PromoteResult(status=PROMOTED)"""
         from ghdag.files import md_promote
 
         write_file(repo_root / "result" / "r1.md", "# Result\nsome content\n")
@@ -40,7 +40,7 @@ class TestMdPromoteBasic:
         assert result.section == "Promoted"
 
     def test_p2_content_appended_to_target(self, repo_root: Path) -> None:
-        """P2: 昇格先ファイルの ## Promoted セクションにソース内容が追記される"""
+        """P2: source content is appended under ## Promoted in the target file"""
         from ghdag.files import md_promote
 
         source_content = "# Result\nsome content\n"
@@ -54,7 +54,7 @@ class TestMdPromoteBasic:
         assert "some content" in target_text
 
     def test_p3_idempotency_marker_written(self, repo_root: Path) -> None:
-        """P3: 昇格後に冪等マーカが記録される"""
+        """P3: an idempotency marker is recorded after promote"""
         from ghdag.files import md_promote
 
         write_file(repo_root / "result" / "r1.md", "content\n")
@@ -66,7 +66,7 @@ class TestMdPromoteBasic:
         assert "<!-- ghdag:append key=promote:result/r1.md -->" in target_text
 
     def test_p4_audit_log_written(self, repo_root: Path) -> None:
-        """P4: 昇格先ディレクトリの audit.jsonl に md_promote イベントが記録される"""
+        """P4: md_promote event is recorded in the target directory audit.jsonl"""
         from ghdag.files import md_promote
 
         write_file(repo_root / "result" / "r1.md", "content\n")
@@ -88,7 +88,7 @@ class TestMdPromoteBasic:
 
 class TestMdPromoteIdempotency:
     def test_p5_second_call_returns_noop(self, repo_root: Path) -> None:
-        """P5: 同一 source_path で 2 回目の md_promote は NOOP を返す"""
+        """P5: second md_promote with the same source_path returns NOOP"""
         from ghdag.files import md_promote
 
         write_file(repo_root / "result" / "r1.md", "content\n")
@@ -100,7 +100,7 @@ class TestMdPromoteIdempotency:
         assert result2.status == PromoteStatus.NOOP
 
     def test_p6_second_call_no_double_append(self, repo_root: Path) -> None:
-        """P6: 2 回目の md_promote 後、昇格先ファイルの内容が 1 回目と同一"""
+        """P6: after a second md_promote, target file content matches the first"""
         from ghdag.files import md_promote
 
         write_file(repo_root / "result" / "r1.md", "unique-body\n")
@@ -118,7 +118,7 @@ class TestMdPromoteIdempotency:
 
 class TestMdPromoteCustomSection:
     def test_p7_custom_section(self, repo_root: Path) -> None:
-        """P7: section 引数を指定するとその名前のセクションに追記される"""
+        """P7: specifying section appends under that section name"""
         from ghdag.files import md_promote
 
         write_file(repo_root / "result" / "r1.md", "body\n")
@@ -136,7 +136,7 @@ class TestMdPromoteCustomSection:
         assert "## Archive" in target_text
 
     def test_p8_custom_idempotency_key(self, repo_root: Path) -> None:
-        """P8: idempotency_key を明示すると、そのキーで冪等マーカが付く"""
+        """P8: an explicit idempotency_key is used on the idempotency marker"""
         from ghdag.files import md_promote
 
         write_file(repo_root / "result" / "r1.md", "body\n")
@@ -155,7 +155,7 @@ class TestMdPromoteCustomSection:
 
 class TestMdPromoteErrors:
     def test_p9_source_not_found(self, repo_root: Path) -> None:
-        """P9: source_path が存在しない場合は FileNotFoundError"""
+        """P9: missing source_path raises FileNotFoundError"""
         from ghdag.files import md_promote
 
         write_file(repo_root / "notes" / "summary.md", "# Summary\n")
@@ -164,7 +164,7 @@ class TestMdPromoteErrors:
             md_promote("result/nonexistent.md", "notes/summary.md", repo_root=repo_root)
 
     def test_p10_path_traversal_source(self, repo_root: Path) -> None:
-        """P10: source_path にパストラバーサルを指定すると ValueError"""
+        """P10: path traversal in source_path raises ValueError"""
         from ghdag.files import md_promote
 
         write_file(repo_root / "notes" / "summary.md", "# Summary\n")
@@ -173,7 +173,7 @@ class TestMdPromoteErrors:
             md_promote("../../../etc/passwd", "notes/summary.md", repo_root=repo_root)
 
     def test_p11_path_traversal_target(self, repo_root: Path) -> None:
-        """P11: target_path にパストラバーサルを指定すると ValueError"""
+        """P11: path traversal in target_path raises ValueError"""
         from ghdag.files import md_promote
 
         write_file(repo_root / "result" / "r1.md", "content\n")
@@ -182,7 +182,7 @@ class TestMdPromoteErrors:
             md_promote("result/r1.md", "../../../etc/passwd", repo_root=repo_root)
 
     def test_p12_audit_write_failure_does_not_raise(self, repo_root: Path) -> None:
-        """P12: audit 書き込み失敗でも promote 自体は成功する"""
+        """P12: promote still succeeds when audit write fails"""
         from unittest.mock import patch
 
         from ghdag.files import md_promote
@@ -198,18 +198,18 @@ class TestMdPromoteErrors:
 
 class TestDagHooksIntegration:
     def test_d1_protocol_has_check_promote_target(self) -> None:
-        """D1: DagHooks Protocol に check_promote_target が定義されている"""
+        """D1: DagHooks Protocol defines check_promote_target"""
         from ghdag.dag.hooks import DagHooks
         assert hasattr(DagHooks, "check_promote_target")
 
     def test_d2_default_hooks_returns_none(self) -> None:
-        """D2: DefaultHooks.check_promote_target() は常に None を返す"""
+        """D2: DefaultHooks.check_promote_target() always returns None"""
         from ghdag.dag.hooks import DefaultHooks
         hooks = DefaultHooks()
         assert hooks.check_promote_target("any/path.md") is None
 
     def test_d3_engine_calls_md_promote_when_hook_returns_target(self, repo_root: Path) -> None:
-        """D3: hook が target_path を返した場合、エンジンが md_promote を呼び出す"""
+        """D3: when the hook returns target_path, the engine calls md_promote"""
         import io
         import subprocess
         import time
@@ -264,7 +264,7 @@ class TestDagHooksIntegration:
         hooks.check_promote_target.assert_called_once()
 
     def test_d4_engine_skips_promote_when_hook_returns_none(self, repo_root: Path) -> None:
-        """D4: check_promote_target が None を返した場合、promote は実行されない"""
+        """D4: when check_promote_target returns None, promote is not run"""
         import io
         import subprocess
         import time
@@ -310,7 +310,7 @@ class TestDagHooksIntegration:
         mock_promote.assert_not_called()
 
     def test_d5_promote_exception_does_not_fail_task(self, repo_root: Path) -> None:
-        """D5: promote が例外を送出してもタスク自体は成功として扱われる"""
+        """D5: even if promote raises, the task itself is treated as success"""
         import io
         import subprocess
         import time

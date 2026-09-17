@@ -1,8 +1,7 @@
-"""cursor stream-json から assistant ターンを空行区切りで再構成する（nexus #3260）。
+"""Rebuild assistant turns from cursor stream-json with blank-line separators (nexus #3260).
 
-tool_call 境界で各ターンを確定し、完結全文の重複を除いた本文が
-result / call_text / DAG result に揃うこと、および events が生 JSONL のまま
-であることを検証する。
+Confirm each turn at tool_call boundaries, that the deduplicated full text
+matches across result / call_text / DAG result, and that events remain raw JSONL.
 """
 
 from __future__ import annotations
@@ -138,7 +137,7 @@ class TestReconstructAssistantTurns:
         assert reconstruct_assistant_turns(stdout) == expected
 
     def test_ac4_consecutive_tool_calls_do_not_create_empty_turns(self):
-        # チャンクが互いに一致しない文言を使い、途中片が誤って完結判定されないようにする
+        # Use mutually non-matching chunk text so a partial is not mistaken for complete
         events = [
             *_partials("ABCD", 2),
             _tool_call("started"),

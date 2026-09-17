@@ -60,7 +60,7 @@ def test_core_ports_reexports_forge_port() -> None:
 def test_state_machine_transition_uses_get_forge(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """影響分析: state_machine.transition の bare GitHubClient() を get_forge 経由に."""
+    """Impact analysis: route state_machine.transition bare GitHubClient() via get_forge."""
     fake = MagicMock()
     fake.issue_get.side_effect = [
         {"labels": [{"name": "phase:a"}]},

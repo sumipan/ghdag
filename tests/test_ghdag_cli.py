@@ -1,9 +1,9 @@
 """Tests for ghdag.cli — AC1 〜 AC11.
 
-テスト方針:
-- main(argv=[...]) のパース検証
-- DagEngine / WorkflowDispatcher は mock、正しい引数で呼ばれることを assert
-- 異常系は SystemExit の code を assert
+Test approach:
+- Parse validation via main(argv=[...])
+- Mock DagEngine / WorkflowDispatcher; assert correct args
+- Error cases assert SystemExit code
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # ---------------------------------------------------------------------------
-# AC1: ヘルプ表示
+# AC1: help display
 # ---------------------------------------------------------------------------
 
 
@@ -54,7 +54,7 @@ class TestHelp:
 
 
 # ---------------------------------------------------------------------------
-# AC2: バージョン
+# AC2: version
 # ---------------------------------------------------------------------------
 
 
@@ -69,7 +69,7 @@ class TestVersion:
 
 
 # ---------------------------------------------------------------------------
-# AC3: ghdag run 正常系
+# AC3: ghdag run happy path
 # ---------------------------------------------------------------------------
 
 
@@ -121,7 +121,7 @@ class TestRunNormal:
 
 class TestRunHooks:
     def _make_hooks_module_with_class(self):
-        """HOOKS_CLASS 属性を持つモジュール名前空間と hooks クラスを返す。"""
+        """Return a module namespace with HOOKS_CLASS and a hooks class."""
         import types
 
         class MyHooks:
@@ -153,7 +153,7 @@ class TestRunHooks:
             from ghdag.cli import main
             main(["run", str(exec_md), "--hooks", "my_hooks"])
 
-        # DagEngine は hooks インスタンス付きで呼ばれる
+        # DagEngine is called with a hooks instance
         call_args = mock_engine_cls.call_args
         assert call_args is not None
         _, hooks_arg = call_args[0]
@@ -174,7 +174,7 @@ class TestRunHooks:
             from ghdag.cli import main
             main(["run", str(exec_md), "--hooks", "my_hooks"])
 
-        # engine.run() が呼ばれる
+        # engine.run() is called
         mock_engine_instance.run.assert_called_once()
 
     def test_hooks_invalid_module_exits_1(self, tmp_path, capsys):
@@ -206,7 +206,7 @@ class TestRunHooks:
 
 
 # ---------------------------------------------------------------------------
-# AC4: ghdag run 異常系
+# AC4: ghdag run error cases
 # ---------------------------------------------------------------------------
 
 
@@ -228,7 +228,7 @@ class TestRunError:
 
 
 # ---------------------------------------------------------------------------
-# AC5: ghdag watch 正常系
+# AC5: ghdag watch happy path
 # ---------------------------------------------------------------------------
 
 
@@ -291,7 +291,7 @@ class TestWatchNormal:
 
 
 # ---------------------------------------------------------------------------
-# AC6: ghdag watch 異常系
+# AC6: ghdag watch error cases
 # ---------------------------------------------------------------------------
 
 
@@ -334,7 +334,7 @@ class TestPythonM:
 
 
 # ---------------------------------------------------------------------------
-# AC8: ログレベル
+# AC8: log level
 # ---------------------------------------------------------------------------
 
 
@@ -361,7 +361,7 @@ class TestLogLevel:
 
 
 # ---------------------------------------------------------------------------
-# AC9: ghdag trigger 正常系
+# AC9: ghdag trigger happy path
 # ---------------------------------------------------------------------------
 
 
@@ -468,7 +468,7 @@ handlers:
 
 
 # ---------------------------------------------------------------------------
-# AC10: ghdag trigger 異常系
+# AC10: ghdag trigger error cases
 # ---------------------------------------------------------------------------
 
 
@@ -545,7 +545,7 @@ handlers:
         assert "not found" in capsys.readouterr().err
 
     def test_trigger_skipped_exits_1(self, tmp_path, capsys):
-        """dispatch が skipped を返した場合は exit 1"""
+        """exit 1 when dispatch returns skipped"""
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
         self._write_workflow_yaml(workflows_dir)
@@ -688,7 +688,7 @@ class TestLlmAuditPath:
         return LLMResult(stdout="ok\n", stderr="", returncode=returncode)
 
     def test_ac1_audit_path_and_correlation_id(self, tmp_path):
-        """AC1: --audit-path + --correlation-id + 正常終了 → レコード追記。"""
+        """AC1: --audit-path + --correlation-id + success → append record."""
         audit_path = tmp_path / "audit.jsonl"
         mock_result = self._make_result(returncode=0)
 
@@ -715,7 +715,7 @@ class TestLlmAuditPath:
         assert "+00:00" in r["timestamp"]
 
     def test_ac2_correlation_id_unspecified_is_null(self, tmp_path):
-        """AC2: correlation_id 未指定 → null。"""
+        """AC2: correlation_id omitted → null."""
         audit_path = tmp_path / "audit.jsonl"
         mock_result = self._make_result(returncode=0)
 
@@ -729,7 +729,7 @@ class TestLlmAuditPath:
         assert r["correlation_id"] is None
 
     def test_ac3_env_var_audit_path(self, tmp_path, monkeypatch):
-        """AC3: 環境変数 GHDAG_AUDIT_PATH でのパス指定。"""
+        """AC3: path via env GHDAG_AUDIT_PATH."""
         audit_path = tmp_path / "audit.jsonl"
         monkeypatch.setenv("GHDAG_AUDIT_PATH", str(audit_path))
         mock_result = self._make_result(returncode=0)
@@ -745,7 +745,7 @@ class TestLlmAuditPath:
         assert r["event"] == "llm_call"
 
     def test_ac4_flag_takes_precedence_over_env(self, tmp_path, monkeypatch):
-        """AC4: --audit-path が環境変数 GHDAG_AUDIT_PATH より優先。"""
+        """AC4: --audit-path takes precedence over env GHDAG_AUDIT_PATH."""
         env_path = tmp_path / "env.jsonl"
         flag_path = tmp_path / "flag.jsonl"
         monkeypatch.setenv("GHDAG_AUDIT_PATH", str(env_path))
@@ -761,7 +761,7 @@ class TestLlmAuditPath:
         assert not env_path.exists()
 
     def test_ac_a6_request_id_flag(self, tmp_path):
-        """AC-A6: --request-id 指定時 → audit レコードの request_id がその値になる。"""
+        """AC-A6: with --request-id, audit record request_id matches that value."""
         audit_path = tmp_path / "audit.jsonl"
         mock_result = self._make_result(returncode=0)
 
@@ -780,7 +780,7 @@ class TestLlmAuditPath:
         assert r["schema_version"] == 3
 
     def test_ac5_timeout_recorded(self, tmp_path):
-        """AC5: --timeout 指定時 → timeout_sec が記録される。"""
+        """AC5: with --timeout, timeout_sec is recorded."""
         audit_path = tmp_path / "audit.jsonl"
         mock_result = self._make_result(returncode=0)
 
@@ -794,7 +794,7 @@ class TestLlmAuditPath:
         assert r["timeout_sec"] == 120
 
     def test_ac6_timeout_unspecified_is_null(self, tmp_path):
-        """AC6: --timeout 未指定 → timeout_sec = null。"""
+        """AC6: without --timeout, timeout_sec = null."""
         audit_path = tmp_path / "audit.jsonl"
         mock_result = self._make_result(returncode=0)
 
@@ -808,7 +808,7 @@ class TestLlmAuditPath:
         assert r["timeout_sec"] is None
 
     def test_ac7_no_audit_on_llm_failure(self, tmp_path):
-        """AC7: LLM 異常終了 → 監査ログは記録されない。"""
+        """AC7: LLM failure → no audit log recorded."""
         audit_path = tmp_path / "audit.jsonl"
         mock_result = self._make_result(returncode=1)
 
@@ -822,7 +822,7 @@ class TestLlmAuditPath:
         assert not audit_path.exists()
 
     def test_ac9_no_audit_path_no_env_no_log(self, tmp_path, monkeypatch):
-        """AC9: audit-path 未指定 + 環境変数未設定 → 監査ログなし（後方互換）。"""
+        """AC9: no audit-path and no env → no audit log (backward compatible)."""
         monkeypatch.delenv("GHDAG_AUDIT_PATH", raising=False)
         mock_result = self._make_result(returncode=0)
 
@@ -842,7 +842,7 @@ class TestLlmAuditPath:
 
 class TestRunMaxConcurrency:
     def test_max_concurrency_arg(self, tmp_path):
-        """--max-concurrency が DagConfig に正しく渡されること"""
+        """--max-concurrency is passed correctly to DagConfig"""
         exec_md = tmp_path / "exec.md"
         exec_md.write_text("")
 
@@ -858,7 +858,7 @@ class TestRunMaxConcurrency:
         assert call_kwargs["max_concurrency"] == 4
 
     def test_max_concurrency_default_none(self, tmp_path):
-        """--max-concurrency 未指定時に None であること"""
+        """--max-concurrency omitted → None"""
         exec_md = tmp_path / "exec.md"
         exec_md.write_text("")
 
@@ -874,7 +874,7 @@ class TestRunMaxConcurrency:
         assert call_kwargs["max_concurrency"] is None
 
     def test_max_concurrency_invalid_type_exits_2(self, tmp_path, capsys):
-        """--max-concurrency abc が argparse のエラーで終了すること"""
+        """--max-concurrency abc exits via argparse error"""
         exec_md = tmp_path / "exec.md"
         exec_md.write_text("")
 
@@ -896,7 +896,7 @@ class TestLLMCapabilitiesArgs:
         return LLMResult(stdout="ok", stderr="", returncode=returncode)
 
     def test_ac6_capabilities_preset_text_only_passed_to_call(self):
-        """AC6: --capabilities-preset text_only → call() に TEXT_ONLY capabilities が渡される"""
+        """AC6: --capabilities-preset text_only → TEXT_ONLY capabilities passed to call()"""
         from ghdag.llm.capabilities import TEXT_ONLY
         mock_result = self._make_result()
         with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
@@ -908,7 +908,7 @@ class TestLLMCapabilitiesArgs:
         assert call_kwargs["capabilities"] == TEXT_ONLY
 
     def test_ac7_permission_mode_plan_passed_to_call(self):
-        """AC7: --permission-mode plan → call() に LLMCapabilities(permission_mode='plan') が渡される"""
+        """AC7: --permission-mode plan → LLMCapabilities(permission_mode='plan') passed to call()"""
         mock_result = self._make_result()
         with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
             from ghdag.cli import main
@@ -920,7 +920,7 @@ class TestLLMCapabilitiesArgs:
         assert caps.permission_mode == "plan"
 
     def test_ac11_dangerously_skip_still_works(self):
-        """AC11: --dangerously-skip-permissions → 従来通り dangerously_skip_permissions=True"""
+        """AC11: --dangerously-skip-permissions → dangerously_skip_permissions=True as before"""
         mock_result = self._make_result()
         with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
             from ghdag.cli import main
@@ -931,21 +931,21 @@ class TestLLMCapabilitiesArgs:
         assert call_kwargs["dangerously_skip_permissions"] is True
 
     def test_ac13_invalid_capabilities_preset_exits_2(self, capsys):
-        """AC13: --capabilities-preset invalid → argparse エラーで exit"""
+        """AC13: --capabilities-preset invalid → exit via argparse error"""
         from ghdag.cli import main
         with pytest.raises(SystemExit) as exc:
             main(["llm", "hello", "--capabilities-preset", "invalid_preset"])
         assert exc.value.code == 2
 
     def test_permission_mode_invalid_exits_2(self, capsys):
-        """--permission-mode invalid → argparse エラーで exit"""
+        """--permission-mode invalid → exit via argparse error"""
         from ghdag.cli import main
         with pytest.raises(SystemExit) as exc:
             main(["llm", "hello", "--permission-mode", "invalid_mode"])
         assert exc.value.code == 2
 
     def test_both_preset_and_permission_mode_override(self):
-        """--capabilities-preset text_only + --permission-mode plan → preset ベースで permission_mode を上書き"""
+        """--capabilities-preset text_only + --permission-mode plan → override permission_mode on preset"""
         from ghdag.llm.capabilities import TEXT_ONLY
         mock_result = self._make_result()
         with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:

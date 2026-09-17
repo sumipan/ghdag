@@ -1,12 +1,12 @@
 """Tests for GitHubClient ETag conditional requests (nexus #3070).
 
-実測ヘッダ（2026-09-10, GET /repos/sumipan/nexus/issues?state=open&per_page=1）:
+Measured headers (2026-09-10, GET /repos/sumipan/nexus/issues?state=open&per_page=1):
   ETag: '"fe991d6a950abb80cb7059ab6aaaca5636b5be168ac6fa515f1ab09de77934e8"'
   X-RateLimit-Remaining: '2474'
   X-RateLimit-Limit: '5000'
   X-RateLimit-Used: '2526'
   X-RateLimit-Reset: '1789023299'
-304 はレート消費なしでキャッシュ本文を返す。
+304 returns the cached body without consuming rate limit.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ import pytest
 
 from ghdag.github_client import GitHubClient
 
-# 実測 ETag（strong validator、両端の二重引用符を含む）
+# Measured ETag (strong validator, including surrounding double quotes)
 _REALISTIC_ETAG = '"fe991d6a950abb80cb7059ab6aaaca5636b5be168ac6fa515f1ab09de77934e8"'
 
 
@@ -63,7 +63,7 @@ def _http_error(code: int, *, headers: dict | None = None, message: str = "error
 
 
 def test_etag_true_sends_if_none_match_on_second_request(monkeypatch: pytest.MonkeyPatch) -> None:
-    """2 回目以降の etag=True リクエストに If-None-Match が付く。"""
+    """Subsequent etag=True requests include If-None-Match."""
     client = _make_client()
     captured_headers: list[dict[str, str]] = []
     call_count = {"n": 0}
@@ -92,7 +92,7 @@ def test_etag_true_sends_if_none_match_on_second_request(monkeypatch: pytest.Mon
     assert first == [{"number": 1}]
     assert second == [{"number": 1}]
     assert call_count["n"] == 2
-    # 1 回目は If-None-Match なし、2 回目はキャッシュ ETag を送る
+    # First request has no If-None-Match; second sends the cached ETag
     assert "If-none-match" not in {k.lower(): v for k, v in captured_headers[0].items()} or (
         captured_headers[0].get("If-None-Match") is None
         and captured_headers[0].get("If-none-match") is None
@@ -104,7 +104,7 @@ def test_etag_true_sends_if_none_match_on_second_request(monkeypatch: pytest.Mon
 def test_304_returns_cached_body_without_updating_rate_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """HTTP 304 時はキャッシュ本文を返し、_last_rate_limit を更新しない。"""
+    """On HTTP 304, return cached body and do not update _last_rate_limit."""
     client = _make_client()
     call_count = {"n": 0}
 
@@ -129,14 +129,14 @@ def test_304_returns_cached_body_without_updating_rate_limit(
     assert client.get_last_rate_limit() is not None
     assert client.get_last_rate_limit()["remaining"] == 100
 
-    # 304 経路 — remaining は 100 のまま
+    # 304 path — remaining stays at 100
     result = client._request("GET", "/repos/owner/repo/issues", etag=True)
     assert result == [{"number": 42, "title": "cached"}]
     assert client.get_last_rate_limit()["remaining"] == 100
 
 
 def test_200_stores_etag_in_cache(monkeypatch: pytest.MonkeyPatch) -> None:
-    """200 応答時に ETag をインスタンスキャッシュへ保存する。"""
+    """On 200 responses, store ETag in the instance cache."""
     client = _make_client()
 
     def fake_urlopen(req, timeout=120):
@@ -155,7 +155,7 @@ def test_200_stores_etag_in_cache(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_etag_false_does_not_send_if_none_match(monkeypatch: pytest.MonkeyPatch) -> None:
-    """etag=False（既定）ではキャッシュがあっても If-None-Match を付けない。"""
+    """etag=False (default) does not send If-None-Match even when cached."""
     client = _make_client()
     client._etag_cache["https://api.github.com/repos/owner/repo/issues"] = (
         _REALISTIC_ETAG,
@@ -175,7 +175,7 @@ def test_etag_false_does_not_send_if_none_match(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_list_all_issues_uses_etag(monkeypatch: pytest.MonkeyPatch) -> None:
-    """list_all_issues は etag=True で _request する。"""
+    """list_all_issues calls _request with etag=True."""
     client = _make_client()
     seen: list[bool] = []
 

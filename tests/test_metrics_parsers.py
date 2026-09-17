@@ -11,7 +11,7 @@ from ghdag.metrics.parsers import parse_engine_model, parse_token_count
     ('claude -p "hello" --model claude-opus-4-6', ("claude", "claude-opus-4-6")),
     ('claude -p "hello"', ("claude", None)),
     ('gemini --model gemini-3.1-flash -p "hello"', ("gemini", "gemini-3.1-flash")),
-    # cursor の CLI は agent に変更されたため cursor コマンドは (None, None)
+    # cursor CLI was renamed to agent, so a cursor command yields (None, None)
     ('cursor --model claude-sonnet-4-6 -p "hello"', (None, None)),
 ])
 def test_parse_engine_model_normal(command, expected):
@@ -19,7 +19,7 @@ def test_parse_engine_model_normal(command, expected):
 
 
 @pytest.mark.parametrize("command,expected", [
-    # bash は shell CLI になったので ("shell", None) を返す
+    # bash became the shell CLI, so it returns ("shell", None)
     ('bash -c "echo test"', ("shell", None)),
     ('python script.py', (None, None)),
     ('', (None, None)),
@@ -31,38 +31,38 @@ def test_parse_engine_model_edge_cases(command, expected):
 
 
 # ---------------------------------------------------------------------------
-# #982 修正: パイプ形式・agent 形式・shell 形式のテスト
+# #982 fix: pipe / agent / shell command forms
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("command,expected", [
-    # claude パイプ形式（#982 修正）
+    # claude pipe form (#982 fix)
     (
         "cat order.md | claude -p 'prompt' --model 'claude-sonnet-4-6'",
         ("claude", "claude-sonnet-4-6"),
     ),
-    # gemini パイプ形式
+    # gemini pipe form
     (
         "cat order.md | gemini -p 'prompt' --model 'gemini-2.5-flash' --approval-mode yolo",
         ("gemini", "gemini-2.5-flash"),
     ),
-    # cursor（agent コマンド）形式
+    # cursor (agent command) form
     (
         "agent --model 'auto' -p --force < order.md",
         ("cursor", "auto"),
     ),
-    # shell（bash コマンド）形式
+    # shell (bash command) form
     (
         "bash -o pipefail order.md",
         ("shell", None),
     ),
-    # claude 直接形式（後方互換）
+    # claude direct form (backward compatible)
     (
         "claude -p 'hello' --model claude-opus-4-6",
         ("claude", "claude-opus-4-6"),
     ),
-    # 空文字
+    # empty string
     ("", (None, None)),
-    # 不明コマンド
+    # unknown command
     ("python script.py", (None, None)),
 ])
 def test_parse_engine_model_spec_based(command, expected):

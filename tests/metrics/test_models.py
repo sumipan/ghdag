@@ -13,7 +13,7 @@ UUID = "test-uuid-0000-0000-0000-000000000001"
 
 class TestTaskMetrics:
     def test_ac4_backward_compatible_construction(self):
-        """AC-4: 既存引数のみでの構築が成功し、correlation_id が None である。"""
+        """AC-4: construction with legacy args succeeds and correlation_id is None."""
         now = time.time()
         m = TaskMetrics(
             uuid=UUID,
@@ -28,7 +28,7 @@ class TestTaskMetrics:
         assert m.correlation_id is None
 
     def test_ac4_with_correlation_id(self):
-        """AC-4: correlation_id を渡した場合にフィールドに格納される。"""
+        """AC-4: passing correlation_id stores it on the field."""
         now = time.time()
         m = TaskMetrics(
             uuid=UUID,
@@ -44,7 +44,7 @@ class TestTaskMetrics:
         assert m.correlation_id == "issuesmith:brushup:958"
 
     def test_ac4_frozen(self):
-        """frozen=True なので変更不可。"""
+        """frozen=True: mutation is rejected."""
         now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,
@@ -57,7 +57,7 @@ class TestTaskMetrics:
     # --- Issue #962 tests ---
 
     def test_failure_class_default_none(self):
-        """failure_class 未指定 → None（後方互換）。"""
+        """failure_class omitted → None (backward compatible)."""
         now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,
@@ -67,7 +67,7 @@ class TestTaskMetrics:
         assert m.failure_class is None
 
     def test_failure_class_set(self):
-        """failure_class=FailureClass.TIMEOUT を渡すとフィールドに格納される。"""
+        """Passing failure_class=FailureClass.TIMEOUT stores it on the field."""
         now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,
@@ -79,7 +79,7 @@ class TestTaskMetrics:
         assert m.failure_class.value == "TIMEOUT"
 
     def test_task_metrics_additional_tags_optional(self):
-        """TaskMetrics.additional_tags は optional（デフォルト None）。"""
+        """TaskMetrics.additional_tags is optional (default None)."""
         now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,
@@ -102,7 +102,7 @@ class TestTaskMetrics:
 
 class TestFailureClass:
     def test_all_14_values_exist(self):
-        """FailureClass enum が 14 値を持つ。"""
+        """FailureClass enum has 14 values."""
         expected = {
             "ENGINE_ERROR",
             "QUOTA_EXHAUSTED",
@@ -186,12 +186,12 @@ class TestFailureClass:
         assert FailureClass.UNKNOWN_FAILURE.retry_policy == "requires_review"
 
     def test_invalid_value_raises(self):
-        """不正な文字列からの生成を拒否する。"""
+        """Reject construction from an invalid string."""
         with pytest.raises(ValueError):
             FailureClass("INVALID")
 
     def test_task_metrics_with_enum(self):
-        """TaskMetrics(failure_class=FailureClass.TIMEOUT) で生成できる。"""
+        """TaskMetrics can be built with failure_class=FailureClass.TIMEOUT."""
         now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,
@@ -203,7 +203,7 @@ class TestFailureClass:
         assert m.failure_class.value == "TIMEOUT"
 
     def test_task_metrics_default_none(self):
-        """TaskMetrics() のデフォルト failure_class は None。"""
+        """TaskMetrics default failure_class is None."""
         now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,
@@ -213,7 +213,7 @@ class TestFailureClass:
         assert m.failure_class is None
 
     def test_task_metrics_request_id_optional(self):
-        """TaskMetrics.request_id は optional（デフォルト None）。"""
+        """TaskMetrics.request_id is optional (default None)."""
         now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,

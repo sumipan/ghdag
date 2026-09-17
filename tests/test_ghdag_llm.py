@@ -1,4 +1,4 @@
-"""Tests for ghdag.llm — ワンショット LLM 呼び出しインタフェース"""
+"""Tests for ghdag.llm — one-shot LLM call interface"""
 
 from __future__ import annotations
 
@@ -28,12 +28,12 @@ from ghdag.llm.spec import render_exec_command
 from ghdag.workflow.engine import get_adapter
 
 # ---------------------------------------------------------------------------
-# ホワイトリスト・検証
+# Whitelist / validation
 # ---------------------------------------------------------------------------
 
 class TestEngineModels:
     def test_list_engines(self):
-        """利用可能なエンジン一覧が返る"""
+        """Returns the list of available engines"""
         engines = list_engines()
         assert "claude" in engines
         assert "gemini" in engines
@@ -41,14 +41,14 @@ class TestEngineModels:
         assert engines == sorted(engines)
 
     def test_list_models_claude(self):
-        """claude エンジンの許可モデル一覧"""
+        """Allowed models for the claude engine"""
         models = list_models("claude")
         assert "claude-sonnet-4-6" in models
         assert "claude-opus-4-6" in models
         assert models == sorted(models)
 
     def test_list_models_gemini(self, monkeypatch):
-        """gemini エンジンのデフォルト許可モデル一覧（GHDAG_LLM_MODELS 環境変数の影響を除外）"""
+        """Default allowed models for gemini (excluding GHDAG_LLM_MODELS env influence)"""
         import ghdag.llm.engines as engines_mod
         from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
         monkeypatch.setattr(engines_mod, "_ENGINE_MODELS", DEFAULT_ENGINE_MODELS)
@@ -57,25 +57,25 @@ class TestEngineModels:
         assert "gemini-2.5-pro" in models
 
     def test_list_models_cursor(self):
-        """cursor エンジンの許可モデル一覧"""
+        """Allowed models for the cursor engine"""
         models = list_models("cursor")
         assert "auto" in models
         assert "composer-2" in models
 
     def test_list_models_unknown_engine(self):
-        """未知エンジン → EngineModelError"""
+        """Unknown engine → EngineModelError"""
         with pytest.raises(EngineModelError, match="Unknown engine"):
             list_models("openai")
 
 
 class TestValidateEngineModel:
     def test_valid_claude_model(self):
-        """claude + 許可モデル → そのまま返る"""
+        """claude + allowed model → returned as-is"""
         result = validate_engine_model("claude", "claude-opus-4-6")
         assert result == "claude-opus-4-6"
 
     def test_valid_gemini_model(self, monkeypatch):
-        """gemini + 許可モデル → そのまま返る（GHDAG_LLM_MODELS 環境変数の影響を除外）"""
+        """gemini + allowed model → returned as-is (excluding GHDAG_LLM_MODELS env)"""
         import ghdag.llm.engines as engines_mod
         from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
         monkeypatch.setattr(engines_mod, "_ENGINE_MODELS", DEFAULT_ENGINE_MODELS)
@@ -83,38 +83,38 @@ class TestValidateEngineModel:
         assert result == "gemini-2.5-pro"
 
     def test_default_model_claude(self):
-        """model=None → エンジンデフォルト"""
+        """model=None → engine default"""
         result = validate_engine_model("claude", None)
         assert result == ENGINE_DEFAULTS["claude"]
 
     def test_default_model_gemini(self):
-        """model=None → エンジンデフォルト"""
+        """model=None → engine default"""
         result = validate_engine_model("gemini", None)
         assert result == ENGINE_DEFAULTS["gemini"]
 
     def test_valid_cursor_model(self):
-        """cursor + 許可モデル → そのまま返る"""
+        """cursor + allowed model → returned as-is"""
         result = validate_engine_model("cursor", "composer-2")
         assert result == "composer-2"
 
     def test_default_model_cursor(self):
-        """cursor + model=None → "auto" がデフォルト"""
+        """cursor + model=None → defaults to \"auto\""""
         result = validate_engine_model("cursor", None)
         assert result == ENGINE_DEFAULTS["cursor"]
         assert result == "auto"
 
     def test_unknown_engine(self):
-        """未知エンジン → EngineModelError"""
+        """Unknown engine → EngineModelError"""
         with pytest.raises(EngineModelError, match="Unknown engine"):
             validate_engine_model("openai", "gpt-4o")
 
     def test_invalid_model(self):
-        """許可外モデル → EngineModelError"""
+        """Disallowed model → EngineModelError"""
         with pytest.raises(EngineModelError, match="Model not in allowlist"):
             validate_engine_model("claude", "gpt-4o")
 
     def test_invalid_model_contains_info(self):
-        """エラーメッセージにエンジン名とモデル名が含まれる"""
+        """Error message includes engine name and model name"""
         with pytest.raises(EngineModelError) as exc_info:
             validate_engine_model("claude", "unknown-model")
         msg = str(exc_info.value)
@@ -123,30 +123,30 @@ class TestValidateEngineModel:
 
 
 # ---------------------------------------------------------------------------
-# コマンド構築
+# Command construction
 # ---------------------------------------------------------------------------
 
 class TestBuildLLMCmd:
     def test_basic_claude(self):
-        """基本的な claude コマンド構築（capabilities フラグ含む）"""
+        """Basic claude command construction (includes capabilities flags)"""
         cmd = build_llm_cmd("claude", "claude-opus-4-6", "hello")
-        # 基本要素の確認
+        # Check basic elements
         assert cmd[0] == "claude"
         assert "--model" in cmd
         assert "claude-opus-4-6" in cmd
         assert "-p" in cmd
         assert "hello" in cmd
-        # TEXT_ONLY デフォルト: permission-mode と disallowed-tools が付く
+        # TEXT_ONLY default: permission-mode and disallowed-tools are attached
         assert "--permission-mode" in cmd
         assert "--disallowed-tools" in cmd
 
     def test_basic_gemini(self):
-        """基本的な gemini コマンド構築（capabilities フラグなし）"""
+        """Basic gemini command construction (no capabilities flags)"""
         cmd = build_llm_cmd("gemini", "gemini-2.5-flash", "hello")
         assert cmd == ["gemini", "--model", "gemini-2.5-flash", "-p", "hello"]
 
     def test_basic_cursor(self):
-        """基本的な cursor コマンド構築（CLI は agent、capabilities フラグなし）"""
+        """Basic cursor command construction (CLI is agent, no capabilities flags)"""
         cmd = build_llm_cmd("cursor", "composer-2", "hello")
         assert cmd == ["agent", "--model", "composer-2", "-p", "hello"]
 
@@ -198,7 +198,7 @@ class TestCapabilities:
         assert caps.output_format == "json"
 
     def test_force_cursor(self):
-        """cursor で dangerously_skip_permissions=True のとき --force が付与される"""
+        """cursor with dangerously_skip_permissions=True attaches --force"""
         cmd = build_llm_cmd(
             "cursor", "auto", "hello",
             dangerously_skip_permissions=True,
@@ -206,7 +206,7 @@ class TestCapabilities:
         assert "--force" in cmd
 
     def test_force_cursor_not_added_by_default(self):
-        """cursor で dangerously_skip_permissions=False のとき --force は付与されない"""
+        """cursor with dangerously_skip_permissions=False does not attach --force"""
         cmd = build_llm_cmd("cursor", "auto", "hello")
         assert "--force" not in cmd
 
@@ -227,10 +227,10 @@ class TestLLMResult:
 
 class TestLLMResultValidate:
     def test_json_ok_valid_json(self):
-        """JSON_ONLY + 有効な JSON → LLMParseError なし"""
+        """JSON_ONLY + valid JSON → no LLMParseError"""
         r = LLMResult(stdout='{"k": "v"}', stderr="", returncode=0)
         result = r.validate(JSON_ONLY)
-        assert result is r  # 自身を返す
+        assert result is r  # returns self
 
     def test_json_ok_invalid_json(self):
         """JSON_ONLY + non-JSON → LLMParseError"""
@@ -240,19 +240,19 @@ class TestLLMResultValidate:
         assert exc_info.value.raw == "not json"
 
     def test_json_fail_skips_validation(self):
-        """returncode != 0 → 検証スキップ"""
+        """returncode != 0 → skip validation"""
         r = LLMResult(stdout="err", stderr="", returncode=1)
         result = r.validate(JSON_ONLY)  # should not raise
         assert result is r
 
     def test_text_ok_no_validation(self):
-        """TEXT_ONLY → JSON 検証なし"""
+        """TEXT_ONLY → no JSON validation"""
         r = LLMResult(stdout="not json", stderr="", returncode=0)
         result = r.validate(TEXT_ONLY)  # should not raise
         assert result is r
 
     def test_stream_extracts_result_from_jsonl(self):
-        """stream=True → JSONL から最終 result を抽出"""
+        """stream=True → extract final result from JSONL"""
         jsonl = (
             '{"type":"system","subtype":"init"}\n'
             '{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}\n'
@@ -263,7 +263,7 @@ class TestLLMResultValidate:
         assert result.stdout == "final answer"
 
     def test_stream_json_output_validated_after_extraction(self):
-        """stream=True + output_format=json → 抽出後に JSON 検証"""
+        """stream=True + output_format=json → JSON validate after extract"""
         jsonl = (
             '{"type":"result","subtype":"success","result":"{\\"k\\": \\"v\\"}"}\n'
         )
@@ -272,7 +272,7 @@ class TestLLMResultValidate:
         assert result.stdout == '{"k": "v"}'
 
     def test_stream_no_result_line_raises(self):
-        """stream JSONL に result 行がない → LLMParseError"""
+        """stream JSONL without a result line → LLMParseError"""
         r = LLMResult(stdout='{"type":"system"}\n', stderr="", returncode=0)
         with pytest.raises(LLMParseError, match="no result line"):
             r.validate(LLMCapabilities(stream=True))
@@ -324,7 +324,7 @@ class TestBuildLLMCmdCapabilities:
         assert "--disallowed-tools" not in cmd
 
     def test_custom_permission_mode(self):
-        """カスタム permission_mode"""
+        """Custom permission_mode"""
         caps = LLMCapabilities(permission_mode="plan")
         cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=caps)
         assert "--permission-mode" in cmd
@@ -332,14 +332,14 @@ class TestBuildLLMCmdCapabilities:
         assert cmd[perm_idx + 1] == "plan"
 
     def test_gemini_ignores_capabilities_flags(self):
-        """gemini では capabilities フラグは付与されない"""
+        """gemini does not attach capabilities flags"""
         caps = LLMCapabilities(permission_mode="default", output_format="text")
         cmd = build_llm_cmd("gemini", "gemini-2.5-flash", "hello", capabilities=caps)
         assert "--permission-mode" not in cmd
         assert "--disallowed-tools" not in cmd
 
     def test_stream_true_adds_stream_json(self):
-        """stream=True → --output-format stream-json --verbose（output_format を上書き）"""
+        """stream=True → --output-format stream-json --verbose (overrides output_format)"""
         caps = LLMCapabilities(stream=True)
         cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=caps)
         assert "--output-format" in cmd
@@ -348,7 +348,7 @@ class TestBuildLLMCmdCapabilities:
         assert "--verbose" in cmd
 
     def test_stream_true_overrides_json_output_format(self):
-        """stream=True 時は output_format=json より stream-json が優先される"""
+        """With stream=True, stream-json takes precedence over output_format=json"""
         caps = LLMCapabilities(output_format="json", stream=True)
         cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=caps)
         fmt_idx = cmd.index("--output-format")
@@ -378,7 +378,7 @@ class TestValidateCapabilitiesForEngine:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_cursor_with_text_only_ok(self, mock_run):
-        """cursor engine で TEXT_ONLY (disallowed_tools あり) が通ること"""
+        """cursor engine accepts TEXT_ONLY (with disallowed_tools)"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         result = call("hello", engine="cursor", capabilities=TEXT_ONLY)
         assert result.ok
@@ -396,7 +396,7 @@ class TestValidateCapabilitiesForEngine:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_cursor_with_stream_builds_flags(self, mock_run):
-        """cursor + stream=True は NotImplementedError にならず stream-json を付与する。"""
+        """cursor + stream=True does not raise NotImplementedError; attaches stream-json."""
         mock_run.return_value = MagicMock(
             stdout=(
                 '{"type":"result","subtype":"success","is_error":false,'
@@ -414,13 +414,13 @@ class TestValidateCapabilitiesForEngine:
 
 
 # ---------------------------------------------------------------------------
-# call() — subprocess をモック
+# call() — mock subprocess
 # ---------------------------------------------------------------------------
 
 class TestCall:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_default_model(self, mock_run: MagicMock):
-        """model=None → デフォルトモデルで呼び出し"""
+        """model=None → call with the default model"""
         mock_run.return_value = MagicMock(
             stdout="response", stderr="", returncode=0,
         )
@@ -433,7 +433,7 @@ class TestCall:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_explicit_model(self, mock_run: MagicMock):
-        """明示的モデル指定"""
+        """Explicit model selection"""
         mock_run.return_value = MagicMock(
             stdout="ok", stderr="", returncode=0,
         )
@@ -443,13 +443,13 @@ class TestCall:
         assert "claude-opus-4-6" in cmd
 
     def test_call_invalid_model(self):
-        """許可外モデル → EngineModelError（subprocess 呼び出し前にエラー）"""
+        """Disallowed model → EngineModelError (before subprocess call)"""
         with pytest.raises(EngineModelError):
             call("hello", engine="claude", model="bad-model")
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_with_stdin(self, mock_run: MagicMock):
-        """stdin_text が渡される"""
+        """stdin_text is passed through"""
         mock_run.return_value = MagicMock(
             stdout="ok", stderr="", returncode=0,
         )
@@ -459,7 +459,7 @@ class TestCall:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_with_timeout(self, mock_run: MagicMock):
-        """timeout が渡される"""
+        """timeout is passed through"""
         mock_run.return_value = MagicMock(
             stdout="ok", stderr="", returncode=0,
         )
@@ -469,7 +469,7 @@ class TestCall:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_action_none_default_no_dangerously(self, mock_run: MagicMock):
-        """デフォルト capabilities では --dangerously-skip-permissions は付与されない"""
+        """Default capabilities do not attach --dangerously-skip-permissions"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("test prompt", engine="claude")
         cmd = mock_run.call_args[0][0]
@@ -477,7 +477,7 @@ class TestCall:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_dangerous_full_access_bypasspermissions(self, mock_run: MagicMock):
-        """DANGEROUS_FULL_ACCESS では --permission-mode bypassPermissions が付与される"""
+        """DANGEROUS_FULL_ACCESS attaches --permission-mode bypassPermissions"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("test prompt", engine="claude", capabilities=DANGEROUS_FULL_ACCESS)
         cmd = mock_run.call_args[0][0]
@@ -489,7 +489,7 @@ class TestCall:
 class TestCallCapabilities:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_default_uses_text_only(self, mock_run):
-        """call() のデフォルトは TEXT_ONLY"""
+        """call() defaults to TEXT_ONLY"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello")
         cmd = mock_run.call_args[0][0]
@@ -498,7 +498,7 @@ class TestCallCapabilities:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_dangerously_skip_permissions_true_claude(self, mock_run: MagicMock):
-        """dangerously_skip_permissions=True + engine=claude → コマンドにフラグが付く"""
+        """dangerously_skip_permissions=True + engine=claude → flag on command"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="claude", dangerously_skip_permissions=True)
         cmd = mock_run.call_args[0][0]
@@ -506,7 +506,7 @@ class TestCallCapabilities:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_dangerously_skip_permissions_false_no_flag(self, mock_run: MagicMock):
-        """dangerously_skip_permissions=False（デフォルト）→ フラグが付かない"""
+        """dangerously_skip_permissions=False (default) → no flag"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="claude", dangerously_skip_permissions=False)
         cmd = mock_run.call_args[0][0]
@@ -514,20 +514,20 @@ class TestCallCapabilities:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_dangerously_skip_permissions_true_gemini_ignored(self, mock_run: MagicMock):
-        """dangerously_skip_permissions=True + engine=gemini → Claude固有フラグは無視"""
+        """dangerously_skip_permissions=True + engine=gemini → Claude-specific flag ignored"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="gemini", capabilities=LLMCapabilities(), dangerously_skip_permissions=True)
         cmd = mock_run.call_args[0][0]
         assert "--dangerously-skip-permissions" not in cmd
 
     def test_call_action_raises_type_error(self):
-        """旧引数 action → TypeError"""
+        """Legacy action arg → TypeError"""
         with pytest.raises(TypeError):
             call("hello", action="skill")  # type: ignore
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_action_skill_cursor_force(self, mock_run: MagicMock):
-        """cursor で dangerously_skip_permissions=True のとき --force が付与される"""
+        """cursor with dangerously_skip_permissions=True attaches --force"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("test prompt", engine="cursor", dangerously_skip_permissions=True)
         cmd = mock_run.call_args[0][0]
@@ -535,7 +535,7 @@ class TestCallCapabilities:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_with_json_only(self, mock_run):
-        """JSON_ONLY capabilities が正しく渡される"""
+        """JSON_ONLY capabilities are passed correctly"""
         mock_run.return_value = MagicMock(stdout='{"k":"v"}', stderr="", returncode=0)
         result = call("hello", capabilities=JSON_ONLY)
         assert result.ok
@@ -544,7 +544,7 @@ class TestCallCapabilities:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_with_custom_capabilities(self, mock_run):
-        """カスタム capabilities"""
+        """Custom capabilities"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         caps = LLMCapabilities(permission_mode="plan")
         call("hello", capabilities=caps)
@@ -555,7 +555,7 @@ class TestCallCapabilities:
 
 
 # ---------------------------------------------------------------------------
-# CLI テスト
+# CLI tests
 # ---------------------------------------------------------------------------
 
 class TestCLI:
@@ -670,7 +670,7 @@ class TestRenderExecCommand:
         assert cmd == "gemini -p --model 'gemini-2.5-flash' --approval-mode yolo < queue/order.md"
 
     def test_gemini_no_dash_m(self):
-        """gemini コマンドに -m を含まないこと（--model に統一）"""
+        """gemini command must not include -m (unified on --model)"""
         spec = ENGINE_SPECS["gemini"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model="gemini-2.5-flash")
         assert " -m " not in cmd
@@ -693,13 +693,13 @@ class TestRenderExecCommand:
         )
 
     def test_cursor_p_force_adjacent(self):
-        """-p と --force が隣接していること"""
+        """-p and --force are adjacent"""
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model="auto")
         assert "-p --force" in cmd
 
     def test_cursor_includes_output_format_stream_json(self):
-        """DAG 経路の cursor コマンドに --output-format stream-json が含まれる。"""
+        """DAG-path cursor command includes --output-format stream-json."""
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model="auto")
         assert "--output-format stream-json" in cmd
@@ -711,16 +711,16 @@ class TestRenderExecCommand:
         assert cmd == "bash -o pipefail queue/order.sh"
 
     def test_prompt_ignored_for_flag_only(self):
-        """FLAG_ONLY では prompt 文字列を argv に載せない"""
+        """FLAG_ONLY does not put the prompt string on argv"""
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
-            spec, order_path="jobs/o.md", model="claude-sonnet-4-6", prompt="任意文字列",
+            spec, order_path="jobs/o.md", model="claude-sonnet-4-6", prompt="any-string",
         )
         assert "-p '" not in cmd
-        assert "任意文字列" not in cmd
+        assert "any-string" not in cmd
 
     def test_no_engine_embeds_prompt_value_in_argv(self):
-        """全 ENGINE_SPECS について生成コマンドに `-p '` を含まない"""
+        """Generated commands for all ENGINE_SPECS must not contain `-p '`"""
         for name, spec in ENGINE_SPECS.items():
             cmd = render_exec_command(
                 spec, order_path="jobs/o.md", model=spec.default_model, prompt="hello",
@@ -750,7 +750,7 @@ class TestAdapterOutputs:
         )
 
     def test_claude_adapter_prompt_optional(self):
-        """build_exec_record は prompt 省略で呼べる"""
+        """build_exec_record can be called without prompt"""
         adapter = get_adapter("claude")
         record = adapter.build_exec_record(
             uuid="u1",
@@ -762,7 +762,7 @@ class TestAdapterOutputs:
         assert "-p '" not in record["command"]
 
     def test_gemini_adapter_uses_double_dash_model(self):
-        """get_adapter('gemini') が -m ではなく --model を使う"""
+        """get_adapter('gemini') uses --model, not -m"""
         adapter = get_adapter("gemini")
         record = adapter.build_exec_record(
             uuid="u1",
@@ -776,7 +776,7 @@ class TestAdapterOutputs:
         assert "--model 'gemini-2.5-flash'" in cmd
 
     def test_cursor_adapter_p_force_adjacent(self):
-        """get_adapter('cursor') の出力で -p --force が隣接"""
+        """get_adapter('cursor') output has adjacent -p --force"""
         adapter = get_adapter("cursor")
         record = adapter.build_exec_record(
             uuid="u1",
@@ -805,7 +805,7 @@ class TestAdapterOutputs:
 
 class TestRenderExecCommandCapabilities:
     def test_ac1_claude_text_only_capabilities(self):
-        """AC1: capabilities=TEXT_ONLY → --permission-mode default --disallowed-tools ...、--dangerously-skip-permissions なし"""
+        """AC1: capabilities=TEXT_ONLY → --permission-mode default --disallowed-tools ...; no --dangerously-skip-permissions"""
         from ghdag.llm.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
@@ -832,7 +832,7 @@ class TestRenderExecCommandCapabilities:
         assert "--dangerously-skip-permissions" not in cmd
 
     def test_ac3_cursor_text_only_no_force(self):
-        """AC3: cursor + capabilities=TEXT_ONLY → --force を含まない"""
+        """AC3: cursor + capabilities=TEXT_ONLY → does not include --force"""
         from ghdag.llm.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(
@@ -842,7 +842,7 @@ class TestRenderExecCommandCapabilities:
         assert "--force" not in cmd
 
     def test_ac8_claude_capabilities_none_preserves_danger_flag(self):
-        """AC8: capabilities=None（デフォルト）→ 従来通り --dangerously-skip-permissions"""
+        """AC8: capabilities=None (default) → --dangerously-skip-permissions as before"""
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
             spec, order_path="queue/order.md", model="claude-opus-4-6",
@@ -852,7 +852,7 @@ class TestRenderExecCommandCapabilities:
         assert "--permission-mode" not in cmd
 
     def test_gemini_capabilities_fallback_to_no_flags(self):
-        """gemini + capabilities → フラグなしにフォールバック（extra_args は維持）"""
+        """gemini + capabilities → fall back to no flags (extra_args kept)"""
         from ghdag.llm.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["gemini"]
         cmd = render_exec_command(
@@ -860,10 +860,10 @@ class TestRenderExecCommandCapabilities:
             capabilities=TEXT_ONLY,
         )
         assert "--permission-mode" not in cmd
-        assert "--approval-mode yolo" in cmd  # extra_args は維持
+        assert "--approval-mode yolo" in cmd  # extra_args kept
 
     def test_shell_capabilities_no_change(self):
-        """shell + capabilities → コマンド変化なし"""
+        """shell + capabilities → command unchanged"""
         from ghdag.llm.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["shell"]
         cmd_no_caps = render_exec_command(spec, order_path="queue/order.sh", model=None)
@@ -871,7 +871,7 @@ class TestRenderExecCommandCapabilities:
         assert cmd_no_caps == cmd_with_caps
 
     def test_claude_stream_capabilities(self):
-        """stream=True → render_exec_command に stream-json フラグが含まれる"""
+        """stream=True → render_exec_command includes stream-json flags"""
         caps = LLMCapabilities(stream=True)
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
@@ -883,7 +883,7 @@ class TestRenderExecCommandCapabilities:
         assert "--verbose" in cmd
 
     def test_cursor_stream_prefers_stream_json_without_duplicate(self):
-        """cursor stream 指定時は stream-json が優先され --output-format は 1 回だけ。"""
+        """With cursor stream, stream-json wins and --output-format appears once."""
         caps = LLMCapabilities(stream=True)
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(
@@ -910,7 +910,7 @@ class TestSupportsCapability:
             ("codex", "resume", True),
             ("codex", "stream", True),
             ("codex", "output_format", False),
-            # nexus #3044 — isolation（グローバル設定隔離）
+            # nexus #3044 — isolation (global config isolation)
             ("claude", "isolation", True),
             ("codex", "isolation", True),
             ("cursor", "isolation", False),
@@ -930,24 +930,24 @@ class TestSupportsCapability:
         assert supports_capability("claude", "unknown_capability") is True
 
     def test_ignored_capability_not_counted_as_unsupported(self) -> None:
-        """_IGNORED に入る attr は effective_unsupported から除外され True。"""
+        """Attrs in _IGNORED are excluded from effective_unsupported and yield True."""
         from ghdag.llm.engines import supports_capability
 
         assert supports_capability("codex", "allowed_tools") is True
         assert supports_capability("cursor", "disallowed_tools") is True
 
     def test_cursor_unsupported_includes_isolation_with_reason(self) -> None:
-        """_UNSUPPORTED_CAPABILITIES['cursor'] に isolation があること（nexus #3044）。"""
+        """_UNSUPPORTED_CAPABILITIES['cursor'] includes isolation (nexus #3044)."""
         from ghdag.llm.engines import _UNSUPPORTED_CAPABILITIES
 
         assert "isolation" in _UNSUPPORTED_CAPABILITIES["cursor"]
 
 
 class TestEngineIsolation:
-    """エンジン隔離の opt-in — nexus #3174（旧 #3044 常時隔離を条件化）。"""
+    """Engine isolation opt-in — nexus #3174 (conditionalizes always-on isolation from #3044)."""
 
     def test_claude_cmd_omits_disable_slash_commands_by_default(self) -> None:
-        """既定では --disable-slash-commands を付けない（skills 利用可能）。"""
+        """By default do not attach --disable-slash-commands (skills remain usable)."""
         cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello")
         assert "--disable-slash-commands" not in cmd
         assert "--disable-slash-commands" not in ENGINE_SPECS["claude"].extra_args
@@ -962,7 +962,7 @@ class TestEngineIsolation:
     def test_codex_call_sets_codex_home_when_isolation_and_auth(
         self, mock_run: MagicMock, tmp_path, monkeypatch
     ) -> None:
-        """isolation=True かつ auth.json があるときだけ CODEX_HOME を注入する。"""
+        """Inject CODEX_HOME only when isolation=True and auth.json exists."""
         import ghdag.llm.engines as engines_mod
 
         monkeypatch.setattr(engines_mod, "_CODEX_DAG_HOME", str(tmp_path) + "/")
@@ -978,7 +978,7 @@ class TestEngineIsolation:
     def test_codex_isolation_skipped_without_auth(
         self, mock_run: MagicMock, tmp_path, monkeypatch, capsys
     ) -> None:
-        """isolation=True でも auth.json が無ければ CODEX_HOME を注入せず警告する。"""
+        """With isolation=True but no auth.json, do not inject CODEX_HOME; warn."""
         import ghdag.llm.engines as engines_mod
 
         monkeypatch.setattr(engines_mod, "_CODEX_DAG_HOME", str(tmp_path) + "/")
@@ -993,7 +993,7 @@ class TestEngineIsolation:
     def test_codex_call_no_codex_home_by_default(
         self, mock_run: MagicMock, monkeypatch
     ) -> None:
-        """isolation=None かつ GHDAG_ENGINE_ISOLATION 未設定では CODEX_HOME を注入しない。"""
+        """With isolation=None and GHDAG_ENGINE_ISOLATION unset, do not inject CODEX_HOME."""
         monkeypatch.delenv("GHDAG_ENGINE_ISOLATION", raising=False)
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="codex", capabilities=TEXT_ONLY, isolation=None)
@@ -1004,7 +1004,7 @@ class TestEngineIsolation:
     def test_cursor_call_unaffected_by_isolation_meta_capability(
         self, mock_run: MagicMock
     ) -> None:
-        """isolation は LLMCapabilities 属性ではないので cursor call が壊れない。"""
+        """isolation is not an LLMCapabilities attr, so cursor call stays intact."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         result = call("hello", engine="cursor", capabilities=TEXT_ONLY)
         assert result.ok

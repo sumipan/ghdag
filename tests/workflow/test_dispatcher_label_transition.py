@@ -1,4 +1,4 @@
-"""Tests for dispatcher label transition — Issue #2258 (A: 区切り文字非依存化)."""
+"""Tests for dispatcher label transition — Issue #2258 (A: delimiter-agnostic)."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ class TestDispatchHyphenLabelTransition:
         github_client.update_label.assert_called_once_with(1, "research-ready", "research-running")
 
     def test_dispatch_label_without_ready_suffix_no_transition(self):
-        """trigger.label=research-foo → update_label は呼ばれない"""
+        """trigger.label=research-foo → update_label is not called"""
         workflow = _make_workflow(["research-foo"])
         dispatcher, github_client, _ = _make_dispatcher(workflow)
         issue = _make_issue(1, ["research-foo"])
@@ -101,7 +101,7 @@ class TestDispatchColonLabelTransition:
 
 class TestGetCurrentRunningRankLabelSeparator:
     def test_get_current_running_rank_recognizes_colon_running(self):
-        """trigger.label=research:ready の running は research:running → rank 0 を返す"""
+        """running for trigger.label=research:ready returns research:running → rank 0"""
         workflow = _make_workflow(["research:ready"])
         dispatcher, _, _ = _make_dispatcher(workflow)
         issue = _make_issue(3, ["research:running"])
@@ -111,7 +111,7 @@ class TestGetCurrentRunningRankLabelSeparator:
         assert rank == 0
 
     def test_get_current_running_rank_still_recognizes_hyphen_running(self):
-        """trigger.label=research-ready の running は research-running → rank 0 を返す（回帰防止）"""
+        """running for trigger.label=research-ready returns research-running → rank 0 (regression guard)"""
         workflow = _make_workflow(["research-ready"])
         dispatcher, _, _ = _make_dispatcher(workflow)
         issue = _make_issue(4, ["research-running"])

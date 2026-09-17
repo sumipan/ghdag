@@ -1,10 +1,10 @@
 """Tests for GitHubClient rate-limit retry on 403 (nexus #3070).
 
-403 + X-RateLimit-Remaining: 0 のとき:
-  1. Retry-After があれば優先
-  2. なければ X-RateLimit-Reset - now を待機
-  3. 待機 <= 900 秒なら sleep して 1 回だけリトライ
-  4. 待機 > 900 秒、またはリトライ後も 403 なら RateLimitError
+On 403 + X-RateLimit-Remaining: 0:
+  1. Prefer Retry-After when present
+  2. Otherwise wait X-RateLimit-Reset - now
+  3. If wait <= 900s, sleep and retry once
+  4. If wait > 900s, or still 403 after retry, raise RateLimitError
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def _http_error(code: int, *, headers: dict | None = None, message: str = "API r
 def test_rate_limit_waits_reset_then_retries_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Reset が now+60 のとき 60 秒待機して再試行し成功する。"""
+    """When Reset is now+60, wait 60s, retry, and succeed."""
     client = _make_client()
     now = 1_700_000_000
     monkeypatch.setattr(time, "time", lambda: now)
@@ -99,7 +99,7 @@ def test_rate_limit_waits_reset_then_retries_success(
 def test_rate_limit_over_15_min_raises_immediately(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Reset が now+901 のとき即 RateLimitError（sleep しない）。"""
+    """When Reset is now+901, raise RateLimitError immediately (no sleep)."""
     client = _make_client()
     now = 1_700_000_000
     monkeypatch.setattr(time, "time", lambda: now)
@@ -126,7 +126,7 @@ def test_rate_limit_over_15_min_raises_immediately(
 def test_retry_after_preferred_over_reset(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Retry-After: 30 がある場合は X-RateLimit-Reset より優先して 30 秒待機。"""
+    """When Retry-After: 30 is present, prefer it over X-RateLimit-Reset and wait 30s."""
     client = _make_client()
     now = 1_700_000_000
     monkeypatch.setattr(time, "time", lambda: now)
@@ -156,7 +156,7 @@ def test_retry_after_preferred_over_reset(
 
 
 def test_rate_limit_retry_still_403_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """リトライ後も 403 なら RateLimitError を送出する。"""
+    """If still 403 after retry, raise RateLimitError."""
     client = _make_client()
     now = 1_700_000_000
     monkeypatch.setattr(time, "time", lambda: now)

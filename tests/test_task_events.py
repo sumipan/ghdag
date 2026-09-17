@@ -221,7 +221,7 @@ class TestExtractStreamResultShared:
         assert adapter.extract_result_text(_LEGACY_JSON_RESULT.encode(), b"") == b"pong"
 
     def test_stream_json_result_text_matches_legacy_json_path(self):
-        """stream-json 経路の result テキストは従来 json 経路と同じ本文になる。"""
+        """stream-json path result text matches the legacy json path body."""
         adapter = ClaudeJsonAdapter()
         stream_text = adapter.extract_result_text(_STREAM_SUCCESS.encode(), b"")
         legacy_text = adapter.extract_result_text(_LEGACY_JSON_RESULT.encode(), b"")
@@ -231,7 +231,7 @@ class TestExtractStreamResultShared:
         adapter = ClaudeJsonAdapter()
         sid = adapter.extract_session_id(_STREAM_SUCCESS.encode(), b"")
         assert sid == "9664201d-a9c9-43d6-b070-6d7ee4183d55"
-        # TextResult.session_id は raw.session_id 経由
+        # TextResult.session_id comes via raw.session_id
         from ghdag.llm.engines import LLMResult
 
         raw = LLMResult(stdout=_STREAM_SUCCESS, stderr="", returncode=0, session_id=sid)
@@ -487,5 +487,5 @@ class TestUiProgressFromEvents:
 
 
 def test_chunk_reader_still_available():
-    """非 stream 経路用のチャンク読みが残っていること。"""
+    """Chunked read for the non-stream path still exists."""
     assert callable(_stdout_reader)

@@ -1,4 +1,4 @@
-"""Tests for ghdag.audit.span — latency span public API (nexus #3323 / #3301 サブ8)."""
+"""Tests for ghdag.audit.span — latency span public API (nexus #3323 / #3301 sub-8)."""
 from __future__ import annotations
 
 import json

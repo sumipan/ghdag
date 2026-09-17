@@ -23,7 +23,7 @@ from ghdag.workflow.schema import (
 )
 
 # ---------------------------------------------------------------------------
-# TC-1: YAML パース（正常系）
+# TC-1: YAML parse (happy path)
 # ---------------------------------------------------------------------------
 
 _EXTENDED_YAML = """\
@@ -282,7 +282,7 @@ def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tupl
 
 
 # ---------------------------------------------------------------------------
-# TC-2: 多段 DAG 投入（正常系）
+# TC-2: multi-stage DAG enqueue (happy path)
 # ---------------------------------------------------------------------------
 
 
@@ -333,13 +333,13 @@ class TestTC2MultiStepDag:
 
 
 # ---------------------------------------------------------------------------
-# TC-2b: context 拡張（result_filename, 依存先 result）
+# TC-2b: context extension (result_filename, upstream result)
 # ---------------------------------------------------------------------------
 
 
 class TestTC2bContextExpansion:
     def test_context_contains_result_filename(self):
-        """context に ts, order_uuid, result_uuid, result_filename が含まれる"""
+        """context includes ts, order_uuid, result_uuid, result_filename"""
         workflow = _make_extended_workflow()
         dispatcher, _, pipeline_state, order_builder = _make_dispatcher(workflow)
         issue = _make_issue(10, ["pipeline:draft-ready"])
@@ -355,7 +355,7 @@ class TestTC2bContextExpansion:
         assert ctx["result_filename"] == f"{ctx['ts']}-claude-result-{ctx['result_uuid']}.md"
 
     def test_context_contains_dep_result_filename(self):
-        """P2 の context に p1_result_filename が含まれる"""
+        """P2 context includes p1_result_filename"""
         workflow = _make_extended_workflow()
         dispatcher, _, pipeline_state, order_builder = _make_dispatcher(workflow)
         issue = _make_issue(42, ["pipeline:develop-ready"])
@@ -363,7 +363,7 @@ class TestTC2bContextExpansion:
         trigger = workflow.triggers[1]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
 
-        # build_order は 3 回呼ばれる (p1, p2, p3)
+        # build_order is called 3 times (p1, p2, p3)
         calls = order_builder.build_order.call_args_list
         assert len(calls) == 3
 
@@ -371,21 +371,21 @@ class TestTC2bContextExpansion:
         p2_ctx = calls[1][0][1]
         p3_ctx = calls[2][0][1]
 
-        # p1 には依存先がないので dep_result_filename なし
+        # p1 has no upstream dep, so no dep_result_filename
         assert not any(k.endswith("_result_filename") and k != "result_filename" for k in p1_ctx)
 
-        # p2 には p1_result_filename がある
+        # p2 has p1_result_filename
         assert "p1_result_filename" in p2_ctx
         expected_p1_result = f"{p1_ctx['ts']}-claude-result-{p1_ctx['result_uuid']}.md"
         assert p2_ctx["p1_result_filename"] == expected_p1_result
 
-        # p3 には p2_result_filename がある
+        # p3 has p2_result_filename
         assert "p2_result_filename" in p3_ctx
         expected_p2_result = f"{p2_ctx['ts']}-claude-result-{p2_ctx['result_uuid']}.md"
         assert p3_ctx["p2_result_filename"] == expected_p2_result
 
     def test_context_preserves_original_fields(self):
-        """context に issue_number, workflow_name, handler_name が引き続き含まれる"""
+        """context still includes issue_number, workflow_name, handler_name"""
         workflow = _make_extended_workflow()
         dispatcher, _, _, order_builder = _make_dispatcher(workflow)
         issue = _make_issue(10, ["pipeline:draft-ready"])
@@ -400,7 +400,7 @@ class TestTC2bContextExpansion:
 
 
 # ---------------------------------------------------------------------------
-# TC-3: --model フラグ生成
+# TC-3: --model flag generation
 # ---------------------------------------------------------------------------
 
 
@@ -430,7 +430,7 @@ class TestTC3ModelFlag:
 
 
 # ---------------------------------------------------------------------------
-# TC-4: Issue コンテキスト取得
+# TC-4: Issue context fetch
 # ---------------------------------------------------------------------------
 
 
@@ -472,13 +472,13 @@ class TestTC4IssueContext:
 
 
 # ---------------------------------------------------------------------------
-# TC-5: 後退遷移ガード
+# TC-5: backward-transition guard
 # ---------------------------------------------------------------------------
 
 
 class TestTC5BackwardGuard:
     def test_backward_transition_blocked(self):
-        """develop-running 中に draft-ready が発火 → skipped"""
+        """draft-ready while develop-running → skipped"""
         workflow = _make_extended_workflow()
         dispatcher, _, pipeline_state, _ = _make_dispatcher(workflow)
         # Issue has develop-running (rank 1)
@@ -492,7 +492,7 @@ class TestTC5BackwardGuard:
         pipeline_state.append_exec_records.assert_not_called()
 
     def test_forward_transition_allowed(self):
-        """draft-running 中に develop-ready が発火 → dispatched"""
+        """develop-ready while draft-running → dispatched"""
         workflow = _make_extended_workflow()
         dispatcher, _, pipeline_state, _ = _make_dispatcher(workflow)
         # Issue has draft-running (rank 0)
@@ -505,7 +505,7 @@ class TestTC5BackwardGuard:
         pipeline_state.append_exec_records.assert_called_once()
 
     def test_no_running_labels_allows_dispatch(self):
-        """running ラベルなし → dispatched"""
+        """no running label → dispatched"""
         workflow = _make_extended_workflow()
         dispatcher, _, pipeline_state, _ = _make_dispatcher(workflow)
         issue = _make_issue(42, ["pipeline:draft-ready"])
@@ -517,7 +517,7 @@ class TestTC5BackwardGuard:
 
 
 # ---------------------------------------------------------------------------
-# TC-6: reset ハンドラー
+# TC-6: reset handler
 # ---------------------------------------------------------------------------
 
 
@@ -592,7 +592,7 @@ class TestTC6ResetHandler:
         github_client.remove_label.assert_called_once_with(99, "issuesmith:draft-running")
 
     def test_reset_uses_label_namespace_when_set(self):
-        """label_namespace が設定されていれば trigger.label ではなくそれを prefix に使う。"""
+        """When label_namespace is set, use it as prefix instead of trigger.label."""
         workflow = WorkflowConfig(
             name="custom-wf",
             label_namespace="custom",
@@ -619,7 +619,7 @@ class TestTC6ResetHandler:
 
 
 # ---------------------------------------------------------------------------
-# TC-7: 既存テスト互換（import / poll_once）
+# TC-7: existing-test compat (import / poll_once)
 # ---------------------------------------------------------------------------
 
 
@@ -653,7 +653,7 @@ class TestTC7Compatibility:
 
 
 # ---------------------------------------------------------------------------
-# TC-8: stash-pipeline.yml（diary worktree）パース
+# TC-8: stash-pipeline.yml (diary worktree) parse
 # ---------------------------------------------------------------------------
 
 
@@ -722,7 +722,7 @@ polling_interval: 30
 
 class TestTC9ContextHook:
     def test_yaml_context_hook_parsed(self, tmp_path):
-        """context_hook が YAML から HandlerConfig にパースされる"""
+        """context_hook is parsed from YAML into HandlerConfig"""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -741,7 +741,7 @@ handlers:
         assert configs[0].handlers["brushup"].context_hook == "python -m my_hook"
 
     def test_yaml_no_context_hook_is_none(self, tmp_path):
-        """context_hook 未指定時は None"""
+        """context_hook is None when omitted"""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -759,7 +759,7 @@ handlers:
         assert configs[0].handlers["brushup"].context_hook is None
 
     def test_context_hook_merges_into_template_context(self):
-        """context_hook の出力が template context にマージされる"""
+        """context_hook output is merged into template context"""
         workflow = WorkflowConfig(
             name="test",
             triggers=[TriggerConfig(label="pipeline:draft-ready", handler="brushup")],
@@ -785,11 +785,11 @@ handlers:
         ctx = order_builder.build_order.call_args[0][1]
         assert ctx["pipeline_id"] == "test-123"
         assert ctx["worktree_path"] == "/tmp/wt"
-        # 基本 context も残っている
+        # base context is still present
         assert ctx["issue_number"] == "10"
 
     def test_context_hook_not_called_when_none(self):
-        """context_hook が None のとき _run_context_hook は呼ばれない"""
+        """_run_context_hook is not called when context_hook is None"""
         workflow = _make_extended_workflow()
         dispatcher, _, _, _ = _make_dispatcher(workflow)
         dispatcher._run_context_hook = MagicMock()
@@ -801,7 +801,7 @@ handlers:
         dispatcher._run_context_hook.assert_not_called()
 
     def test_run_context_hook_parses_json(self):
-        """_run_context_hook が stdout JSON をパースして dict を返す"""
+        """_run_context_hook parses stdout JSON and returns a dict"""
         workflow = _make_extended_workflow()
         dispatcher, _, _, _ = _make_dispatcher(workflow)
 
@@ -814,7 +814,7 @@ handlers:
         assert result == {"key": "value", "num": "42"}
 
     def test_run_context_hook_returns_empty_on_failure(self):
-        """_run_context_hook が失敗時に空 dict を返す"""
+        """_run_context_hook returns empty dict on failure"""
         workflow = _make_extended_workflow()
         dispatcher, _, _, _ = _make_dispatcher(workflow)
 
@@ -827,7 +827,7 @@ handlers:
         assert result == {}
 
     def test_run_context_hook_raises_on_invalid_json(self):
-        """_run_context_hook が不正 JSON で ValueError を投げる"""
+        """_run_context_hook raises ValueError on invalid JSON"""
         workflow = _make_extended_workflow()
         dispatcher, _, _, _ = _make_dispatcher(workflow)
 
@@ -839,7 +839,7 @@ handlers:
                 dispatcher._run_context_hook("echo test", 10)
 
     def test_run_context_hook_returns_empty_on_empty_stdout(self):
-        """_run_context_hook が空 stdout で空 dict を返す"""
+        """_run_context_hook returns empty dict on empty stdout"""
         workflow = _make_extended_workflow()
         dispatcher, _, _, _ = _make_dispatcher(workflow)
 
@@ -906,13 +906,13 @@ class TestRemoveIdempotencyMatching:
 
 
 # ---------------------------------------------------------------------------
-# TC-10: template_dir 設定（Issue #14）
+# TC-10: template_dir setting (Issue #14)
 # ---------------------------------------------------------------------------
 
 
 class TestTC10TemplateDir:
     def test_template_dir_parsed_from_yaml(self, tmp_path):
-        """template_dir が YAML から WorkflowConfig にパースされる"""
+        """template_dir is parsed from YAML into WorkflowConfig"""
         my_templates = tmp_path / "my-templates"
         my_templates.mkdir()
         (my_templates / "brushup.md").write_text("# brushup\n", encoding="utf-8")
@@ -935,7 +935,7 @@ handlers:
         assert configs[0].template_dir == str(tmp_path.resolve() / "my-templates")
 
     def test_template_dir_none_when_not_specified(self, tmp_path):
-        """template_dir 未指定時は None"""
+        """template_dir is None when omitted"""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -953,7 +953,7 @@ handlers:
         assert configs[0].template_dir is None
 
     def test_template_dir_absolute_path_preserved(self, tmp_path):
-        """template_dir が絶対パスの場合はそのまま保持される"""
+        """Absolute template_dir is kept as-is"""
         abs_templates = tmp_path / "abs-templates"
         abs_templates.mkdir()
         (abs_templates / "brushup.md").write_text("# brushup\n", encoding="utf-8")
@@ -974,7 +974,7 @@ handlers:
         assert configs[0].template_dir == str(abs_templates)
 
     def test_template_dir_relative_resolved_against_workflow_dir(self, tmp_path):
-        """template_dir の相対パスがワークフローディレクトリ基準で解決される"""
+        """Relative template_dir is resolved against the workflow directory"""
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
         shared_templates = tmp_path / "shared-templates"
@@ -998,7 +998,7 @@ handlers:
         assert configs[0].template_dir == expected
 
     def test_workflow_config_template_dir_default(self):
-        """WorkflowConfig の template_dir デフォルト値は None"""
+        """WorkflowConfig.template_dir defaults to None"""
         config = WorkflowConfig(
             name="test",
             triggers=[TriggerConfig(label="x", handler="y")],
@@ -1008,15 +1008,15 @@ handlers:
 
 
 # ---------------------------------------------------------------------------
-# TC-engine: engine キー / agent フォールバック（Issue #604）
+# TC-engine: engine key / agent fallback (Issue #604)
 # ---------------------------------------------------------------------------
 
 
 class TestTCEngineKey:
-    """TC-engine-1〜4: engine キーの優先度と agent フォールバック"""
+    """TC-engine-1–4: engine key priority and agent fallback"""
 
     def test_engine_key_only(self, tmp_path):
-        """TC-engine-1: engine: cursor のみ → StepConfig.engine == 'cursor'"""
+        """TC-engine-1: engine: cursor only → StepConfig.engine == 'cursor'"""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -1036,7 +1036,7 @@ handlers:
         assert step.engine == "cursor"
 
     def test_agent_only_fallback(self, tmp_path):
-        """TC-engine-2 (updated): agent: gemini のみ → agent キーは無視され engine は 'claude'"""
+        """TC-engine-2 (updated): agent: gemini only → agent key ignored, engine is 'claude'"""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -1056,7 +1056,7 @@ handlers:
         assert step.engine == "claude"
 
     def test_engine_takes_priority_over_agent(self, tmp_path):
-        """TC-engine-3: engine: cursor と agent: claude の両方指定 → engine が優先（agent は無視）"""
+        """TC-engine-3: both engine: cursor and agent: claude → engine wins (agent ignored)"""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -1077,7 +1077,7 @@ handlers:
         assert step.engine == "cursor"
 
     def test_neither_engine_nor_agent_defaults_to_claude(self, tmp_path):
-        """TC-engine-4: どちらも未指定 → デフォルト 'claude'"""
+        """TC-engine-4: neither set → default 'claude'"""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -1097,7 +1097,7 @@ handlers:
 
 
 # ---------------------------------------------------------------------------
-# AC1: agent フィールド削除 (Issue #766)
+# AC1: agent field removed (Issue #766)
 # ---------------------------------------------------------------------------
 
 
@@ -1108,17 +1108,17 @@ class TestAC1AgentFieldRemoved:
         assert step.engine == "cursor"
 
     def test_step_config_default_engine_is_claude(self):
-        """StepConfig() → engine は 'claude'（デフォルト）"""
+        """StepConfig() → engine is 'claude' (default)"""
         step = StepConfig(template="t", model="m")
         assert step.engine == "claude"
 
     def test_step_config_agent_keyword_raises_type_error(self):
-        """StepConfig(agent='cursor') → TypeError（agent フィールドは削除済み）"""
+        """StepConfig(agent='cursor') → TypeError (agent field removed)"""
         with pytest.raises(TypeError):
             StepConfig(template="t", model="m", agent="cursor")  # type: ignore
 
     def test_yaml_agent_key_ignored_defaults_to_claude(self, tmp_path):
-        """YAML に agent: cursor が含まれる場合、agent キーは無視され engine は 'claude'"""
+        """YAML with agent: cursor ignores agent key; engine is 'claude'"""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -1138,15 +1138,15 @@ handlers:
         assert step.engine == "claude"
 
 # ---------------------------------------------------------------------------
-# TC-11: 静的参照検証（Issue #1045）
+# TC-11: static reference validation (Issue #1045)
 # ---------------------------------------------------------------------------
 
 
 class TestTC11StaticValidation:
-    """AC-3〜AC-10 をカバーするテスト群"""
+    """Test group covering AC-3–AC-10"""
 
     def test_handler_reference_mismatch(self, tmp_path):
-        """AC-3: trigger が存在しない handler を参照すると ValueError"""
+        """AC-3: trigger referencing nonexistent handler → ValueError"""
         yaml_content = """\
 name: test
 triggers:
@@ -1163,7 +1163,7 @@ handlers:
             load_workflows(tmp_path)
 
     def test_handler_reference_mismatch_includes_handler_name(self, tmp_path):
-        """AC-4: エラーメッセージに未知の handler 名と定義済みリストが含まれる"""
+        """AC-4: error message includes unknown handler name and defined list"""
         yaml_content = """\
 name: test
 triggers:
@@ -1183,7 +1183,7 @@ handlers:
         assert "brushup" in msg
 
     def test_template_file_not_found(self, tmp_path):
-        """AC-5, AC-6: template ファイルが存在しない場合 ValueError"""
+        """AC-5, AC-6: missing template file → ValueError"""
         yaml_content = """\
 name: test
 triggers:
@@ -1203,7 +1203,7 @@ handlers:
         assert "brushup" in str(exc_info.value)
 
     def test_template_default_dir(self, tmp_path):
-        """AC-7: template_dir 未指定時は 'templates' がデフォルトとして使われる"""
+        """AC-7: without template_dir, 'templates' is used as default"""
         yaml_content = """\
 name: test
 triggers:
@@ -1221,7 +1221,7 @@ handlers:
         assert "templates" in str(exc_info.value)
 
     def test_reset_handler_skips_template_check(self, tmp_path):
-        """AC-8: type: reset handler はテンプレート検証をスキップ（steps が空）"""
+        """AC-8: type: reset handler skips template validation (empty steps)"""
         yaml_content = """\
 name: test
 triggers:
@@ -1236,7 +1236,7 @@ handlers:
         assert len(configs) == 1
 
     def test_context_hook_not_found_warns(self, tmp_path, caplog):
-        """AC-9: context_hook コマンドが見つからない場合 warning ログが出る（エラーにはならない）"""
+        """AC-9: missing context_hook command logs warning (not an error)"""
         yaml_content = """\
 name: test
 triggers:
@@ -1259,7 +1259,7 @@ handlers:
         )
 
     def test_context_hook_multi_token_checks_first_only(self, tmp_path, caplog):
-        """AC-10: 複数トークンの context_hook は最初のトークン（python）のみ検証される"""
+        """AC-10: multi-token context_hook validates only the first token (python)"""
         yaml_content = """\
 name: test
 triggers:
@@ -1280,7 +1280,7 @@ handlers:
         assert not any("python" in r.message for r in caplog.records)
 
     def test_no_warning_without_context_hook(self, tmp_path, caplog):
-        """AC-2: context_hook が未指定の handler では warning が出力されない"""
+        """AC-2: handlers without context_hook emit no warning"""
         yaml_content = """\
 name: test
 triggers:
@@ -1300,7 +1300,7 @@ handlers:
         assert len(caplog.records) == 0
 
     def test_valid_workflow_loads_successfully(self, tmp_path):
-        """AC-1: 有効な workflow（テンプレート実在・handler 参照正しい）は成功する"""
+        """AC-1: valid workflow (templates exist, handler refs correct) succeeds"""
         yaml_content = """\
 name: test
 triggers:

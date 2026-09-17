@@ -1,7 +1,7 @@
 """Tests for WorkflowDispatcher batch poll via list_all_issues (nexus #3070).
 
-32 トリガ × 1 リポジトリでも list_all_issues は open/closed 各 1 回。
-ラベルフィルタはローカル。一括取得失敗時は当該 github の全 trigger をスキップ。
+Even with 32 triggers × 1 repository, list_all_issues is called once each for open/closed.
+Label filtering is local. On bulk-fetch failure, skip all triggers for that github.
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def _make_dispatcher(workflow: WorkflowConfig) -> tuple[WorkflowDispatcher, Magi
 
 class TestBatchPollApiCalls:
     def test_32_triggers_one_repo_calls_list_all_issues_twice(self):
-        """AC-1: 32 トリガ・1 リポで list_all_issues は open + closed の 2 回のみ。"""
+        """AC-1: with 32 triggers and 1 repo, list_all_issues is called only twice (open + closed)."""
         workflow = _make_workflow_with_n_triggers(32, with_nonterminal=True)
         dispatcher, github = _make_dispatcher(workflow)
 
@@ -83,7 +83,7 @@ class TestBatchPollApiCalls:
         github.list_issues.assert_not_called()
 
     def test_without_nonterminal_only_open_once(self):
-        """nonterminal_closed 未設定なら open のみ 1 回。"""
+        """Without nonterminal_closed, only one open call."""
         workflow = _make_workflow_with_n_triggers(5, with_nonterminal=False)
         dispatcher, github = _make_dispatcher(workflow)
 
@@ -95,7 +95,7 @@ class TestBatchPollApiCalls:
 
 class TestLocalLabelFilter:
     def test_filters_issues_by_trigger_label(self):
-        """一括取得結果から trigger.label でローカルフィルタする。"""
+        """Locally filter bulk-fetch results by trigger.label."""
         workflow = _make_workflow_with_n_triggers(3, with_nonterminal=False)
         dispatcher, github = _make_dispatcher(workflow)
         issues = [
@@ -115,7 +115,7 @@ class TestLocalLabelFilter:
 
 class TestBatchFetchIsolation:
     def test_batch_fetch_failure_skips_all_triggers(self, caplog):
-        """一括取得失敗時は全 trigger をスキップし warning。"""
+        """On bulk-fetch failure, skip all triggers and emit a warning."""
         workflow = _make_workflow_with_n_triggers(3, with_nonterminal=False)
         dispatcher, github = _make_dispatcher(workflow)
         github.list_all_issues.side_effect = RuntimeError("api down")

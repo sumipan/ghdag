@@ -13,13 +13,13 @@ from ghdag.llm.spec import ENGINE_SPECS, render_exec_command
 
 class TestLLMResultLatencyMs:
     def test_llm_result_latency_ms_default(self):
-        """latency_ms 未指定時のデフォルトは 0.0。"""
+        """Default latency_ms is 0.0 when unspecified."""
         r = LLMResult(stdout="out", stderr="", returncode=0)
         assert r.latency_ms == 0.0
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_measures_latency(self, mock_run: MagicMock):
-        """call() は latency_ms > 0 を返す。"""
+        """call() returns latency_ms > 0."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         result = call("hello", engine="claude")
         assert result.latency_ms > 0
@@ -27,25 +27,25 @@ class TestLLMResultLatencyMs:
 
 class TestBuildLlmCmdCodex:
     def test_build_llm_cmd_codex(self):
-        """build_llm_cmd("codex") は subcommand + flags を正しく組み立てる。"""
+        """build_llm_cmd("codex") assembles subcommand + flags correctly."""
         cmd = build_llm_cmd("codex", "gpt-5.6-terra", "test")
         assert cmd == ["codex", "exec", "-", "--model", "gpt-5.6-terra", "--json", "--skip-git-repo-check"]
 
     def test_build_llm_cmd_codex_danger_flag(self):
-        """dangerously_skip_permissions=True で bypass フラグが追加される。"""
+        """dangerously_skip_permissions=True adds the bypass flag."""
         cmd = build_llm_cmd("codex", "gpt-5.6-terra", "test", dangerously_skip_permissions=True)
         assert "--dangerously-bypass-approvals-and-sandbox" in cmd
 
     def test_build_llm_cmd_existing_engines_unaffected(self):
-        """既存エンジン（claude/gemini/cursor/shell）は subcommand=() のため argv が変わらない。"""
+        """Existing engines (claude/gemini/cursor/shell) keep argv unchanged because subcommand=()."""
         for engine, cli in [("claude", "claude"), ("gemini", "gemini"), ("shell", "bash")]:
             cmd = build_llm_cmd(engine, ENGINE_SPECS[engine].default_model or "auto", "test")
             assert cmd[0] == cli
-            # subcommand が空なので cli の直後がオプションや引数（exec など余分な要素が入らない）
+            # empty subcommand: options/args follow cli directly (no extra elements like exec)
             assert "exec" not in cmd
 
     def test_build_llm_cmd_claude_includes_resume(self):
-        """resume_session_id 指定で claude は --resume を付与する。"""
+        """With resume_session_id, claude gets --resume."""
         cmd = build_llm_cmd(
             "claude",
             "claude-sonnet-4-6",
@@ -56,7 +56,7 @@ class TestBuildLlmCmdCodex:
         assert "sess-1" in cmd
 
     def test_build_llm_cmd_codex_switches_to_resume_subcommand(self):
-        """resume_session_id 指定で codex は exec resume に切り替わる。"""
+        """With resume_session_id, codex switches to exec resume."""
         cmd = build_llm_cmd(
             "codex",
             "gpt-5.6-terra",
@@ -67,7 +67,7 @@ class TestBuildLlmCmdCodex:
         assert "-" not in cmd[:5]
 
     def test_render_exec_command_codex(self):
-        """render_exec_command が codex 向けの正しいシェルコマンドを生成する。"""
+        """render_exec_command builds the correct shell command for codex."""
         spec = ENGINE_SPECS["codex"]
         cmd = render_exec_command(
             spec,
@@ -80,7 +80,7 @@ class TestBuildLlmCmdCodex:
         )
 
     def test_render_exec_command_codex_with_capabilities(self):
-        """capabilities 指定時は _build_codex_flags 経由でフラグ生成される。"""
+        """With capabilities set, flags are built via _build_codex_flags."""
         from ghdag.llm.capabilities import LLMCapabilities
         spec = ENGINE_SPECS["codex"]
         cmd = render_exec_command(
@@ -92,17 +92,17 @@ class TestBuildLlmCmdCodex:
         assert "codex exec -" in cmd
         assert "--json" in cmd
         assert "--skip-git-repo-check" in cmd
-        # extra_args と _build_codex_flags の両方が出すため重複しやすい。
-        # codex CLI は `--json` の重複を argument error（exit 2）で弾く。
+        # Both extra_args and _build_codex_flags emit these, so duplicates are likely.
+        # codex CLI rejects duplicate `--json` with an argument error (exit 2).
         assert cmd.split().count("--json") == 1
         assert cmd.split().count("--skip-git-repo-check") == 1
 
     def test_render_exec_command_codex_dangerous_full_access(self):
-        """DANGEROUS_FULL_ACCESS 指定時はサンドボックスバイパスフラグが付く（nexus#2558 回帰）。
+        """DANGEROUS_FULL_ACCESS adds the sandbox bypass flag (nexus#2558 regression).
 
-        render_exec_command は builder を dangerously_skip_permissions=False で呼ぶため、
-        capabilities.permission_mode を見ないとフラグが落ちる。落ちると codex は
-        workspace-write のまま起動し、cwd 外（例: 日記リポジトリ）へ書けずに失敗する。
+        render_exec_command calls the builder with dangerously_skip_permissions=False,
+        so without reading capabilities.permission_mode the flag is dropped. Then codex
+        starts in workspace-write and fails to write outside cwd (e.g. a diary repo).
         """
         from ghdag.llm.capabilities import DANGEROUS_FULL_ACCESS
         spec = ENGINE_SPECS["codex"]
@@ -117,7 +117,7 @@ class TestBuildLlmCmdCodex:
         assert cmd.split().count("--json") == 1
 
     def test_render_exec_command_codex_default_keeps_sandbox(self):
-        """既定 capabilities ではバイパスフラグを付けない（サンドボックス維持）。"""
+        """Default capabilities do not add the bypass flag (sandbox stays on)."""
         from ghdag.llm.capabilities import LLMCapabilities
         spec = ENGINE_SPECS["codex"]
         cmd = render_exec_command(
@@ -132,7 +132,7 @@ class TestBuildLlmCmdCodex:
 class TestCallCodexPromptRouting:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_codex_prompt_to_stdin(self, mock_run: MagicMock):
-        """call(engine="codex", prompt="hello") で subprocess.run の input に prompt が渡る。"""
+        """call(engine="codex", prompt="hello") passes prompt as subprocess.run input."""
         mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
         call("hello", engine="codex", capabilities=LLMCapabilities())
         _, kwargs = mock_run.call_args
@@ -140,7 +140,7 @@ class TestCallCodexPromptRouting:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_codex_stdin_text_priority(self, mock_run: MagicMock):
-        """stdin_text が明示指定されている場合は prompt より優先される。"""
+        """Explicit stdin_text takes priority over prompt."""
         mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
         call("hello", engine="codex", stdin_text="override", capabilities=LLMCapabilities())
         _, kwargs = mock_run.call_args
@@ -148,7 +148,7 @@ class TestCallCodexPromptRouting:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_claude_stdin_text_unaffected(self, mock_run: MagicMock):
-        """claude エンジンは prompt_flag があるため stdin ルーティングが発動しない。"""
+        """claude has prompt_flag, so stdin routing does not activate."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="claude", stdin_text=None)
         _, kwargs = mock_run.call_args
@@ -157,7 +157,7 @@ class TestCallCodexPromptRouting:
 
 class TestCallResumeSessionId:
     def test_call_with_resume_unsupported_engine_raises(self):
-        """gemini + resume_session_id は NotImplementedError。"""
+        """gemini + resume_session_id raises NotImplementedError."""
         with pytest.raises(NotImplementedError, match="resume"):
             call(
                 "hello",
@@ -169,7 +169,7 @@ class TestCallResumeSessionId:
     @patch("ghdag.llm.engines.get_output_adapter")
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_sets_session_id_from_adapter(self, mock_run: MagicMock, mock_get_adapter: MagicMock):
-        """成功時に adapter 抽出結果が LLMResult.session_id に入る。"""
+        """On success, adapter-extracted value is stored in LLMResult.session_id."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         adapter = MagicMock()
         adapter.extract_session_id.return_value = "sess-abc"
@@ -182,7 +182,7 @@ class TestCallResumeSessionId:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_cursor_extracts_session_id_from_real_json(self, mock_run: MagicMock):
-        """cursor 実測 JSON stdout から session_id を抽出する。"""
+        """Extract session_id from measured cursor JSON stdout."""
         stdout = (
             '{"type":"result","subtype":"success","is_error":false,'
             '"result":"pong",'
@@ -195,7 +195,7 @@ class TestCallResumeSessionId:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_text_cursor_extracts_result_from_json(self, mock_run: MagicMock):
-        """call_text(cursor) が JSON の result を body にし、session_id を保持する。"""
+        """call_text(cursor) puts JSON result in body and keeps session_id."""
         from ghdag.llm.adapters.cursor import CursorAdapter
         from ghdag.llm.engines import call_text
 
@@ -217,19 +217,19 @@ class TestCallResumeSessionId:
 class TestCodexUnsupportedCapabilities:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_codex_stream_accepted(self, mock_run: MagicMock):
-        """stream=True は受理され --json 経路になる（#2967）。"""
+        """stream=True is accepted and uses the --json path (#2967)."""
         mock_run.return_value = MagicMock(stdout="{}", stderr="", returncode=0)
         result = call("test", engine="codex", capabilities=LLMCapabilities(stream=True))
         assert result.returncode == 0
         assert "--json" in mock_run.call_args[0][0]
 
     def test_codex_unsupported_output_format_json(self):
-        """output_format="json" で NotImplementedError が送出される。"""
+        """output_format="json" raises NotImplementedError."""
         with pytest.raises(NotImplementedError, match="output_format"):
             call("test", engine="codex", capabilities=LLMCapabilities(output_format="json"))
 
     def test_codex_unsupported_permission_mode(self):
-        """permission_mode 非デフォルト値で NotImplementedError が送出される。"""
+        """Non-default permission_mode raises NotImplementedError."""
         with pytest.raises(NotImplementedError, match="permission_mode"):
             call(
                 "test",
@@ -239,11 +239,11 @@ class TestCodexUnsupportedCapabilities:
 
 
 class TestCodexIgnoredCapabilities:
-    """codex は allowed_tools / disallowed_tools を noop で受理する（Issue: TEXT_ONLY で codex を呼びたい）。"""
+    """codex accepts allowed_tools / disallowed_tools as noop (want TEXT_ONLY via codex)."""
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_codex_with_text_only_does_not_raise(self, mock_run: MagicMock):
-        """TEXT_ONLY (disallowed_tools あり) を codex に渡しても NotImplementedError が出ない。"""
+        """Passing TEXT_ONLY (with disallowed_tools) to codex does not raise NotImplementedError."""
         from ghdag.llm.capabilities import TEXT_ONLY
         mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
         result = call("test", engine="codex", capabilities=TEXT_ONLY)
@@ -251,7 +251,7 @@ class TestCodexIgnoredCapabilities:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_codex_with_disallowed_tools_does_not_raise(self, mock_run: MagicMock):
-        """disallowed_tools を明示指定しても codex では noop で通る。"""
+        """Explicit disallowed_tools is a noop for codex."""
         mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
         result = call(
             "test",
@@ -262,7 +262,7 @@ class TestCodexIgnoredCapabilities:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_codex_with_allowed_tools_does_not_raise(self, mock_run: MagicMock):
-        """allowed_tools を明示指定しても codex では noop で通る。"""
+        """Explicit allowed_tools is a noop for codex."""
         mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
         result = call(
             "test",
@@ -272,7 +272,7 @@ class TestCodexIgnoredCapabilities:
         assert result.returncode == 0
 
     def test_codex_tool_flags_not_emitted_in_argv(self):
-        """codex の argv には --allowed-tools / --disallowed-tools が現れない（CLI に該当フラグがない）。"""
+        """codex argv has no --allowed-tools / --disallowed-tools (CLI has no such flags)."""
         cmd = build_llm_cmd(
             "codex",
             "gpt-5.6-terra",
@@ -284,46 +284,46 @@ class TestCodexIgnoredCapabilities:
         )
         assert "--allowed-tools" not in cmd
         assert "--disallowed-tools" not in cmd
-        # 既存の codex 固有フラグは維持されている
+        # Existing codex-specific flags are preserved
         assert "--json" in cmd
         assert "--skip-git-repo-check" in cmd
 
 
 class TestExtraArgsDedupe:
-    """EngineSpec.extra_args と _CAPABILITY_FLAG_BUILDERS の重複フラグを除去する。
+    """Deduplicate flags between EngineSpec.extra_args and _CAPABILITY_FLAG_BUILDERS.
 
-    codex CLI は `--json` の重複を `error: the argument '--json' cannot be used
-    multiple times`（exit 2）で拒否するため、重複はモデル呼び出し前の即死になる。
+    codex CLI rejects duplicate `--json` with `error: the argument '--json' cannot be used
+    multiple times` (exit 2), so duplicates are an immediate failure before the model call.
     """
 
     def test_dedupe_removes_valueless_flag_emitted_by_builder(self):
-        """値を取らないフラグが builder 側にあれば extra_args から落ちる。"""
+        """Valueless flags present on the builder side are dropped from extra_args."""
         from ghdag.llm.spec import _dedupe_extra_args
         assert _dedupe_extra_args(
             ("--json", "--skip-git-repo-check"), ["--json", "--skip-git-repo-check"]
         ) == []
 
     def test_dedupe_removes_flag_with_value_as_a_pair(self):
-        """値付きフラグはフラグと値のペアごと落とす。"""
+        """Flags with values are dropped as flag+value pairs."""
         from ghdag.llm.spec import _dedupe_extra_args
         assert _dedupe_extra_args(
             ("--output-format", "json"), ["--permission-mode", "default", "--output-format", "json"]
         ) == []
 
     def test_dedupe_keeps_flags_builder_did_not_emit(self):
-        """builder が出していないフラグは値ごと残る。"""
+        """Flags the builder did not emit remain, including their values."""
         from ghdag.llm.spec import _dedupe_extra_args
         assert _dedupe_extra_args(
             ("--output-format", "json"), ["--permission-mode", "default"]
         ) == ["--output-format", "json"]
 
     def test_dedupe_noop_when_builder_emits_nothing(self):
-        """perm_flags が空なら extra_args はそのまま。"""
+        """When perm_flags is empty, extra_args is unchanged."""
         from ghdag.llm.spec import _dedupe_extra_args
         assert _dedupe_extra_args(("-o", "pipefail"), []) == ["-o", "pipefail"]
 
     def test_codex_render_has_no_duplicate_flags_for_every_preset(self):
-        """どの permission preset でも codex の argv にフラグ重複が出ない。"""
+        """No flag duplicates in codex argv for any permission preset."""
         from ghdag.llm.capabilities import PRESETS
         spec = ENGINE_SPECS["codex"]
         for name, caps in PRESETS.items():
@@ -336,7 +336,7 @@ class TestExtraArgsDedupe:
                 assert tokens.count(flag) == 1, f"preset={name} cmd={cmd}"
 
     def test_claude_json_only_no_duplicate_output_format(self):
-        """claude + json_only でも --output-format が重複しない（値付きフラグの回帰）。"""
+        """claude + json_only does not duplicate --output-format (valued-flag regression)."""
         from ghdag.llm.capabilities import PRESETS
         cmd = render_exec_command(
             ENGINE_SPECS["claude"], order_path="jobs/order.md",
@@ -346,10 +346,10 @@ class TestExtraArgsDedupe:
         assert "--output-format json" in cmd
 
     def test_claude_text_only_keeps_extra_args_output_format(self):
-        """claude + text_only は builder が --output-format を出さないので extra_args 側が残る。
+        """claude + text_only keeps extra_args --output-format because the builder omits it.
 
-        DAG 既定は stream-json --verbose（#2966）。ClaudeJsonAdapter は JSONL result 行から
-        usage / session_id を取る。
+        DAG default is stream-json --verbose (#2966). ClaudeJsonAdapter reads usage /
+        session_id from the JSONL result line.
         """
         from ghdag.llm.capabilities import PRESETS
         cmd = render_exec_command(
@@ -361,7 +361,7 @@ class TestExtraArgsDedupe:
         assert cmd.split().count("--output-format") == 1
 
     def test_cursor_text_only_keeps_extra_args_output_format(self):
-        """cursor + text_only でも extra_args の --output-format stream-json が残る。"""
+        """cursor + text_only keeps extra_args --output-format stream-json."""
         from ghdag.llm.capabilities import PRESETS
         cmd = render_exec_command(
             ENGINE_SPECS["cursor"], order_path="jobs/order.md",
@@ -372,7 +372,7 @@ class TestExtraArgsDedupe:
         assert "--stream-partial-output" in cmd
 
     def test_cursor_json_only_overrides_stream_default(self):
-        """cursor + json_only は単一 JSON に戻し、stream 専用フラグを残さない。"""
+        """cursor + json_only returns to single JSON and drops stream-only flags."""
         from ghdag.llm.capabilities import PRESETS
         cmd = render_exec_command(
             ENGINE_SPECS["cursor"], order_path="jobs/order.md",
@@ -384,7 +384,7 @@ class TestExtraArgsDedupe:
         assert "--stream-partial-output" not in cmd
 
     def test_cursor_stream_dedupes_output_format(self):
-        """cursor + stream は stream-json が優先され --output-format は 1 回だけ。"""
+        """cursor + stream prefers stream-json and emits --output-format only once."""
         cmd = render_exec_command(
             ENGINE_SPECS["cursor"], order_path="jobs/order.md",
             model="auto", capabilities=LLMCapabilities(stream=True),
@@ -394,7 +394,7 @@ class TestExtraArgsDedupe:
         assert cmd.split().count("--stream-partial-output") == 1
 
     def test_gemini_without_builder_keeps_extra_args(self):
-        """builder を持たないエンジンの extra_args は変化しない。"""
+        """extra_args for engines without a builder are unchanged."""
         from ghdag.llm.capabilities import PRESETS
         cmd = render_exec_command(
             ENGINE_SPECS["gemini"], order_path="jobs/order.md",
@@ -404,10 +404,10 @@ class TestExtraArgsDedupe:
 
 
 class TestSandboxCapability:
-    """sandbox capability と READONLY_OBSERVE プリセット（nexus Issue #2640）。"""
+    """sandbox capability and READONLY_OBSERVE preset (nexus Issue #2640)."""
 
     def test_sandbox_off_matches_default_for_all_engines(self):
-        """LLMCapabilities(sandbox='off') と LLMCapabilities() で全エンジンの argv が一致する。"""
+        """LLMCapabilities(sandbox='off') and LLMCapabilities() yield the same argv for all engines."""
         default = LLMCapabilities()
         explicit_off = LLMCapabilities(sandbox="off")
         for engine, model in [
@@ -422,7 +422,7 @@ class TestSandboxCapability:
             )
 
     def test_readonly_observe_preset(self):
-        """PRESETS['readonly_observe'] が sandbox=readonly と編集系 deny を持つ。"""
+        """PRESETS['readonly_observe'] has sandbox=readonly and edit-tool denies."""
         from ghdag.llm.capabilities import PRESETS
 
         caps = PRESETS["readonly_observe"]
@@ -441,7 +441,7 @@ class TestSandboxCapability:
         assert cmd[cmd.index("--permission-mode") + 1] == "plan"
 
     def test_codex_sandbox_readonly_uses_s_read_only(self):
-        """codex + sandbox=readonly → -s read-only、bypass フラグなし。"""
+        """codex + sandbox=readonly → -s read-only, no bypass flag."""
         cmd = build_llm_cmd(
             "codex",
             "gpt-5.6-terra",
@@ -453,7 +453,7 @@ class TestSandboxCapability:
         assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
 
     def test_cursor_sandbox_readonly_uses_sandbox_enabled(self):
-        """cursor + sandbox=readonly → --sandbox enabled、--force なし。"""
+        """cursor + sandbox=readonly → --sandbox enabled, no --force."""
         cmd = build_llm_cmd(
             "cursor",
             "auto",
@@ -465,7 +465,7 @@ class TestSandboxCapability:
         assert "--force" not in cmd
 
     def test_claude_sandbox_readonly_conflicts_with_permission_mode(self):
-        """claude + sandbox=readonly + 明示 permission_mode → ValueError。"""
+        """claude + sandbox=readonly + explicit permission_mode → ValueError."""
         with pytest.raises(ValueError, match="sandbox='readonly' conflicts"):
             build_llm_cmd(
                 "claude",
@@ -518,18 +518,18 @@ class TestSandboxCapability:
             )
 
     def test_cursor_disallowed_tools_in_ignored_capabilities(self):
-        """cursor の disallowed_tools は _IGNORED_CAPABILITIES で noop 宣言される。"""
+        """cursor disallowed_tools is declared noop via _IGNORED_CAPABILITIES."""
         from ghdag.llm.engines import _IGNORED_CAPABILITIES, _UNSUPPORTED_CAPABILITIES
 
         assert "disallowed_tools" in _IGNORED_CAPABILITIES["cursor"]
-        # 差集合後は検証対象から外れる（unsupported に含まれていても ignored でスキップ）
+        # After set difference, excluded from validation (skipped via ignored even if unsupported)
         unsupported = _UNSUPPORTED_CAPABILITIES.get("cursor", set())
         ignored = _IGNORED_CAPABILITIES.get("cursor", set())
         assert "disallowed_tools" not in (unsupported - ignored)
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_cursor_disallowed_tools_noop(self, mock_run: MagicMock):
-        """cursor に disallowed_tools を渡しても NotImplementedError にならず argv にも出ない。"""
+        """Passing disallowed_tools to cursor does not raise and does not appear in argv."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         result = call(
             "test",
@@ -544,7 +544,7 @@ class TestSandboxCapability:
 class TestCallCwd:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_passes_cwd_to_subprocess(self, mock_run: MagicMock, tmp_path):
-        """call(..., cwd=...) が subprocess.run に cwd を渡す。"""
+        """call(..., cwd=...) passes cwd to subprocess.run."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="claude", cwd=tmp_path)
         _, kwargs = mock_run.call_args
@@ -552,7 +552,7 @@ class TestCallCwd:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_default_cwd_is_none(self, mock_run: MagicMock):
-        """cwd 未指定時は subprocess.run の cwd=None（現行互換）。"""
+        """When cwd is omitted, subprocess.run gets cwd=None (current compat)."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="claude")
         _, kwargs = mock_run.call_args

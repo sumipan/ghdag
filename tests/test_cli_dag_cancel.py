@@ -9,7 +9,7 @@ import pytest
 
 class TestCliDagCancel:
     def test_cancel_creates_control_file_when_running(self, tmp_path, capsys, monkeypatch):
-        """実行中 uuid への cancel は jobs/cancel/<uuid> を作る。"""
+        """Cancel for a running uuid creates jobs/cancel/<uuid>."""
         from ghdag.cli import main
 
         jobs = tmp_path / "jobs"
@@ -38,7 +38,7 @@ class TestCliDagCancel:
         assert "cancel" in captured.out.lower() or uuid in captured.out
 
     def test_cancel_not_running_creates_nothing(self, tmp_path, capsys, monkeypatch):
-        """実行中でない uuid は not running を返し制御ファイルを作らない。"""
+        """A non-running uuid returns not running and creates no control file."""
         from ghdag.cli import main
 
         jobs = tmp_path / "jobs"
@@ -55,7 +55,7 @@ class TestCliDagCancel:
         assert not (jobs / "cancel" / uuid).exists()
 
     def test_api_stop_uses_cancel_file_not_ps(self, tmp_path):
-        """/api/stop 経路は ps 直殺しではなく制御ファイルを作成する。"""
+        """The /api/stop path creates a control file instead of killing via ps."""
         import inspect
 
         from ghdag.ui import server as server_mod
@@ -64,8 +64,8 @@ class TestCliDagCancel:
         assert "_kill_by_uuid" not in stop_src
         assert "ps" not in stop_src
 
-        # _kill_by_uuid が残っていても stop から呼ばれないこと、
-        # および制御ファイル作成ヘルパが running 時に cancel を作ること
+        # stop must not call _kill_by_uuid even if it remains,
+        # and the control-file helper must create cancel when running
         assert hasattr(server_mod, "_request_cancel")
         jobs = tmp_path / "jobs"
         running = jobs / "running"

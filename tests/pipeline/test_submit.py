@@ -1,4 +1,4 @@
-"""tests/pipeline/test_submit.py — make_order_record / submit_order のテスト"""
+"""tests/pipeline/test_submit.py — tests for make_order_record / submit_order"""
 
 from __future__ import annotations
 

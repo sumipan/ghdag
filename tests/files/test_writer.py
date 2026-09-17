@@ -22,7 +22,7 @@ def write_file(path: Path, content: str) -> None:
 
 class TestMdWriteBasic:
     def test_w1_write_and_audit(self, repo_root: Path) -> None:
-        """W1: 正常書き込み後にファイル内容が置換され audit.jsonl に記録される"""
+        """W1: after a successful write, file content is replaced and audit.jsonl is updated"""
         f = repo_root / "result" / "bar.md"
         write_file(f, "old content")
 
@@ -41,7 +41,7 @@ class TestMdWriteBasic:
         assert record["bytes_written"] == len("done".encode("utf-8"))
 
     def test_w2_overwrite(self, repo_root: Path) -> None:
-        """W2: 既存ファイルを異なる content で上書き → audit ログに 2 件記録"""
+        """W2: overwriting an existing file with different content → two audit log entries"""
         f = repo_root / "result" / "bar.md"
         write_file(f, "first")
 
@@ -54,17 +54,17 @@ class TestMdWriteBasic:
         assert len(lines) == 2
 
     def test_w3_path_traversal(self, repo_root: Path) -> None:
-        """W3: repo_root 外パスで ValueError"""
+        """W3: path outside repo_root raises ValueError"""
         with pytest.raises(PathTraversalError, match="Path traversal"):
             md_write("../../etc/passwd", "evil", repo_root=repo_root)
 
     def test_w4_parent_dir_missing(self, repo_root: Path) -> None:
-        """W4: 親ディレクトリが存在しない場合 FileNotFoundError（自動作成しない）"""
+        """W4: missing parent directory raises FileNotFoundError (no auto-create)"""
         with pytest.raises(FileNotFoundError):
             md_write("nonexistent_dir/foo.md", "content", repo_root=repo_root)
 
     def test_w5_audit_failure_nonfatal(self, repo_root: Path) -> None:
-        """W5: audit 書き込み失敗時も本体の書き込みは成功する"""
+        """W5: main write still succeeds when audit write fails"""
         f = repo_root / "result" / "bar.md"
         write_file(f, "old")
 
@@ -75,7 +75,7 @@ class TestMdWriteBasic:
         assert result.bytes_written == len("new content".encode("utf-8"))
 
     def test_w6_concurrent_no_partial_write(self, repo_root: Path) -> None:
-        """TC2: 10スレッド×100回の並列 md_write でpartial writeが発生しないこと"""
+        """TC2: 10 threads x 100 parallel md_write calls produce no partial writes"""
         f = repo_root / "result" / "concurrent.md"
         write_file(f, "initial")
 
@@ -95,7 +95,7 @@ class TestMdWriteBasic:
 
 class TestMdWriteProvenance:
     def test_ac14_source_and_correlation_id_recorded(self, repo_root: Path) -> None:
-        """AC14: source / correlation_id が audit に記録される"""
+        """AC14: source / correlation_id are recorded in audit"""
         f = repo_root / "result" / "bar.md"
         write_file(f, "old")
 
@@ -113,7 +113,7 @@ class TestMdWriteProvenance:
         assert record["correlation_id"] == "xyz"
 
     def test_ac14_default_audit_unchanged(self, repo_root: Path) -> None:
-        """AC14: デフォルト None では従来どおり source=md_write"""
+        """AC14: default None keeps legacy source=md_write"""
         f = repo_root / "result" / "bar.md"
         write_file(f, "old")
 

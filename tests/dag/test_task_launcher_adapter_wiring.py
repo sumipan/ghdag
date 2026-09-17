@@ -1,6 +1,6 @@
-"""退行検査: task_launcher が adapter 経由で stdout を処理することを保証する。
+"""Regression: task_launcher must process stdout via the adapter.
 
-このテストが失敗した場合、adapter 配線が再度切断されていることを意味する。
+If this test fails, the adapter wiring has been disconnected again.
 """
 
 from __future__ import annotations
@@ -50,7 +50,7 @@ _CLAUDE_JSON_STDOUT = json.dumps({
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
 def test_claude_json_result_path_contains_text_only(mock_mark_done, tmp_path):
-    """claude JSON stdout → result_path に JSON ではなく 'result' テキストのみが書かれる。"""
+    """claude JSON stdout → result_path gets 'result' text only, not raw JSON."""
     engine, hooks = _make_engine(tmp_path)
     result_file = tmp_path / "result.md"
 
@@ -81,7 +81,7 @@ def test_claude_json_result_path_contains_text_only(mock_mark_done, tmp_path):
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
 def test_claude_json_metrics_are_non_null(mock_mark_done, tmp_path):
-    """claude engine → TaskMetrics の token_count / cost_usd / cache 各フィールドが非 null。"""
+    """claude engine → TaskMetrics token_count / cost_usd / cache fields are non-null."""
     engine, hooks = _make_engine(tmp_path)
     result_file = tmp_path / "result.md"
 
@@ -113,7 +113,7 @@ def test_claude_json_metrics_are_non_null(mock_mark_done, tmp_path):
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
 def test_cursor_plain_text_result_path_unchanged(mock_mark_done, tmp_path):
-    """cursor engine → result_path に stdout がそのまま書かれる（互換維持）。"""
+    """cursor engine → result_path gets stdout as-is (compat preserved)."""
     engine, hooks = _make_engine(tmp_path)
     result_file = tmp_path / "result.md"
     plain_text = b"This is a plain text result."
@@ -141,7 +141,7 @@ def test_cursor_plain_text_result_path_unchanged(mock_mark_done, tmp_path):
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
 def test_cursor_token_count_is_none(mock_mark_done, tmp_path):
-    """cursor engine → 非 JSON stdout では TaskMetrics.token_count が None。"""
+    """cursor engine → non-JSON stdout leaves TaskMetrics.token_count as None."""
     engine, hooks = _make_engine(tmp_path)
     result_file = tmp_path / "result.md"
 
@@ -185,7 +185,7 @@ _CODEX_JSONL_STDOUT = (
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
 def test_cursor_json_writes_result_text_and_session(mock_mark_done, tmp_path):
-    """cursor JSON stdout → result は pong、SessionStore に session_id を記録する。"""
+    """cursor JSON stdout → result is pong; SessionStore records session_id."""
     engine, hooks = _make_engine(tmp_path)
     result_file = tmp_path / "result.md"
     parent_uuid = "test-cursor-json-parent"
@@ -235,7 +235,7 @@ def test_cursor_json_writes_result_text_and_session(mock_mark_done, tmp_path):
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
 def test_codex_jsonl_writes_result_text_and_session(mock_mark_done, tmp_path):
-    """codex JSONL stdout → result は pong、SessionStore に thread_id を記録する。"""
+    """codex JSONL stdout → result is pong; SessionStore records thread_id."""
     engine, hooks = _make_engine(tmp_path)
     result_file = tmp_path / "result.md"
     parent_uuid = "test-codex-jsonl-parent"

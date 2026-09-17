@@ -56,6 +56,7 @@ def test_policy_opt_in_disabled_by_default():
 
 
 def test_genshijin_prompt_is_machine_handoff_style():
+    # Japanese text intentionally kept for CJK processing test
     assert "敬語" in GENSHIJIN_HANDOFF_PROMPT or "背景説明" in GENSHIJIN_HANDOFF_PROMPT
     assert "facts" in GENSHIJIN_HANDOFF_PROMPT.lower() or "事実" in GENSHIJIN_HANDOFF_PROMPT
     # Must not be a general output_style knob name
@@ -63,7 +64,7 @@ def test_genshijin_prompt_is_machine_handoff_style():
 
 
 def test_genshijin_not_applied_to_result_or_human_outputs():
-    """genshijin は compaction プロンプト専用。result / Slack / 日記経路に漏れない。"""
+    """genshijin is compaction-prompt-only; must not leak into result / Slack / diary paths."""
     import ghdag.dag.task_launcher as launcher_mod
     import ghdag.llm.adapters.claude_json as claude_json
     import ghdag.llm.adapters.codex as codex
@@ -215,7 +216,7 @@ def test_write_compaction_audit_records_lineage(tmp_path):
 
 
 def test_replay_comparison_records_token_delta(tmp_path):
-    """同一 workflow の compact あり／なし比較を audit に残せる。"""
+    """Audit can record a with/without compact comparison for the same workflow."""
     audit_path = tmp_path / "audit.jsonl"
     write_compaction_audit(
         audit_path,

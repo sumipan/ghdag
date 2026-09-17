@@ -49,10 +49,10 @@ def test_submit_records_resume_from_uuid_annotation():
 
     assert p2["annotations"]["resume_from_uuid"] == p1["uuid"]
 
-    # 後方互換: resume_from 未指定ステップには annotation を出さない
+    # Back-compat: steps without resume_from emit no annotation
     assert "resume_from_uuid" not in p1["annotations"]
 
-    # UUID 形式の sanity check（実データでマップされていることを確認）
+    # UUID format sanity check (confirm mapped from real data)
     _uuid.UUID(p2["annotations"]["resume_from_uuid"])
 
 
