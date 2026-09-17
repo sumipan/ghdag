@@ -65,7 +65,7 @@ class TestFanOutAudit:
         audit_records = [
             json.loads(ln) for ln in audit_path.read_text(encoding="utf-8").splitlines() if ln.strip()
         ]
-        # 子タスクごとに 1 件（append 1 record ずつ）→ 2 件、いずれも source=fanout
+        # One record per child task (append 1 each) → 2 records, both source=fanout
         assert len(audit_records) == 2
         for rec in audit_records:
             assert rec["source"] == "fanout"
@@ -74,7 +74,7 @@ class TestFanOutAudit:
             assert len(rec["task_uuids"]) == 1
 
     def test_pipeline_append_audit_unchanged_no_duplicate(self, tmp_path: Path) -> None:
-        """PipelineState.append_exec_records 経路の audit は従来どおり 1 件のみ。"""
+        """PipelineState.append_exec_records path still writes exactly one audit record."""
         state_dir = tmp_path / "state"
         state_dir.mkdir()
         exec_path = tmp_path / "jobs" / "exec.jsonl"

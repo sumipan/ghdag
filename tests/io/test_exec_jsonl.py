@@ -290,7 +290,7 @@ class TestValidateRepair:
 
 
 class TestNoDirectExecJsonlIoElsewhere:
-    """Acceptance: src/ghdag/ 内で exec.jsonl を直接 open/read_text/write_text するのは io/exec_jsonl.py のみ。"""
+    """Acceptance: within src/ghdag/, only io/exec_jsonl.py may open/read_text/write_text exec.jsonl."""
 
     _SRC = Path(__file__).resolve().parents[2] / "src" / "ghdag"
     _ALLOWED = {_SRC / "io" / "exec_jsonl.py"}

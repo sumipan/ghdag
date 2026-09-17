@@ -54,7 +54,7 @@ def test_default_render_is_frozen(tmp_path: Path) -> None:
 
 
 def test_frozen_order_matches_prechange_template_builder(tmp_path: Path) -> None:
-    """render 未指定（frozen）の order 本文は TemplateOrderBuilder と同一。"""
+    """Order body with render unspecified (frozen) matches TemplateOrderBuilder."""
     queue = tmp_path / "queue"
     queue.mkdir()
     _write_workflow(tmp_path, render=None, engine="claude")
@@ -113,10 +113,10 @@ def test_frozen_order_matches_prechange_template_builder(tmp_path: Path) -> None
     )
     assert result.status == "dispatched"
     assert len(captured) == 1
-    # ts/uuid は submit 内で生成されるため、本文の固定部分だけ比較
+    # ts/uuid are generated inside submit; compare only the fixed parts of the body
     assert "hello-42" in captured[0]
     assert "python -m ghdag.workflow.render" not in captured[0]
-    # StepConfig.render デフォルトでも builder 直呼びと同等の展開結果になること
+    # Default StepConfig.render should expand equivalently to a direct builder call
     rebuilt = order_builder.build_order(
         step.template,
         {
@@ -134,7 +134,7 @@ def test_frozen_order_matches_prechange_template_builder(tmp_path: Path) -> None
 
 
 def test_live_order_is_trampoline_and_rereads_template(tmp_path: Path) -> None:
-    """render: live の order は trampoline 1 行で、テンプレ書き換えが実行時に効く。"""
+    """render: live order is a one-line trampoline; template edits take effect at runtime."""
     queue = tmp_path / "queue"
     queue.mkdir()
     _write_workflow(tmp_path, render="live", engine="shell")
@@ -185,7 +185,7 @@ def test_live_order_is_trampoline_and_rereads_template(tmp_path: Path) -> None:
     template_path = str((tmp_path / "templates" / "step.md").resolve())
     assert template_path in order or shlex.quote(template_path) in order
 
-    # enqueue 後にテンプレを書き換え → trampoline 実行で新本文が使われる
+    # rewrite template after enqueue → trampoline run uses the new body
     (tmp_path / "templates" / "step.md").write_text('echo "WORLD-${issue_number}"\n', encoding="utf-8")
     proc = subprocess.run(
         ["bash", "-o", "pipefail", "-c", order],
@@ -227,7 +227,7 @@ def test_render_cli_module_undefined_variable_exits_2(tmp_path: Path) -> None:
 
 
 def test_live_submit_does_not_mutate_pipeline_order_builders(tmp_path: Path) -> None:
-    """AC-3: dispatcher は _pipeline._order_builders を直接変更しない。"""
+    """AC-3: dispatcher does not mutate _pipeline._order_builders directly."""
     queue = tmp_path / "queue"
     queue.mkdir()
     _write_workflow(tmp_path, render="live", engine="shell")

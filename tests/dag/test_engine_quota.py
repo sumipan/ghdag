@@ -119,7 +119,7 @@ def test_launch_popen_failure_rolls_back_running_reservation(tmp_path: Path) -> 
 
 
 def test_resume_fallback_relaunches_async_without_blocking(tmp_path: Path) -> None:
-    """resume フォールバックは Popen で非同期再起動し、check_completions をブロックしない。"""
+    """Resume fallback restarts asynchronously via Popen and does not block check_completions."""
     config = DagConfig(
         exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl",
         exec_done_dir=tmp_path / "jobs" / "done",
@@ -189,7 +189,7 @@ def test_resume_fallback_command_forms_unchanged_across_engines(
     resumed_cmd: str,
     original_cmd: str,
 ) -> None:
-    """claude / cursor / codex のフォールバック起動コマンド形は _command_without_resume のまま。"""
+    """Fallback launch command shapes for claude / cursor / codex stay as _command_without_resume."""
     config = DagConfig(
         exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl",
         exec_done_dir=tmp_path / "jobs" / "done",

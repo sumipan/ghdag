@@ -129,7 +129,7 @@ class TestWriteTaskExitAudit:
         assert r["schema_version"] == 3
 
     def test_ac_a2_v3_propagation_fields(self, tmp_path):
-        """AC-A2: write_task_exit_audit に v3 伝播フィールドが含まれる。"""
+        """AC-A2: write_task_exit_audit includes v3 propagation fields."""
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -146,7 +146,7 @@ class TestWriteTaskExitAudit:
         assert r["orchestration_id"] == "orch-1"
 
     def test_ac_a7_null_propagation_fields_backward_compat(self, tmp_path):
-        """AC-A7: 伝播フィールド未指定時は null（v1 相当の情報量）。"""
+        """AC-A7: omitted propagation fields are null (v1-equivalent info)."""
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -162,7 +162,7 @@ class TestWriteTaskExitAudit:
         assert r["orchestration_id"] is None
 
     def test_ac10_coexists_with_enqueue_record(self, tmp_path):
-        """AC-10: enqueue レコード（write_audit_log）と exit レコードが同一ファイルに共存できる。"""
+        """AC-10: enqueue (write_audit_log) and exit records coexist in one file."""
         from ghdag.pipeline.audit import AuditContext, write_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
@@ -184,7 +184,7 @@ class TestWriteTaskExitAudit:
     # --- Issue #961 tests ---
 
     def test_ac2_exit_audit_with_correlation_id(self, tmp_path):
-        """AC-2: write_task_exit_audit に correlation_id を渡すとレコードに含まれる。"""
+        """AC-2: passing correlation_id to write_task_exit_audit includes it in the record."""
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -198,7 +198,7 @@ class TestWriteTaskExitAudit:
         assert r["correlation_id"] == "test:key"
 
     def test_ac3_enqueue_and_exit_same_correlation_id(self, tmp_path):
-        """AC-3: enqueue と exit レコードが同じ correlation_id を持つ。"""
+        """AC-3: enqueue and exit records share the same correlation_id."""
         from ghdag.pipeline.audit import AuditContext, write_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
@@ -223,7 +223,7 @@ class TestWriteTaskExitAudit:
             assert r["correlation_id"] == "test:key"
 
     def test_exit_audit_default_no_correlation_id(self, tmp_path):
-        """correlation_id を省略した場合、レコードに含まれないか null になる。"""
+        """Omitting correlation_id leaves it absent or null in the record."""
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -233,13 +233,13 @@ class TestWriteTaskExitAudit:
         )
 
         r = json.loads(audit_path.read_text().strip())
-        # デフォルト None → JSON では null or フィールドなし
+        # default None → JSON null or field omitted
         assert r.get("correlation_id") is None
 
     # --- Issue #962 tests ---
 
     def test_failure_class_in_record(self, tmp_path):
-        """failure_class=FailureClass.TIMEOUT → JSON レコードに "failure_class": "TIMEOUT" が含まれる。"""
+        """failure_class=FailureClass.TIMEOUT → JSON has 'failure_class': 'TIMEOUT'."""
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -253,7 +253,7 @@ class TestWriteTaskExitAudit:
         assert r["failure_class"] == "TIMEOUT"
 
     def test_failure_class_null_for_success(self, tmp_path):
-        """failure_class=None → JSON レコードに "failure_class": null が含まれる。"""
+        """failure_class=None → JSON has 'failure_class': null."""
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -267,7 +267,7 @@ class TestWriteTaskExitAudit:
         assert r["failure_class"] is None
 
     def test_failure_class_default_null(self, tmp_path):
-        """failure_class 未指定 → JSON レコードに "failure_class": null が含まれる。"""
+        """failure_class omitted → JSON has 'failure_class': null."""
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -282,7 +282,7 @@ class TestWriteTaskExitAudit:
     # --- Issue #1041 tests ---
 
     def test_failure_class_enum_serialized_as_string(self, tmp_path):
-        """write_task_exit_audit(failure_class=FailureClass.TIMEOUT) → JSON で "failure_class": "TIMEOUT"。"""
+        """write_task_exit_audit(failure_class=FailureClass.TIMEOUT) → JSON 'failure_class': 'TIMEOUT'."""
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -296,7 +296,7 @@ class TestWriteTaskExitAudit:
         assert r["failure_class"] == "TIMEOUT"
 
     def test_failure_class_auth_serialized_as_string(self, tmp_path):
-        """write_task_exit_audit(failure_class=FailureClass.AUTH) → JSON で "failure_class": "AUTH"。"""
+        """write_task_exit_audit(failure_class=FailureClass.AUTH) → JSON 'failure_class': 'AUTH'."""
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -310,7 +310,7 @@ class TestWriteTaskExitAudit:
         assert r["failure_class"] == "AUTH"
 
     def test_failure_class_enum_none_serialized_as_null(self, tmp_path):
-        """write_task_exit_audit(failure_class=None) → JSON で "failure_class": null。"""
+        """write_task_exit_audit(failure_class=None) → JSON 'failure_class': null."""
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,

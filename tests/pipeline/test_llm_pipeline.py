@@ -37,7 +37,7 @@ def _make_api(
 
 class TestAC1SingleStep:
     def test_submit_single_step_returns_exec_records(self):
-        """1 step で exec_records 1 レコード（JSONL 形式）。"""
+        """One step yields one exec_records entry (JSONL format)."""
         import json as _json
         api, pipeline_state, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
@@ -51,7 +51,7 @@ class TestAC1SingleStep:
         pipeline_state.append_exec_records.assert_called_once()
 
     def test_submit_writes_order_file(self):
-        """write_order_file が 1 回呼ばれる。"""
+        """write_order_file is called once."""
         api, pipeline_state, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
@@ -59,7 +59,7 @@ class TestAC1SingleStep:
         pipeline_state.write_order_file.assert_called_once()
 
     def test_submit_calls_build_order(self):
-        """build_order が 1 回呼ばれ、template 名が渡される。"""
+        """build_order is called once with the template name."""
         api, _, order_builder = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
@@ -69,7 +69,7 @@ class TestAC1SingleStep:
         assert call_args[0] == "brushup"
 
     def test_exec_record_contains_model(self):
-        """exec レコードの command にモデル名が含まれる。"""
+        """The exec record command includes the model name."""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
@@ -77,7 +77,7 @@ class TestAC1SingleStep:
         assert "claude-opus-4-6" in exec_lines[0]
 
     def test_exec_record_contains_dangerously_skip_permissions(self):
-        """exec レコードの command に --dangerously-skip-permissions が含まれない（TEXT_ONLY デフォルト）。"""
+        """The exec record command omits --dangerously-skip-permissions (TEXT_ONLY default)."""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
@@ -94,7 +94,7 @@ class TestAC1SingleStep:
 
 class TestAC1IdempotencyKey:
     def test_no_idempotency_key_no_comment(self):
-        """idempotency_key なしのとき先頭コメント行なし。"""
+        """Without idempotency_key, no leading comment line."""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
@@ -109,7 +109,7 @@ class TestAC1IdempotencyKey:
 
 class TestAC1TwoStepsWithDepends:
     def test_p2_has_depends_p1_uuid(self):
-        """p2 の exec レコードの depends に p1_uuid が含まれる。"""
+        """p2 exec record depends includes p1_uuid."""
         import json as _json
         api, _, _ = _make_api()
         steps = [
@@ -123,7 +123,7 @@ class TestAC1TwoStepsWithDepends:
         assert p1_record["uuid"] in p2_record["depends"]
 
     def test_p2_context_has_p1_result_filename(self):
-        """P2 の build_order に渡される context に p1_result_filename が含まれる。"""
+        """Context passed to P2 build_order includes p1_result_filename."""
         api, _, order_builder = _make_api()
         steps = [
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
@@ -140,7 +140,7 @@ class TestAC1TwoStepsWithDepends:
         assert p2_ctx["p1_result_filename"] == expected
 
     def test_three_steps_chain(self):
-        """p1→p2→p3 チェーンで 3 exec レコード生成、依存が正しく解決される。"""
+        """p1→p2→p3 chain yields 3 exec records with dependencies resolved."""
         import json as _json
         api, pipeline_state, _ = _make_api()
         steps = [
@@ -159,13 +159,13 @@ class TestAC1TwoStepsWithDepends:
 
 
 # ---------------------------------------------------------------------------
-# AC4: エンジン名が result_filename / exec 行に反映される
+# AC4: engine name is reflected in result_filename / exec line
 # ---------------------------------------------------------------------------
 
 
 class TestAC4EngineResultFilename:
     def test_claude_engine_result_filename(self):
-        """engine=claude のとき result_filename が {ts}-claude-result-{uuid}.md。"""
+        """When engine=claude, result_filename is {ts}-claude-result-{uuid}.md."""
         api, _, order_builder = _make_api()
         steps = [StepConfig(id="p1", template="p1", model="claude-sonnet-4-6", engine="claude")]
         api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
@@ -174,7 +174,7 @@ class TestAC4EngineResultFilename:
         assert ctx["result_filename"].startswith(ctx["ts"] + "-claude-result-")
 
     def test_gemini_engine_result_filename(self):
-        """engine=gemini のとき result_filename が {ts}-gemini-result-{uuid}.md。"""
+        """When engine=gemini, result_filename is {ts}-gemini-result-{uuid}.md."""
         api, _, order_builder = _make_api()
         steps = [StepConfig(id="p1", template="p1", model="gemini-2.5-flash", engine="gemini")]
         api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
@@ -183,7 +183,7 @@ class TestAC4EngineResultFilename:
         assert ctx["result_filename"].startswith(ctx["ts"] + "-gemini-result-")
 
     def test_dep_result_filename_reflects_dep_engine(self):
-        """p1(gemini)→p2: p1_result_filename が {ts}-gemini-result-{uuid}.md。"""
+        """p1(gemini)→p2: p1_result_filename is {ts}-gemini-result-{uuid}.md."""
         api, _, order_builder = _make_api()
         steps = [
             StepConfig(id="p1", template="p1", model="gemini-2.5-flash", engine="gemini"),
@@ -200,7 +200,7 @@ class TestAC4EngineResultFilename:
         assert p2_ctx["p1_result_filename"] == expected
 
     def test_gemini_engine_exec_record_no_skip_permissions(self):
-        """engine=gemini のとき exec レコードの command に --dangerously-skip-permissions が含まれない。"""
+        """When engine=gemini, exec command omits --dangerously-skip-permissions."""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="p1", model="gemini-2.5-flash", engine="gemini")]
@@ -212,13 +212,13 @@ class TestAC4EngineResultFilename:
 
 
 # ---------------------------------------------------------------------------
-# AC3: DagEngine 互換フォーマット
+# AC3: DagEngine-compatible format
 # ---------------------------------------------------------------------------
 
 
 class TestAC3ExecFormat:
     def test_uuid_field_in_exec_record(self):
-        """exec レコードの uuid フィールドが UUID 形式（36文字のハイフン区切り）。"""
+        """exec record uuid field is UUID format (36-char hyphenated)."""
         import json as _json
         import re
         api, _, _ = _make_api()
@@ -230,7 +230,7 @@ class TestAC3ExecFormat:
         assert re.match(uuid_pattern, record["uuid"])
 
     def test_depends_field_in_exec_record(self):
-        """exec レコードの depends フィールドに p1 の uuid が含まれる。"""
+        """exec record depends field includes p1 uuid."""
         import json as _json
         api, _, _ = _make_api()
         steps = [
@@ -244,7 +244,7 @@ class TestAC3ExecFormat:
         assert p1_record["uuid"] in p2_record["depends"]
 
     def test_result_path_in_exec_record(self):
-        """exec レコードに result_path フィールドが含まれる。"""
+        """exec record includes a result_path field."""
         import json as _json
         api, pipeline_state, _ = _make_api()
         pipeline_state.write_order_file.return_value = "20260419-claude-order-abc.md"
@@ -257,13 +257,13 @@ class TestAC3ExecFormat:
 
 
 # ---------------------------------------------------------------------------
-# base_context が各ステップ context に引き継がれる
+# base_context is carried into each step context
 # ---------------------------------------------------------------------------
 
 
 class TestBaseContextPropagation:
     def test_base_context_keys_in_step_context(self):
-        """base_context の値が build_order に渡される context に含まれる。"""
+        """base_context values appear in the context passed to build_order."""
         api, _, order_builder = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         api.submit(steps, {"issue_number": "42", "workflow_name": "test"}, audit_context=_TEST_AUDIT_CTX)
@@ -273,7 +273,7 @@ class TestBaseContextPropagation:
         assert ctx["workflow_name"] == "test"
 
     def test_step_specific_keys_added(self):
-        """ts, order_uuid, result_uuid, result_filename が context に含まれる。"""
+        """ts, order_uuid, result_uuid, result_filename are included in context."""
         api, _, order_builder = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
@@ -285,7 +285,7 @@ class TestBaseContextPropagation:
         assert "result_filename" in ctx
 
     def test_base_context_not_mutated(self):
-        """submit() が base_context 辞書を直接変更しない。"""
+        """submit() does not mutate the base_context dict in place."""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         base = {"issue_number": "10"}
@@ -296,15 +296,15 @@ class TestBaseContextPropagation:
 
 
 # ---------------------------------------------------------------------------
-# Regression: per-workflow OrderBuilder 切り替え
-# テンプレート解決がワークフロー横断で混線する不具合（issue #610 で観測された
-# `FileNotFoundError: workflows/inkwell/brushup.md` の経路）の再発防止。
+# Regression: per-workflow OrderBuilder switching
+# Prevents cross-workflow template resolution mix-ups (observed in issue #610 as
+# `FileNotFoundError: workflows/inkwell/brushup.md`).
 # ---------------------------------------------------------------------------
 
 
 class TestPerWorkflowOrderBuilder:
     def test_order_builder_resolved_by_workflow_name(self):
-        """base_context['workflow_name'] に対応する OrderBuilder が使われる。"""
+        """The OrderBuilder matching base_context['workflow_name'] is used."""
         from unittest.mock import MagicMock
 
         from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
@@ -332,18 +332,18 @@ class TestPerWorkflowOrderBuilder:
 
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
 
-        # issuesmith の workflow_name で submit → issuesmith_builder が呼ばれる
+        # submit with issuesmith workflow_name → issuesmith_builder is called
         api.submit(steps, {"workflow_name": "issuesmith", "issue_number": "610"}, audit_context=_TEST_AUDIT_CTX)
         issuesmith_builder.build_order.assert_called_once()
         inkwell_builder.build_order.assert_not_called()
         default_builder.build_order.assert_not_called()
 
-        # 別ワークフロー名で再 submit → 該当 builder が呼ばれる
+        # re-submit with another workflow name → matching builder is called
         api.submit(steps, {"workflow_name": "inkwell"}, audit_context=_TEST_AUDIT_CTX)
         inkwell_builder.build_order.assert_called_once()
 
     def test_falls_back_to_default_builder_when_workflow_unknown(self):
-        """order_builders に該当エントリがない場合はデフォルトに落ちる。"""
+        """Falls back to default when order_builders has no matching entry."""
         from unittest.mock import MagicMock
 
         from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
@@ -365,12 +365,12 @@ class TestPerWorkflowOrderBuilder:
         )
 
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {"workflow_name": "research"}, audit_context=_TEST_AUDIT_CTX)  # 未登録
+        api.submit(steps, {"workflow_name": "research"}, audit_context=_TEST_AUDIT_CTX)  # unregistered
         default_builder.build_order.assert_called_once()
         inkwell_builder.build_order.assert_not_called()
 
     def test_falls_back_to_default_when_workflow_name_missing(self):
-        """base_context に workflow_name が無くてもデフォルトで動く（後方互換）。"""
+        """Works with default when base_context has no workflow_name (backward compatible)."""
         from unittest.mock import MagicMock
 
         from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
@@ -390,11 +390,11 @@ class TestPerWorkflowOrderBuilder:
         )
 
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)  # workflow_name キーなし
+        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)  # no workflow_name key
         default_builder.build_order.assert_called_once()
 
     def test_backward_compat_no_order_builders_kwarg(self):
-        """order_builders を渡さない既存の呼び出し方式は引き続き動作する。"""
+        """Legacy call style without order_builders still works."""
         from unittest.mock import MagicMock
 
         from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
@@ -413,18 +413,18 @@ class TestPerWorkflowOrderBuilder:
         )
 
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {"workflow_name": "issuesmith"}, audit_context=_TEST_AUDIT_CTX)  # 何が来ても default に落ちる
+        api.submit(steps, {"workflow_name": "issuesmith"}, audit_context=_TEST_AUDIT_CTX)  # always falls back to default
         order_builder.build_order.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
-# Issue #3029: submit(order_builder=..., workflow_roles=...) 公開引数
+# Issue #3029: submit(order_builder=..., workflow_roles=...) public kwargs
 # ---------------------------------------------------------------------------
 
 
 class TestSubmitOrderBuilderAndWorkflowRoles:
     def test_submit_order_builder_kwarg_skips_resolve(self):
-        """submit(order_builder=wrapped) 時は _resolve_order_builder を呼ばない。"""
+        """With submit(order_builder=wrapped), _resolve_order_builder is not called."""
         api, pipeline_state, default_builder = _make_api()
         wrapped = MagicMock()
         wrapped.build_order.return_value = "wrapped order"
@@ -446,7 +446,7 @@ class TestSubmitOrderBuilderAndWorkflowRoles:
         pipeline_state.append_exec_records.assert_called_once()
 
     def test_workflow_roles_set_role_annotations(self):
-        """workflow_roles ありで step.role が annotations に設定される。"""
+        """With workflow_roles, step.role is set in annotations."""
         import json as _json
 
         api, pipeline_state, _ = _make_api()
@@ -472,7 +472,7 @@ class TestSubmitOrderBuilderAndWorkflowRoles:
         assert parsed["annotations"]["role_engines"] == ["claude", "codex"]
 
     def test_role_annotations_drive_quota_gate_admit(self, tmp_path):
-        """AC-2: 読み込んだ roles 由来の annotations が QuotaGate.admit(role, role_engines) に効く。"""
+        """AC-2: annotations from loaded roles affect QuotaGate.admit(role, role_engines)."""
         from datetime import datetime, timedelta, timezone
 
         from ghdag.io import exec_jsonl
@@ -536,13 +536,13 @@ class TestSubmitOrderBuilderAndWorkflowRoles:
 
 
 # ---------------------------------------------------------------------------
-# AC3: depends 事前検証 (Issue #766)
+# AC3: depends pre-validation (Issue #766)
 # ---------------------------------------------------------------------------
 
 
 class TestAC3DependsValidation:
     def test_unknown_dependency_raises_value_error(self):
-        """未定義の depends id → ValueError('Unknown dependency: ...')"""
+        """Undefined depends id → ValueError('Unknown dependency: ...')"""
         api, pipeline_state, _ = _make_api()
         steps = [
             StepConfig(id="step_a", template="t", model="m", depends=["nonexistent_step"]),
@@ -551,7 +551,7 @@ class TestAC3DependsValidation:
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
     def test_circular_dependency_a_b_a_raises_value_error(self):
-        """A→B→A の循環参照 → ValueError('circular dependency' を含む)"""
+        """A→B→A circular dependency → ValueError containing 'circular dependency'"""
         api, _, _ = _make_api()
         steps = [
             StepConfig(id="a", template="t", model="m", depends=["b"]),
@@ -561,7 +561,7 @@ class TestAC3DependsValidation:
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
     def test_valid_linear_dependency_passes(self):
-        """A→B→C の正常な直列依存 → 検証通過、3 exec 行生成"""
+        """A→B→C valid linear depends → validation passes, 3 exec lines"""
         api, pipeline_state, _ = _make_api()
         steps = [
             StepConfig(id="a", template="t", model="m"),
@@ -573,7 +573,7 @@ class TestAC3DependsValidation:
         pipeline_state.append_exec_records.assert_called_once()
 
     def test_validation_error_no_order_file_written(self):
-        """検証エラー時、order ファイルも exec.jsonl への追記も行われない"""
+        """On validation error, neither order file nor exec.jsonl is written"""
         api, pipeline_state, _ = _make_api()
         steps = [
             StepConfig(id="a", template="t", model="m", depends=["nonexistent"]),
@@ -584,7 +584,7 @@ class TestAC3DependsValidation:
         pipeline_state.append_exec_records.assert_not_called()
 
     def test_validation_error_circular_no_files_written(self):
-        """循環参照エラー時も order ファイルと exec.jsonl への追記が行われない"""
+        """On circular dependency error, neither order file nor exec.jsonl is written"""
         api, pipeline_state, _ = _make_api()
         steps = [
             StepConfig(id="x", template="t", model="m", depends=["y"]),
@@ -597,13 +597,13 @@ class TestAC3DependsValidation:
 
 
 # ---------------------------------------------------------------------------
-# JSONL mode: exec.jsonl への JSON レコード書き込み
+# JSONL mode: write JSON records to exec.jsonl
 # ---------------------------------------------------------------------------
 
 
 class TestJsonlMode:
     def test_calls_append_exec_records(self):
-        """append_exec_records が呼ばれる。"""
+        """append_exec_records is called."""
         api, pipeline_state, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
@@ -612,7 +612,7 @@ class TestJsonlMode:
         assert len(exec_lines) == 1
 
     def test_returns_json_strings(self):
-        """exec_lines は JSON 文字列（uuid フィールドを含む）。"""
+        """exec_lines are JSON strings (including a uuid field)."""
         import json as _json
 
         api, _, _ = _make_api()
@@ -625,7 +625,7 @@ class TestJsonlMode:
         assert "result_path" in record
 
     def test_idempotency_in_record(self):
-        """idempotency_key がレコードに埋め込まれ、コメント行は生成されない。"""
+        """idempotency_key is embedded in the record; no comment line is generated."""
         import json as _json
 
         api, pipeline_state, _ = _make_api()
@@ -637,7 +637,7 @@ class TestJsonlMode:
         assert record.get("idempotency_key") == "workflow:handler:42"
 
     def test_result_path_in_record(self):
-        """result_path フィールドが queue_dir/filename 形式。"""
+        """result_path field is queue_dir/filename format."""
         import json as _json
 
         api, _, _ = _make_api(queue_dir="jobs")
@@ -648,7 +648,7 @@ class TestJsonlMode:
         assert record["result_path"].startswith("jobs/")
 
     def test_no_comment_idempotency_line(self):
-        """exec_lines に # idempotency: コメント行が含まれない。"""
+        """exec_lines do not include # idempotency: comment lines."""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, idempotency_key="scheduler:diary_review:ts", audit_context=_TEST_AUDIT_CTX)
@@ -657,7 +657,7 @@ class TestJsonlMode:
             assert not line.startswith("#"), f"comment line found: {line!r}"
 
     def test_cursor_engine_valid_json(self):
-        """cursor engine の exec レコードが valid JSON で command に agent が含まれる。"""
+        """cursor engine exec record is valid JSON and command includes agent."""
         import json as _json
 
         api, _, _ = _make_api()
@@ -669,7 +669,7 @@ class TestJsonlMode:
         assert "agent" in record["command"]
 
     def test_all_exec_lines_are_parseable_json(self):
-        """複数ステップを submit したとき、全 exec_lines が JSON パース可能。"""
+        """When submitting multiple steps, all exec_lines are JSON-parseable."""
         import json as _json
 
         api, _, _ = _make_api()
@@ -686,7 +686,7 @@ class TestJsonlMode:
             assert "command" in record
 
     def test_scheduler_idempotency_key_format(self):
-        """スケジューラー形式 (scheduler:job_id:ISO8601) の idempotency_key が正常に埋め込まれる。"""
+        """Scheduler-format idempotency_key (scheduler:job_id:ISO8601) embeds correctly."""
         import json as _json
 
         api, _, _ = _make_api()
@@ -700,20 +700,20 @@ class TestJsonlMode:
 
 
 # ---------------------------------------------------------------------------
-# Issue #984: audit_context 必須化テスト (AC-1, AC-5 置換)
+# Issue #984: audit_context required tests (replaces AC-1, AC-5)
 # ---------------------------------------------------------------------------
 
 
 class TestAuditContextPropagation:
     def test_ac5_submit_without_audit_context_raises_type_error(self):
-        """AC-5 (必須化): audit_context を省略した submit() が TypeError を送出する。"""
+        """AC-5 (required): submit() without audit_context raises TypeError."""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         with pytest.raises(TypeError):
             api.submit(steps, {"issue_number": "10"}, idempotency_key="wf:h:10")
 
     def test_ac1_audit_context_passed_to_append_exec_records(self):
-        """AC-1: audit_context が append_exec_records に中継される。"""
+        """AC-1: audit_context is forwarded to append_exec_records."""
         from ghdag.pipeline.audit import AuditContext
 
         api, pipeline_state, _ = _make_api()
@@ -754,10 +754,10 @@ def _make_api_with_tmpdir(tmp_path):
 
 
 class TestResultContentInjection:
-    """Issue #1014: ${dep_id_result_content} コンテキスト注入。"""
+    """Issue #1014: ${dep_id_result_content} context injection."""
 
     def test_ac1_result_content_injected_when_file_exists(self, tmp_path):
-        """AC1: result ファイル存在時、p1_result_content が p2 コンテキストに注入される。"""
+        """AC1: when result file exists, p1_result_content is injected into p2 context."""
         result_content = "# Analysis Result\nScore: 85"
         result_file = tmp_path / f"{_TS}-claude-result-{_P1_UUID}.md"
         result_file.write_text(result_content, encoding="utf-8")
@@ -776,7 +776,7 @@ class TestResultContentInjection:
         assert p2_ctx["p1_result_content"] == result_content
 
     def test_ac2_empty_string_when_result_file_missing(self, tmp_path):
-        """AC2: result ファイル未存在時、p1_result_content が空文字列になる（エラーなし）。"""
+        """AC2: when result file is missing, p1_result_content is empty string (no error)."""
         api, _, order_builder = _make_api_with_tmpdir(tmp_path)
         steps = [
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
@@ -791,7 +791,7 @@ class TestResultContentInjection:
         assert p2_ctx["p1_result_content"] == ""
 
     def test_ac3_result_filename_and_content_coexist(self, tmp_path):
-        """AC3: p1_result_filename と p1_result_content が両方正しく展開される。"""
+        """AC3: both p1_result_filename and p1_result_content expand correctly."""
         result_content = "summary output"
         result_file = tmp_path / f"{_TS}-claude-result-{_P1_UUID}.md"
         result_file.write_text(result_content, encoding="utf-8")
@@ -811,7 +811,7 @@ class TestResultContentInjection:
         assert p2_ctx["p1_result_content"] == result_content
 
     def test_ac4_multiple_dep_contents_injected(self, tmp_path):
-        """AC4: p3 が p1・p2 両方に依存 → 両方の result_content が注入される。"""
+        """AC4: p3 depends on both p1 and p2 → both result_content values are injected."""
         content_p1 = "p1 result"
         content_p2 = "p2 result"
         (tmp_path / f"{_TS}-claude-result-{_P1_UUID}.md").write_text(content_p1, encoding="utf-8")
@@ -840,7 +840,7 @@ class TestResultContentInjection:
 
 class TestStepConfigPermission:
     def test_ac5_permission_text_only_exec_record_has_permission_mode(self):
-        """AC5: permission='text_only' → exec record command に --permission-mode default --disallowed-tools"""
+        """AC5: permission='text_only' → exec record command has --permission-mode default --disallowed-tools"""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="text_only")]
@@ -852,7 +852,7 @@ class TestStepConfigPermission:
         assert "--disallowed-tools" in record["command"]
 
     def test_ac5_permission_text_only_no_dangerously(self):
-        """AC5: permission='text_only' → --dangerously-skip-permissions なし"""
+        """AC5: permission='text_only' → no --dangerously-skip-permissions"""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="text_only")]
@@ -862,7 +862,7 @@ class TestStepConfigPermission:
         assert "--dangerously-skip-permissions" not in record["command"]
 
     def test_ac10_permission_none_default_behavior(self):
-        """AC10: permission=None（デフォルト）→ TEXT_ONLY（--permission-mode default --disallowed-tools）"""
+        """AC10: permission=None (default) → TEXT_ONLY (--permission-mode default --disallowed-tools)"""
         import json as _json
         api, _, _ = _make_api()
         steps_default = [StepConfig(template="brushup", model="claude-opus-4-6")]
@@ -900,10 +900,10 @@ class TestStepConfigPermission:
         assert "bypassPermissions" in record["command"]
 
     def test_permission_dangerous_full_access_codex(self):
-        """codex + permission='dangerous_full_access' → サンドボックスバイパスフラグが付く。
+        """codex + permission='dangerous_full_access' → sandbox bypass flags are attached.
 
-        nexus#2558 回帰: フラグが落ちると codex は workspace-write のまま起動し、
-        cwd 外（日記リポジトリ）へ書けずスキルが黙って失敗する。
+        nexus#2558 regression: without the flags, codex starts as workspace-write and
+        cannot write outside cwd (diary repo), so skills fail silently.
         """
         import json as _json
         api, _, _ = _make_api()
@@ -922,7 +922,7 @@ class TestStepConfigPermission:
         assert record["command"].split().count("--json") == 1
 
     def test_safe_default_permission_applied_when_env_set_and_permission_none(self, monkeypatch):
-        """AC2: env 指定 + permission=None で safe default が適用される。"""
+        """AC2: with env set and permission=None, the safe default is applied."""
         import json as _json
 
         monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "text_only")
@@ -939,7 +939,7 @@ class TestStepConfigPermission:
         assert "default_permission_applied" not in record["annotations"]
 
     def test_safe_default_rollback_dangerous_full_access(self, monkeypatch):
-        """GHDAG_SAFE_DEFAULT_PERMISSION=dangerous_full_access で危険デフォルトにロールバック可能。"""
+        """GHDAG_SAFE_DEFAULT_PERMISSION=dangerous_full_access can roll back to the dangerous default."""
         import json as _json
 
         monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "dangerous_full_access")
@@ -954,7 +954,7 @@ class TestStepConfigPermission:
         assert record["annotations"].get("safe_default_preset") == "dangerous_full_access"
 
     def test_explicit_permission_wins_over_safe_default_env(self, monkeypatch):
-        """AC3: permission 明示時は env より permission が優先される。"""
+        """AC3: an explicit permission overrides the env default."""
         import json as _json
 
         monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "text_only")
@@ -968,7 +968,7 @@ class TestStepConfigPermission:
         assert "safe_default_preset" not in record["annotations"]
 
     def test_cursor_dangerous_full_access_includes_force(self):
-        """AC4: cursor + dangerous_full_access で --force が付与される。"""
+        """AC4: cursor + dangerous_full_access attaches --force."""
         import json as _json
 
         api, _, _ = _make_api()
@@ -979,7 +979,7 @@ class TestStepConfigPermission:
         assert "--force" in record["command"]
 
     def test_cursor_text_only_does_not_include_force(self):
-        """AC5: cursor + text_only では --force が付与されない。"""
+        """AC5: cursor + text_only does not attach --force."""
         import json as _json
 
         api, _, _ = _make_api()
@@ -990,7 +990,7 @@ class TestStepConfigPermission:
         assert "--force" not in record["command"]
 
     def test_invalid_safe_default_permission_raises_value_error(self, monkeypatch):
-        """AC6: 不正な GHDAG_SAFE_DEFAULT_PERMISSION は ValueError。"""
+        """AC6: invalid GHDAG_SAFE_DEFAULT_PERMISSION raises ValueError."""
         monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "invalid_preset")
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6", permission=None)]
@@ -998,7 +998,7 @@ class TestStepConfigPermission:
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
     def test_shell_engine_command_unchanged_when_safe_default_env_set(self, monkeypatch):
-        """AC7: shell エンジンは safe default env の影響を受けない。"""
+        """AC7: shell engine is unaffected by the safe-default env."""
         import json as _json
 
         monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "text_only")
@@ -1030,7 +1030,7 @@ class TestDefaultPermissionAuditAnnotations:
         assert "injected_danger_flag" not in record["annotations"]
 
     def test_ac2_permission_text_only_no_default_annotation(self):
-        """AC2: permission='text_only' → default_permission_applied キーなし。"""
+        """AC2: permission='text_only' → no default_permission_applied key."""
         import json as _json
         api, _, _ = _make_api()
         steps = [
@@ -1046,7 +1046,7 @@ class TestDefaultPermissionAuditAnnotations:
         assert "default_permission_applied" not in record["annotations"]
 
     def test_ac3_gemini_engine_no_default_annotation(self):
-        """AC3: gemini（danger_flag=None）→ default_permission_applied キーなし。"""
+        """AC3: gemini (danger_flag=None) → no default_permission_applied key."""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
@@ -1056,7 +1056,7 @@ class TestDefaultPermissionAuditAnnotations:
         assert "default_permission_applied" not in record["annotations"]
 
     def test_ac3_shell_engine_no_default_annotation(self):
-        """AC3: shell（danger_flag=None）→ default_permission_applied キーなし。"""
+        """AC3: shell (danger_flag=None) → no default_permission_applied key."""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="echo", engine="shell")]
@@ -1066,7 +1066,7 @@ class TestDefaultPermissionAuditAnnotations:
         assert "default_permission_applied" not in record["annotations"]
 
     def test_ac7_cursor_permission_none_injected_force(self):
-        """AC7: cursor + permission=None → TEXT_ONLY デフォルト（--force なし）。"""
+        """AC7: cursor + permission=None → TEXT_ONLY default (no --force)."""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="impl", model="cursor", engine="cursor")]
@@ -1080,13 +1080,13 @@ class TestDefaultPermissionAuditAnnotations:
 
 
 # ---------------------------------------------------------------------------
-# metadata 引数 — submit() の annotations 反映 (Issue #1295)
+# metadata kwarg — annotations reflected from submit() (Issue #1295)
 # ---------------------------------------------------------------------------
 
 
 class TestMetadataInAnnotations:
     def test_metadata_reflected_in_record_annotations(self):
-        """submit(metadata={"k": "v"}) で annotations に {"k": "v"} が含まれる。"""
+        """submit(metadata={"k": "v"}) includes {"k": "v"} in annotations."""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
@@ -1096,7 +1096,7 @@ class TestMetadataInAnnotations:
         assert record["annotations"].get("k") == "v"
 
     def test_metadata_channel_and_thread_ts(self):
-        """channel_id と thread_ts を metadata で渡すと annotations に格納される。"""
+        """Passing channel_id and thread_ts via metadata stores them in annotations."""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
@@ -1108,7 +1108,7 @@ class TestMetadataInAnnotations:
         assert record["annotations"]["thread_ts"] == "1234567890.000"
 
     def test_submit_with_metadata_completes_without_error(self):
-        """submit(metadata=...) が正常に完了する（例外なし）。"""
+        """submit(metadata=...) completes successfully (no exception)."""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         result = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata={"foo": "bar"})
@@ -1117,7 +1117,7 @@ class TestMetadataInAnnotations:
 
 class TestMetadataMultipleSteps:
     def test_all_steps_get_same_annotations(self):
-        """複数ステップ投入時、全レコードに同一の annotations が付与される。"""
+        """When submitting multiple steps, every record gets the same annotations."""
         import json as _json
         api, _, _ = _make_api()
         steps = [
@@ -1135,7 +1135,7 @@ class TestMetadataMultipleSteps:
             assert record["annotations"]["thread_ts"] == "9999.000"
 
     def test_two_steps_both_have_annotations(self):
-        """2 ステップ（依存なし・依存あり）どちらにも annotations が付与される。"""
+        """Both steps (independent and dependent) receive annotations."""
         import json as _json
         api, _, _ = _make_api()
         steps = [
@@ -1152,7 +1152,7 @@ class TestMetadataMultipleSteps:
 
 class TestMetadataRoundTrip:
     def test_roundtrip_via_parse_jsonl(self):
-        """submit() で metadata を渡し、exec.jsonl → parse_jsonl() → Task.annotations が一致する。"""
+        """submit() with metadata: exec.jsonl → parse_jsonl() → Task.annotations match."""
         import json as _json
 
         from ghdag.dag.parser import parse_jsonl
@@ -1178,7 +1178,7 @@ class TestMetadataRoundTrip:
         assert tasks[0].annotations["thread_ts"] == "1234567890.000"
 
     def test_roundtrip_multiple_steps(self):
-        """複数ステップのラウンドトリップ: 全 Task.annotations が metadata と一致する。"""
+        """Multi-step round-trip: every Task.annotations matches metadata."""
         import json as _json
 
         from ghdag.dag.parser import parse_jsonl
@@ -1212,7 +1212,7 @@ class TestMetadataRoundTrip:
 
 class TestMetadataBackwardCompat:
     def test_no_metadata_annotations_empty(self):
-        """metadata を省略した場合、gemini は metadata 由来の annotation キーなし（safe default のみ）。"""
+        """When metadata is omitted, gemini has no metadata-derived annotation keys (safe default only)."""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
@@ -1226,7 +1226,7 @@ class TestMetadataBackwardCompat:
         assert len(annotations) == 3
 
     def test_no_metadata_does_not_break_existing_behavior(self):
-        """metadata なしで既存のテスト項目（uuid, command, result_path）が正常。"""
+        """Without metadata, existing fields (uuid, command, result_path) remain valid."""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
@@ -1240,7 +1240,7 @@ class TestMetadataBackwardCompat:
 
 class TestMetadataWithIdempotencyKey:
     def test_idempotency_key_and_metadata_together(self):
-        """idempotency_key と metadata を同時に指定できる。"""
+        """idempotency_key and metadata can be specified together."""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
@@ -1259,7 +1259,7 @@ class TestMetadataWithIdempotencyKey:
 
 class TestMetadataEmptyDict:
     def test_empty_metadata_dict_annotations_stays_empty(self):
-        """metadata={} を渡した場合、gemini は metadata 由来の annotation キーなし（safe default のみ）。"""
+        """With metadata={}, gemini has no metadata-derived annotation keys (safe default only)."""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
@@ -1275,7 +1275,7 @@ class TestMetadataEmptyDict:
 
 class TestMetadataExplicitNone:
     def test_explicit_none_metadata_same_as_omitted(self):
-        """metadata=None を明示的に渡した場合、gemini は省略時と同一（safe default のみ）。"""
+        """With metadata=None explicitly, gemini matches the omitted case (safe default only)."""
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]

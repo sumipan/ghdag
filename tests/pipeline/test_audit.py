@@ -26,7 +26,7 @@ class TestAuditContext:
         assert ctx.correlation_id == "issue:756"
 
     def test_ac_a1_extended_fields_no_type_error(self):
-        """AC-A1: request_id / parent_correlation_id / orchestration_id を渡しても TypeError にならない。"""
+        """AC-A1: passing request_id / parent_correlation_id / orchestration_id does not raise TypeError."""
         ctx = AuditContext(
             source="x",
             correlation_id="y",
@@ -41,7 +41,7 @@ class TestAuditContext:
 
 class TestWriteAuditLog:
     def test_ac4_keyword_args_recorded(self, tmp_path):
-        """AC4: task_uuids, exec_lines_count をキーワード引数で渡し正しく記録される。"""
+        """AC4: task_uuids and exec_lines_count kwargs are recorded correctly."""
         audit_path = tmp_path / "audit.jsonl"
         ctx = AuditContext(source="issuesmith")
 
@@ -67,7 +67,7 @@ class TestWriteAuditLog:
         assert isinstance(r["caller_stack"], list)
 
     def test_ac5_exec_lines_count_zero_no_write(self, tmp_path):
-        """AC5: exec_lines_count=0 → 何も書き込まれない。"""
+        """AC5: exec_lines_count=0 → nothing is written."""
         audit_path = tmp_path / "audit.jsonl"
         ctx = AuditContext()
 
@@ -81,7 +81,7 @@ class TestWriteAuditLog:
         assert not audit_path.exists()
 
     def test_ac5_empty_task_uuids_with_count(self, tmp_path):
-        """AC5補: task_uuids=[] かつ exec_lines_count > 0 → 空リストとして記録される。"""
+        """AC5b: task_uuids=[] with exec_lines_count > 0 → recorded as empty list."""
         audit_path = tmp_path / "audit.jsonl"
         ctx = AuditContext(source="issuesmith")
 
@@ -97,7 +97,7 @@ class TestWriteAuditLog:
         assert r["exec_lines_count"] == 1
 
     def test_ac8_write_failure_logs_stderr_no_exception(self, tmp_path, capsys):
-        """AC8: I/O 失敗 → stderr 警告のみ、例外を上位に伝搬しない。"""
+        """AC8: I/O failure → stderr warning only; exception is not propagated."""
         audit_path = tmp_path / "audit.jsonl"
         audit_path.mkdir()
 
@@ -112,7 +112,7 @@ class TestWriteAuditLog:
         assert "[audit] warning:" in captured.err
 
     def test_without_context_uses_unknown(self, tmp_path):
-        """AuditContext デフォルト → source='unknown', correlation_id=null。"""
+        """AuditContext defaults → source='unknown', correlation_id=null."""
         audit_path = tmp_path / "audit.jsonl"
 
         write_audit_log(
@@ -127,7 +127,7 @@ class TestWriteAuditLog:
         assert r["correlation_id"] is None
 
     def test_default_permission_uuids_recorded(self, tmp_path):
-        """default_permission_uuids が渡された場合、ログに反映される。"""
+        """When default_permission_uuids is passed, it appears in the log."""
         audit_path = tmp_path / "audit.jsonl"
 
         write_audit_log(
@@ -142,7 +142,7 @@ class TestWriteAuditLog:
         assert r["default_permission_uuids"] == [UUID1, UUID2]
 
     def test_default_permission_uuids_omitted_when_none(self, tmp_path):
-        """default_permission_uuids=None → フィールドを出力しない。"""
+        """default_permission_uuids=None → field is omitted."""
         audit_path = tmp_path / "audit.jsonl"
 
         write_audit_log(
@@ -157,7 +157,7 @@ class TestWriteAuditLog:
         assert "default_permission_uuids" not in r
 
     def test_default_permission_uuids_omitted_when_empty(self, tmp_path):
-        """default_permission_uuids=[] → フィールドを出力しない。"""
+        """default_permission_uuids=[] → field is omitted."""
         audit_path = tmp_path / "audit.jsonl"
 
         write_audit_log(
@@ -172,7 +172,7 @@ class TestWriteAuditLog:
         assert "default_permission_uuids" not in r
 
     def test_idempotency_key_recorded(self, tmp_path):
-        """idempotency_key が渡された場合、ログに反映される。"""
+        """When idempotency_key is passed, it appears in the log."""
         audit_path = tmp_path / "audit.jsonl"
 
         write_audit_log(
@@ -187,7 +187,7 @@ class TestWriteAuditLog:
         assert r["idempotency_key"] == "issuesmith:brushup:756"
 
     def test_caller_stack_max_5_frames(self, tmp_path):
-        """caller_stack は最大 5 フレーム。"""
+        """caller_stack is capped at 5 frames."""
         audit_path = tmp_path / "audit.jsonl"
 
         write_audit_log(
@@ -201,7 +201,7 @@ class TestWriteAuditLog:
         assert len(r["caller_stack"]) <= 5
 
     def test_appends_multiple_calls(self, tmp_path):
-        """複数回呼ぶと JSONL に複数行が追記される。"""
+        """Multiple calls append multiple JSONL lines."""
         audit_path = tmp_path / "audit.jsonl"
 
         write_audit_log(
@@ -221,24 +221,24 @@ class TestWriteAuditLog:
         assert len(lines) == 2
 
     def test_ac1_no_extract_task_uuids_in_audit(self):
-        """AC1: audit モジュールに _extract_task_uuids が存在しない。"""
+        """AC1: audit module must not expose _extract_task_uuids."""
         import ghdag.pipeline.audit as audit_mod
         assert not hasattr(audit_mod, "_extract_task_uuids")
 
     def test_ac2_no_uuid_re_in_audit(self):
-        """AC2: audit モジュールに _UUID_RE が存在しない。"""
+        """AC2: audit module must not expose _UUID_RE."""
         import ghdag.pipeline.audit as audit_mod
         assert not hasattr(audit_mod, "_UUID_RE")
 
     def test_ac3_no_exec_lines_param(self):
-        """AC3: write_audit_log が exec_lines パラメータを持たない。"""
+        """AC3: write_audit_log must not take an exec_lines parameter."""
         import inspect
         sig = inspect.signature(write_audit_log)
         assert "exec_lines" not in sig.parameters
 
 
 class TestAppendExecRecordsAudit:
-    """AC6: append_exec_records 経由で dict から UUID が抽出され audit に記録される。"""
+    """AC6: UUIDs extracted from dicts via append_exec_records are recorded in audit."""
 
     def test_ac6_uuid_from_dict(self, tmp_path):
         from ghdag.pipeline.state import PipelineState
@@ -257,7 +257,7 @@ class TestAppendExecRecordsAudit:
         assert r["exec_lines_count"] == 1
 
     def test_ac6_record_without_uuid_key(self, tmp_path):
-        """uuid キーを持たない dict はスキップ。"""
+        """Dicts without a uuid key are skipped."""
         from ghdag.pipeline.state import PipelineState
 
         exec_path = tmp_path / "exec.jsonl"
@@ -271,7 +271,7 @@ class TestAppendExecRecordsAudit:
         assert r["task_uuids"] == []
 
     def test_ac_a4_enqueue_v3_fields(self, tmp_path):
-        """AC-A4: write_audit_log に v3 フィールドが含まれる。"""
+        """AC-A4: write_audit_log includes v3 fields."""
         audit_path = tmp_path / "audit.jsonl"
         ctx = AuditContext(
             source="mltgnt-scheduler",
@@ -293,7 +293,7 @@ class TestAppendExecRecordsAudit:
         assert r["orchestration_id"] == "orch-1"
 
     def test_ac_a5_request_id_in_exec_annotations(self, tmp_path):
-        """AC-A5: append_exec_records が annotations._request_id に request_id を注入する。"""
+        """AC-A5: append_exec_records injects request_id into annotations._request_id."""
         from ghdag.pipeline.state import PipelineState
 
         exec_path = tmp_path / "exec.jsonl"
@@ -308,7 +308,7 @@ class TestAppendExecRecordsAudit:
         assert rec["annotations"]["_request_id"] == "req-abc"
 
     def test_ac4_default_permission_uuids_from_annotations(self, tmp_path):
-        """AC4: default_permission_applied 付き UUID のみ audit に記録。"""
+        """AC4: only UUIDs with default_permission_applied are recorded in audit."""
         from ghdag.pipeline.state import PipelineState
 
         exec_path = tmp_path / "exec.jsonl"
@@ -344,7 +344,7 @@ class TestAppendExecRecordsAudit:
         assert len(r["task_uuids"]) == 3
 
     def test_ac5_no_default_permission_uuids_when_all_specified(self, tmp_path):
-        """AC5: 全レコードが permission 指定相当（annotations 空）→ フィールドなし。"""
+        """AC5: all records equivalent to explicit permission (empty annotations) → field omitted."""
         from ghdag.pipeline.state import PipelineState
 
         exec_path = tmp_path / "exec.jsonl"
@@ -368,7 +368,7 @@ class TestWriteLlmAuditLog:
     """Tests for write_llm_audit_log() — Issue #762."""
 
     def test_ac1_all_fields(self, tmp_path):
-        """AC1: 全フィールド指定 — 正しく記録される。"""
+        """AC1: all fields specified — recorded correctly."""
         from ghdag.pipeline.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
@@ -397,7 +397,7 @@ class TestWriteLlmAuditLog:
         assert _UUID4_RE.match(r["request_id"])
 
     def test_ac_a3_external_request_id(self, tmp_path):
-        """AC-A3: request_id 指定時はその値が使われる。"""
+        """AC-A3: when request_id is specified, that value is used."""
         from ghdag.pipeline.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
@@ -412,7 +412,7 @@ class TestWriteLlmAuditLog:
         assert r["request_id"] == "ext-123"
 
     def test_ac2_correlation_id_none(self, tmp_path):
-        """AC2: correlation_id 未指定 → null。"""
+        """AC2: correlation_id omitted → null."""
         from ghdag.pipeline.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
@@ -427,7 +427,7 @@ class TestWriteLlmAuditLog:
         assert r["correlation_id"] is None
 
     def test_ac6_timeout_sec_none(self, tmp_path):
-        """AC6: timeout_sec 未指定 → null。"""
+        """AC6: timeout_sec omitted → null."""
         from ghdag.pipeline.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
@@ -442,7 +442,7 @@ class TestWriteLlmAuditLog:
         assert r["timeout_sec"] is None
 
     def test_ac8_write_failure_logs_stderr_no_exception(self, tmp_path, capsys):
-        """AC8: I/O 失敗 → stderr 警告のみ、例外を上位に伝搬しない。"""
+        """AC8: I/O failure → stderr warning only; exception is not propagated."""
         from ghdag.pipeline.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
@@ -459,7 +459,7 @@ class TestWriteLlmAuditLog:
         assert "[audit] warning:" in captured.err
 
     def test_request_id_unique_per_call(self, tmp_path):
-        """request_id は呼び出しごとに異なる UUID4。"""
+        """request_id is a distinct UUID4 per call."""
         from ghdag.pipeline.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
@@ -476,7 +476,7 @@ class TestWriteLlmAuditLog:
         assert len(set(request_ids)) == 3
 
     def test_appends_multiple_calls(self, tmp_path):
-        """複数回呼ぶと JSONL に複数行が追記される。"""
+        """Multiple calls append multiple JSONL lines."""
         from ghdag.pipeline.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
@@ -487,7 +487,7 @@ class TestWriteLlmAuditLog:
         assert len(lines) == 2
 
     def test_ac11_coexists_with_enqueue_records(self, tmp_path):
-        """AC11: enqueue レコードと llm_call レコードが同一ファイルに共存できる。"""
+        """AC11: enqueue and llm_call records can coexist in the same file."""
         from ghdag.pipeline.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
@@ -514,7 +514,7 @@ class TestWriteLlmAuditLog:
 class TestRotation:
     def test_ac1_size_rotation_triggers(self, tmp_path, monkeypatch):
         """AC-1: file > threshold → rotate; new record in fresh audit.jsonl."""
-        # rotate 実装は io/_rotate に一元化（#2673）。閾値パッチは正規モジュールへ。
+        # rotate implementation is centralized in io/_rotate (#2673). Patch the threshold on the canonical module.
         import ghdag.io._rotate as rotate_mod
         monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
 
@@ -561,7 +561,7 @@ class TestRotation:
         assert len(lines) == 2
 
     def test_ac_should_rotate_daily_not_exists(self):
-        """_should_rotate_daily 関数が存在しないこと（dead code 除去）"""
+        """_should_rotate_daily must not exist (dead code removed)"""
         import ghdag.pipeline.audit as audit_mod
         assert not hasattr(audit_mod, "_should_rotate_daily")
 

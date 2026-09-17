@@ -91,7 +91,7 @@ def test_record_parallel_writes(tmp_path):
 
 
 def test_record_expands_additional_tags(tmp_path):
-    """additional_tags がある場合、JSONL レコードに key-value を展開する。"""
+    """When additional_tags is set, expand key-value pairs onto the JSONL record."""
     output = tmp_path / "metrics.jsonl"
     recorder = MetricsRecorder(output)
     recorder.record(make_metrics(uuid="t-tags", additional_tags={"template": "b1", "tier": "heavy"}))
@@ -102,7 +102,7 @@ def test_record_expands_additional_tags(tmp_path):
 
 
 def test_record_without_additional_tags_omits_extra_keys(tmp_path):
-    """additional_tags が None のとき既存フィールド以外を増やさない。"""
+    """When additional_tags is None, do not add keys beyond the existing fields."""
     output = tmp_path / "metrics.jsonl"
     recorder = MetricsRecorder(output)
     recorder.record(make_metrics(uuid="t-none"))

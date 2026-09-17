@@ -31,18 +31,18 @@ def _make_metrics(status: str = "success") -> TaskMetrics:
 
 class TestDefaultHooksLoggingOnly:
     def test_no_args_init(self):
-        """AC-2: DefaultHooks() は引数なしでインスタンス化できる。"""
+        """AC-2: DefaultHooks() can be instantiated with no arguments."""
         hooks = DefaultHooks()
         assert hooks is not None
 
     def test_on_task_success_no_fs_write(self, tmp_path):
-        """AC-3: on_task_success 呼び出し後、FS への書き込みが発生しない。"""
+        """AC-3: calling on_task_success does not write to the filesystem."""
         hooks = DefaultHooks()
         hooks.on_task_success(UUID, _make_task(), _make_metrics("success"))
         assert not any(tmp_path.iterdir())
 
     def test_all_events_no_fs_write(self, tmp_path):
-        """全イベントを呼び出してもファイルが作成されない。"""
+        """Calling every event creates no files."""
         hooks = DefaultHooks()
         task = _make_task()
         metrics = _make_metrics()

@@ -20,8 +20,8 @@ class TestInlineOrderBuilder:
 
     def test_no_variables(self):
         builder = InlineOrderBuilder()
-        result = builder.build_order("固定テキスト", {})
-        assert result == "固定テキスト"
+        result = builder.build_order("fixed text", {})
+        assert result == "fixed text"
 
     def test_multiple_variables(self):
         builder = InlineOrderBuilder()
@@ -29,49 +29,49 @@ class TestInlineOrderBuilder:
         assert result == "X and Y"
 
     def test_undefined_variable_passes_through(self):
-        """未定義変数は ${var} のまま残す（safe_substitute 挙動）。
+        """Undefined variables remain as ${var} (safe_substitute behavior).
 
-        scheduler の動的プロンプト（mltgnt skill action 等）で LLM 向けの
-        ${ENV_VAR} 表記が含まれた場合に scheduler が死なないよう、未定義変数を
-        raise せずそのまま通す仕様。
+        For scheduler dynamic prompts (mltgnt skill actions, etc.) that include
+        LLM-facing ${ENV_VAR} notation, leave undefined variables unsubstituted
+        instead of raising so the scheduler does not die.
         """
         builder = InlineOrderBuilder()
         result = builder.build_order("${missing}", {})
         assert result == "${missing}"
 
     def test_partial_substitution(self):
-        """既知変数だけ展開し、未知は ${var} のまま残す。"""
+        """Expand known variables only; leave unknown ones as ${var}."""
         builder = InlineOrderBuilder()
         result = builder.build_order("${p} ${q}", {"p": "1"})
         assert result == "1 ${q}"
 
     def test_skill_prompt_with_env_var_notation(self):
-        """SKILL.md 風の ${ENV_VAR} 記法を含むプロンプトが落ちない。
+        """SKILL.md-style ${ENV_VAR} notation in a prompt must not fail.
 
-        mltgnt skill action 経由で `${NIKKI_ROOT}/日記/...` のような LLM 向け
-        環境変数表記が prompt に含まれても TemplateVariableError を raise しない
-        ことの回帰テスト。
+        Regression: LLM-facing env notation with a CJK diary path segment via
+        mltgnt skill action must not raise TemplateVariableError.
         """
         builder = InlineOrderBuilder()
-        prompt = "対象日記: ${NIKKI_ROOT}/日記/YYYY-MM-DD.md ($0)"
+        # Japanese text intentionally kept for CJK processing test
+        prompt = "Target diary: ${NIKKI_ROOT}/日記/YYYY-MM-DD.md ($0)"
         result = builder.build_order(prompt, {"workflow_name": "scheduler"})
-        # ${NIKKI_ROOT} と $0 が未定義でも raise されずに通る
+        # ${NIKKI_ROOT} and $0 remain unsubstituted without raising
         assert "${NIKKI_ROOT}" in result
         assert "$0" in result
 
     def test_malformed_placeholder_passes_through(self):
-        """malformed placeholder (${}) も safe_substitute では raise せず残る。
+        """Malformed placeholder (${}) is left as-is by safe_substitute (no raise).
 
-        従来は ValueError を raise していたが、scheduler の動的プロンプト経路で
-        scheduler スレッドが落ちるよりも、不正記法をそのまま LLM に渡したほうが
-        運用上安全（LLM が文脈で判断できる）。
+        Previously raised ValueError; on the scheduler dynamic-prompt path it is
+        safer to pass the bad notation through to the LLM (which can judge from
+        context) than to crash the scheduler thread.
         """
         builder = InlineOrderBuilder()
         result = builder.build_order("text ${} more", {})
         assert result == "text ${} more"
 
     def test_protocol_conformance_with_llm_pipeline_api(self, tmp_path):
-        """InlineOrderBuilder を order_builders に渡して submit が成功する。"""
+        """Passing InlineOrderBuilder via order_builders lets submit succeed."""
         pipeline_state = MagicMock()
         pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
         default_builder = MagicMock()
@@ -83,7 +83,7 @@ class TestInlineOrderBuilder:
             queue_dir="queue",
             order_builders={"scheduler": InlineOrderBuilder()},
         )
-        steps = [StepConfig(template="プロンプト本文 ${issue_number}", model="claude-opus-4-6")]
+        steps = [StepConfig(template="Prompt body ${issue_number}", model="claude-opus-4-6")]
         exec_lines = api.submit(
             steps,
             base_context={"workflow_name": "scheduler", "issue_number": "42"},

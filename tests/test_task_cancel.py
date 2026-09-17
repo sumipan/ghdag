@@ -47,7 +47,7 @@ def _read_done(config: DagConfig, uuid: str) -> str:
 
 class TestTaskCancel:
     def test_cancel_running_sleep_marks_cancelled(self, tmp_path, monkeypatch):
-        """実行中 sleep を cancel → kill_grace 内に CANCELLED done マーカー。"""
+        """Cancel an in-flight sleep → CANCELLED done marker within kill_grace."""
         config = _make_config(
             tmp_path,
             [{"uuid": "uuid-a", "command": "sleep 60", "depends": []}],
@@ -103,7 +103,7 @@ class TestTaskCancel:
         assert call_task.uuid == "uuid-a"
 
     def test_cancel_supports_legacy_hooks_without_cancel_callback(self, tmp_path):
-        """on_task_cancelled 未実装の旧 hooks でもキャンセル処理は壊れない。"""
+        """Cancel still works when legacy hooks omit on_task_cancelled."""
 
         class LegacyHooks:
             def on_task_start(self, uuid, task):
@@ -142,7 +142,7 @@ class TestTaskCancel:
         t.join(timeout=3.0)
 
     def test_cancel_propagates_dep_failed(self, tmp_path):
-        """キャンセルされた親に依存する子は DEP_FAILED。"""
+        """Child depending on a cancelled parent becomes DEP_FAILED."""
         config = _make_config(
             tmp_path,
             [
@@ -181,7 +181,7 @@ class TestTaskCancel:
         hooks.on_task_dep_failed.assert_called()
 
     def test_running_file_removed_on_success(self, tmp_path):
-        """正常終了でも jobs/running/<uuid>.json が消える。"""
+        """jobs/running/<uuid>.json is cleared on normal completion too."""
         config = _make_config(
             tmp_path,
             [{"uuid": "uuid-a", "command": "sleep 0.2", "depends": []}],
@@ -212,7 +212,7 @@ class TestTaskCancel:
         assert not running_path.exists()
 
     def test_running_file_removed_on_timeout(self, tmp_path):
-        """タイムアウト終了でも jobs/running/<uuid>.json が消える。"""
+        """jobs/running/<uuid>.json is cleared on timeout exit too."""
         config = _make_config(
             tmp_path,
             [{"uuid": "uuid-a", "command": "sleep 60", "depends": []}],
@@ -239,7 +239,7 @@ class TestTaskCancel:
         assert not running_path.exists()
 
     def test_default_hooks_on_task_cancelled_noop(self):
-        """DefaultHooks.on_task_cancelled は例外なく noop。"""
+        """DefaultHooks.on_task_cancelled is a no-op without raising."""
         hooks = DefaultHooks()
         from ghdag.dag.models import Task
 

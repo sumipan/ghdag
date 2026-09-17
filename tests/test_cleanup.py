@@ -1,4 +1,4 @@
-"""Tests for ghdag.cleanup — AC1〜AC10 および Issue-856 修正テストを含む。"""
+"""Tests for ghdag.cleanup — AC1–AC10 and Issue-856 fix coverage."""
 
 from __future__ import annotations
 
@@ -103,7 +103,7 @@ class TestFileTimestamp:
 
 
 # ---------------------------------------------------------------------------
-# AC1: 完了済みタスクのアーカイブ
+# AC1: archive completed tasks
 # ---------------------------------------------------------------------------
 
 
@@ -173,7 +173,7 @@ class TestArchivedDone:
 
 
 # ---------------------------------------------------------------------------
-# AC2: 孤立タスクのアーカイブ
+# AC2: archive orphan tasks
 # ---------------------------------------------------------------------------
 
 
@@ -287,7 +287,7 @@ class TestDryRun:
 
 
 # ---------------------------------------------------------------------------
-# AC4: result のみ存在（order 欠損）の完了済みタスク
+# AC4: completed task with result only (missing order)
 # ---------------------------------------------------------------------------
 
 
@@ -312,7 +312,7 @@ class TestResultOnlyDone:
 
 
 # ---------------------------------------------------------------------------
-# AC5: order のみ存在（result 欠損）の孤立タスク
+# AC5: orphan task with order only (missing result)
 # ---------------------------------------------------------------------------
 
 
@@ -337,7 +337,7 @@ class TestOrderOnlyOrphan:
 
 
 # ---------------------------------------------------------------------------
-# AC6: queue/ が存在しない
+# AC6: queue/ does not exist
 # ---------------------------------------------------------------------------
 
 
@@ -362,7 +362,7 @@ class TestQueueDirMissing:
 
 
 # ---------------------------------------------------------------------------
-# AC7: マッチするファイルが 0 件
+# AC7: zero matching files
 # ---------------------------------------------------------------------------
 
 
@@ -384,20 +384,20 @@ class TestNoMatchingFiles:
 
 
 # ---------------------------------------------------------------------------
-# AC8: 境界値（ちょうど cutoff 日数）
+# AC8: boundary (exactly cutoff days)
 # ---------------------------------------------------------------------------
 
 
 class TestBoundaryValues:
     def test_exactly_cutoff_days_is_archived(self, tmp_path):
-        """cutoff_days ちょうどのタスクはアーカイブされる（<=）"""
+        """Tasks exactly at cutoff_days are archived (<=)"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_A)
         _make_done_flag(done_dir, UUID_A)
         _make_exec_jsonl(exec_md, [UUID_A])
 
-        # file_timestamp を固定値で mock し、cutoff_ts == file_ts の境界をテスト
-        fixed_ts = 1_700_000_000.0  # 固定値
+        # Mock file_timestamp to a fixed value to test cutoff_ts == file_ts boundary
+        fixed_ts = 1_700_000_000.0  # fixed value
         fake_now = datetime.fromtimestamp(fixed_ts + 86400, tz=timezone.utc)
 
         with patch("ghdag.cleanup.orchestrator.datetime") as mock_dt, \
@@ -417,7 +417,7 @@ class TestBoundaryValues:
 
 
 # ---------------------------------------------------------------------------
-# AC9: exec.md が存在しない
+# AC9: exec.md does not exist
 # ---------------------------------------------------------------------------
 
 
@@ -443,7 +443,7 @@ class TestExecMdMissing:
 
 
 # ---------------------------------------------------------------------------
-# AC10: UUID の大文字・小文字混在
+# AC10: mixed-case UUID
 # ---------------------------------------------------------------------------
 
 
@@ -468,15 +468,15 @@ class TestUUIDCaseInsensitive:
 
 
 # ---------------------------------------------------------------------------
-# AC1 (追加): 複合ツール名（ハイフン入り）のファイルが cleanup 対象になる
+# AC1 (extra): hyphenated compound tool-name files are cleanup targets
 # ---------------------------------------------------------------------------
 
 
 class TestCompoundToolName:
     def test_compound_tool_name_done_task_is_archived(self, tmp_path):
-        """claude-investigator のような複合ツール名ファイルが完了済みアーカイブされる"""
+        """Compound tool-name files like claude-investigator are archived when completed"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
-        # 複合ツール名でファイルを作成
+        # Create files with a compound tool name
         order = queue_dir / f"{TS}-claude-investigator-order-{UUID_A}.md"
         result = queue_dir / f"{TS}-claude-investigator-result-{UUID_A}.md"
         order.write_text("order")
@@ -498,7 +498,7 @@ class TestCompoundToolName:
         assert not result.exists()
 
     def test_gemini_redelegator_done_task_is_archived(self, tmp_path):
-        """gemini-redelegator のような複合ツール名ファイルが完了済みアーカイブされる"""
+        """Compound tool-name files like gemini-redelegator are archived when completed"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order = queue_dir / f"{TS}-gemini-redelegator-order-{UUID_B}.md"
         order.write_text("order")
@@ -518,7 +518,7 @@ class TestCompoundToolName:
         assert not order.exists()
 
     def test_cursor_investigator_orphan_task_is_archived(self, tmp_path):
-        """cursor-investigator のような複合ツール名の孤立タスクがアーカイブされる"""
+        """Orphan tasks with compound tool names like cursor-investigator are archived"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order = queue_dir / f"{TS}-cursor-investigator-order-{UUID_C}.md"
         order.write_text("order")
@@ -539,13 +539,13 @@ class TestCompoundToolName:
 
 
 # ---------------------------------------------------------------------------
-# AC2 (追加): stderr ファイルが cleanup 対象になる
+# AC2 (extra): stderr files are cleanup targets
 # ---------------------------------------------------------------------------
 
 
 class TestStderrKind:
     def test_stderr_file_done_task_is_archived(self, tmp_path):
-        """claude-stderr の stderr ファイルが完了済みとしてアーカイブされる"""
+        """claude-stderr stderr files are archived as completed"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         stderr_file = queue_dir / f"{TS}-claude-stderr-{UUID_A}.md"
         stderr_file.write_text("stderr content")
@@ -565,7 +565,7 @@ class TestStderrKind:
         assert not stderr_file.exists()
 
     def test_cursor_stderr_orphan_task_is_archived(self, tmp_path):
-        """cursor-stderr の孤立タスクがアーカイブされる"""
+        """cursor-stderr orphan tasks are archived"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         stderr_file = queue_dir / f"{TS}-cursor-stderr-{UUID_B}.md"
         stderr_file.write_text("stderr content")
@@ -585,7 +585,7 @@ class TestStderrKind:
         assert not stderr_file.exists()
 
     def test_gemini_stderr_matches_as_valid_kind(self, tmp_path):
-        """gemini-stderr ファイルが QUEUE_FILE_RE にマッチする"""
+        """gemini-stderr files match QUEUE_FILE_RE"""
         from ghdag.cleanup import QUEUE_FILE_RE
         fname = f"{TS}-gemini-stderr-{UUID_C}.md"
         assert QUEUE_FILE_RE.match(fname) is not None
@@ -611,13 +611,13 @@ class TestCleanupResult:
 
 class TestJsonlPrune:
     def test_jsonl_prune_removes_target_uuid_line(self, tmp_path):
-        """JSONL 形式の exec ファイルからアーカイブ対象 UUID 行を除去する"""
+        """Remove archive-target UUID lines from a JSONL exec file"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         order_a, _ = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order_a, days_ago=2)
         _make_done_flag(done_dir, UUID_A)
-        # UUID_B は active な pending ジョブ（order ファイルあり・done なし・新しい）= Case E
-        # ghdag は order ファイル先行で投入するため、order が無い = pending ではなく dead
+        # UUID_B is an active pending job (order present, no done, recent) = Case E
+        # ghdag enqueues order-first, so missing order = dead, not pending
         order_b, _ = _make_queue_files(queue_dir, UUID_B)
         _set_mtime(order_b, days_ago=0.1)
         _make_exec_jsonl(exec_jsonl, [UUID_A, UUID_B])
@@ -636,12 +636,12 @@ class TestJsonlPrune:
         assert UUID_B in content
 
     def test_jsonl_prune_keeps_non_matching_uuid(self, tmp_path):
-        """別 UUID の JSONL 行は残る（active な pending ジョブは Case E で keep）"""
+        """JSONL lines for other UUIDs remain (active pending jobs kept as Case E)"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         order_a, _ = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order_a, days_ago=2)
         _make_done_flag(done_dir, UUID_A)
-        # UUID_B は active pending（Case E: done なし・ファイルあり・新しい）
+        # UUID_B is active pending (Case E: no done, files present, recent)
         order_b, _ = _make_queue_files(queue_dir, UUID_B)
         _set_mtime(order_b, days_ago=0.1)
         _make_exec_jsonl(exec_jsonl, [UUID_B])
@@ -654,13 +654,13 @@ class TestJsonlPrune:
             cutoff_days=1,
         )
 
-        # UUID_A は exec.jsonl に無いので Case A 対象外、Phase 2 で archive される（pruned_exec=0）
-        # UUID_B は Case E で keep
+        # UUID_A is absent from exec.jsonl so not Case A; Phase 2 archives it (pruned_exec=0)
+        # UUID_B is kept as Case E
         assert res.pruned_exec == 0
         assert UUID_B in exec_jsonl.read_text()
 
     def test_jsonl_prune_keeps_invalid_json_line(self, tmp_path):
-        """パース不能な行は除去しない"""
+        """Unparseable lines are not removed"""
         import json
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_A)
@@ -685,13 +685,13 @@ class TestJsonlPrune:
         assert UUID_A not in content
 
 # ---------------------------------------------------------------------------
-# Issue-856: orphan done マーカー付与（AC2）
+# Issue-856: attach orphan done marker (AC2)
 # ---------------------------------------------------------------------------
 
 
 class TestOrphanDoneMark:
     def test_orphan_archive_creates_done_marker(self, tmp_path):
-        """orphan アーカイブ前に ORPHAN_ARCHIVED の done マーカーを作成する"""
+        """Create an ORPHAN_ARCHIVED done marker before orphan archive"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_B)
         _set_mtime(order, days_ago=10)
@@ -712,7 +712,7 @@ class TestOrphanDoneMark:
         assert "ORPHAN_ARCHIVED" in done_flag.read_text()
 
     def test_orphan_done_marker_created_before_file_move(self, tmp_path):
-        """done マーカーはファイル移動の前に作成される（DagEngine が誤認しないよう）"""
+        """done marker is created before file moves (so DagEngine does not misread state)"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_B)
         _set_mtime(order, days_ago=10)
@@ -742,13 +742,13 @@ class TestOrphanDoneMark:
 
 
 # ---------------------------------------------------------------------------
-# Issue-856: done マーカー削除順序（AC3）
+# Issue-856: done marker deletion order (AC3)
 # ---------------------------------------------------------------------------
 
 
 class TestDoneDeleteOrder:
     def test_exec_pruned_before_done_marker_deleted(self, tmp_path):
-        """exec prune が完了した後に done マーカーを削除する"""
+        """Delete the done marker only after exec prune completes"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=2)
@@ -767,7 +767,7 @@ class TestDoneDeleteOrder:
             return original_unlink(self, missing_ok=missing_ok)
 
         def tracking_prune(path, prune_uuids, *, dry_run=False):
-            # prune は LOCK_EX 付き rewrite（旧 Path.write_text 相当）
+            # prune rewrites under LOCK_EX (replaces former Path.write_text)
             result = original_prune(path, prune_uuids, dry_run=dry_run)
             if Path(path).name == exec_jsonl.name and result > 0 and not dry_run:
                 call_order.append(f"write_exec:{exec_jsonl.name}")
@@ -798,7 +798,7 @@ class TestDoneDeleteOrder:
 
 
 # ---------------------------------------------------------------------------
-# AC11〜AC17: Phase 2 sweep フェーズ
+# AC11–AC17: Phase 2 sweep phase
 # ---------------------------------------------------------------------------
 
 UUID_D = "dddddddd-dddd-dddd-dddd-dddddddddddd"
@@ -806,7 +806,7 @@ UUID_D = "dddddddd-dddd-dddd-dddd-dddddddddddd"
 
 class TestSweepExtras:
     def test_ac11_slack_pending_json_is_swept(self, tmp_path):
-        """AC11: slack-pending-*.json が sweep される"""
+        """AC11: slack-pending-*.json files are swept"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
         slack_file.write_text("{}")
@@ -822,13 +822,13 @@ class TestSweepExtras:
 
         assert res.swept_extras == 1
         assert not slack_file.exists()
-        # archive/YYYY-MM/extras/ に移動されていること
+        # Must be moved under archive/YYYY-MM/extras/
         extras_dirs = list(archive_dir.glob("*/extras"))
         assert len(extras_dirs) == 1
         assert (extras_dirs[0] / slack_file.name).exists()
 
     def test_ac12_nonstandard_md_is_swept(self, tmp_path):
-        """AC12: 非標準命名 .md が sweep される"""
+        """AC12: non-standard-named .md files are swept"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         nonstandard = queue_dir / "20260324105832-gemini-deep-kakiuchi-result.md"
         nonstandard.write_text("result")
@@ -848,9 +848,9 @@ class TestSweepExtras:
         assert len(extras_dirs) == 1
 
     def test_ac13_whitelist_files_are_not_swept(self, tmp_path):
-        """AC13: *.jsonl, .gitkeep, .ghdag.lock はホワイトリストで sweep されない"""
+        """AC13: *.jsonl, .gitkeep, .ghdag.lock are whitelisted and not swept"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
-        exec_md.write_text("")  # exec.jsonl を実際に作成する
+        exec_md.write_text("")  # actually create exec.jsonl
         gitkeep = queue_dir / ".gitkeep"
         gitkeep.touch()
         lock = queue_dir / ".ghdag.lock"
@@ -876,7 +876,7 @@ class TestSweepExtras:
         assert audit.exists()
 
     def test_ac14_young_file_is_not_swept(self, tmp_path):
-        """AC14: orphan_days 未満のファイルは sweep されない"""
+        """AC14: files younger than orphan_days are not swept"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
         slack_file.write_text("{}")
@@ -894,7 +894,7 @@ class TestSweepExtras:
         assert slack_file.exists()
 
     def test_ac15_dry_run_sweep(self, tmp_path, capsys):
-        """AC15: dry_run で sweep 対象を表示するのみ、ファイルは残存"""
+        """AC15: dry_run only lists sweep targets; files remain"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
         slack_file.write_text("{}")
@@ -915,7 +915,7 @@ class TestSweepExtras:
         assert "[dry] sweep extras:" in out
 
     def test_ac16_directories_are_not_swept(self, tmp_path):
-        """AC16: done/, archive/, thread-index/ ディレクトリは sweep されない"""
+        """AC16: done/, archive/, thread-index/ directories are not swept"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         thread_index = queue_dir / "thread-index"
         thread_index.mkdir()
@@ -934,7 +934,7 @@ class TestSweepExtras:
         assert thread_index.exists()
 
     def test_ac17_phase1_archived_files_not_double_processed(self, tmp_path):
-        """AC17: Phase 1 でアーカイブ済みのファイルは Phase 2 で二重処理されない"""
+        """AC17: files archived in Phase 1 are not double-processed in Phase 2"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, result = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=2)
@@ -954,15 +954,15 @@ class TestSweepExtras:
 
 
 # ---------------------------------------------------------------------------
-# Issue-870: stuck エントリ除去（Case C/F）と Case B の保護
+# Issue-870: remove stuck entries (Case C/F) and protect Case B
 # ---------------------------------------------------------------------------
 
 
 class TestStuckDoneExecPrune:
     def test_stuck_uuid_pruned_from_exec(self, tmp_path):
-        """Case C: done マーカーあり・ファイルなし → exec.jsonl から除去される"""
+        """Case C: done marker present, files absent → removed from exec.jsonl"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
-        # ファイルは作らない（stuck 状態：前回の cleanup で既にアーカイブ済み）
+        # Do not create files (stuck: already archived by a previous cleanup)
         _make_done_flag(done_dir, UUID_A)
         _make_exec_jsonl(exec_jsonl, [UUID_A])
 
@@ -979,7 +979,7 @@ class TestStuckDoneExecPrune:
         assert UUID_A not in exec_jsonl.read_text()
 
     def test_stuck_uuid_done_marker_preserved(self, tmp_path):
-        """Case C: stuck 後も done マーカーは削除されない"""
+        """Case C: done marker is not deleted after stuck handling"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         _make_done_flag(done_dir, UUID_A)
         _make_exec_jsonl(exec_jsonl, [UUID_A])
@@ -995,7 +995,7 @@ class TestStuckDoneExecPrune:
         assert (done_dir / UUID_A).exists()
 
     def test_done_recent_not_pruned(self, tmp_path):
-        """Case B: done あり・ファイルあり・cutoff 未到達 → exec.jsonl は除去されない"""
+        """Case B: done present, files present, before cutoff → exec.jsonl not pruned"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         order, result = _make_queue_files(queue_dir, UUID_B)
         _set_mtime(order, days_ago=0.5)
@@ -1017,7 +1017,7 @@ class TestStuckDoneExecPrune:
         assert result.exists()
 
     def test_stuck_cleanup_idempotent(self, tmp_path):
-        """Case C を 2 回連続実行 → 2 回目は pruned_exec == 0、エラーなし"""
+        """Run Case C twice → second run has pruned_exec == 0, no error"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         _make_done_flag(done_dir, UUID_A)
         _make_exec_jsonl(exec_jsonl, [UUID_A])
@@ -1041,15 +1041,15 @@ class TestStuckDoneExecPrune:
         assert res2.pruned_exec == 0
 
     def test_dead_entry_pruned(self, tmp_path):
-        """Case F: done なし・ファイルなし → exec.jsonl から除去される
+        """Case F: no done, no files → removed from exec.jsonl
 
-        ghdag のジョブ投入は「order ファイル作成 → exec.jsonl 追記」の順序が
-        全投入点（LLMPipelineAPI / submit_order / enqueue 等）で保証されており、
-        append_exec は fcntl.LOCK_EX 下で実行される。したがって「exec.jsonl にあるが
-        files なし」は pending ではなく dead entry である。
+        Job enqueue always creates the order file before appending exec.jsonl at
+        every entry point (LLMPipelineAPI / submit_order / enqueue, etc.), and
+        append_exec runs under fcntl.LOCK_EX. Therefore "present in exec.jsonl but
+        no files" is a dead entry, not pending.
         """
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
-        # done マーカーなし、ファイルなし、exec.jsonl にエントリのみ
+        # no done marker, no files, only an exec.jsonl entry
         _make_exec_jsonl(exec_jsonl, [UUID_C])
 
         res = cleanup_queue(
@@ -1067,13 +1067,13 @@ class TestStuckDoneExecPrune:
 
 
 # ---------------------------------------------------------------------------
-# Issue-1057: auto_repair=False デフォルト動作（検出のみ）
+# Issue-1057: auto_repair=False default behavior (detect only)
 # ---------------------------------------------------------------------------
 
 
 class TestAutoRepairFalse:
     def test_case_d_no_archive_detected_orphan(self, tmp_path, capsys):
-        """auto_repair=False: Case D orphan は検出のみ, ファイル移動なし, detected_orphan=1"""
+        """auto_repair=False: Case D orphan is detect-only, no file move, detected_orphan=1"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         order, result = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=10)
@@ -1096,7 +1096,7 @@ class TestAutoRepairFalse:
         assert UUID_A in exec_jsonl.read_text()
 
     def test_case_d_stderr_report_orphan(self, tmp_path, capsys):
-        """auto_repair=False: Case D → stderr に ORPHAN detected レポートが出力される"""
+        """auto_repair=False: Case D → ORPHAN detected report on stderr"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=10)
@@ -1117,7 +1117,7 @@ class TestAutoRepairFalse:
         assert "--auto-repair" in err
 
     def test_case_d_no_done_marker_created(self, tmp_path):
-        """auto_repair=False: Case D → done マーカーが作成されない"""
+        """auto_repair=False: Case D → done marker is not created"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=10)
@@ -1135,7 +1135,7 @@ class TestAutoRepairFalse:
         assert not (done_dir / UUID_A).exists()
 
     def test_case_f_no_prune_detected_dead(self, tmp_path, capsys):
-        """auto_repair=False: Case F dead entry は検出のみ, exec 行削除なし, detected_dead=1"""
+        """auto_repair=False: Case F dead entry is detect-only, no exec line delete, detected_dead=1"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         _make_exec_jsonl(exec_jsonl, [UUID_B])
 
@@ -1152,7 +1152,7 @@ class TestAutoRepairFalse:
         assert UUID_B in exec_jsonl.read_text()
 
     def test_case_f_stderr_report_dead(self, tmp_path, capsys):
-        """auto_repair=False: Case F → stderr に DEAD_ENTRY detected レポートが出力される"""
+        """auto_repair=False: Case F → DEAD_ENTRY detected report on stderr"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         _make_exec_jsonl(exec_jsonl, [UUID_B])
 
@@ -1170,7 +1170,7 @@ class TestAutoRepairFalse:
         assert "--auto-repair" in err
 
     def test_auto_repair_true_case_d_archives(self, tmp_path):
-        """auto_repair=True: Case D → 従来通り orphan アーカイブされる"""
+        """auto_repair=True: Case D → orphan archived as before"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         order, result = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=10)
@@ -1191,7 +1191,7 @@ class TestAutoRepairFalse:
         assert not result.exists()
 
     def test_auto_repair_true_case_f_prunes(self, tmp_path):
-        """auto_repair=True: Case F → 従来通り exec 行削除される"""
+        """auto_repair=True: Case F → exec line deleted as before"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         _make_exec_jsonl(exec_jsonl, [UUID_B])
 
@@ -1208,7 +1208,7 @@ class TestAutoRepairFalse:
         assert UUID_B not in exec_jsonl.read_text()
 
     def test_auto_repair_false_dry_run_no_dry_prefix_in_stderr(self, tmp_path, capsys):
-        """auto_repair=False, dry_run=True: Case D/F の検出レポートは [dry] プレフィックスなし"""
+        """auto_repair=False, dry_run=True: Case D/F detect reports have no [dry] prefix"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_A)
         _set_mtime(order, days_ago=10)

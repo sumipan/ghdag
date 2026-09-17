@@ -25,7 +25,7 @@ class TestComputePromptHash:
         assert compute_prompt_hash("") == expected
 
     def test_compute_prompt_hash_multibyte(self):
-        prompt = "こんにちは"
+        prompt = "hello"
         expected = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
         assert compute_prompt_hash(prompt) == expected
 
@@ -112,7 +112,7 @@ class TestWriteLlmInferenceAudit:
 
 class TestCliEmitsLlmInference:
     def test_cli_emits_llm_inference(self, tmp_path):
-        """ghdag llm 成功時に llm.inference レコードが追記される。"""
+        """On successful ghdag llm, an llm.inference record is appended."""
         from unittest.mock import patch
 
         from ghdag.llm.engines import LLMResult

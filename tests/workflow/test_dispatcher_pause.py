@@ -53,7 +53,7 @@ def _read_audit_events(tmp_path: Path) -> list[dict]:
 
 
 def test_pause_file_skips_poll_once(tmp_path):
-    """pause file が存在する間は poll_once / dispatch を呼ばない。"""
+    """While the pause file exists, do not call poll_once / dispatch."""
     pause_file = tmp_path / "pause.txt"
     pause_file.write_text("quota exhausted", encoding="utf-8")
     dispatcher = _make_dispatcher(tmp_path, pause_file=pause_file)
@@ -67,7 +67,7 @@ def test_pause_file_skips_poll_once(tmp_path):
 
 
 def test_dispatch_resumes_after_pause_file_removed(tmp_path):
-    """pause file を削除すると次ループから poll_once / dispatch が再開する。"""
+    """After deleting the pause file, poll_once / dispatch resume on the next loop."""
     pause_file = tmp_path / "pause.txt"
     pause_file.write_text("quota exhausted", encoding="utf-8")
     dispatcher = _make_dispatcher(tmp_path, pause_file=pause_file)
@@ -97,7 +97,7 @@ def test_dispatch_resumes_after_pause_file_removed(tmp_path):
 
 
 def test_pause_and_resume_events_are_recorded_once(tmp_path):
-    """pause / resume イベントは遷移時のみ 1 回ずつ記録される。"""
+    """pause / resume events are recorded once each, only on transition."""
     pause_file = tmp_path / "pause.txt"
     pause_file.write_text("quota exhausted", encoding="utf-8")
     dispatcher = _make_dispatcher(tmp_path, pause_file=pause_file)
@@ -120,7 +120,7 @@ def test_pause_and_resume_events_are_recorded_once(tmp_path):
 
 
 def test_pause_reason_is_truncated_to_500_chars(tmp_path):
-    """pause 理由は 500 文字で切り捨てる。"""
+    """Pause reason is truncated to 500 characters."""
     pause_file = tmp_path / "pause.txt"
     pause_file.write_text("x" * 700, encoding="utf-8")
     dispatcher = _make_dispatcher(tmp_path, pause_file=pause_file)

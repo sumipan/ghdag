@@ -6,7 +6,7 @@ from ghdag.workflow.state_machine import (
     validate_transition,
 )
 
-# --- WorkflowConfig パース ---
+# --- WorkflowConfig parsing ---
 
 def test_workflow_config_with_label_fields():
     cfg = WorkflowConfig(
@@ -29,7 +29,7 @@ def test_workflow_config_transitions_default_none():
     assert cfg.reset_label is None
 
 
-# --- validate_transition 正常系 ---
+# --- validate_transition happy path ---
 
 def test_valid_transition():
     ok, msg = validate_transition(
@@ -46,7 +46,7 @@ def test_valid_transition_with_unrelated_labels():
     assert ok is True
 
 
-# --- validate_transition 異常系 ---
+# --- validate_transition error cases ---
 
 def test_undefined_transition_rejected():
     ok, msg = validate_transition(
@@ -61,6 +61,7 @@ def test_no_phase_label_rejected():
         [], "test:b", transitions={"test:a": ["test:b"]}
     )
     assert ok is False
+    # Japanese text intentionally kept for CJK processing test
     assert "遷移元を特定できない" in msg
 
 
@@ -69,6 +70,7 @@ def test_no_phase_label_rejected():
 def test_transitions_none_skips_validation():
     ok, msg = validate_transition(["test:a"], "test:b", transitions=None)
     assert ok is True
+    # Japanese text intentionally kept for CJK processing test
     assert msg == "バリデーションスキップ"
 
 

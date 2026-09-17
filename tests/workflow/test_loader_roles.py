@@ -1,4 +1,4 @@
-"""loader が label_namespace / transitions / reset_label / roles / step.role を読む (Issue #3029)."""
+"""loader reads label_namespace / transitions / reset_label / roles / step.role (Issue #3029)."""
 
 from __future__ import annotations
 
@@ -13,11 +13,11 @@ from ghdag.workflow.state_machine import _load_workflow_config
 
 
 def _resolve_issuesmith_yml() -> Path:
-    """nexus 実ファイルを優先し、無ければ slimmed fixture にフォールバック。
+    """Prefer the real nexus file; fall back to the slimmed fixture if missing.
 
-    worktree 下では .../nexus/workflows/issuesmith.yml が見つかる。
-    ghdag 単独 CI では parents 深さが異なり実ファイルが無いため、
-    tests/fixtures/issuesmith_workflow_roles.yml（実形の縮約）を使う。
+    Under a worktree, .../nexus/workflows/issuesmith.yml is found.
+    In standalone ghdag CI, parent depth differs and the real file is absent,
+    so use tests/fixtures/issuesmith_workflow_roles.yml (condensed real shape).
     """
     here = Path(__file__).resolve()
     for parent in here.parents:
@@ -32,7 +32,7 @@ _NEXUS_ISSUESMITH_YML = _resolve_issuesmith_yml()
 
 
 def _stub_templates(workflow_dir: Path, yml_text: str) -> None:
-    """issuesmith.yml が参照する template ファイルを空スタブで用意する。"""
+    """Provide empty stubs for template files referenced by issuesmith.yml."""
     data = yaml.safe_load(yml_text)
     template_dir_name = data.get("template_dir") or "templates"
     tdir = workflow_dir / template_dir_name
@@ -42,13 +42,13 @@ def _stub_templates(workflow_dir: Path, yml_text: str) -> None:
 
 
 def _issuesmith_fixture(tmp_path: Path, *, inject_roles: bool = False) -> Path:
-    """実 issuesmith.yml（または同等 fixture）を tmp にコピーし、必要なら roles / step.role を注入する。"""
+    """Copy real issuesmith.yml (or equivalent fixture) to tmp; inject roles / step.role if needed."""
     assert _NEXUS_ISSUESMITH_YML.is_file(), f"missing fixture: {_NEXUS_ISSUESMITH_YML}"
     text = _NEXUS_ISSUESMITH_YML.read_text(encoding="utf-8")
     if inject_roles:
         data = yaml.safe_load(text)
         data["roles"] = {"design": ["claude", "codex"], "impl": ["cursor", "claude"]}
-        # 先頭ハンドラの先頭ステップに role を付与（実ファイル形を維持）
+        # attach role to the first step of the first handler (keep real file shape)
         first_handler = next(iter(data["handlers"].values()))
         first_handler["steps"][0]["role"] = "design"
         text = yaml.dump(data, allow_unicode=True, sort_keys=False)
@@ -104,7 +104,7 @@ roles:
             load_workflows(tmp_path)
 
     def test_state_machine_load_no_longer_needs_replace_workaround(self, tmp_path: Path) -> None:
-        """_parse がフィールドを読むため、_load_workflow_config は replace なしで同等。"""
+        """Because _parse reads the fields, _load_workflow_config is equivalent without replace."""
         wf_dir = _issuesmith_fixture(tmp_path)
         yml_path = wf_dir / "issuesmith.yml"
         via_state_machine = _load_workflow_config(yml_path)

@@ -7,7 +7,7 @@ from ghdag.core.engine_spec import ENGINE_SPECS
 
 
 class TestIsolationOptIn:
-    """AC-1 / AC-2: --disable-slash-commands は isolation=True のときだけ付く。"""
+    """AC-1 / AC-2: --disable-slash-commands is attached only when isolation=True."""
 
     def test_build_llm_cmd_default_omits_disable_slash_commands(self) -> None:
         cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", isolation=False)

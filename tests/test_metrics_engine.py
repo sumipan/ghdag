@@ -134,7 +134,7 @@ def test_engine_model_in_metrics(mock_tee, mock_mark_done, tmp_path):
 @patch("ghdag.dag.task_launcher.state_mark_done")
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
 def test_timeout_failure_class(mock_tee, mock_mark_done, tmp_path):
-    """タイムアウトパス → metrics.failure_class == "TIMEOUT"。"""
+    """Timeout path → metrics.failure_class == \"TIMEOUT\"."""
     engine, hooks = make_engine(tmp_path)
     rt = make_running_task()
     rt.term_sent_at = time.monotonic() - 1.0
@@ -150,7 +150,7 @@ def test_timeout_failure_class(mock_tee, mock_mark_done, tmp_path):
 @patch("ghdag.dag.task_launcher.state_mark_done")
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value="result.md")
 def test_pipeline_failed_failure_class(mock_tee, mock_mark_done, tmp_path):
-    """PIPELINE_STATUS: *_FAILED パス → metrics.failure_class == "PIPELINE_FAILED"。"""
+    """PIPELINE_STATUS: *_FAILED path → metrics.failure_class == \"PIPELINE_FAILED\"."""
     engine, hooks = make_engine(tmp_path)
     hooks.check_rejected.return_value = False
     hooks.check_pipeline_status.return_value = "IMPL_FAILED"

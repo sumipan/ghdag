@@ -1,4 +1,4 @@
-"""tests/llm/test_managed.py — call_managed() の回帰テスト (Issue #2793)."""
+"""tests/llm/test_managed.py — regression tests for call_managed() (Issue #2793)."""
 
 from __future__ import annotations
 

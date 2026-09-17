@@ -36,16 +36,16 @@ def test_violation_with_all_fields():
     v = Violation(
         rule_id="cp1.forbidden_word.tbd",
         severity="warn",
-        message="TBD が残存",
+        message="TBD remains",
         location="line 5",
         auto_fixable=True,
-        fix_hint="具体的な方針に置き換えてください",
+        fix_hint="Replace with a concrete policy",
     )
     assert v.rule_id == "cp1.forbidden_word.tbd"
     assert v.severity == "warn"
     assert v.location == "line 5"
     assert v.auto_fixable is True
-    assert v.fix_hint == "具体的な方針に置き換えてください"
+    assert v.fix_hint == "Replace with a concrete policy"
 
 
 # --- GATE_REGISTRY ---
@@ -55,8 +55,8 @@ def test_gate_registry_is_dict():
 
 
 def test_gate_registry_starts_empty_no_concrete_rules():
-    # ghdag 版は具体ルールを auto-import しない。issuesmith 側が登録する。
-    # GATE_REGISTRY が dict であることと、Protocol 準拠ルールを手動登録できることを確認。
+    # ghdag does not auto-import concrete rules; issuesmith registers them.
+    # Confirm GATE_REGISTRY is a dict and Protocol-compliant rules can be registered manually.
     key = "_test_empty_check"
     assert key not in GATE_REGISTRY
 

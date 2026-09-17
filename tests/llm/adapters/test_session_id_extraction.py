@@ -6,7 +6,7 @@ from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.adapters.codex import CodexAdapter
 from ghdag.llm.adapters.cursor import CursorAdapter
 
-# 実測 stdout fixtures（Issue #2968）
+# Measured stdout fixtures (Issue #2968)
 _CURSOR_REAL_JSON = (
     b'{"type":"result","subtype":"success","is_error":false,'
     b'"duration_ms":5607,"duration_api_ms":5607,"result":"pong",'
@@ -38,7 +38,7 @@ def test_claude_json_extracts_none_when_missing_session_id():
 
 
 def test_cursor_extracts_session_id_from_real_json():
-    """実測 cursor JSON の session_id を抽出する。"""
+    """Extract session_id from measured cursor JSON."""
     adapter = CursorAdapter()
     assert adapter.extract_session_id(_CURSOR_REAL_JSON, b"") == (
         "85105031-11df-48a2-a791-812a0128b4cf"
@@ -46,7 +46,7 @@ def test_cursor_extracts_session_id_from_real_json():
 
 
 def test_cursor_extracts_chat_id_from_jsonl():
-    """旧形式 chat_id の後方互換。"""
+    """Backward compat for legacy chat_id."""
     adapter = CursorAdapter()
     stdout = b'{"type":"meta","chat_id":"chat_123"}\n{"type":"result","result":"ok"}\n'
     assert adapter.extract_session_id(stdout, b"") == "chat_123"
@@ -66,7 +66,7 @@ def test_cursor_text_stdout_has_no_session_id():
 
 
 def test_codex_extracts_thread_id_from_real_jsonl():
-    """実測 codex JSONL の thread.started.thread_id を抽出する。"""
+    """Extract thread.started.thread_id from measured codex JSONL."""
     adapter = CodexAdapter()
     assert adapter.extract_session_id(_CODEX_REAL_JSONL, b"") == (
         "01a0842c-88a5-7993-afd5-13562483ca9b"
@@ -74,7 +74,7 @@ def test_codex_extracts_thread_id_from_real_jsonl():
 
 
 def test_codex_extracts_session_id_from_jsonl():
-    """旧形式 session_id の後方互換。"""
+    """Backward compat for legacy session_id."""
     adapter = CodexAdapter()
     stdout = b'{"type":"session.created","session_id":"codex_sess_1"}\n{"type":"turn.completed"}\n'
     assert adapter.extract_session_id(stdout, b"") == "codex_sess_1"

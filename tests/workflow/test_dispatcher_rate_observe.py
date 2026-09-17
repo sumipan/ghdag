@@ -1,7 +1,7 @@
 """Tests for header-based rate limit observation (nexus #3070).
 
-_observe_rate_limit は get_last_rate_limit() のみ使い、GET /rate_limit を呼ばない。
-応答ヘッダ由来の remaining / limit / used / reset を audit に書く。
+_observe_rate_limit uses only get_last_rate_limit(); it does not call GET /rate_limit.
+Write remaining / limit / used / reset from response headers into the audit log.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ def _make_dispatcher(tmp_path: Path, polling_interval: int = 30) -> tuple[Workfl
 
 class TestObserveUsesLastRateLimit:
     def test_records_header_rate_limit_in_audit(self, tmp_path):
-        """AC-4: get_last_rate_limit の値（used 含む）が audit に記録される。"""
+        """AC-4: get_last_rate_limit values (including used) are written to audit."""
         dispatcher, github = _make_dispatcher(tmp_path)
         github.get_last_rate_limit.return_value = {
             "remaining": 2474,

@@ -1,4 +1,4 @@
-"""tests/llm/test_call_text.py — TextResult dataclass と call_text 関数のユニットテスト。"""
+"""tests/llm/test_call_text.py — unit tests for TextResult dataclass and call_text."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from ghdag.llm import TextResult, call_text
 from ghdag.llm.engines import LLMResult
 
 # ---------------------------------------------------------------------------
-# TextResult dataclass テスト
+# TextResult dataclass tests
 # ---------------------------------------------------------------------------
 
 class TestTextResult:
@@ -52,7 +52,7 @@ class TestTextResult:
 
 
 # ---------------------------------------------------------------------------
-# call_text 関数テスト
+# call_text function tests
 # ---------------------------------------------------------------------------
 
 def _make_llm_result(stdout: str, stderr: str = "", returncode: int = 0) -> LLMResult:
@@ -71,7 +71,7 @@ class TestCallText:
         assert result.error.kind is EngineErrorKind.CAPACITY
 
     def test_claude_engine_extracts_result_field(self):
-        """ClaudeJsonAdapter が {"result": "extracted"} から "extracted" を返すこと。"""
+        """ClaudeJsonAdapter returns "extracted" from {"result": "extracted"}."""
         import json
         json_stdout = json.dumps({"result": "extracted", "type": "result"})
         mock_result = _make_llm_result(stdout=json_stdout)
@@ -83,8 +83,8 @@ class TestCallText:
         assert result.success is True
 
     def test_adapter_empty_output_falls_back_to_raw_stdout(self):
-        """adapter が空バイトを返した場合 body が raw.stdout にフォールバックすること。"""
-        # CodexAdapter は agent_message が 0 件の場合に空バイトを返す
+        """When the adapter returns empty bytes, body falls back to raw.stdout."""
+        # CodexAdapter returns empty bytes when there are zero agent_message events
         mock_result = _make_llm_result(stdout="fallback text")
         with patch("ghdag.llm.engines.call", return_value=mock_result):
             with patch("ghdag.llm.adapters.get_output_adapter") as mock_get_adapter:
@@ -96,14 +96,14 @@ class TestCallText:
         assert result.body == "fallback text"
 
     def test_nonzero_returncode_sets_success_false(self):
-        """call() が returncode=1 を返した場合 success=False かつ body にはフォールバック値。"""
+        """When call() returns returncode=1, success=False and body has a fallback value."""
         mock_result = _make_llm_result(stdout="error output", stderr="some error", returncode=1)
         with patch("ghdag.llm.engines.call", return_value=mock_result):
             result = call_text("test prompt", engine="claude")
         assert result.success is False
         assert result.returncode == 1
         assert result.error is None
-        # body は adapter 出力または raw.stdout フォールバック — 空でないこと
+        # body is adapter output or raw.stdout fallback — must be non-empty
         assert result.body
 
     def test_returns_text_result_type(self):
@@ -113,7 +113,7 @@ class TestCallText:
         assert isinstance(result, TextResult)
 
     def test_passes_kwargs_to_call(self):
-        """call_text が call() に引数を正しく転送すること。"""
+        """call_text forwards arguments to call() correctly."""
         mock_result = _make_llm_result(stdout="ok")
         with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
             call_text(
@@ -133,14 +133,14 @@ class TestCallText:
         assert call_kwargs[1]["dangerously_skip_permissions"] is True
 
     def test_import_from_ghdag_llm(self):
-        """from ghdag.llm import call_text, TextResult が成功すること。"""
+        """from ghdag.llm import call_text, TextResult succeeds."""
         from ghdag.llm import TextResult as TR
         from ghdag.llm import call_text as ct
         assert TR is TextResult
         assert ct is call_text
 
     def test_codex_engine_extracts_agent_message(self):
-        """CodexAdapter が JSONL の agent_message テキストを body に抽出すること。"""
+        """CodexAdapter extracts agent_message text from JSONL into body."""
         import json
         jsonl_line = json.dumps({
             "type": "item.completed",
@@ -153,7 +153,7 @@ class TestCallText:
         assert result.success is True
 
     def test_cursor_engine_extracts_json_result(self):
-        """CursorAdapter が JSON stdout の result を body に抽出すること。"""
+        """CursorAdapter extracts result from JSON stdout into body."""
         import json
         payload = json.dumps({
             "type": "result",
@@ -167,7 +167,7 @@ class TestCallText:
         assert result.success is True
 
     def test_cursor_engine_passes_through_plain_text(self):
-        """CursorAdapter が非 JSON stdout をそのまま body にパススルーすること。"""
+        """CursorAdapter passes non-JSON stdout through to body as-is."""
         mock_result = _make_llm_result(stdout="cursor output")
         with patch("ghdag.llm.engines.call", return_value=mock_result):
             result = call_text("test prompt", engine="cursor")
@@ -175,7 +175,7 @@ class TestCallText:
         assert result.success is True
 
     def test_passthrough_engine_passes_through_stdout(self):
-        """未知 engine で _PassthroughAdapter が stdout をそのまま body にパススルーすること。"""
+        """For an unknown engine, _PassthroughAdapter passes stdout through to body."""
         mock_result = _make_llm_result(stdout="raw text")
         with patch("ghdag.llm.engines.call", return_value=mock_result):
             result = call_text("test prompt", engine="unknown")
@@ -183,14 +183,14 @@ class TestCallText:
         assert result.success is True
 
     def test_passthrough_empty_stdout_returns_empty(self):
-        """_PassthroughAdapter で stdout が空の場合 body == "" となること。"""
+        """With _PassthroughAdapter, empty stdout yields body == ''."""
         mock_result = _make_llm_result(stdout="")
         with patch("ghdag.llm.engines.call", return_value=mock_result):
             result = call_text("test prompt", engine="unknown")
         assert result.body == ""
 
     def test_json_text_preserved_in_body(self):
-        """result フィールドに JSON 文字列が入っていた場合、body にそのまま保持されること。"""
+        """When the result field holds a JSON string, body keeps it as-is."""
         import json
         json_stdout = json.dumps({"result": '{"key": "val"}', "type": "result"})
         mock_result = _make_llm_result(stdout=json_stdout)

@@ -143,7 +143,7 @@ class TestParseFanoutSpec:
     def test_ac3_markdown_hr_without_fanout_returns_none(self, tmp_path):
         """AC3: --- in Claude output without ghdag_fanout: → None (no warning)."""
         f = tmp_path / "result.md"
-        f.write_text("実装完了。\n\n---\n\n**変更内容:**\nPR作成済み")
+        f.write_text("Implementation complete.\n\n---\n\n**Changes:**\nPR created")
         assert parse_fanout_spec(str(f)) is None
 
     def test_ac4_multiple_separators_fanout_after_second(self, tmp_path):

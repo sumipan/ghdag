@@ -44,7 +44,7 @@ def _make_issue(number: int) -> dict:
 def _make_dispatcher(workflow: WorkflowConfig) -> tuple[WorkflowDispatcher, MagicMock]:
     github_client = MagicMock(spec=GitHubIssuePort)
     github_client.list_all_issues.return_value = []
-    github_client.get_last_rate_limit.return_value = None  # rate limit 観測をスキップ
+    github_client.get_last_rate_limit.return_value = None  # skip rate-limit observation
     github_client.get_rate_limit.return_value = None
     pipeline = MagicMock(spec=LLMPipelineAPI)
     dispatcher = WorkflowDispatcher(
@@ -58,20 +58,20 @@ def _make_dispatcher(workflow: WorkflowConfig) -> tuple[WorkflowDispatcher, Magi
 
 class TestTC7DispatchErrorLogsOnly:
     def test_no_error_comment_on_dispatch_failure(self):
-        """TC-7: dispatch() が例外を出してもIssueにエラーコメントは投稿しない"""
+        """TC-7: when dispatch() raises, do not post an error comment on the Issue"""
         workflow = _make_workflow()
         dispatcher, github_client = _make_dispatcher(workflow)
         issue = _make_issue(42)
         github_client.list_all_issues.return_value = [issue]
 
-        dispatcher.dispatch = MagicMock(side_effect=KeyError("テンプレート展開エラー (brushup.md): 'missing'"))
+        dispatcher.dispatch = MagicMock(side_effect=KeyError("template expansion error (brushup.md): 'missing'"))
 
         dispatcher.run(max_iterations=1)
 
         github_client.add_comment.assert_not_called()
 
     def test_error_log_includes_traceback(self, caplog):
-        """TC-7: logger.exception が呼ばれる（スタックトレース付き）"""
+        """TC-7: logger.exception is called (with stack trace)"""
         workflow = _make_workflow()
         dispatcher, github_client = _make_dispatcher(workflow)
         issue = _make_issue(42)
@@ -85,7 +85,7 @@ class TestTC7DispatchErrorLogsOnly:
         assert any("issue #42" in r.message for r in caplog.records)
 
     def test_run_continues_after_dispatch_failure(self):
-        """TC-7: dispatch() が例外を出しても run() はクラッシュしない"""
+        """TC-7: when dispatch() raises, run() does not crash"""
         workflow = _make_workflow()
         dispatcher, github_client = _make_dispatcher(workflow)
         issue = _make_issue(42)
@@ -97,7 +97,7 @@ class TestTC7DispatchErrorLogsOnly:
 
 class TestTC9NonIntIssueNumberSkipsComment:
     def test_no_comment_when_issue_number_not_int(self):
-        """TC-9: issue_number が int でない場合もクラッシュしない"""
+        """TC-9: non-int issue_number does not crash"""
         workflow = _make_workflow()
         dispatcher, github_client = _make_dispatcher(workflow)
 

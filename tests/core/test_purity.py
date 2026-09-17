@@ -1,4 +1,4 @@
-"""core 純度ガード — IO / subprocess 等の混入を禁止する。"""
+"""core purity guard — forbids IO / subprocess and similar imports."""
 
 from __future__ import annotations
 

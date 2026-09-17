@@ -66,7 +66,7 @@ def test_repo_resolution_raises_when_github_repositories_missing(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# create_github_clients — 複数リポジトリ
+# create_github_clients — multiple repositories
 # ---------------------------------------------------------------------------
 
 

@@ -87,7 +87,7 @@ class TestMultiEngineDagEvents:
                 {
                     "uuid": "evt-cursor",
                     "engine": "cursor",
-                    # `: ...` は bash no-op。launcher が stream 可否判定に使うフラグを埋め込む
+                    # `: ...` is a bash no-op; embed flags the launcher uses for stream eligibility
                     "command": f"cat {fixture} # -p --output-format stream-json",
                     "depends": [],
                     "result_path": str(result_file),
@@ -155,7 +155,7 @@ class TestMultiEngineDagEvents:
 
 class TestStreamFallback:
     def test_cursor_without_print_falls_back(self, tmp_path):
-        """cursor コマンドに -p/--print が無いとき一括読み + stream_fallback。"""
+        """Without -p/--print on cursor command → bulk read + stream_fallback."""
         result_file = tmp_path / "result.md"
         fixture = tmp_path / "fixture.json"
         fixture.write_text(_CURSOR_LEGACY, encoding="utf-8")
@@ -165,7 +165,7 @@ class TestStreamFallback:
                 {
                     "uuid": "evt-fallback",
                     "engine": "cursor",
-                    # -p 無し・stream-json 無し → stream 不可
+                    # no -p, no stream-json → streaming not available
                     "command": f"cat {fixture}",
                     "depends": [],
                     "result_path": str(result_file),
@@ -189,16 +189,16 @@ class TestStreamFallback:
         events_path = tmp_path / "jobs" / "events" / "evt-fallback.jsonl"
         assert not events_path.exists()
         assert result_file.read_text(encoding="utf-8") == "pong"
-        # annotations に stream_fallback が記録される
-        # TaskLauncher が annotations を更新するため exec 再読 or launcher 経由で確認
-        # DagEngine が保持する tasks を見る
+        # stream_fallback is recorded in annotations
+        # TaskLauncher updates annotations; confirm via exec re-read or launcher
+        # inspect tasks held by DagEngine
         task = engine._tasks["evt-fallback"]
         assert task.annotations.get("stream_fallback") in {True, "true"}
         hooks.on_task_progress.assert_not_called()
 
     def test_codex_without_json_falls_back(self, tmp_path):
         result_file = tmp_path / "result.md"
-        # --json 無し → 一括読み。stdout は JSONL 風でもフラグ判定は command 文字列のみ
+        # without --json → bulk read; even JSONL-like stdout: eligibility uses command string only
         payload = json.dumps(
             {
                 "type": "item.completed",

@@ -91,7 +91,7 @@ class TestMonitor:
         assert rows[0].state == STATE_RUNNING
 
     def test_build_rows_running_from_jobs_running_dir(self, tmp_path):
-        """jobs/running/<uuid>.json があるとき build_rows が running と判定する。"""
+        """When jobs/running/<uuid>.json exists, build_rows marks it running."""
         import json as _json
 
         from ghdag.ui.monitor import STATE_RUNNING, build_rows, running_uuids_from_jobs_dir
@@ -237,11 +237,11 @@ class TestMonitor:
         assert tasks["aaaa-bbbb-cccc-dddd"].idempotency_key == ""
 
     def test_parse_exec_jsonl_with_null_idempotency_key(self, tmp_path):
-        """submit/audit/hooks の `idempotency_key: str | None = None` 仕様により
-        exec.jsonl に `"idempotency_key": null` が書き出されるケース。
-        `data.get(k, default)` の default は値が null の場合は適用されず None が
-        返るため、`or ""` で空文字に正規化されないと下流の regex.match() で
-        TypeError になる。"""
+        """Case where submit/audit/hooks `idempotency_key: str | None = None`
+        writes `"idempotency_key": null` into exec.jsonl.
+        `data.get(k, default)` does not apply default when the value is null
+        (returns None), so without normalizing via `or ""` the downstream
+        regex.match() raises TypeError."""
         import json as _json
 
         from ghdag.ui.monitor import _parse_exec_jsonl
@@ -278,7 +278,7 @@ class TestUiCli:
     def test_ui_missing_exec_starts_anyway(self, tmp_path):
         from ghdag.cli import main
 
-        # exec ファイルがなくても UI は起動する（build_rows が空を返すだけ）
+        # UI starts even without an exec file (build_rows just returns empty)
         with patch("ghdag.ui.server.run_server") as mock_run:
             main(["ui", "--repo-root", str(tmp_path), "--port", "9999"])
             mock_run.assert_called_once()

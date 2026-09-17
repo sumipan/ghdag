@@ -1,4 +1,4 @@
-"""import 時副作用の固定 — ENGINE_MODELS 遅延化と Adapter 解決。"""
+"""Pin import-time side effects — ENGINE_MODELS lazy load and Adapter resolution."""
 
 from __future__ import annotations
 
@@ -11,9 +11,9 @@ _SRC = str(Path(__file__).resolve().parents[2] / "src")
 
 
 def test_import_llm_engines_does_not_call_load_engine_models() -> None:
-    """import ghdag.llm.engines が load_engine_models（env / cwd YAML）を呼ばないこと。
+    """import ghdag.llm.engines must not call load_engine_models (env / cwd YAML).
 
-    他テストの sys.modules を汚染しないよう subprocess で検証する。
+    Verified in a subprocess so other tests' sys.modules are not polluted.
     """
     code = r"""
 from unittest.mock import patch
@@ -37,7 +37,7 @@ print("OK")
 
 
 def test_import_workflow_resolves_get_adapter() -> None:
-    """import ghdag.workflow 直後に get_adapter('claude') が EngineAdapter を返すこと。"""
+    """get_adapter('claude') returns an EngineAdapter right after importing ghdag.workflow."""
     import ghdag.workflow  # noqa: F401
     from ghdag.core.command import get_adapter
 

@@ -65,10 +65,10 @@ def _run_engine_with_timeout(engine: DagEngine, timeout: float = 5.0) -> None:
 
 
 class TestSingleTaskExecution:
-    """§5.4 単一タスク実行"""
+    """§5.4 single task execution"""
 
     def test_single_task_success(self, tmp_path):
-        """exec.md に 1 行、依存なし → exit 0 で jobs/done にステータス書き込み"""
+        """One line in exec.md, no deps → write status to jobs/done with exit 0"""
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
@@ -83,10 +83,10 @@ class TestSingleTaskExecution:
 
 
 class TestDependencyResolution:
-    """§5.4 依存解決"""
+    """§5.4 dependency resolution"""
 
     def test_dep_blocks_launch(self, tmp_path):
-        """uuid-b[depends:uuid-a] の場合、uuid-a 完了前に uuid-b が起動されないこと"""
+        """With uuid-b[depends:uuid-a], uuid-b must not start before uuid-a completes"""
         # uuid-a sleeps so we can check uuid-b hasn't started
         config = _make_config(
             tmp_path,
@@ -110,7 +110,7 @@ class TestDependencyResolution:
         t.join(timeout=5.0)
 
     def test_dep_resolved_after_success(self, tmp_path):
-        """uuid-a が成功後に uuid-b が起動されること"""
+        """uuid-b starts after uuid-a succeeds"""
         config = _make_config(
             tmp_path,
             "uuid-a: echo ok\n"
@@ -130,10 +130,10 @@ class TestDependencyResolution:
 
 
 class TestDepFailed:
-    """§5.4 依存失敗時"""
+    """§5.4 on dependency failure"""
 
     def test_dep_failed_skip(self, tmp_path):
-        """uuid-a が失敗した場合、uuid-b はスキップされること"""
+        """When uuid-a fails, uuid-b is skipped"""
         config = _make_config(
             tmp_path,
             "uuid-a: exit 1\n"
@@ -157,10 +157,10 @@ class TestDepFailed:
 
 
 class TestAppendTask:
-    """§5.4 append_task 排他"""
+    """§5.4 append_task exclusivity"""
 
     def test_append_task_concurrent(self, tmp_path):
-        """2 スレッドから同時に append_task() を呼んでも行が混在しないこと"""
+        """Concurrent append_task() from 2 threads must not interleave lines"""
         config = _make_config(tmp_path, "")
         engine = DagEngine(config, hooks=MagicMock())
         # Don't run the engine loop — just test append_task
@@ -197,10 +197,10 @@ class TestAppendTask:
 
 
 class TestHooksCalled:
-    """§5.4 hooks 呼び出し"""
+    """§5.4 hooks invocation"""
 
     def test_on_task_start_called(self, tmp_path):
-        """タスク起動時に on_task_start が正しい uuid と task で 1 回呼ばれること"""
+        """on_task_start is called once with the correct uuid and task on start"""
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
@@ -214,7 +214,7 @@ class TestHooksCalled:
         assert call_args[0][1].uuid == "uuid-a"  # task
 
     def test_on_task_start_not_called_for_skipped_missing_input(self, tmp_path):
-        """stdin ファイルが存在しないタスクでは on_task_start が呼ばれないこと"""
+        """on_task_start is not called when the stdin file is missing"""
         config = _make_config(
             tmp_path,
             "uuid-a: agent -p --force < /tmp/nonexistent_ghdag_xxxxxx.md | tee -a result.md\n",
@@ -227,7 +227,7 @@ class TestHooksCalled:
         hooks.on_task_start.assert_not_called()
 
     def test_on_task_success_called(self, tmp_path):
-        """タスク成功時に on_task_success が呼ばれること"""
+        """on_task_success is called on task success"""
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
@@ -240,7 +240,7 @@ class TestHooksCalled:
         assert call_args[0][0] == "uuid-a"
 
     def test_on_task_failure_called(self, tmp_path):
-        """タスク失敗時に on_task_failure が returncode と stderr_text 付きで呼ばれること"""
+        """on_task_failure is called with returncode and stderr_text on failure"""
         config = _make_config(tmp_path, "uuid-a: echo err >&2 && exit 42\n")
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
@@ -259,7 +259,7 @@ class TestSignalShutdown:
     """§5.4 SIGINT/SIGTERM"""
 
     def test_shutdown_flag_stops_loop(self, tmp_path):
-        """shutdown フラグで on_shutdown が呼ばれループが終了すること"""
+        """shutdown flag calls on_shutdown and ends the loop"""
         config = _make_config(tmp_path, "uuid-a: sleep 30\n")
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
@@ -278,7 +278,7 @@ class TestSignalShutdown:
         hooks.on_shutdown.assert_called_once_with(signal.SIGINT)
 
     def test_signal_handler_installed_in_main_thread(self, tmp_path):
-        """Main thread で実行した場合にシグナルハンドラがインストールされること"""
+        """Signal handlers are installed when run on the main thread"""
         config = _make_config(tmp_path, "")
         hooks = MagicMock()
         engine = DagEngine(config, hooks)
@@ -294,10 +294,10 @@ class TestSignalShutdown:
 
 
 class TestDagConfigDefaults:
-    """AC 4-1, 4-2: lock_file のデフォルト"""
+    """AC 4-1, 4-2: lock_file defaults"""
 
     def test_lock_file_defaults_to_exec_md_parent(self, tmp_path):
-        """4-1: lock_file 未指定時は exec_jsonl_path の親ディレクトリに .ghdag.lock が作られる"""
+        """4-1: without lock_file, .ghdag.lock is created under exec_jsonl_path parent"""
         exec_jsonl = tmp_path / "jobs" / "exec.jsonl"
         exec_jsonl.parent.mkdir(parents=True, exist_ok=True)
         exec_jsonl.write_text("")
@@ -305,7 +305,7 @@ class TestDagConfigDefaults:
         assert config.lock_file == Path(str(exec_jsonl.parent)) / ".ghdag.lock"
 
     def test_lock_file_explicit_preserved(self, tmp_path):
-        """4-2: 明示指定した lock_file は維持される（後方互換）"""
+        """4-2: explicitly set lock_file is preserved (backward compatible)"""
         exec_jsonl = tmp_path / "exec.jsonl"
         exec_jsonl.write_text("")
         custom = str(tmp_path / "custom.lock")
@@ -314,10 +314,10 @@ class TestDagConfigDefaults:
 
 
 class TestTaskTimeout:
-    """AC 1-1 ~ 1-4: 子プロセス wall-clock タイムアウト"""
+    """AC 1-1 ~ 1-4: child-process wall-clock timeout"""
 
     def test_timeout_records_timeout_status(self, tmp_path):
-        """1-1: task_timeout=2.0 で sleep 60 を実行すると TIMEOUT が記録される"""
+        """1-1: sleep 60 with task_timeout=2.0 records TIMEOUT"""
         config = _make_config(
             tmp_path,
             "uuid-a: sleep 60\n",
@@ -335,7 +335,7 @@ class TestTaskTimeout:
         assert status == "TIMEOUT"
 
     def test_timeout_sigkill_after_term_ignored(self, tmp_path):
-        """1-2: SIGTERM を無視するプロセスが kill_grace 後に SIGKILL で終了する"""
+        """1-2: SIGTERM-ignoring process is killed with SIGKILL after kill_grace"""
         config = _make_config(
             tmp_path,
             "uuid-a: trap '' TERM; sleep 60\n",
@@ -353,7 +353,7 @@ class TestTaskTimeout:
         assert status == "TIMEOUT"
 
     def test_no_timeout_when_none(self, tmp_path):
-        """1-3: task_timeout=None では無制限（3秒の sleep が正常完了する）"""
+        """1-3: task_timeout=None is unlimited (3s sleep completes normally)"""
         config = _make_config(
             tmp_path,
             "uuid-a: sleep 1\n",
@@ -370,7 +370,7 @@ class TestTaskTimeout:
         assert status == "0"
 
     def test_timeout_calls_on_task_failure_with_timeout_msg(self, tmp_path):
-        """1-4: on_task_failure の stderr_text 引数にタイムアウトである旨が含まれる"""
+        """1-4: on_task_failure stderr_text indicates a timeout"""
         config = _make_config(
             tmp_path,
             "uuid-a: sleep 60\n",
@@ -390,10 +390,10 @@ class TestTaskTimeout:
 
 
 class TestValidateDependenciesEngine:
-    """AC 3: validate_dependencies がエンジンに統合されている"""
+    """AC 3: validate_dependencies is integrated into the engine"""
 
     def test_orphan_dep_marks_dep_failed(self, tmp_path):
-        """孤立依存のタスクが DEP_FAILED としてマークされる"""
+        """Orphan-dependency tasks are marked DEP_FAILED"""
         config = _make_config(
             tmp_path,
             "uuid-b[depends:nonexistent-uuid]: echo should-not-run\n",
@@ -410,7 +410,7 @@ class TestValidateDependenciesEngine:
 
 
 # ---------------------------------------------------------------------------
-# JSONL task with result_path — stdout 直書き (AC3, AC5-AC8)
+# JSONL task with result_path — write stdout directly (AC3, AC5-AC8)
 # ---------------------------------------------------------------------------
 
 def _make_jsonl_config(tmp_path, tasks: list[dict], **overrides) -> DagConfig:
@@ -437,7 +437,7 @@ class TestStdoutDirectWrite:
     """AC3, AC5-AC8: JSONL task with result_path — stdout capture and write"""
 
     def test_stdout_written_to_result_path_ac3(self, tmp_path):
-        """result_path 設定時に stdout が直接書き込まれる (AC3)"""
+        """With result_path set, stdout is written directly (AC3)"""
         result_path = str(tmp_path / "result.md")
         config = _make_jsonl_config(tmp_path, [
             _jsonl_task("uuid-a", "echo 'hello world'", result_path)
@@ -455,7 +455,7 @@ class TestStdoutDirectWrite:
         hooks.on_task_success.assert_called_once()
 
     def test_pipeline_status_merge_done_calls_success_ac5(self, tmp_path):
-        """stdout に PIPELINE_STATUS: MERGE_DONE → on_task_success が呼ばれる (AC5)"""
+        """stdout PIPELINE_STATUS: MERGE_DONE → on_task_success is called (AC5)"""
         result_path = str(tmp_path / "result.md")
         config = _make_jsonl_config(tmp_path, [
             _jsonl_task("uuid-a", "echo 'PIPELINE_STATUS: MERGE_DONE'", result_path)
@@ -471,7 +471,7 @@ class TestStdoutDirectWrite:
         hooks.on_task_failure.assert_not_called()
 
     def test_pipeline_status_impl_failed_calls_failure_ac6(self, tmp_path):
-        """stdout に PIPELINE_STATUS: IMPL_FAILED → on_task_failure が呼ばれる (AC6)"""
+        """stdout PIPELINE_STATUS: IMPL_FAILED → on_task_failure is called (AC6)"""
         result_path = str(tmp_path / "result.md")
         config = _make_jsonl_config(tmp_path, [
             _jsonl_task("uuid-a", "echo 'PIPELINE_STATUS: IMPL_FAILED'", result_path)
@@ -488,10 +488,10 @@ class TestStdoutDirectWrite:
         assert "PIPELINE_FAILED:IMPL_FAILED" in call_args[0][3]
 
     def test_rejected_calls_on_task_rejected_ac7(self, tmp_path):
-        """stdout が REJECTED: で始まる → on_task_rejected が呼ばれる (AC7)"""
+        """stdout starting with REJECTED: → on_task_rejected is called (AC7)"""
         result_path = str(tmp_path / "result.md")
         config = _make_jsonl_config(tmp_path, [
-            _jsonl_task("uuid-a", "echo 'REJECTED: 理由'", result_path)
+            _jsonl_task("uuid-a", "echo 'REJECTED: reason'", result_path)
         ])
         hooks = MagicMock()
         hooks.check_rejected.return_value = True
@@ -504,7 +504,7 @@ class TestStdoutDirectWrite:
         hooks.on_task_success.assert_not_called()
 
     def test_empty_stdout_calls_on_task_empty_result_ac8(self, tmp_path):
-        """stdout が空 → on_task_empty_result が呼ばれる (AC8)"""
+        """Empty stdout → on_task_empty_result is called (AC8)"""
         result_path = str(tmp_path / "result.md")
         config = _make_jsonl_config(tmp_path, [
             _jsonl_task("uuid-a", "true", result_path)
@@ -522,10 +522,10 @@ class TestStdoutDirectWrite:
 
 
 class TestStdinMissingInputSkip:
-    """AC-1〜AC-5: stdin 入力ファイル不在時のスキップ動作"""
+    """AC-1–AC-5: skip behavior when stdin input file is missing"""
 
     def test_missing_stdin_file_skips_task(self, tmp_path, caplog):
-        """AC-1: stdin ファイルが存在しない場合、SKIPPED_MISSING_INPUT でスキップされる"""
+        """AC-1: missing stdin file → skipped with SKIPPED_MISSING_INPUT"""
         config = _make_config(
             tmp_path,
             "uuid-a: agent -p --force < /tmp/nonexistent_ghdag_xxxxxx.md | tee -a result.md\n",
@@ -545,7 +545,7 @@ class TestStdinMissingInputSkip:
         hooks.on_task_failure.assert_not_called()
 
     def test_existing_stdin_file_launches_normally(self, tmp_path):
-        """AC-2: stdin ファイルが存在する場合、従来どおり正常に起動・完了する"""
+        """AC-2: when stdin file exists, starts and completes as before"""
         stdin_file = tmp_path / "input.txt"
         stdin_file.write_text("hello", encoding="utf-8")
         config = _make_config(
@@ -561,7 +561,7 @@ class TestStdinMissingInputSkip:
         assert _read_done_status(config.exec_done_dir, "uuid-a") == "0"
 
     def test_no_stdin_redirect_unaffected(self, tmp_path):
-        """AC-3: stdin リダイレクトのないコマンドは影響を受けない"""
+        """AC-3: commands without stdin redirect are unaffected"""
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
@@ -572,7 +572,7 @@ class TestStdinMissingInputSkip:
         assert _read_done_status(config.exec_done_dir, "uuid-a") == "0"
 
     def test_heredoc_not_misdetected(self, tmp_path):
-        """AC-4: ヒアドキュメント (`<<`) を誤検出しない"""
+        """AC-4: do not false-detect heredoc (`<<`)"""
         config = _make_jsonl_config(tmp_path, [
             {
                 "uuid": "uuid-a",
@@ -592,10 +592,10 @@ class TestStdinMissingInputSkip:
         assert _read_done_status(config.exec_done_dir, "uuid-a") == "0"
 
     def test_relative_stdin_uses_cwd(self, tmp_path):
-        """AC-5: 相対パスが cwd を基準に解決され、不在なら SKIPPED_MISSING_INPUT"""
+        """AC-5: relative path resolved against cwd; missing → SKIPPED_MISSING_INPUT"""
         work_dir = tmp_path / "work"
         work_dir.mkdir()
-        # orders/task.md は存在しない
+        # orders/task.md does not exist
         config = _make_config(
             tmp_path,
             "uuid-a: agent < orders/task.md\n",
@@ -610,7 +610,7 @@ class TestStdinMissingInputSkip:
 
 
 class TestEngineModelFromStructuredFields:
-    """AC3: task.engine/model 優先と parse_engine_model フォールバックの検証"""
+    """AC3: task.engine/model priority and parse_engine_model fallback"""
 
     def _make_jsonl_config(self, tmp_path, jsonl_content: str, **overrides) -> DagConfig:
         exec_jsonl = tmp_path / "exec.jsonl"
@@ -627,7 +627,7 @@ class TestEngineModelFromStructuredFields:
         return DagConfig(**defaults)
 
     def test_structured_engine_used_without_fallback(self, tmp_path):
-        """AC3: task.engine が設定されている場合、on_task_success の metrics.engine にその値が使われる"""
+        """AC3: when task.engine is set, on_task_success metrics.engine uses that value"""
         jsonl = json.dumps({
             "uuid": "uuid-a",
             "command": "echo hello",
@@ -649,8 +649,8 @@ class TestEngineModelFromStructuredFields:
         assert metrics.model is None
 
     def test_fallback_when_engine_field_absent(self, tmp_path):
-        """AC3: task.engine=None（旧レコード）の場合、parse_engine_model フォールバックが動く"""
-        # claude コマンドがなくても echo でテスト: engine=null → parse_engine_model("echo hello") → engine=None
+        """AC3: when task.engine=None (legacy record), parse_engine_model fallback runs"""
+        # Test with echo (no claude): engine=null → parse_engine_model("echo hello") → engine=None
         jsonl = json.dumps({
             "uuid": "uuid-b",
             "command": "echo hello",
@@ -666,11 +666,11 @@ class TestEngineModelFromStructuredFields:
         hooks.on_task_success.assert_called_once()
         call_args = hooks.on_task_success.call_args
         metrics = call_args[0][2]  # TaskMetrics
-        # parse_engine_model("echo hello") → engine=None（コマンドに既知エンジンなし）
+        # parse_engine_model("echo hello") → engine=None (no known engine in command)
         assert metrics.engine is None
 
     def test_structured_model_used_directly(self, tmp_path):
-        """AC3: task.model が設定されている場合、metrics.model にその値が使われる"""
+        """AC3: when task.model is set, metrics.model uses that value"""
         jsonl = json.dumps({
             "uuid": "uuid-c",
             "command": "echo hello",
@@ -692,7 +692,7 @@ class TestEngineModelFromStructuredFields:
         assert metrics.model == "claude-opus-4-6"
 
     def test_request_id_from_annotations(self, tmp_path):
-        """AC-A5: annotations._request_id が TaskMetrics.request_id に読み出される。"""
+        """AC-A5: annotations._request_id is read into TaskMetrics.request_id."""
         jsonl = json.dumps({
             "uuid": "uuid-d",
             "command": "echo hello",
@@ -712,10 +712,10 @@ class TestEngineModelFromStructuredFields:
 
 
 class TestReaderThreadJoin:
-    """スレッド回収テスト — 受け入れ条件: 正常系"""
+    """Thread join tests — acceptance: happy path"""
 
     def test_stderr_thread_not_alive_after_completion(self, tmp_path):
-        """タスク完了後、stderr_thread が alive でないこと"""
+        """After task completion, stderr_thread is not alive"""
         captured_rt = []
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
         hooks = MagicMock()
@@ -735,7 +735,7 @@ class TestReaderThreadJoin:
         assert not rt.stderr_thread.is_alive()
 
     def test_stdout_thread_none_when_no_result_path(self, tmp_path):
-        """result_path 未指定の場合、stdout_thread は None"""
+        """Without result_path, stdout_thread is None"""
         captured_rt = []
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
         hooks = MagicMock()
@@ -753,7 +753,7 @@ class TestReaderThreadJoin:
         assert captured_rt[0].stdout_thread is None
 
     def test_both_threads_recovered_with_result_path(self, tmp_path):
-        """result_path 指定時、stderr_thread と stdout_thread の両方が回収される"""
+        """With result_path, both stderr_thread and stdout_thread are joined"""
         captured_rt = []
         result_path = str(tmp_path / "result.md")
         config = _make_jsonl_config(tmp_path, [
@@ -780,10 +780,10 @@ class TestReaderThreadJoin:
 
 
 class TestThreadLeakPrevention:
-    """スレッドリーク防止テスト"""
+    """Thread-leak prevention tests"""
 
     def test_100_tasks_thread_count_within_bounds(self, tmp_path):
-        """100 タスク連続実行後のスレッド数が起動時 +2 以内"""
+        """After 100 sequential tasks, thread count is within start + 2"""
         baseline = threading.active_count()
         tasks = "\n".join(f"uuid-{i:03d}: echo task{i}" for i in range(100))
         config = _make_config(tmp_path, tasks + "\n")
@@ -801,10 +801,10 @@ class TestThreadLeakPrevention:
 
 
 class TestMaxConcurrency:
-    """AC2: max_concurrency による同時実行上限のテスト"""
+    """AC2: max_concurrency concurrent-execution cap"""
 
     def test_concurrency_limited(self, tmp_path):
-        """max_concurrency=2 で同時実行が 2 を超えないこと"""
+        """With max_concurrency=2, concurrency never exceeds 2"""
         tasks = "\n".join(f"uuid-{i}: sleep 1" for i in range(4))
         config = _make_config(tmp_path, tasks + "\n", max_concurrency=2)
         hooks = MagicMock()
@@ -831,7 +831,7 @@ class TestMaxConcurrency:
         assert max(samples) <= 2, f"Concurrency exceeded 2: max={max(samples)}, samples={samples}"
 
     def test_none_means_unlimited(self, tmp_path):
-        """max_concurrency=None でタスクが全て同時起動されること"""
+        """With max_concurrency=None, all tasks start concurrently"""
         tasks = "\n".join(f"uuid-{i}: sleep 3" for i in range(3))
         config = _make_config(tmp_path, tasks + "\n", max_concurrency=None)
         hooks = MagicMock()
@@ -849,7 +849,7 @@ class TestMaxConcurrency:
         assert running_count == 3, f"Expected 3 tasks running simultaneously, got {running_count}"
 
     def test_concurrency_1_serializes_tasks(self, tmp_path):
-        """max_concurrency=1 でタスク A, B（依存なし）を投入した場合、1つずつ実行されること"""
+        """With max_concurrency=1, independent tasks A and B run one at a time"""
         config = _make_config(
             tmp_path,
             "uuid-a: sleep 0.5\nuuid-b: sleep 0.5\n",
@@ -882,7 +882,7 @@ class TestMaxConcurrency:
         assert "uuid-b" in done
 
     def test_dep_failed_detection_with_limit(self, tmp_path):
-        """上限到達時も DEP_FAILED が正しく検出されること"""
+        """DEP_FAILED is still detected correctly when at the concurrency cap"""
         config = _make_config(
             tmp_path,
             "uuid-a: exit 1\nuuid-b[depends:uuid-a]: echo b\nuuid-c: sleep 0.2\n",
@@ -907,10 +907,10 @@ class TestMaxConcurrency:
 
 
 class TestTimeoutReaderJoin:
-    """タイムアウト後のスレッド回収テスト"""
+    """Thread join after timeout"""
 
     def test_timeout_threads_joined(self, tmp_path):
-        """タイムアウトで強制終了されたタスクでも reader スレッドが回収される"""
+        """Reader threads are joined even for tasks force-killed by timeout"""
         captured_rt = []
         config = _make_config(
             tmp_path,
@@ -935,7 +935,7 @@ class TestTimeoutReaderJoin:
         assert not rt.stderr_thread.is_alive()
 
     def test_join_warning_when_reader_thread_hangs(self, tmp_path, caplog):
-        """`_join_reader_threads` でスレッドが 2.0s 内に終了しない場合、warning が出力される"""
+        """`_join_reader_threads` emits a warning if threads do not finish within 2.0s"""
         stop_event = threading.Event()
 
         def hanging_reader():

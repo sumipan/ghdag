@@ -189,7 +189,7 @@ class TestAuditHooks:
         assert r.get("correlation_id") is None
 
     def test_on_task_success_request_id_from_metrics(self, tmp_path):
-        """AuditHooks が TaskMetrics.request_id を audit に転送する。"""
+        """AuditHooks forwards TaskMetrics.request_id into the audit record."""
         audit_path = tmp_path / "audit.jsonl"
         hooks = AuditHooks(audit_path=audit_path)
         now = time.time()

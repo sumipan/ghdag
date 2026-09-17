@@ -52,7 +52,7 @@ def _make_ep(name: str, load_result=None, *, raises: BaseException | None = None
 
 
 def test_entry_point_gate_resolved_by_get_gate_and_cli(tmp_path: Path) -> None:
-    """ダミー ghdag.gates EP が get_gate / CLI で解決され、issuesmith なしで JSON を返す。"""
+    """Dummy ghdag.gates EP resolves via get_gate / CLI and returns JSON without issuesmith."""
     body_path = tmp_path / "body.txt"
     body_path.write_text("hello", encoding="utf-8")
 
@@ -78,7 +78,7 @@ def test_entry_point_gate_resolved_by_get_gate_and_cli(tmp_path: Path) -> None:
 
 
 def test_entry_point_load_failure_is_fail_open(capsys: pytest.CaptureFixture[str]) -> None:
-    """1 EP の ImportError/AttributeError でも他ゲートは登録され stderr に失敗が残る。"""
+    """ImportError/AttributeError on one EP still registers other gates and logs failure on stderr."""
     bad = _make_ep("broken", raises=ImportError("boom"))
     good = _make_ep("good", _OtherRule)
 
@@ -94,7 +94,7 @@ def test_entry_point_load_failure_is_fail_open(capsys: pytest.CaptureFixture[str
 
 
 def test_gate_registry_wins_over_entry_point() -> None:
-    """同名時は GATE_REGISTRY（import 副作用）が entry-point より優先される。"""
+    """On name clash, GATE_REGISTRY (import side effect) takes precedence over entry points."""
 
     class RegistryRule:
         def check(self, body: str, labels: list[str]) -> list[Violation]:
