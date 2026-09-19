@@ -21,11 +21,17 @@ def get_current_phase(
     labels: list[str],
     transitions: dict[str, list[str]],
 ) -> str | None:
-    """labels 内で transitions のキーにマッチする最初のラベルを返す。"""
-    for label in labels:
-        if label in transitions:
-            return label
-    return None
+    """transitions 定義順で最も後方（最も進んだ）フェーズラベルを返す。
+
+    labels に複数のフェーズラベルが含まれる場合、transitions の挿入順（パイプライン
+    進行順）で最も後ろにあるものを現在フェーズとする。ラベル配列の順序に依存しない。
+    """
+    label_set = set(labels)
+    current = None
+    for phase in transitions:
+        if phase in label_set:
+            current = phase
+    return current
 
 
 def validate_transition(
