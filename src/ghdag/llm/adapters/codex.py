@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.ports.output import EngineError, EngineErrorKind
 from ghdag.llm.adapters.failure_classification import (
+    QUOTA_DEFAULT_PAUSE_SECONDS,
     classify_common_failure,
     looks_like_question,
 )
@@ -103,7 +104,8 @@ class CodexAdapter:
             if obj.get("type") not in {"error", "turn.failed"}:
                 continue
             message = _extract_error_message(obj)
-            kind, retryable, resume_at = _classify_error(message)
+            observed_at = datetime.now(timezone.utc)
+            kind, retryable, resume_at = _classify_error(message, observed_at)
             return EngineError(
                 kind=kind,
                 message=message,
@@ -216,13 +218,19 @@ def _parse_reset_at(message: str) -> datetime | None:
     return parsed
 
 
-def _classify_error(message: str) -> tuple[EngineErrorKind, bool, datetime | None]:
+def _classify_error(message: str, observed_at: datetime) -> tuple[EngineErrorKind, bool, datetime | None]:
     lower = message.lower()
     if "quota" in lower and "exhaust" in lower:
-        return EngineErrorKind.QUOTA_EXHAUSTED, False, _parse_reset_at(message)
+        resume_at = _parse_reset_at(message) or (
+            observed_at + timedelta(seconds=QUOTA_DEFAULT_PAUSE_SECONDS)
+        )
+        return EngineErrorKind.QUOTA_EXHAUSTED, False, resume_at
     if "usage limit" in lower:
         # "You've hit your usage limit. ... try again at Sep 10th, 2026 2:13 AM."（2026-09-09 実測）
-        return EngineErrorKind.QUOTA_EXHAUSTED, False, _parse_reset_at(message)
+        resume_at = _parse_reset_at(message) or (
+            observed_at + timedelta(seconds=QUOTA_DEFAULT_PAUSE_SECONDS)
+        )
+        return EngineErrorKind.QUOTA_EXHAUSTED, False, resume_at
     if "rate limit" in lower or "ratelimit" in lower:
         return EngineErrorKind.RATE_LIMIT, True, None
     if "capacity" in lower or "overloaded" in lower:
