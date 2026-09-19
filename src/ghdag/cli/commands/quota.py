@@ -117,7 +117,6 @@ def cmd_quota_status(args) -> None:
     }
     for name in sorted(engine_names):
         quota_state = snapshot.engines.get(name)
-        is_paused = quota_state is not None and quota_state.status == "paused"
         is_permanent = quota_state is not None and quota_state.status == "paused" and quota_state.resume_at is None
         payload["engines"][name] = {
             # Keep the pre-drain status contract while adding the explicit
