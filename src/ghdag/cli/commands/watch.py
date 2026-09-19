@@ -28,8 +28,11 @@ def cmd_watch(args) -> None:
     github_clients = create_github_clients()
     exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
     queue_dir = str(exec_jsonl_resolved.parent)
+    state_dir = args.state_dir if isinstance(args.state_dir, str) else str(
+        exec_jsonl_resolved.parent.parent / ".pipeline-state"
+    )
     pipeline_state = PipelineState(
-        state_dir=".pipeline-state",
+        state_dir=state_dir,
         exec_jsonl_path=str(exec_jsonl_resolved),
     )
     order_builders: dict[str, TemplateOrderBuilder] = {

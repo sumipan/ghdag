@@ -109,6 +109,12 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Pause dispatch while this file exists (default: disabled)",
     )
+    watch_parser.add_argument(
+        "--state-dir",
+        default=None,
+        metavar="PATH",
+        help="Pipeline state directory (default: derived from --exec-md parent's parent / .pipeline-state)",
+    )
     watch_parser.set_defaults(func=cmd_watch)
 
     # ghdag ui
@@ -285,6 +291,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--reason",
         default=None,
         help="Reason for redispatch (recorded in audit.jsonl)",
+    )
+    trigger_parser.add_argument(
+        "--state-dir",
+        default=None,
+        metavar="PATH",
+        help="Pipeline state directory (default: derived from --exec-md parent's parent / .pipeline-state)",
     )
     trigger_parser.set_defaults(func=cmd_trigger)
 
