@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import os
+
 from ghdag.core.models.metrics import FailureClass
+
+QUOTA_DEFAULT_PAUSE_SECONDS: int = int(
+    os.environ.get("GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS", 18000)
+)
 
 
 def last_nonempty_line(text: str) -> str:

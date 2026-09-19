@@ -117,6 +117,8 @@ def cmd_quota_status(args) -> None:
     }
     for name in sorted(engine_names):
         quota_state = snapshot.engines.get(name)
+        is_paused = quota_state is not None and quota_state.status == "paused"
+        is_permanent = is_paused and quota_state.resume_at is None
         payload["engines"][name] = {
             # Keep the pre-drain status contract while adding the explicit
             # quota_status name and drain/run counters.
@@ -129,6 +131,7 @@ def cmd_quota_status(args) -> None:
             ),
             "reason": quota_state.reason if quota_state else None,
             "quota_status": quota_state.status if quota_state else "available",
+            "permanent_pause": is_permanent,
             "draining": name in snapshot.draining_engines,
             "queued": queued_by_engine.get(name, 0),
             "deferred": deferred_by_engine.get(name, 0),
