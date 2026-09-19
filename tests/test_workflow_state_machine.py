@@ -110,7 +110,7 @@ def test_get_current_phase_none():
     ) is None
 
 
-# --- AC-1/AC-2/AC-3: 複数フェーズラベルの決定論的解決 ---
+# --- AC-1/AC-2/AC-3: multi-phase label deterministic resolution ---
 
 _TRANSITIONS = {
     "issuesmith:draft-done": ["issuesmith:develop-ready"],
@@ -122,7 +122,7 @@ _TRANSITIONS = {
 
 
 def test_get_current_phase_most_advanced():
-    # AC-1: draft-done が先に来ても develop-running が返る
+    # AC-1: returns develop-running even when draft-done comes first
     assert (
         get_current_phase(
             ["issuesmith:draft-done", "issuesmith:develop-running"],
@@ -133,7 +133,7 @@ def test_get_current_phase_most_advanced():
 
 
 def test_get_current_phase_order_invariant():
-    # AC-1: ラベル配列を逆転しても同じ結果
+    # AC-1: same result even when label array is reversed
     assert (
         get_current_phase(
             ["issuesmith:develop-running", "issuesmith:draft-done"],
@@ -144,18 +144,18 @@ def test_get_current_phase_order_invariant():
 
 
 def test_transition_scope_too_large_from_develop_running():
-    # AC-4: develop-running + draft-done を持つ issue で scope-too-large への遷移成功
-    # Forge フェイク: labels_remove が ["issuesmith:develop-running"] であることを確認
-    from unittest.mock import MagicMock, call, patch
+    # AC-4: transition to scope-too-large succeeds for issue with develop-running + draft-done
+    # Forge fake: verify labels_remove is ["issuesmith:develop-running"]
+    from unittest.mock import MagicMock, patch
 
     fake_forge = MagicMock()
     fake_forge.issue_get.side_effect = [
-        # 1回目: current_labels 取得
+        # 1st call: get current_labels
         {"labels": [
             {"name": "issuesmith:draft-done"},
             {"name": "issuesmith:develop-running"},
         ]},
-        # 2回目: 遷移後検証
+        # 2nd call: post-transition verification
         {"labels": [{"name": "issuesmith:scope-too-large"}]},
     ]
 
