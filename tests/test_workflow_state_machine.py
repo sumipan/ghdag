@@ -108,3 +108,68 @@ def test_get_current_phase_none():
     assert get_current_phase(
         ["other"], transitions={"test:a": ["test:b"]}
     ) is None
+
+
+# --- AC-1/AC-2/AC-3: 複数フェーズラベルの決定論的解決 ---
+
+_TRANSITIONS = {
+    "issuesmith:draft-done": ["issuesmith:develop-ready"],
+    "issuesmith:develop-running": [
+        "issuesmith:develop-done",
+        "issuesmith:scope-too-large",
+    ],
+}
+
+
+def test_get_current_phase_most_advanced():
+    # AC-1: draft-done が先に来ても develop-running が返る
+    assert (
+        get_current_phase(
+            ["issuesmith:draft-done", "issuesmith:develop-running"],
+            transitions=_TRANSITIONS,
+        )
+        == "issuesmith:develop-running"
+    )
+
+
+def test_get_current_phase_order_invariant():
+    # AC-1: ラベル配列を逆転しても同じ結果
+    assert (
+        get_current_phase(
+            ["issuesmith:develop-running", "issuesmith:draft-done"],
+            transitions=_TRANSITIONS,
+        )
+        == "issuesmith:develop-running"
+    )
+
+
+def test_transition_scope_too_large_from_develop_running():
+    # AC-4: develop-running + draft-done を持つ issue で scope-too-large への遷移成功
+    # Forge フェイク: labels_remove が ["issuesmith:develop-running"] であることを確認
+    from unittest.mock import MagicMock, call, patch
+
+    fake_forge = MagicMock()
+    fake_forge.issue_get.side_effect = [
+        # 1回目: current_labels 取得
+        {"labels": [
+            {"name": "issuesmith:draft-done"},
+            {"name": "issuesmith:develop-running"},
+        ]},
+        # 2回目: 遷移後検証
+        {"labels": [{"name": "issuesmith:scope-too-large"}]},
+    ]
+
+    with patch("ghdag.workflow.state_machine.get_forge", return_value=fake_forge):
+        from ghdag.workflow.state_machine import transition
+
+        transition(
+            issue_number=3364,
+            target="issuesmith:scope-too-large",
+            transitions=_TRANSITIONS,
+        )
+
+    fake_forge.issue_update.assert_called_once_with(
+        3364,
+        labels_remove=["issuesmith:develop-running"],
+        labels_add=["issuesmith:scope-too-large"],
+    )
