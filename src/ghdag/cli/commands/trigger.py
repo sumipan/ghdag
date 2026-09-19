@@ -64,8 +64,14 @@ def cmd_trigger(args) -> None:
     github_client = create_github_client()
     exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
     queue_dir = str(exec_jsonl_resolved.parent)
+    if isinstance(args.state_dir, str):
+        state_dir = args.state_dir
+    elif exec_jsonl_resolved.parent.name == "jobs":
+        state_dir = str(exec_jsonl_resolved.parent.parent / ".pipeline-state")
+    else:
+        state_dir = ".pipeline-state"
     pipeline_state = PipelineState(
-        state_dir=".pipeline-state",
+        state_dir=state_dir,
         exec_jsonl_path=str(exec_jsonl_resolved),
     )
     template_dir = workflow.template_dir or "templates"
