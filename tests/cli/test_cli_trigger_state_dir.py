@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-
 _WORKFLOW_YAML = """
 name: issuesmith
 template_dir: templates
