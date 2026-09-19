@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-import pytest
-
-from ghdag.llm.adapters.failure_classification import QUOTA_DEFAULT_PAUSE_SECONDS
 from ghdag.core.ports.output import EngineErrorKind
-
+from ghdag.llm.adapters.failure_classification import QUOTA_DEFAULT_PAUSE_SECONDS
 
 FIXED_NOW = datetime(2026, 9, 20, 12, 0, 0, tzinfo=timezone.utc)
 
