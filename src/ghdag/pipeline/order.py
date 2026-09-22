@@ -6,6 +6,7 @@ pipeline/order.py — テンプレート展開
 
 from __future__ import annotations
 
+import hashlib
 import string
 from pathlib import Path
 
@@ -100,3 +101,20 @@ class TemplateOrderBuilder:
             raise ValueError(
                 f"テンプレート展開エラー ({template_path}): {e}"
             ) from e
+
+    def get_template_hash(self, step_id: str) -> str:
+        """Return SHA-256 hex digest of the template file content.
+
+        Args:
+            step_id: template file name (without .md extension)
+        Returns:
+            64-character lowercase hex string
+        Raises:
+            FileNotFoundError: template_dir/{step_id}.md does not exist
+        """
+        template_path = self._template_dir / f"{step_id}.md"
+        if not template_path.exists():
+            raise FileNotFoundError(
+                f"テンプレートファイルが見つかりません: {template_path}"
+            )
+        return hashlib.sha256(template_path.read_bytes()).hexdigest()

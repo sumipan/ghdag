@@ -22,6 +22,7 @@ from ghdag.pipeline.audit_query import detect_correlation_bursts
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import build_idempotency_key
+from ghdag.workflow.loader import load_workflows
 from ghdag.workflow.render import build_live_trampoline
 from ghdag.workflow.schema import (
     DispatchResult,
@@ -79,6 +80,7 @@ class WorkflowDispatcher:
         pipeline: LLMPipelineAPI,
         queue_dir: str = "queue",
         pause_file: str | Path | None = None,
+        workflows_dir: Path | None = None,
     ):
         self._workflows = workflows
         # 単一クライアントとクライアントのリストの両方を受け付ける。
@@ -96,6 +98,9 @@ class WorkflowDispatcher:
             self._workflows[0].polling_interval if self._workflows else 30
         )
         self._current_polling_interval = self._base_polling_interval
+        self._workflows_dir = Path(workflows_dir) if workflows_dir is not None else None
+        self._last_mtime: float = self._get_max_mtime()
+        self._consecutive_failures: dict[tuple[int, str], int] = {}
 
     def poll_once(self) -> list[dict]:
         """1回のポーリングを実行。マッチした Issue とアクションのリストを返す。
@@ -357,11 +362,15 @@ class WorkflowDispatcher:
                 )
                 self._paused = False
 
+            self._maybe_reload_workflows()
+
             matches = self.poll_once()
             self._observe_rate_limit()
             self._observe_correlation_burst()
             for match in matches:
                 github = match.get("_github") or self._githubs[0]
+                issue_number = match["_issue_data"].get("number", "?")
+                handler_name = match.get("handler", "?")
                 try:
                     self.dispatch(
                         match["_issue_data"],
@@ -371,17 +380,76 @@ class WorkflowDispatcher:
                         trigger_rank=match["_trigger_rank"],
                         github=github,
                     )
-                except Exception:
-                    issue_number = match["_issue_data"].get("number", "?")
-                    handler_name = match.get("handler", "?")
+                    if isinstance(issue_number, int):
+                        self._consecutive_failures.pop((issue_number, handler_name), None)
+                except Exception as exc:
                     logger.exception(
                         "dispatch failed: issue #%s handler=%s — skipping",
                         issue_number,
                         handler_name,
                     )
+                    self._append_dispatch_failed_audit(issue_number, handler_name, exc)
             count += 1
             if max_iterations is None or count < max_iterations:
                 time.sleep(self._current_polling_interval)
+
+    def _get_max_mtime(self) -> float:
+        """Return max mtime of *.yml files in workflows_dir, or 0.0 if none."""
+        if self._workflows_dir is None:
+            return 0.0
+        mtimes = [
+            p.stat().st_mtime
+            for p in self._workflows_dir.glob("*.yml")
+            if p.is_file()
+        ]
+        return max(mtimes, default=0.0)
+
+    def _maybe_reload_workflows(self) -> None:
+        """Reload workflows from disk if any *.yml mtime has changed."""
+        if self._workflows_dir is None:
+            return
+        current_mtime = self._get_max_mtime()
+        if current_mtime <= self._last_mtime:
+            return
+        self._last_mtime = current_mtime
+        try:
+            new_workflows = load_workflows(self._workflows_dir)
+            self._workflows = new_workflows
+            logger.info("workflows reloaded from %s", self._workflows_dir)
+        except Exception as exc:
+            logger.warning(
+                "workflow reload failed (%s: %s) — keeping previous definition",
+                type(exc).__name__,
+                exc,
+            )
+
+    def _append_dispatch_failed_audit(
+        self,
+        issue_number: int | str,
+        handler_name: str,
+        exc: Exception,
+    ) -> None:
+        if isinstance(issue_number, int):
+            key = (issue_number, handler_name)
+            self._consecutive_failures[key] = self._consecutive_failures.get(key, 0) + 1
+            count = self._consecutive_failures[key]
+        else:
+            count = 1
+        audit_path = Path(self._queue_dir) / "audit.jsonl"
+        record = {
+            "timestamp": now_ts(),
+            "schema_version": 1,
+            "event": "dispatcher_dispatch_failed",
+            "issue_number": issue_number,
+            "handler": handler_name,
+            "exception_class": type(exc).__name__,
+            "exception_message": str(exc)[:200],
+            "consecutive_failures": count,
+        }
+        try:
+            append_audit_record(audit_path, record)
+        except OSError:
+            logger.debug("dispatch_failed audit write failed", exc_info=True)
 
     def _append_redispatch_audit(
         self,
