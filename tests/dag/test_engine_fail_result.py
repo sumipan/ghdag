@@ -224,8 +224,9 @@ def test_pipeline_status_deferred_downstream_does_not_start(tmp_path):
     done_dir = tmp_path / "jobs" / "done"
     done_dir.mkdir(parents=True, exist_ok=True)
 
-    from ghdag.dag.engine import DagEngine as _DagEngine
     import json as _json
+
+    from ghdag.dag.engine import DagEngine as _DagEngine
 
     exec_path.parent.mkdir(parents=True, exist_ok=True)
     exec_path.write_text(

@@ -11,9 +11,10 @@ import time
 from pathlib import Path
 from typing import IO
 
-from ghdag.core.vocabulary import DONE_DEP_FAILED, DONE_DEFERRED
+from ghdag.core.vocabulary import DONE_DEFERRED, DONE_DEP_FAILED
 from ghdag.io import exec_jsonl
 from ghdag.io.audit import AuditContext
+from ghdag.io.done import read_done_content
 from ghdag.quota import QuotaGate
 
 from .circuit_breaker import CircuitBreakerPolicy
@@ -28,7 +29,6 @@ from .state import (
 from .state import (
     mark_done as state_mark_done,
 )
-from ghdag.io.done import read_done_content
 from .task_launcher import TaskLauncher
 
 logger = logging.getLogger(__name__)
