@@ -5,9 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
-## Unreleased
+## 0.67.0 - 2026-09-22
+
+> Y bump: `QuotaGate.defer` and `DONE_DEFERRED` are new public API (merged in PR #292 without a version bump; this release publishes them).
 
 ### Added
+
+- `QuotaGate.defer(task_uuid, *, engine, after=None, role_engines=None, reason=None)` public API, `brake_state_path` secondary gate, `DONE_DEFERRED` (`PIPELINE_STATUS: DEFERRED`) handling in the task launcher and DAG engine requeue on release (sumipan/nexus#3515)
 
 - `ghdag.audit.span` 公開 API（`emit_span` / `make_span_id`）。`jobs/latency_span.jsonl` の 1 行 1 span 形式と `LATENCY_SPAN_PATH` を nexus `tools.measurement.latency_span` と同一のまま監査 envelope へ移設（nexus #3323 / #3301 サブ8）
 
