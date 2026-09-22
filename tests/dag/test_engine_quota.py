@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ghdag.core.vocabulary import DONE_DEFERRED
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig, RunningTask, Task
 
@@ -297,3 +298,32 @@ def test_runtime_quota_error_becomes_deferred_without_failure_hook(mock_mark_don
     assert not result_file.exists()
     mock_mark_done.assert_not_called()
     assert "runtime-1" in engine._quota_gate.snapshot().deferred_tasks
+
+
+def test_requeue_deferred_removes_done_deferred_file(tmp_path: Path) -> None:
+    exec_path = tmp_path / "jobs" / "exec.jsonl"
+    done_dir = tmp_path / "jobs" / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    _write_exec(exec_path, [{"uuid": "task-1", "command": "claude -p hello", "depends": []}])
+
+    config = DagConfig(exec_jsonl_path=exec_path, exec_done_dir=done_dir, poll_interval=0.01)
+    hooks = MagicMock()
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = None
+    engine = DagEngine(config, hooks)
+
+    past = datetime(2026, 9, 22, 11, tzinfo=JST)
+    resume_at = datetime(2026, 9, 22, 12, tzinfo=JST)
+    engine._quota_gate.report(engine="claude", status="paused", observed_at=past, resume_at=resume_at)
+    engine._quota_gate.defer("task-1", engine="claude", after=past)
+    (done_dir / "task-1").write_text(DONE_DEFERRED, encoding="utf-8")
+
+    def stop_after_first_sleep(*_args, **_kwargs):
+        engine._shutdown = True
+
+    with patch("ghdag.dag.task_launcher.subprocess.Popen"), patch(
+        "ghdag.dag.engine.time.sleep", side_effect=stop_after_first_sleep
+    ):
+        engine.run()
+
+    assert not (done_dir / "task-1").exists()

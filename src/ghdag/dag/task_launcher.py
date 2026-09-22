@@ -20,6 +20,7 @@ from typing import TypedDict
 from ghdag.config.env import session_compaction_enabled
 from ghdag.core.vocabulary import (
     DONE_CANCELLED,
+    DONE_DEFERRED,
     DONE_EMPTY_RESULT,
     DONE_ENGINE_ENV_ERROR,
     DONE_ENGINE_ERROR,
@@ -603,7 +604,10 @@ class TaskLauncher:
 
                     elif effective_result_path and (
                         pipeline_status := self._hooks.check_pipeline_status(effective_result_path)
-                    ) and pipeline_status.endswith("_FAILED"):
+                    ) and pipeline_status == DONE_DEFERRED:
+                        state_mark_done(self._config.exec_done_dir, uuid, DONE_DEFERRED)
+
+                    elif effective_result_path and pipeline_status and pipeline_status.endswith("_FAILED"):
                         pipeline_failed = f"{DONE_PIPELINE_FAILED_PREFIX}{pipeline_status}"
                         state_mark_done(
                             self._config.exec_done_dir, uuid,
