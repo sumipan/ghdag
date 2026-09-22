@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import shlex
 import shutil
 from pathlib import Path
@@ -171,8 +172,11 @@ def _validate(data: dict, filename: str) -> None:
             )
 
 
+_RESULT_VAR_RE = re.compile(r"\$\{(\w+)_result_(?:filename|content)\}")
+
+
 def _validate_references(config: WorkflowConfig, *, workflow_dir: Path | None = None) -> None:
-    """Check template file existence and context_hook executability."""
+    """Check template file existence, context_hook executability, and depends resolution."""
     template_dir = Path(config.template_dir) if config.template_dir else (
         workflow_dir / "templates" if workflow_dir else Path("templates")
     )
@@ -186,6 +190,7 @@ def _validate_references(config: WorkflowConfig, *, workflow_dir: Path | None = 
                     "(not in PATH or not executable)",
                     handler_name, cmd,
                 )
+        step_ids_so_far: set[str] = set()
         for i, step in enumerate(handler.steps):
             template_path = template_dir / f"{step.template}.md"
             if not template_path.exists():
@@ -193,6 +198,17 @@ def _validate_references(config: WorkflowConfig, *, workflow_dir: Path | None = 
                     f"handler '{handler_name}' steps[{i}].template: "
                     f"file not found: {template_path}"
                 )
+            content = template_path.read_text(encoding="utf-8", errors="replace")
+            for m in _RESULT_VAR_RE.finditer(content):
+                ref_id = m.group(1)
+                if ref_id in step_ids_so_far and ref_id not in (step.depends or []):
+                    raise ValidationError(
+                        f"handler '{handler_name}' steps[{i}].template '{step.template}' "
+                        f"references ${{{ref_id}_result_...}} but '{ref_id}' is not in "
+                        f"depends (depends={step.depends})"
+                    )
+            if step.id:
+                step_ids_so_far.add(step.id)
 
 
 def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:

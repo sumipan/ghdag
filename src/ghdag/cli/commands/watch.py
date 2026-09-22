@@ -55,6 +55,7 @@ def cmd_watch(args) -> None:
     )
     dispatcher = WorkflowDispatcher(
         workflows=workflows,
+        workflows_dir=workflows_path,
         github_client=github_clients,
         pipeline=pipeline,
         queue_dir=queue_dir,
