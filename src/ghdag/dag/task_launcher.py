@@ -177,6 +177,19 @@ def _signal_process_tree(proc: subprocess.Popen[bytes], sig: signal.Signals) -> 
         proc.terminate()
 
 
+
+def _task_env(uuid: str, task: Task) -> dict[str, str]:
+    """Environment for a launched task: the parent's plus the task identity.
+
+    ``GHDAG_TASK_UUID`` lets a task (for example ``issuesmith dispatch``) register itself
+    with ``QuotaGate.defer(task_uuid, ...)`` before emitting ``PIPELINE_STATUS: DEFERRED``;
+    ``GHDAG_RESULT_PATH`` is the result file ghdag will write for it (sumipan/nexus#3515).
+    """
+    env = os.environ.copy()
+    env["GHDAG_TASK_UUID"] = uuid
+    env["GHDAG_RESULT_PATH"] = task.result_path or ""
+    return env
+
 class TaskLauncher:
     """Manage subprocess launch and completion detection for DAG tasks."""
 
@@ -268,6 +281,7 @@ class TaskLauncher:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     cwd=cwd,
+                    env=_task_env(uuid, task),
                     start_new_session=True,
                 )
                 stdout_buf = io.BytesIO()
@@ -294,6 +308,7 @@ class TaskLauncher:
                     ["bash", "-o", "pipefail", "-c", task.command],
                     stderr=subprocess.PIPE,
                     cwd=cwd,
+                    env=_task_env(uuid, task),
                     start_new_session=True,
                 )
         except Exception:
@@ -421,6 +436,7 @@ class TaskLauncher:
                             stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE,
                             cwd=cwd,
+                            env=_task_env(uuid, task),
                             start_new_session=True,
                         )
                         stdout_buf = io.BytesIO()
