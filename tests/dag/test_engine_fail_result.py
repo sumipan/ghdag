@@ -6,7 +6,7 @@ import io
 import time
 from unittest.mock import MagicMock, patch
 
-from ghdag.core.vocabulary import DONE_ENGINE_ERROR, DONE_ENGINE_ERROR_FINAL
+from ghdag.core.vocabulary import DONE_DEFERRED, DONE_ENGINE_ERROR, DONE_ENGINE_ERROR_FINAL
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DagHooks
 from ghdag.dag.models import DagConfig, RunningTask, Task
@@ -158,3 +158,103 @@ def test_non_retryable_engine_error_marks_done_final(mock_mark_done, tmp_path):
     hooks.on_task_failure.assert_called_once()
     metrics = hooks.on_task_failure.call_args[0][4]
     assert metrics.failure_class == FailureClass.ENGINE_ERROR
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_pipeline_status_deferred_marks_done_deferred_no_failure_hook(mock_mark_done, tmp_path):
+    engine, hooks = _make_engine(tmp_path)
+    result_file = tmp_path / "result.md"
+    result_file.write_text("PIPELINE_STATUS: DEFERRED\n", encoding="utf-8")
+
+    hooks.check_pipeline_status.return_value = "DEFERRED"
+
+    proc = MagicMock()
+    proc.poll.return_value = 0
+    proc.returncode = 0
+    task = Task(uuid="deferred-1", command="claude -p hi", engine="claude", result_path=str(result_file))
+    rt = RunningTask(
+        uuid=task.uuid,
+        task=task,
+        proc=proc,
+        started_at=time.time() - 0.1,
+        started_at_mono=time.monotonic() - 0.1,
+        stderr_buf=io.BytesIO(b""),
+        stdout_buf=io.BytesIO(b""),
+        retry_depth=0,
+    )
+    engine._launcher._running[rt.uuid] = rt
+
+    engine._launcher.check_completions()
+
+    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, DONE_DEFERRED)
+    hooks.on_task_failure.assert_not_called()
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_pipeline_status_deferred_circuit_breaker_not_triggered(mock_mark_done, tmp_path):
+    engine, hooks = _make_engine(tmp_path)
+    result_file = tmp_path / "result.md"
+    result_file.write_text("PIPELINE_STATUS: DEFERRED\n", encoding="utf-8")
+
+    hooks.check_pipeline_status.return_value = "DEFERRED"
+
+    proc = MagicMock()
+    proc.poll.return_value = 0
+    proc.returncode = 0
+    task = Task(uuid="deferred-2", command="claude -p hi", engine="claude", result_path=str(result_file))
+    rt = RunningTask(
+        uuid=task.uuid,
+        task=task,
+        proc=proc,
+        started_at=time.time() - 0.1,
+        started_at_mono=time.monotonic() - 0.1,
+        stderr_buf=io.BytesIO(b""),
+        stdout_buf=io.BytesIO(b""),
+        retry_depth=0,
+    )
+    engine._launcher._running[rt.uuid] = rt
+
+    engine._launcher.check_completions()
+
+    assert not engine._launcher._circuit_breaker.tripped
+
+
+def test_pipeline_status_deferred_downstream_does_not_start(tmp_path):
+    exec_path = tmp_path / "jobs" / "exec.jsonl"
+    done_dir = tmp_path / "jobs" / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+
+    from ghdag.dag.engine import DagEngine as _DagEngine
+    import json as _json
+
+    exec_path.parent.mkdir(parents=True, exist_ok=True)
+    exec_path.write_text(
+        _json.dumps({"uuid": "upstream", "command": "echo up", "depends": []}) + "\n"
+        + _json.dumps({"uuid": "downstream", "command": "echo down", "depends": ["upstream"]}) + "\n",
+        encoding="utf-8",
+    )
+
+    hooks = MagicMock()
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = None
+
+    config = DagConfig(exec_jsonl_path=exec_path, exec_done_dir=done_dir, poll_interval=0.01)
+    engine = _DagEngine(config, hooks)
+
+    (done_dir / "upstream").write_text(DONE_DEFERRED, encoding="utf-8")
+
+    loop_count = 0
+
+    def stop_after_two_sleeps(*_args, **_kwargs):
+        nonlocal loop_count
+        loop_count += 1
+        if loop_count >= 2:
+            engine._shutdown = True
+
+    with patch("ghdag.dag.task_launcher.subprocess.Popen") as mock_popen, patch(
+        "ghdag.dag.engine.time.sleep", side_effect=stop_after_two_sleeps
+    ):
+        engine.run()
+
+    mock_popen.assert_not_called()
+    assert not (done_dir / "downstream").exists()
