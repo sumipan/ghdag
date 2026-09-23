@@ -149,6 +149,8 @@ For cursor stream-json, the result file and `call_text` body reconstruct each as
 
 Interactive prompts from claude / cursor / codex are classified as `FailureClass.INTERACTIVE_PROMPT` (permanent / no retry). The launcher writes done marker `INTERACTIVE_PROMPT` and records the question text (first 200 characters) in audit.
 
+When cursor exits with code 1 and no `type=result` line in stdout, `CursorStreamAdapter.extract_error` scans stderr for `RetriableError:` lines: `[resource_exhausted]` maps to `EngineErrorKind.RATE_LIMIT` (retryable), other codes map to `EngineErrorKind.CAPACITY` (retryable). The launcher then writes `DONE_ENGINE_ERROR` (non-final when `retry < max_retry`) instead of `PROCESS_ERROR`.
+
 ## Public API
 
 Import from the public package paths below. Do not treat private modules (`_*`) or internal shims as the recommended surface.

@@ -336,8 +336,8 @@ def test_retry_and_quarantine_audit_events_are_written(mock_mark_done, tmp_path)
 
 def test_looks_like_question_last_line_endswith_question_mark() -> None:
     assert looks_like_question("Choose an option?\n") is True
-    # Japanese text intentionally kept for CJK processing test
-    assert looks_like_question("選択してください？") is True
+    # full-width question mark (U+FF1F), escaped to keep the source CJK-free
+    assert looks_like_question("".join(map(chr, [0x9078, 0x629E, 0x3057, 0x3066, 0x304F, 0x3060, 0x3055, 0x3044, 0xFF1F]))) is True
     assert looks_like_question("Done.\nAll good.") is False
     assert looks_like_question("") is False
     assert looks_like_question("   \n  ") is False
@@ -452,3 +452,44 @@ def test_interactive_prompt_exit0_succeeds_as_normal(mock_mark_done, tmp_path) -
     hooks.on_task_success.assert_called_once()
     hooks.on_task_failure.assert_not_called()
     assert "Please choose one?" in result_file.read_text(encoding="utf-8")
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_cursor_retriable_error_sets_engine_error_marker(mock_mark_done, tmp_path) -> None:
+    engine, hooks = _make_engine(tmp_path)
+    stderr = _load_fixture("cursor_stream_retriable_error_reconnect.stderr")
+    task = Task(uuid="cursor-retryable", command="cursor agent -p hi", engine="cursor", retry=0)
+    rt = _make_running_task(task, stdout=b"", stderr=stderr, returncode=1)
+    engine._launcher._running[task.uuid] = rt
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="cursor")
+
+    engine._launcher.check_completions()
+
+    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, DONE_ENGINE_ERROR)
+    hooks.on_task_failure.assert_called_once()
+    metrics = hooks.on_task_failure.call_args[0][4]
+    assert metrics.failure_class == FailureClass.ENGINE_ERROR
+    error_summary = hooks.on_task_failure.call_args[0][3]
+    assert "ENGINE_ERROR (RATE_LIMIT): RetriableError: [resource_exhausted] Error" in error_summary
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_cursor_retriable_error_at_max_retry_is_final(mock_mark_done, tmp_path) -> None:
+    engine, hooks = _make_engine(tmp_path)
+    stderr = _load_fixture("cursor_stream_retriable_error_reconnect.stderr")
+    task = Task(
+        uuid="cursor-retryable-final",
+        command="cursor agent -p hi",
+        engine="cursor",
+        retry=engine._config.max_retry,
+    )
+    rt = _make_running_task(task, stdout=b"", stderr=stderr, returncode=1)
+    engine._launcher._running[task.uuid] = rt
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="cursor")
+
+    engine._launcher.check_completions()
+
+    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, DONE_ENGINE_ERROR_FINAL)
+    hooks.on_task_failure.assert_called_once()
+    metrics = hooks.on_task_failure.call_args[0][4]
+    assert metrics.failure_class == FailureClass.ENGINE_ERROR

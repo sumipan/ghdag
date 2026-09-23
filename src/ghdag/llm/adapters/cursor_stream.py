@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from typing import Any
 
 from ghdag.core.models.metrics import FailureClass, TokenUsage
-from ghdag.core.ports.output import EngineError
+from ghdag.core.ports.output import EngineError, EngineErrorKind
 from ghdag.llm.adapters.failure_classification import (
     classify_common_failure,
     looks_like_question,
 )
+
+_RETRIABLE_STDERR_RE = re.compile(
+    r"^RetriableError: (?:\[(?P<code>[a-z_]+)\] ?)?"
+)
+
+_STDERR_AUTH_CODES = frozenset({"unauthenticated", "permission_denied"})
 
 
 def reconstruct_assistant_turns(stdout: bytes) -> str | None:
@@ -188,22 +195,19 @@ class CursorStreamAdapter:
 
     def extract_error(self, stdout: bytes, stderr: bytes) -> EngineError | None:
         data = parse_cursor_result_payload(stdout)
-        if data is None:
-            return None
-        subtype = data.get("subtype")
-        is_error = bool(data.get("is_error"))
-        if not is_error and subtype not in {"error_during_execution", "error"}:
-            return None
-        message = data.get("result") or data.get("message") or f"cursor engine error ({subtype})"
-        if not isinstance(message, str):
-            message = str(message)
-        from ghdag.core.ports.output import EngineErrorKind
-
-        return EngineError(
-            kind=EngineErrorKind.UNKNOWN,
-            message=message,
-            retryable=False,
-        )
+        if data is not None and data.get("type") == "result":
+            subtype = data.get("subtype")
+            is_error = bool(data.get("is_error"))
+            if not is_error and subtype not in {"error_during_execution", "error"}:
+                return None
+            message = (
+                data.get("result") or data.get("message") or f"cursor engine error ({subtype})"
+            )
+            if not isinstance(message, str):
+                message = str(message)
+            kind, retryable = _classify_result_message(message)
+            return EngineError(kind=kind, message=message, retryable=retryable)
+        return _classify_stderr(stderr)
 
     def classify_failure(
         self,
@@ -225,6 +229,36 @@ class CursorStreamAdapter:
     def is_terminal_result_event(self, event: dict[str, Any]) -> bool:
         """このイベント行が最終 result か（進捗イベントか）を判定する。"""
         return isinstance(event, dict) and event.get("type") == "result"
+
+
+def _classify_stderr(stderr: bytes) -> EngineError | None:
+    """stderr の末尾から RetriableError 行を探して EngineError に変換する。"""
+    text = stderr.decode("utf-8", errors="replace")
+    for line in reversed(text.splitlines()):
+        stripped = line.strip()
+        m = _RETRIABLE_STDERR_RE.match(stripped)
+        if m is None:
+            continue
+        code = m.group("code") or ""
+        if code in _STDERR_AUTH_CODES:
+            return None
+        kind = EngineErrorKind.RATE_LIMIT if code == "resource_exhausted" else EngineErrorKind.CAPACITY
+        return EngineError(kind=kind, message=stripped, retryable=True)
+    return None
+
+
+def _classify_result_message(message: str) -> tuple[EngineErrorKind, bool]:
+    """result payload の message 文字列を (EngineErrorKind, retryable) に変換する。"""
+    lower = message.lower()
+    if "quota" in lower and "exhaust" in lower:
+        return EngineErrorKind.QUOTA_EXHAUSTED, False
+    if "rate limit" in lower or "ratelimit" in lower:
+        return EngineErrorKind.RATE_LIMIT, True
+    if "overloaded" in lower or "capacity" in lower:
+        return EngineErrorKind.CAPACITY, True
+    if "auth" in lower or "unauthorized" in lower or "forbidden" in lower:
+        return EngineErrorKind.AUTH, False
+    return EngineErrorKind.UNKNOWN, False
 
 
 def parse_cursor_result_payload(stdout: bytes) -> dict[Any, Any] | None:

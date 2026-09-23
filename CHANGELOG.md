@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.70.0 - 2026-09-24
+
+### Fixed
+
+- `CursorStreamAdapter.extract_error` now classifies `RetriableError:` lines from cursor stderr as `EngineError(kind=RATE_LIMIT, retryable=True)` for `[resource_exhausted]` or `EngineError(kind=CAPACITY, retryable=True)` for other codes, enabling the task launcher to write `DONE_ENGINE_ERROR` (non-final) and retry via the existing engine-error path instead of falling through to `PROCESS_ERROR` (sumipan/nexus#3476)
+
 ## 0.69.0 - 2026-09-23
 
 ### Fixed
