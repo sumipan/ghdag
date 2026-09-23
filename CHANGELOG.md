@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## 0.71.0 - 2026-09-24
+
+### Added
+
+- `TaskLauncher.adopt_orphans(tasks)`: on runner restart, walks `jobs/running/*.json` and either adopts still-alive tasks (registering them in `_adopted` so they are not re-launched) or immediately closes dead ones with `DONE_ORPHANED_ON_RESTART` done marker and a `ORPHANED_ON_RESTART: runner restarted…` result. `is_running` / `running_count` now include adopted tasks; `check_completions` closes adopted tasks once their process group disappears. `DagEngine.run()` calls `adopt_orphans` once after the first exec-file load (sumipan/nexus#3259)
+- `DONE_ORPHANED_ON_RESTART = "ORPHANED_ON_RESTART"` added to `ghdag.core.vocabulary`; `status._done_kind` maps it to `"other"` → `failed`, so `ghdag status` / `plan_recover` treat it as a recoverable failure
+
+### Changed
+
+- `ghdag dag recover` now archives existing result files to `<result>.prev-<ts>` before clearing the done marker (default behaviour). Use `--keep-results` to preserve the old result. Background: nexus #3259 observed that 5 consecutive re-runs after a runner crash all read the same 20:10 result because the old file was never removed. `execute_recover` gains `keep_results: bool = False` and `now: datetime | None` parameters; `RecoverStepInfo` gains `result_path`; `RecoverResult` gains `archived: list[tuple[str, str]]`
+
 ## 0.70.0 - 2026-09-24
 
 ### Fixed

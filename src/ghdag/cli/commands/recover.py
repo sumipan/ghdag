@@ -74,8 +74,24 @@ def cmd_recover(args) -> None:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    keep_results = getattr(args, "keep_results", False)
+
     if args.dry_run:
+        try:
+            result = execute_recover(
+                plan,
+                queue_dir=queue_dir,
+                done_dir=done_dir,
+                dry_run=True,
+                running_uuids=running_uuids,
+                keep_results=keep_results,
+            )
+        except RecoverError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
         print(format_recover_plan(plan))
+        for src, dst in result.archived:
+            print(f"would archive: {src} -> {dst}")
         print(f"\nrecover dry-run: {len(plan.rerun_uuids)} step(s) would be re-executed")
         return
 
@@ -86,6 +102,7 @@ def cmd_recover(args) -> None:
             done_dir=done_dir,
             dry_run=False,
             running_uuids=running_uuids,
+            keep_results=keep_results,
         )
     except RecoverError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -93,6 +110,9 @@ def cmd_recover(args) -> None:
 
     for warning in result.warnings:
         print(f"warning: {warning}", file=sys.stderr)
+
+    for src, dst in result.archived:
+        print(f"archived: {src} -> {dst}")
 
     print(
         f"recover: issue #{args.issue_number} handler={handler_name} "

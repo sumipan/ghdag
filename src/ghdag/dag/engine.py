@@ -44,6 +44,7 @@ class DagEngine:
         self._tasks: dict[str, Task] = {}
         self._shutdown = False
         self._lock_fh: IO[str] | None = None
+        self._adopt_done = False
 
         self._circuit_breaker = CircuitBreakerPolicy(
             failure_window_sec=config.failure_window_sec,
@@ -85,6 +86,9 @@ class DagEngine:
                 task_list = exec_jsonl.parse(text)
                 self._tasks = {t.uuid: t for t in task_list}
                 logger.info("Loaded exec file (%d tasks)", len(self._tasks))
+                if not self._adopt_done:
+                    self._adopt_done = True
+                    self._launcher.adopt_orphans(self._tasks)
 
             self._apply_pending_cancels()
             self._launcher.check_completions()

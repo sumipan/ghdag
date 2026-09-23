@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ghdag.status import _read_step_records, _to_recover_status
@@ -22,6 +24,7 @@ class RecoverStepInfo:
     depends: list[str]
     command: str
     status: str  # success | failed | pending | running | skipped
+    result_path: str | None = None
 
 
 @dataclass
@@ -39,6 +42,7 @@ class RecoverResult:
     recovered: int
     warnings: list[str]
     errors: list[str]
+    archived: list[tuple[str, str]] = field(default_factory=list)
 
 
 class RecoverError(Exception):
@@ -82,6 +86,7 @@ def plan_recover(
             depends=list(rec.depends),
             command=rec.command,
             status=_to_recover_status(rec.status),
+            result_path=rec.result_path,
         )
         for rec in records
     ]
@@ -120,14 +125,20 @@ def execute_recover(
     done_dir: str | Path,
     dry_run: bool = False,
     running_uuids: set[str] | None = None,
+    keep_results: bool = False,
+    now: datetime | None = None,
 ) -> RecoverResult:
     """Execute (or dry-run) a recover plan."""
     queue_path = Path(queue_dir)
     done_path = Path(done_dir)
+    cwd = queue_path.parent
     running = running_uuids or set()
     warnings: list[str] = []
     errors: list[str] = []
     recovered = 0
+    archived: list[tuple[str, str]] = []
+
+    ts = (now or datetime.now(timezone.utc)).strftime("%Y%m%dT%H%M%SZ")
 
     rerun_set = set(plan.rerun_uuids)
     for info in plan.steps:
@@ -154,6 +165,26 @@ def execute_recover(
             )
             raise RecoverError("\n".join(errors))
 
+        result_src: str | None = None
+        result_dst: str | None = None
+        if not keep_results and info.result_path is not None and uuid not in running:
+            rp = Path(info.result_path)
+            if not rp.is_absolute():
+                rp = cwd / rp
+            if rp.is_file():
+                dst = Path(f"{rp}.prev-{ts}")
+                result_src = str(rp)
+                result_dst = str(dst)
+                if not dry_run:
+                    try:
+                        os.replace(rp, dst)
+                    except OSError as exc:
+                        raise RecoverError(
+                            f"failed to archive result for step '{info.step_name}' "
+                            f"(uuid={uuid}): {exc}"
+                        ) from exc
+                archived.append((result_src, result_dst))
+
         if dry_run:
             continue
 
@@ -168,6 +199,7 @@ def execute_recover(
         recovered=recovered,
         warnings=warnings,
         errors=errors,
+        archived=archived,
     )
 
 

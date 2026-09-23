@@ -414,6 +414,11 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Pipeline state directory (default: .pipeline-state)",
     )
+    recover_parser.add_argument(
+        "--keep-results",
+        action="store_true",
+        help="Do not archive existing result files (keep original behaviour)",
+    )
     recover_parser.set_defaults(func=cmd_recover)
 
     cancel_parser = dag_subparsers.add_parser(

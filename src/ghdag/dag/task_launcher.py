@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
@@ -27,6 +28,7 @@ from ghdag.core.vocabulary import (
     DONE_ENGINE_ERROR_FINAL,
     DONE_FANOUT_PARSE_FAILED,
     DONE_INTERACTIVE_PROMPT,
+    DONE_ORPHANED_ON_RESTART,
     DONE_PIPELINE_FAILED_PREFIX,
     DONE_REJECTED,
     DONE_REJECTED_FINAL,
@@ -190,6 +192,15 @@ def _task_env(uuid: str, task: Task) -> dict[str, str]:
     env["GHDAG_RESULT_PATH"] = task.result_path or ""
     return env
 
+
+@dataclass
+class AdoptedTask:
+    uuid: str
+    task: Task
+    pgid: int
+    started_at: float
+
+
 class TaskLauncher:
     """Manage subprocess launch and completion detection for DAG tasks."""
 
@@ -208,6 +219,7 @@ class TaskLauncher:
         self._fanout_manager = fanout_manager
         self._promote_fn = promote_fn
         self._running: dict[str, RunningTask] = {}
+        self._adopted: dict[str, AdoptedTask] = {}
         self._cancelled: set[str] = set()
         self._session_store = SessionStore(self._queue_dir() / ".sessions")
         self._quota_gate = quota_gate or QuotaGate(
@@ -348,6 +360,12 @@ class TaskLauncher:
 
     def check_completions(self) -> None:
         """Inspect running processes and process any that have finished."""
+        for uuid in list(self._adopted):
+            at = self._adopted[uuid]
+            if not _process_group_exists(at.pgid):
+                del self._adopted[uuid]
+                self._finish_orphan(uuid, at.task, at.started_at)
+
         cwd = str(self._config.cwd) if self._config.cwd else None
         for uuid in list(self._running):
             rt = self._running[uuid]
@@ -1043,13 +1061,13 @@ class TaskLauncher:
         return bool(_RESUME_ERROR_RE.search(stderr_text))
 
     def is_running(self, uuid: str) -> bool:
-        """Return True if the given task uuid is currently running."""
-        return uuid in self._running
+        """Return True if the given task uuid is currently running or adopted."""
+        return uuid in self._running or uuid in self._adopted
 
     @property
     def running_count(self) -> int:
-        """Number of currently running tasks."""
-        return len(self._running)
+        """Number of currently running and adopted tasks."""
+        return len(self._running) + len(self._adopted)
 
     def _join_reader_threads(self, rt: RunningTask) -> None:
         for name, th in [("stderr", rt.stderr_thread), ("stdout", rt.stdout_thread)]:
@@ -1061,3 +1079,88 @@ class TaskLauncher:
                     "Task [%s] %s reader thread did not terminate within 2.0s",
                     rt.uuid, name,
                 )
+
+    def adopt_orphans(self, tasks: dict[str, Task]) -> list[str]:
+        """Read jobs/running/*.json and adopt or immediately close orphaned tasks.
+
+        Returns the list of uuids that were registered as adopted (still alive).
+        """
+        running_dir = self._queue_dir() / "running"
+        if not running_dir.is_dir():
+            return []
+        adopted_uuids: list[str] = []
+        for path in running_dir.glob("*.json"):
+            uuid = path.stem
+            if uuid not in tasks:
+                logger.warning("adopt_orphans: unknown uuid %s in running file — skipping", uuid)
+                continue
+            task = tasks[uuid]
+            pgid: int | None = None
+            started_at: float = time.time()
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                raw_pgid = data.get("pgid")
+                if not isinstance(raw_pgid, int):
+                    raise ValueError(f"pgid is not int: {raw_pgid!r}")
+                pgid = raw_pgid
+                raw_started = data.get("started_at")
+                if raw_started:
+                    try:
+                        started_at = datetime.fromisoformat(raw_started).timestamp()
+                    except (ValueError, TypeError):
+                        pass
+            except Exception:
+                logger.warning(
+                    "adopt_orphans: corrupt running file for %s — treating as dead", uuid
+                )
+                self._finish_orphan(uuid, task, started_at)
+                continue
+            if _process_group_exists(pgid):
+                self._adopted[uuid] = AdoptedTask(
+                    uuid=uuid, task=task, pgid=pgid, started_at=started_at
+                )
+                adopted_uuids.append(uuid)
+                logger.info("adopt_orphans: adopted live task %s (pgid=%s)", uuid, pgid)
+            else:
+                logger.info(
+                    "adopt_orphans: task %s already dead (pgid=%s) — closing as orphan",
+                    uuid, pgid,
+                )
+                self._finish_orphan(uuid, task, started_at)
+        return adopted_uuids
+
+    def _finish_orphan(self, uuid: str, task: Task, started_at: float) -> None:
+        """Close an orphaned task with ORPHANED_ON_RESTART done marker."""
+        finished_at = time.time()
+        if task.result_path is not None:
+            try:
+                Path(task.result_path).write_text(
+                    "ORPHANED_ON_RESTART: runner restarted while task was running; "
+                    "exit code and stdout are unavailable",
+                    encoding="utf-8",
+                )
+            except OSError:
+                logger.warning("Failed to write orphan result for [%s]", uuid, exc_info=True)
+        state_mark_done(self._config.exec_done_dir, uuid, DONE_ORPHANED_ON_RESTART)
+        metrics = TaskMetrics(
+            uuid=uuid,
+            engine=task.engine,
+            model=task.model,
+            wall_time_sec=round(finished_at - started_at, 3),
+            token_count=None,
+            status="failure",
+            started_at=started_at,
+            finished_at=finished_at,
+            correlation_id=task.idempotency_key,
+            failure_class=FailureClass.UNKNOWN_FAILURE,
+            request_id=_task_request_id(task),
+            cost_usd=None,
+            cache_read_tokens=None,
+            cache_creation_tokens=None,
+        )
+        self._hooks.on_task_failure(uuid, task, -1, "orphaned_on_restart", metrics)
+        self._cleanup_control_files(uuid)
+        try:
+            self._quota_gate.finish_run(task_uuid=uuid)
+        except ValueError:
+            logger.exception("Failed to update running registry for orphan [%s]", uuid)
