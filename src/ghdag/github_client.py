@@ -11,6 +11,7 @@ import io
 import json
 import random
 import re
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -612,9 +613,29 @@ class GitHubClient:
         p = self._request(
             "GET", f"/repos/{owner}/{repo_name}/pulls/{number}", repo=repo
         )
-        files = self._request(
-            "GET", f"/repos/{owner}/{repo_name}/pulls/{number}/files", repo=repo
+        files = self._paginate(
+            f"/repos/{owner}/{repo_name}/pulls/{number}/files?per_page=100", repo=repo
         )
+
+        p_additions = p.get("additions")
+        p_deletions = p.get("deletions")
+        p_changed_files = p.get("changed_files")
+
+        additions = p_additions if isinstance(p_additions, int) else sum(
+            f.get("additions", 0) for f in files
+        )
+        deletions = p_deletions if isinstance(p_deletions, int) else sum(
+            f.get("deletions", 0) for f in files
+        )
+        changed_files = p_changed_files if isinstance(p_changed_files, int) else len(files)
+
+        if isinstance(p_changed_files, int) and len(files) != p_changed_files:
+            print(
+                f"WARN: ghdag pr_get #{number}: fetched {len(files)} files"
+                f" but changed_files={p_changed_files} (files list may be truncated)",
+                file=sys.stderr,
+            )
+
         return {
             "number": p.get("number"),
             "title": p.get("title"),
@@ -622,10 +643,10 @@ class GitHubClient:
             "state": (p.get("state") or "").upper(),
             "url": p.get("html_url"),
             "headRefName": (p.get("head") or {}).get("ref"),
-            "additions": sum(f.get("additions", 0) for f in (files or [])),
-            "deletions": sum(f.get("deletions", 0) for f in (files or [])),
-            "changedFiles": len(files or []),
-            "files": files or [],
+            "additions": additions,
+            "deletions": deletions,
+            "changedFiles": changed_files,
+            "files": files,
             "mergeStateStatus": (p.get("mergeable_state") or "UNKNOWN").upper(),
             "mergeable": "MERGEABLE"
             if p.get("mergeable") is True

@@ -11,6 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Launched tasks receive `GHDAG_TASK_UUID` and `GHDAG_RESULT_PATH` in their environment (`task_launcher._task_env`), so an external dispatcher can call `QuotaGate.defer(task_uuid, ...)` before emitting `PIPELINE_STATUS: DEFERRED` (sumipan/nexus#3515 follow-up)
 
+### Fixed
+
+- `GitHubClient.pr_get` now fetches all PR files via paginated `GET /pulls/{n}/files?per_page=100` instead of the first 30; `additions`/`deletions`/`changedFiles` use the PR body values as the source of truth (sumipan/nexus#3401)
+
 ## 0.67.0 - 2026-09-22
 
 > Y bump: `QuotaGate.defer` and `DONE_DEFERRED` are new public API (merged in PR #292 without a version bump; this release publishes them).

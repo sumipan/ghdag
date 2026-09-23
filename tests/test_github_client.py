@@ -283,8 +283,10 @@ def test_pr_get_includes_head_ref_name(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     client = GitHubClient(token="tok", repo="o/r")
 
-    def fake_request(method: str, path: str, **kwargs: object) -> dict | list:
-        if path.endswith("/files"):
+    def fake_request(method: str, path: str, **kwargs: object) -> dict | list | tuple:
+        if "/files" in path:
+            if kwargs.get("return_link_header"):
+                return [], None
             return []
         return {
             "number": 42,
