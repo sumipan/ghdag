@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import stat
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -15,6 +18,8 @@ from ghdag.dag.recover import (
 from ghdag.io.done import mark_done
 from ghdag.io.exec_jsonl import build_idempotency_key
 from ghdag.pipeline.state import PipelineState
+
+FIXED_NOW = datetime(2026, 9, 14, 20, 10, 0, tzinfo=timezone.utc)
 
 UUID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 UUID_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
@@ -233,3 +238,149 @@ class TestExecuteRecover:
 
         assert running_uuids_from_queue_dir(jobs) == {UUID_A, UUID_B}
         assert running_uuids_from_queue_dir(tmp_path / "missing") == set()
+
+
+class TestExecuteRecoverResultArchiving:
+    """AC-1: result file archiving on recover."""
+
+    def _result_path(self, jobs: Path, uuid: str) -> Path:
+        return jobs / f"20260905120000-claude-result-{uuid}.md"
+
+    def _archived_path(self, jobs: Path, uuid: str) -> Path:
+        return jobs / f"20260905120000-claude-result-{uuid}.md.prev-20260914T201000Z"
+
+    def test_result_archived_by_default(self, tmp_path):
+        state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
+        _write_order(jobs, UUID_A)
+        result = self._result_path(jobs, UUID_A)
+        result.write_text("old", encoding="utf-8")
+        state.append_exec_records([_record(UUID_A, "p1")])
+        mark_done(done, UUID_A, "1")
+
+        plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
+        rv = execute_recover(plan, queue_dir=jobs, done_dir=done, now=FIXED_NOW)
+
+        archived = self._archived_path(jobs, UUID_A)
+        assert archived.read_text(encoding="utf-8") == "old"
+        assert not result.exists()
+        assert not (done / UUID_A).exists()
+        assert rv.archived == [(str(result), str(archived))]
+        assert rv.recovered == 1
+
+    def test_keep_results_preserves_result(self, tmp_path):
+        state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
+        _write_order(jobs, UUID_A)
+        result = self._result_path(jobs, UUID_A)
+        result.write_text("old", encoding="utf-8")
+        state.append_exec_records([_record(UUID_A, "p1")])
+        mark_done(done, UUID_A, "1")
+
+        plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
+        rv = execute_recover(
+            plan, queue_dir=jobs, done_dir=done, keep_results=True, now=FIXED_NOW
+        )
+
+        assert result.read_text(encoding="utf-8") == "old"
+        assert rv.archived == []
+        assert not (done / UUID_A).exists()
+
+    def test_dry_run_records_archive_plan_without_moving(self, tmp_path):
+        state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
+        _write_order(jobs, UUID_A)
+        result = self._result_path(jobs, UUID_A)
+        result.write_text("old", encoding="utf-8")
+        state.append_exec_records([_record(UUID_A, "p1")])
+        mark_done(done, UUID_A, "1")
+
+        plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
+        rv = execute_recover(plan, queue_dir=jobs, done_dir=done, dry_run=True, now=FIXED_NOW)
+
+        archived = self._archived_path(jobs, UUID_A)
+        assert result.exists()
+        assert not archived.exists()
+        assert (done / UUID_A).exists()
+        assert rv.recovered == 0
+        assert len(rv.archived) == 1
+        assert rv.archived[0] == (str(result), str(archived))
+
+    def test_result_path_none_skips_archive(self, tmp_path):
+        state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
+        _write_order(jobs, UUID_A)
+        rec = {
+            "uuid": UUID_A,
+            "command": f"claude -p jobs/20260905120000-claude-order-{UUID_A}.md",
+            "depends": [],
+            "result_path": None,
+            "idempotency_key": KEY,
+            "annotations": {"step_name": "p1"},
+        }
+        state.append_exec_records([rec])
+        mark_done(done, UUID_A, "1")
+
+        plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
+        rv = execute_recover(plan, queue_dir=jobs, done_dir=done, now=FIXED_NOW)
+
+        assert rv.archived == []
+        assert not (done / UUID_A).exists()
+
+    def test_nonexistent_result_skips_archive(self, tmp_path):
+        state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
+        _write_order(jobs, UUID_A)
+        state.append_exec_records([_record(UUID_A, "p1")])
+        mark_done(done, UUID_A, "1")
+
+        plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
+        rv = execute_recover(plan, queue_dir=jobs, done_dir=done, now=FIXED_NOW)
+
+        assert rv.archived == []
+        assert not (done / UUID_A).exists()
+
+    def test_archive_oserror_raises_recover_error_done_preserved(self, tmp_path):
+        state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
+        _write_order(jobs, UUID_A)
+        result = self._result_path(jobs, UUID_A)
+        result.write_text("old", encoding="utf-8")
+        state.append_exec_records([_record(UUID_A, "p1")])
+        mark_done(done, UUID_A, "1")
+
+        plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
+
+        os.chmod(jobs, stat.S_IREAD | stat.S_IEXEC)
+        try:
+            with pytest.raises(RecoverError, match="failed to archive"):
+                execute_recover(plan, queue_dir=jobs, done_dir=done, now=FIXED_NOW)
+            assert (done / UUID_A).exists()
+        finally:
+            os.chmod(jobs, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+
+    def test_running_uuid_result_not_archived(self, tmp_path):
+        state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
+        _write_order(jobs, UUID_A)
+        result = self._result_path(jobs, UUID_A)
+        result.write_text("old", encoding="utf-8")
+        state.append_exec_records([_record(UUID_A, "p1")])
+        mark_done(done, UUID_A, "1")
+
+        plan = plan_recover(
+            **_plan_kwargs(state_dir, exec_jsonl, jobs, done),
+            running_uuids={UUID_A},
+        )
+        assert UUID_A not in plan.rerun_uuids
+
+        rv = execute_recover(
+            plan, queue_dir=jobs, done_dir=done,
+            running_uuids={UUID_A}, now=FIXED_NOW,
+        )
+        assert rv.archived == []
+        assert result.read_text(encoding="utf-8") == "old"
+
+    def test_plan_recover_step_includes_result_path(self, tmp_path):
+        state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
+        _write_order(jobs, UUID_A)
+        state.append_exec_records([_record(UUID_A, "p1")])
+        mark_done(done, UUID_A, "1")
+
+        plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
+        step = next(s for s in plan.steps if s.uuid == UUID_A)
+        expected = f"jobs/20260905120000-claude-result-{UUID_A}.md"
+        assert step.result_path == expected

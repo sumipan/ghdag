@@ -9,6 +9,7 @@ from ghdag.core.vocabulary import (
     DONE_FANOUT_CHILD_FAILED,
     DONE_FANOUT_PARSE_FAILED,
     DONE_ORPHAN_ARCHIVED,
+    DONE_ORPHANED_ON_RESTART,
     DONE_PIPELINE_FAILED_PREFIX,
     DONE_REJECTED,
     DONE_REJECTED_FINAL,
@@ -63,6 +64,9 @@ class TestDoneMarkers:
 
     def test_done_orphan_archived(self) -> None:
         assert DONE_ORPHAN_ARCHIVED == "ORPHAN_ARCHIVED"
+
+    def test_done_orphaned_on_restart(self) -> None:
+        assert DONE_ORPHANED_ON_RESTART == "ORPHANED_ON_RESTART"
 
 
 class TestQueueFileRe:
