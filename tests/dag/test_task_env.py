@@ -8,6 +8,7 @@ from ghdag.dag.task_launcher import _task_env
 
 
 def test_task_env_adds_identity_and_keeps_parent_env(monkeypatch):
+    monkeypatch.delenv("GHDAG_TASK_UUID", raising=False)
     monkeypatch.setenv("PARENT_MARKER", "kept")
     task = Task(uuid="u-1", command="true", engine="shell", model="bash", result_path="/tmp/r.md")
     env = _task_env("u-1", task)
