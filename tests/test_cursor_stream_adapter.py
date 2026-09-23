@@ -21,6 +21,10 @@ _STREAM_EMPTY = (_FIXTURES / "cursor_stream_empty.jsonl").read_bytes()
 _AUTH_STDOUT = (_FIXTURES / "cursor_stream_auth_fail.stdout").read_bytes()
 _AUTH_STDERR = (_FIXTURES / "cursor_stream_auth_fail.stderr").read_bytes()
 _LEGACY_JSON = (_FIXTURES / "cursor_legacy_json.json").read_bytes()
+_RETRIABLE_STDERR = (_FIXTURES / "cursor_stream_retriable_error.stderr").read_bytes()
+_RETRIABLE_RECONNECT_STDERR = (
+    _FIXTURES / "cursor_stream_retriable_error_reconnect.stderr"
+).read_bytes()
 
 
 class TestCursorStreamAdapterExtraction:
@@ -66,6 +70,121 @@ class TestCursorStreamAdapterExtraction:
     def test_get_output_adapter_returns_cursor_stream(self):
         adapter = get_output_adapter("cursor")
         assert isinstance(adapter, CursorStreamAdapter)
+
+
+class TestCursorStreamExtractError:
+    def test_ac1_retriable_error_single_line(self):
+        from ghdag.core.ports.output import EngineErrorKind
+
+        adapter = CursorStreamAdapter()
+        err = adapter.extract_error(b"", _RETRIABLE_STDERR)
+        assert err is not None
+        assert err.kind == EngineErrorKind.RATE_LIMIT
+        assert err.retryable is True
+        assert err.message == "RetriableError: [resource_exhausted] Error"
+
+    def test_ac1_retriable_error_reconnect_fixture(self):
+        from ghdag.core.ports.output import EngineErrorKind
+
+        adapter = CursorStreamAdapter()
+        err = adapter.extract_error(b"", _RETRIABLE_RECONNECT_STDERR)
+        assert err is not None
+        assert err.kind == EngineErrorKind.RATE_LIMIT
+        assert err.retryable is True
+        assert err.message == "RetriableError: [resource_exhausted] Error"
+
+    def test_ac1b_unavailable_is_capacity(self):
+        from ghdag.core.ports.output import EngineErrorKind
+
+        adapter = CursorStreamAdapter()
+        err = adapter.extract_error(b"", b"RetriableError: [unavailable] Error\n")
+        assert err is not None
+        assert err.kind == EngineErrorKind.CAPACITY
+        assert err.retryable is True
+
+    def test_ac1b_connection_stalled_is_capacity(self):
+        from ghdag.core.ports.output import EngineErrorKind
+
+        adapter = CursorStreamAdapter()
+        err = adapter.extract_error(b"", b"RetriableError: Connection stalled repeatedly\n")
+        assert err is not None
+        assert err.kind == EngineErrorKind.CAPACITY
+        assert err.retryable is True
+
+    def test_ac1c_unauthenticated_returns_none(self):
+        adapter = CursorStreamAdapter()
+        assert adapter.extract_error(b"", b"RetriableError: [unauthenticated] Error\n") is None
+
+    def test_ac1c_non_retriable_error_returns_none(self):
+        adapter = CursorStreamAdapter()
+        assert (
+            adapter.extract_error(
+                b"", b"NonRetriableError: Service Unavailable Service Unavailable\n"
+            )
+            is None
+        )
+
+    def test_ac1c_empty_stderr_returns_none(self):
+        adapter = CursorStreamAdapter()
+        assert adapter.extract_error(b"", b"") is None
+
+    def test_ac1c_invalid_utf8_stderr_returns_none(self):
+        adapter = CursorStreamAdapter()
+        assert adapter.extract_error(b"", b"\xff\xfe") is None
+
+    def test_ac2_success_stdout_ignores_retriable_stderr(self):
+        adapter = CursorStreamAdapter()
+        err = adapter.extract_error(_STREAM_SUCCESS, _RETRIABLE_STDERR)
+        assert err is None
+
+    def test_ac2_assistant_only_stdout_uses_stderr_path(self):
+        from ghdag.core.ports.output import EngineErrorKind
+
+        assistant_only = (
+            b'{"type": "assistant", "message": {"role": "assistant", "content": []}}\n'
+        )
+        adapter = CursorStreamAdapter()
+        err = adapter.extract_error(assistant_only, _RETRIABLE_STDERR)
+        assert err is not None
+        assert err.kind == EngineErrorKind.RATE_LIMIT
+
+    def test_ac3_result_payload_rate_limit(self):
+        from ghdag.core.ports.output import EngineErrorKind
+
+        payload = b'{"type": "result", "subtype": "error", "is_error": true, "result": "Rate limit exceeded"}\n'
+        adapter = CursorStreamAdapter()
+        err = adapter.extract_error(payload, b"")
+        assert err is not None
+        assert err.kind == EngineErrorKind.RATE_LIMIT
+        assert err.retryable is True
+
+    def test_ac3_result_payload_capacity(self):
+        from ghdag.core.ports.output import EngineErrorKind
+
+        payload = b'{"type": "result", "subtype": "error", "is_error": true, "result": "Model is at capacity"}\n'
+        adapter = CursorStreamAdapter()
+        err = adapter.extract_error(payload, b"")
+        assert err is not None
+        assert err.kind == EngineErrorKind.CAPACITY
+        assert err.retryable is True
+
+    def test_ac3_result_payload_unknown(self):
+        from ghdag.core.ports.output import EngineErrorKind
+
+        payload = b'{"type": "result", "subtype": "error", "is_error": true, "result": "something broke"}\n'
+        adapter = CursorStreamAdapter()
+        err = adapter.extract_error(payload, b"")
+        assert err is not None
+        assert err.kind == EngineErrorKind.UNKNOWN
+        assert err.retryable is False
+
+    def test_ac5_classify_common_failure_not_quota_exhausted(self):
+        from ghdag.llm.adapters.failure_classification import classify_common_failure
+
+        result = classify_common_failure(
+            "cursor", b"", b"RetriableError: [resource_exhausted] Error"
+        )
+        assert result is None
 
 
 class TestCursorStreamCapability:
