@@ -242,3 +242,69 @@ class TestAdoptNoRunningDir:
 
         assert adopted == []
         assert launcher.running_count == 0
+
+
+class TestEngineAdoptOnce:
+    def test_engine_adopts_once_and_does_not_relaunch(self, tmp_path):
+        import threading
+        from unittest.mock import patch
+
+        from ghdag.dag.engine import DagEngine
+
+        jobs = tmp_path / "jobs"
+        done = jobs / "done"
+        done.mkdir(parents=True)
+        exec_jsonl = jobs / "exec.jsonl"
+        exec_jsonl.write_text(
+            json.dumps({"uuid": UUID_LIVE, "command": "sleep 30", "depends": []}) + "\n",
+            encoding="utf-8",
+        )
+        config = DagConfig(
+            exec_jsonl_path=str(exec_jsonl),
+            exec_done_dir=str(done),
+            poll_interval=0.05,
+            launch_stagger=0.0,
+            lock_file=str(tmp_path / "lock"),
+        )
+        hooks = MagicMock()
+        engine = DagEngine(config, hooks=hooks)
+
+        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        pgid = proc.pid
+        t = threading.Thread(target=engine.run, daemon=True)
+        try:
+            _write_running_file(jobs, UUID_LIVE, proc.pid, pgid)
+            with patch.object(
+                engine._launcher, "adopt_orphans", wraps=engine._launcher.adopt_orphans
+            ) as spy, patch.object(
+                engine._launcher, "launch", wraps=engine._launcher.launch
+            ) as launch_spy:
+                t.start()
+                assert _wait_until(lambda: spy.call_count == 1)
+                assert engine._launcher.is_running(UUID_LIVE)
+
+                # exec reload (mtime change) must not trigger a second adopt
+                time.sleep(0.1)
+                exec_jsonl.write_text(
+                    exec_jsonl.read_text(encoding="utf-8")
+                    + json.dumps({"uuid": UUID_DEAD, "command": "true", "depends": []})
+                    + "\n",
+                    encoding="utf-8",
+                )
+                os.utime(exec_jsonl, (time.time() + 5, time.time() + 5))
+                assert _wait_until(lambda: is_done(str(done), UUID_DEAD))
+                assert spy.call_count == 1
+                assert all(c.args[0] != UUID_LIVE for c in launch_spy.call_args_list)
+                assert not is_done(str(done), UUID_LIVE)
+
+                _force_kill_pgid(pgid)
+                proc.wait(timeout=3)
+                assert _wait_until(lambda: is_done(str(done), UUID_LIVE))
+                assert _read_done(done, UUID_LIVE) == DONE_ORPHANED_ON_RESTART
+                assert all(c.args[0] != UUID_LIVE for c in launch_spy.call_args_list)
+        finally:
+            engine._shutdown = True
+            t.join(timeout=5)
+            _force_kill_pgid(pgid)
+            if proc.poll() is None:
+                proc.wait(timeout=3)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import stat
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -384,3 +385,60 @@ class TestExecuteRecoverResultArchiving:
         step = next(s for s in plan.steps if s.uuid == UUID_A)
         expected = f"jobs/20260905120000-claude-result-{UUID_A}.md"
         assert step.result_path == expected
+
+    def test_orphaned_on_restart_step_is_failed_and_rerun(self, tmp_path):
+        from ghdag.core.vocabulary import DONE_ORPHANED_ON_RESTART
+
+        state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
+        _write_order(jobs, UUID_A)
+        state.append_exec_records([_record(UUID_A, "p1")])
+        mark_done(done, UUID_A, DONE_ORPHANED_ON_RESTART)
+
+        plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
+        step = next(s for s in plan.steps if s.uuid == UUID_A)
+        assert step.status == "failed"
+        assert UUID_A in plan.rerun_uuids
+
+    def test_rerun_after_archive_writes_new_result(self, tmp_path):
+        from unittest.mock import MagicMock
+
+        from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
+        from ghdag.dag.models import DagConfig, Task
+        from ghdag.dag.task_launcher import TaskLauncher
+
+        state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
+        _write_order(jobs, UUID_A)
+        result = self._result_path(jobs, UUID_A)
+        result.write_text("old", encoding="utf-8")
+        state.append_exec_records([_record(UUID_A, "p1")])
+        mark_done(done, UUID_A, "1")
+
+        plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
+        execute_recover(plan, queue_dir=jobs, done_dir=done, now=FIXED_NOW)
+        assert not result.exists()
+
+        hooks = MagicMock()
+        hooks.check_rejected.return_value = False
+        hooks.check_pipeline_status.return_value = None
+        launcher = TaskLauncher(
+            DagConfig(
+                exec_jsonl_path=exec_jsonl,
+                exec_done_dir=done,
+                task_timeout=None,
+                poll_interval=0.05,
+            ),
+            hooks=hooks,
+            circuit_breaker=CircuitBreakerPolicy(float("inf"), 2**31),
+            fanout_manager=MagicMock(),
+            promote_fn=MagicMock(),
+        )
+        task = Task(uuid=UUID_A, command="bash -c 'echo new'", result_path=str(result))
+        assert launcher.launch(UUID_A, task)
+        deadline = time.monotonic() + 10.0
+        while launcher.is_running(UUID_A) and time.monotonic() < deadline:
+            launcher.check_completions()
+            time.sleep(0.05)
+
+        assert not launcher.is_running(UUID_A)
+        assert result.read_text(encoding="utf-8").strip() == "new"
+        assert self._archived_path(jobs, UUID_A).read_text(encoding="utf-8") == "old"
