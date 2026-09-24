@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,6 +11,26 @@ from ghdag.cleanup.link_rewriter import LinkRewriter
 from ghdag.cleanup.orphan_detector import OrphanDetector
 from ghdag.cleanup.pruner import ExecJsonlPruner
 from ghdag.core.vocabulary import DONE_ORPHAN_ARCHIVED
+
+_TS14_RE = re.compile(r"^\d{14}$")
+_HEX8_RE = re.compile(r"^[0-9a-fA-F]{8}$")
+
+
+def is_sweepable_extra(name: str) -> str | None:
+    """Return the unique-id token that marks name as a one-shot artifact, or None."""
+    if name.endswith(".jsonl"):
+        return None
+    # Covers multi-extension names like foo.json.lock
+    if name.endswith(".lock"):
+        return None
+    if name in {".gitkeep", ".ghdag.lock"}:
+        return None
+    for token in re.split(r"[-_.]", name):
+        if _TS14_RE.match(token):
+            return token
+        if _HEX8_RE.match(token):
+            return token
+    return None
 
 
 def cleanup_queue(
@@ -152,31 +173,39 @@ def cleanup_queue(
     all_moved.extend(p2_moved)
 
     # ── Phase 3: catch-all sweep — QUEUE_FILE_RE 不一致ファイルの一括アーカイブ ──
-    _SWEEP_WHITELIST_SUFFIXES = {".jsonl"}
-    _SWEEP_WHITELIST_NAMES = {".gitkeep", ".ghdag.lock"}
     swept_extras = 0
     for path in queue_dir.iterdir():
         if not path.is_file():
             continue
-        if path.suffix in _SWEEP_WHITELIST_SUFFIXES:
-            continue
-        if path.name in _SWEEP_WHITELIST_NAMES:
+        token = is_sweepable_extra(path.name)
+        if token is None:
             continue
         m = QUEUE_FILE_RE.match(path.name)
         if m and m.group(4).lower() in detected_uuids:
             continue
-        mtime = file_timestamp(path)
+        try:
+            st = path.stat()
+        except OSError:
+            continue
+        mtime = st.st_mtime
         if mtime > orphan_ts:
             continue
+        age_days = int((now.timestamp() - mtime) / 86400)
         mtime_dt = datetime.fromtimestamp(mtime, tz=timezone.utc)
         yyyymm = f"{mtime_dt.year}-{mtime_dt.month:02d}"
         dest_dir = archive_dir / yyyymm / "extras"
         if dry_run:
-            print(f"[dry] sweep extras: {path.name} → {dest_dir / path.name}")
+            print(
+                f"[dry] sweep extras: {path.name} → {dest_dir / path.name}"
+                f" (token={token}, age={age_days}d)"
+            )
         else:
             dest_dir.mkdir(parents=True, exist_ok=True)
             path.rename(dest_dir / path.name)
-            print(f"sweep extras: {path.name} → {dest_dir / path.name}")
+            print(
+                f"sweep extras: {path.name} → {dest_dir / path.name}"
+                f" (token={token}, age={age_days}d)"
+            )
         swept_extras += 1
 
     rewriter = LinkRewriter(queue_dir, dry_run)

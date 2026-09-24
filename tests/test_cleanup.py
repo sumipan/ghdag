@@ -605,7 +605,7 @@ class TestCleanupResult:
 
 
 # ---------------------------------------------------------------------------
-# Issue-856: JSONL prune（AC1）
+# Issue-856: JSONL prune (AC1)
 # ---------------------------------------------------------------------------
 
 
@@ -1227,3 +1227,179 @@ class TestAutoRepairFalse:
         err = capsys.readouterr().err
         assert "ORPHAN detected" in err
         assert "[dry]" not in err
+
+
+# ---------------------------------------------------------------------------
+# Issue-3677: is_sweepable_extra and Phase 3 mtime-based sweep
+# ---------------------------------------------------------------------------
+
+
+class TestIsSweepableExtra:
+    """Unit tests for is_sweepable_extra token detection."""
+
+    @pytest.mark.parametrize(
+        "name,expected",
+        [
+            ("gdrive-sync-20260917-210444.md", "20260917"),
+            ("research-3399-13605dbe-retry-focus.json", "13605dbe"),
+            ("20260101120000-x-result.md", "20260101120000"),
+            ("slack-pending-dddddddd-dddd-dddd-dddd-dddddddddddd.json", "dddddddd"),
+            ("quota-gate.json", None),
+            ("engine-stall-notified.json", None),
+            ("issuesmith-brake.json", None),
+            (".ghdag-release-state.json", None),
+            ("news_batch.json", None),
+            ("quota-gate.json.lock", None),
+            ("audit.jsonl", None),
+            (".gitkeep", None),
+        ],
+    )
+    def test_parametrized(self, name, expected):
+        from ghdag.cleanup.orchestrator import is_sweepable_extra
+
+        result = is_sweepable_extra(name)
+        assert result == expected
+
+
+class TestPhase3MtimeSweep:
+    """AC-1: quota-gate-override.json created 8 days ago, updated 1 hour ago is NOT swept."""
+
+    def test_ac1_state_file_updated_recently_is_not_swept(self, tmp_path):
+        import os
+
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        _make_exec_jsonl(exec_md, [])
+        override = queue_dir / "quota-gate-override.json"
+        override.write_text("{}")
+        # birthtime = 8 days ago, mtime = 1 hour ago
+        eight_days_ago = time.time() - 8 * 86400
+        one_hour_ago = time.time() - 3600
+        os.utime(override, (eight_days_ago, eight_days_ago))
+        os.utime(override, (one_hour_ago, one_hour_ago))
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+        )
+
+        assert res.swept_extras == 0
+        assert override.exists()
+
+    def test_ac2_timestamped_artifact_is_swept(self, tmp_path):
+        """AC-2: 14-digit-prefix file old enough by mtime is swept to extras."""
+        import os
+
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        _make_exec_jsonl(exec_md, [])
+        artifact = queue_dir / "20260101120000-shell-result-abcd1234.md.prev-20260101T000000Z"
+        artifact.write_text("prev")
+        eight_days_ago = time.time() - 8 * 86400
+        os.utime(artifact, (eight_days_ago, eight_days_ago))
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+        )
+
+        assert res.swept_extras == 1
+        assert not artifact.exists()
+        extras_dirs = list(archive_dir.glob("*/extras"))
+        assert len(extras_dirs) == 1
+
+    def test_ac3_lock_files_not_swept(self, tmp_path):
+        """AC-3: .lock files are not swept even when old."""
+        import os
+
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        _make_exec_jsonl(exec_md, [])
+        lock1 = queue_dir / "quota-gate.json.lock"
+        lock2 = queue_dir / "issuesmith-brake.json.lock"
+        lock1.write_text("")
+        lock2.write_text("")
+        thirty_days_ago = time.time() - 30 * 86400
+        os.utime(lock1, (thirty_days_ago, thirty_days_ago))
+        os.utime(lock2, (thirty_days_ago, thirty_days_ago))
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+        )
+
+        assert res.swept_extras == 0
+        assert lock1.exists()
+        assert lock2.exists()
+
+    def test_ac5_mtime_recent_not_swept(self, tmp_path):
+        """AC-5a: slack-pending-<uuid> created 8d ago but updated 1h ago is NOT swept."""
+        import os
+
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        _make_exec_jsonl(exec_md, [])
+        slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
+        slack_file.write_text("{}")
+        eight_days_ago = time.time() - 8 * 86400
+        one_hour_ago = time.time() - 3600
+        os.utime(slack_file, (eight_days_ago, eight_days_ago))
+        os.utime(slack_file, (one_hour_ago, one_hour_ago))
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+        )
+
+        assert res.swept_extras == 0
+        assert slack_file.exists()
+
+    def test_ac5_mtime_old_is_swept(self, tmp_path):
+        """AC-5b: slack-pending-<uuid> created and not updated 8 days ago IS swept."""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        _make_exec_jsonl(exec_md, [])
+        slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
+        slack_file.write_text("{}")
+        _set_mtime(slack_file, days_ago=8)
+
+        res = cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+        )
+
+        assert res.swept_extras == 1
+        assert not slack_file.exists()
+
+    def test_ac7_dry_run_output_format(self, tmp_path, capsys):
+        """AC-7: dry_run outputs [dry] sweep extras: <name> -> <dest> (token=..., age=...d)."""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        _make_exec_jsonl(exec_md, [])
+        slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
+        slack_file.write_text("{}")
+        _set_mtime(slack_file, days_ago=8)
+
+        cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+            dry_run=True,
+        )
+
+        out = capsys.readouterr().out
+        assert "[dry] sweep extras:" in out
+        assert "token=" in out
+        assert "age=" in out
+        assert slack_file.exists()
