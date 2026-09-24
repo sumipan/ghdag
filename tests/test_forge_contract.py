@@ -147,3 +147,44 @@ def test_contract_pr_view_absent_404(forge: LocalForge) -> None:
     with pytest.raises(GitHubApiError) as exc_info:
         forge.pr_get(999999999)
     assert exc_info.value.status_code == 404
+
+
+def _seed_prs(forge: LocalForge, count: int, state: str = "open") -> None:
+    for i in range(1, count + 1):
+        forge._write_pull(  # noqa: SLF001
+            {
+                "number": i,
+                "title": f"PR {i}",
+                "body": "",
+                "state": state,
+                "head": f"branch-{i}",
+                "base": "main",
+                "merged": state == "closed",
+                "url": f"https://github.com/sumipan/ghdag/pull/{i}",
+                "mergeable": None,
+                "mergeable_state": None,
+                "additions": None,
+                "deletions": None,
+            }
+        )
+
+
+def test_contract_pr_list_all_returns_all_when_no_limit(forge: LocalForge) -> None:
+    """pr_list with no limit returns all seeded PRs (full-pagination semantics)."""
+    _seed_prs(forge, 150, state="open")
+    result = forge.pr_list(state="open")
+    assert len(result) == 150
+
+
+def test_contract_pr_list_limit_truncates(forge: LocalForge) -> None:
+    """pr_list(limit=3) returns only 3 items even when more are seeded."""
+    _seed_prs(forge, 150, state="open")
+    result = forge.pr_list(state="open", limit=3)
+    assert len(result) == 3
+
+
+def test_contract_pr_list_state_all_returns_all(forge: LocalForge) -> None:
+    """pr_list(state='all') with no limit returns all 150 seeded items."""
+    _seed_prs(forge, 150, state="open")
+    result = forge.pr_list(state="all")
+    assert len(result) == 150

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
+## [Unreleased]
+
+### Fixed
+
+- `GitHubClient.get_issue_comments`, `issue_get(fields=["comments"])`, `milestone_list`, `list_issues`, `pr_checks`, and `run_logs_failed` now fetch all pages via `_paginate` instead of stopping at the first page. Previously `get_issue_comments` was capped at 30 (no `per_page` set), and the others at 100. Resolves sumipan/nexus#3696.
+
+### Changed
+
+- `GitHubClient.pr_list` and `ForgePort.pr_list` default `limit` changed from `30` to `None` (fetch all matching PRs). Callers that pass an explicit `limit` value are unaffected. `LocalForge.pr_list` now only truncates when `limit` is explicitly provided.
+- `GitHubClient._paginate` gains two new optional keyword arguments: `items_key` (extracts a nested list from dict-wrapped responses such as check-runs and jobs) and `max_items` (stops pagination early once the cumulative count reaches the limit).
+
+
 ## 0.71.0 - 2026-09-24
 
 ### Added
