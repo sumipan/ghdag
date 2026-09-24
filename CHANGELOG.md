@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - `GitHubClient.get_issue_comments`, `issue_get(fields=["comments"])`, `milestone_list`, `list_issues`, `pr_checks`, and `run_logs_failed` now fetch all pages via `_paginate` instead of stopping at the first page. Previously `get_issue_comments` was capped at 30 (no `per_page` set), and the others at 100. Resolves sumipan/nexus#3696.
+- `cleanup_queue` Phase 3 (catch-all sweep) no longer archives state files such as `quota-gate-override.json`, `quota-gate.json.lock`, or `issuesmith-brake.json.lock`. Phase 3 now only sweeps files whose name contains a 14-digit timestamp or 8-character hex token (UUID first group, short hex, or YYYYMMDD), which identifies them as one-shot artifacts. Additionally, Phase 3 now uses `st_mtime` instead of `st_birthtime` for age comparison, so files that are created once but updated in-place are not swept while they are still being modified. Sweep log lines now include `(token=…, age=…d)`. Resolves sumipan/nexus#3677.
 
 ### Changed
 
