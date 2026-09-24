@@ -6,6 +6,7 @@ import io
 import json
 import os
 import urllib.error
+import urllib.parse
 from unittest import mock
 
 import pytest
@@ -148,17 +149,20 @@ def test_issue_get_fields_body(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_issue_get_fields_comments(monkeypatch: pytest.MonkeyPatch) -> None:
     client = GitHubClient(token="tok", repo="o/r")
 
-    def fake_request(method: str, path: str, **kwargs: object) -> list | dict:
-        if method == "GET" and path.endswith("/issues/1") and "comments" not in path:
+    def fake_request(method: str, path: str, **kwargs: object) -> list | dict | tuple:
+        if method == "GET" and "/issues/1" in path and "comments" not in path:
             return {"number": 1}
-        if method == "GET" and path.endswith("/comments"):
-            return [
+        if method == "GET" and "comments" in path:
+            data: list = [
                 {
                     "body": "hi",
                     "user": {"login": "alice"},
                     "created_at": "2026-01-01T00:00:00Z",
                 }
             ]
+            if kwargs.get("return_link_header"):
+                return data, None
+            return data
         raise AssertionError(f"unexpected: {method} {path}")
 
     monkeypatch.setattr(client, "_request", fake_request)
@@ -246,15 +250,17 @@ def test_pr_list_slash_branch_passes_owner_prefix(monkeypatch: pytest.MonkeyPatc
     client = GitHubClient(token="tok", repo="o/r")
     captured: dict[str, object] = {}
 
-    def fake_request(method: str, path: str, **kwargs: object) -> list:
-        captured["params"] = kwargs.get("params")
+    def fake_request(method: str, path: str, **kwargs: object) -> object:
+        captured["path"] = path
+        if kwargs.get("return_link_header"):
+            return [], None
         return []
 
     monkeypatch.setattr(client, "_request", fake_request)
     client.pr_list(head="feat/issue-1759-abcd1234")
-    params = captured["params"]
-    assert isinstance(params, dict)
-    assert params.get("head") == "o:feat/issue-1759-abcd1234"
+    path = str(captured.get("path", ""))
+    qs = urllib.parse.parse_qs(path.split("?", 1)[1] if "?" in path else "")
+    assert qs.get("head", [""])[0] == "o:feat/issue-1759-abcd1234"
 
 
 def test_pr_list_already_qualified_head_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -262,15 +268,17 @@ def test_pr_list_already_qualified_head_unchanged(monkeypatch: pytest.MonkeyPatc
     client = GitHubClient(token="tok", repo="o/r")
     captured: dict[str, object] = {}
 
-    def fake_request(method: str, path: str, **kwargs: object) -> list:
-        captured["params"] = kwargs.get("params")
+    def fake_request(method: str, path: str, **kwargs: object) -> object:
+        captured["path"] = path
+        if kwargs.get("return_link_header"):
+            return [], None
         return []
 
     monkeypatch.setattr(client, "_request", fake_request)
     client.pr_list(head="o:feat/issue-1759-abcd1234")
-    params = captured["params"]
-    assert isinstance(params, dict)
-    assert params.get("head") == "o:feat/issue-1759-abcd1234"
+    path = str(captured.get("path", ""))
+    qs = urllib.parse.parse_qs(path.split("?", 1)[1] if "?" in path else "")
+    assert qs.get("head", [""])[0] == "o:feat/issue-1759-abcd1234"
 
 
 def test_pr_get_includes_head_ref_name(monkeypatch: pytest.MonkeyPatch) -> None:

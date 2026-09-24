@@ -466,7 +466,7 @@ class LocalForge:
         state: str | None = None,
         search: str | None = None,
         repo: str | None = None,
-        limit: int = 30,
+        limit: int | None = None,
     ) -> list[dict]:
         owner, repo_name = (self._repo.split("/", 1) + [""])[:2]
         if repo:
@@ -496,7 +496,9 @@ class LocalForge:
                 mergeable = self._git_mergeable(str(base), str(head_ref))
                 p["mergeable"] = mergeable
             items.append(p)
-        return self._normalize_prs(items[:limit], owner, repo_name)
+        if limit is not None:
+            items = items[:limit]
+        return self._normalize_prs(items, owner, repo_name)
 
     def pr_get(self, number: int, *, repo: str | None = None) -> dict:
         p = self._load_pull(number)

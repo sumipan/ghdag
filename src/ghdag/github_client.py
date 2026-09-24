@@ -342,7 +342,13 @@ class GitHubClient:
         return result
 
     def _paginate(
-        self, path: str, *, repo: str | None = None, etag: bool = False
+        self,
+        path: str,
+        *,
+        repo: str | None = None,
+        etag: bool = False,
+        items_key: str | None = None,
+        max_items: int | None = None,
     ) -> list[Any]:
         items: list[Any] = []
         url: str | None = path if path.startswith("http") else None
@@ -355,15 +361,24 @@ class GitHubClient:
                 chunk, link = self._request(
                     "GET", path, repo=repo, return_link_header=True, etag=etag
                 )
-            if isinstance(chunk, list):
+            if items_key is not None and isinstance(chunk, dict):
+                items.extend(chunk.get(items_key) or [])
+            elif isinstance(chunk, list):
                 items.extend(chunk)
             elif chunk is not None:
                 items.append(chunk)
+            if max_items is not None and len(items) >= max_items:
+                break
             next_url = _parse_link_next(link if isinstance(link, str) else None)
             if not next_url:
                 break
             url = next_url
         return items
+
+    def _issue_comments_raw(self, number: int) -> list[dict]:
+        return self._paginate(
+            f"/repos/{self._owner}/{self._repo}/issues/{number}/comments?per_page=100"
+        )
 
     def issue_get(self, number: int, fields: list[str] | None = None) -> dict:
         raw = self._request("GET", f"/repos/{self._owner}/{self._repo}/issues/{number}")
@@ -373,16 +388,13 @@ class GitHubClient:
         out: dict[str, Any] = {}
         for field in fields:
             if field == "comments":
-                comments = self._request(
-                    "GET", f"/repos/{self._owner}/{self._repo}/issues/{number}/comments"
-                )
                 out["comments"] = [
                     {
                         "body": c.get("body", ""),
                         "author": {"login": (c.get("user") or {}).get("login", "")},
                         "createdAt": c.get("created_at", ""),
                     }
-                    for c in (comments or [])
+                    for c in self._issue_comments_raw(number)
                 ]
             elif field == "labels":
                 out["labels"] = [
@@ -559,32 +571,27 @@ class GitHubClient:
         state: str | None = None,
         search: str | None = None,
         repo: str | None = None,
-        limit: int = 30,
+        limit: int | None = None,
     ) -> list[dict]:
         owner, repo_name = _resolve_repo(repo) if repo else (self._owner, self._repo)
-        params: dict[str, str] = {"per_page": str(min(limit, 100)), "state": state or "open"}
+        per_page = min(limit, 100) if limit is not None else 100
+        qparams: dict[str, str] = {"per_page": str(per_page), "state": state or "open"}
         if head:
-            if ":" in head:
-                params["head"] = head
-            else:
-                params["head"] = f"{owner}:{head}"
-        pulls = self._request(
-            "GET",
-            f"/repos/{owner}/{repo_name}/pulls",
-            params=params,
-            repo=repo,
-        )
-        items = pulls or []
+            qparams["head"] = head if ":" in head else f"{owner}:{head}"
+        path = f"/repos/{owner}/{repo_name}/pulls?{urllib.parse.urlencode(qparams)}"
+        pulls = self._paginate(path, repo=repo, max_items=limit)
         if search:
             q = search.lower()
-            items = [
+            pulls = [
                 p
-                for p in items
+                for p in pulls
                 if q in (p.get("title") or "").lower()
                 or q in (p.get("head", {}).get("ref") or "").lower()
                 or q.replace("head:", "") in (p.get("head", {}).get("ref") or "").lower()
             ]
-        return self._normalize_prs(items[:limit], owner, repo_name)
+        if limit is not None:
+            pulls = pulls[:limit]
+        return self._normalize_prs(pulls, owner, repo_name)
 
     def _normalize_prs(self, pulls: list[dict], owner: str, repo: str) -> list[dict]:
         out = []
@@ -726,13 +733,14 @@ class GitHubClient:
         sha = pr.get("head", {}).get("sha")
         if not sha:
             return []
-        checks = self._request(
-            "GET",
-            f"/repos/{owner}/{repo_name}/commits/{sha}/check-runs",
-            params={"per_page": "100"},
-            repo=repo,
+        return cast(
+            list[dict[str, Any]],
+            self._paginate(
+                f"/repos/{owner}/{repo_name}/commits/{sha}/check-runs?per_page=100",
+                repo=repo,
+                items_key="check_runs",
+            ),
         )
-        return cast(list[dict[str, Any]], (checks or {}).get("check_runs", []))
 
     def pr_ready(self, number: int, *, repo: str | None = None) -> None:
         owner, repo_name = _resolve_repo(repo) if repo else (self._owner, self._repo)
@@ -777,10 +785,11 @@ class GitHubClient:
 
     def run_logs_failed(self, run_id: int, *, repo: str | None = None) -> str:
         owner, repo_name = _resolve_repo(repo) if repo else (self._owner, self._repo)
-        run = self.run_get(run_id, repo=repo)
-        jobs_url = (run.get("jobs_url") or "").replace(API_BASE, "")
-        jobs_resp = self._request("GET", jobs_url)
-        jobs = (jobs_resp or {}).get("jobs", [])
+        jobs = self._paginate(
+            f"/repos/{owner}/{repo_name}/actions/runs/{run_id}/jobs?per_page=100",
+            repo=repo,
+            items_key="jobs",
+        )
         failed = [j for j in jobs if j.get("conclusion") == "failure"]
         if not failed:
             return ""
@@ -808,11 +817,9 @@ class GitHubClient:
         )
 
     def milestone_list(self) -> list[dict]:
-        return self._request(
-            "GET",
-            f"/repos/{self._owner}/{self._repo}/milestones",
-            params={"state": "all", "per_page": "100"},
-        ) or []
+        return self._paginate(
+            f"/repos/{self._owner}/{self._repo}/milestones?state=all&per_page=100"
+        )
 
     def milestone_create(self, title: str, description: str = "") -> int:
         result = self._request(
@@ -904,13 +911,10 @@ class GitHubClient:
         return cast(dict[str, Any], self.issue_get(number))
 
     def list_issues(self, label: str, state: str = "open") -> list[dict]:
+        qs = urllib.parse.urlencode({"labels": label, "state": state, "per_page": "100"})
         return cast(
             list[dict[str, Any]],
-            self._request(
-                "GET",
-                f"/repos/{self._owner}/{self._repo}/issues",
-                params={"labels": label, "state": state, "per_page": "100"},
-            ) or [],
+            self._paginate(f"/repos/{self._owner}/{self._repo}/issues?{qs}"),
         )
 
     def list_all_issues(self, state: str = "open") -> list[dict]:
@@ -919,18 +923,13 @@ class GitHubClient:
         return cast(list[dict[str, Any]], self._paginate(path, etag=True))
 
     def get_issue_comments(self, number: int) -> list[dict]:
-        raw = self._request(
-            "GET",
-            f"/repos/{self._owner}/{self._repo}/issues/{number}/comments",
-            params={"per_page": "100"},
-        ) or []
         return [
             {
                 "author": (c.get("user") or {}).get("login", ""),
                 "created_at": c.get("created_at", ""),
                 "body": c.get("body", ""),
             }
-            for c in raw
+            for c in self._issue_comments_raw(number)
         ]
 
     def update_label(self, number: int, remove: str, add: str) -> None:

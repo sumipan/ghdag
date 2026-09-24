@@ -61,7 +61,7 @@ class ForgePort(Protocol):
         state: str | None = None,
         search: str | None = None,
         repo: str | None = None,
-        limit: int = 30,
+        limit: int | None = None,
     ) -> list[dict]: ...
 
     def pr_get(self, number: int, *, repo: str | None = None) -> dict: ...
