@@ -442,3 +442,124 @@ class TestExecuteRecoverResultArchiving:
         assert not launcher.is_running(UUID_A)
         assert result.read_text(encoding="utf-8").strip() == "new"
         assert self._archived_path(jobs, UUID_A).read_text(encoding="utf-8") == "old"
+
+    def _shell_order_path(self, jobs: Path, uuid: str) -> Path:
+        return jobs / f"20260905120000-shell-order-{uuid}.md"
+
+    def _shell_result_path(self, jobs: Path, uuid: str) -> Path:
+        return jobs / f"20260905120000-shell-result-{uuid}.md"
+
+    def _shell_archived_path(self, jobs: Path, uuid: str) -> Path:
+        return jobs / f"20260905120000-shell-result-{uuid}.md.prev-20260914T201000Z"
+
+    def _shell_record(self, uuid: str, jobs: Path, key: str) -> dict:
+        order = self._shell_order_path(jobs, uuid)
+        result = self._shell_result_path(jobs, uuid)
+        return {
+            "uuid": uuid,
+            "engine": "shell",
+            "command": f"bash -o pipefail {order}",
+            "depends": [],
+            "result_path": str(result),
+            "idempotency_key": key,
+            "annotations": {"step_name": "p2"},
+        }
+
+    def _make_launcher(self, exec_jsonl: Path, done: Path):
+        from unittest.mock import MagicMock
+
+        from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
+        from ghdag.dag.hooks import DefaultHooks
+        from ghdag.dag.models import DagConfig
+        from ghdag.dag.task_launcher import TaskLauncher
+
+        return TaskLauncher(
+            DagConfig(
+                exec_jsonl_path=exec_jsonl,
+                exec_done_dir=done,
+                task_timeout=None,
+                poll_interval=0.05,
+            ),
+            hooks=DefaultHooks(),
+            circuit_breaker=CircuitBreakerPolicy(float("inf"), 2**31),
+            fanout_manager=MagicMock(),
+            promote_fn=MagicMock(),
+        )
+
+    def test_rerun_does_not_read_stale_pipeline_status(self, tmp_path):
+        """AC-1: recover archives old result; rerun reads new PIPELINE_STATUS."""
+        from ghdag.dag.hooks import DefaultHooks
+        from ghdag.dag.models import Task
+
+        state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
+        state.increment_generation("issuesmith", "impl", 2876)
+        key_gen1 = build_idempotency_key("issuesmith", "impl", 2876, 1)
+
+        order = self._shell_order_path(jobs, UUID_B)
+        order.write_text("shell order", encoding="utf-8")
+        result = self._shell_result_path(jobs, UUID_B)
+        result.write_text("PIPELINE_STATUS: VERIFY_FAILED\n", encoding="utf-8")
+
+        state.append_exec_records([self._shell_record(UUID_B, jobs, key_gen1)])
+        mark_done(done, UUID_B, "1")
+
+        plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done, from_step="p2"))
+        execute_recover(plan, queue_dir=jobs, done_dir=done, now=FIXED_NOW)
+        assert not result.exists()
+
+        launcher = self._make_launcher(exec_jsonl, done)
+        task = Task(
+            uuid=UUID_B,
+            command="bash -c 'echo new; echo PIPELINE_STATUS: IMPL_DONE'",
+            result_path=str(result),
+        )
+        assert launcher.launch(UUID_B, task)
+        deadline = time.monotonic() + 10.0
+        while launcher.is_running(UUID_B) and time.monotonic() < deadline:
+            launcher.check_completions()
+            time.sleep(0.05)
+
+        assert not launcher.is_running(UUID_B)
+        assert DefaultHooks().check_pipeline_status(str(result)) == "IMPL_DONE"
+        archived = self._shell_archived_path(jobs, UUID_B)
+        assert archived.read_text(encoding="utf-8") == "PIPELINE_STATUS: VERIFY_FAILED\n"
+        done_value = (done / UUID_B).read_text(encoding="utf-8").strip()
+        assert "_FAILED" not in done_value
+
+    def test_keep_results_rerun_reads_stale_status(self, tmp_path):
+        """AC-1b: keep_results=True leaves old result; TaskLauncher re-reads VERIFY_FAILED."""
+        from ghdag.dag.hooks import DefaultHooks
+        from ghdag.dag.models import Task
+
+        state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
+        state.increment_generation("issuesmith", "impl", 2876)
+        key_gen1 = build_idempotency_key("issuesmith", "impl", 2876, 1)
+
+        order = self._shell_order_path(jobs, UUID_B)
+        order.write_text("shell order", encoding="utf-8")
+        result = self._shell_result_path(jobs, UUID_B)
+        result.write_text("PIPELINE_STATUS: VERIFY_FAILED\n", encoding="utf-8")
+
+        state.append_exec_records([self._shell_record(UUID_B, jobs, key_gen1)])
+        mark_done(done, UUID_B, "1")
+
+        plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done, from_step="p2"))
+        execute_recover(plan, queue_dir=jobs, done_dir=done, keep_results=True, now=FIXED_NOW)
+        assert result.exists()
+
+        launcher = self._make_launcher(exec_jsonl, done)
+        task = Task(
+            uuid=UUID_B,
+            command="bash -c 'echo new; echo PIPELINE_STATUS: IMPL_DONE'",
+            result_path=str(result),
+        )
+        assert launcher.launch(UUID_B, task)
+        deadline = time.monotonic() + 10.0
+        while launcher.is_running(UUID_B) and time.monotonic() < deadline:
+            launcher.check_completions()
+            time.sleep(0.05)
+
+        assert not launcher.is_running(UUID_B)
+        assert result.read_text(encoding="utf-8") == "PIPELINE_STATUS: VERIFY_FAILED\n"
+        assert DefaultHooks().check_pipeline_status(str(result)) == "VERIFY_FAILED"
+        assert not list(jobs.glob(f"*{UUID_B}*.prev-*"))
