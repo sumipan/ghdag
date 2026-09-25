@@ -110,6 +110,20 @@ def protocol_methods(source: str, class_name: str) -> dict[str, bool]:
     return result
 
 
+def _changed_or_removed_sections(changelog_text: str) -> str:
+    """Return only the ``### Changed`` / ``### Removed`` subsections of the text."""
+    parts: list[str] = []
+    keep = False
+    for line in changelog_text.splitlines():
+        if line.startswith("### "):
+            keep = line.strip() in ("### Changed", "### Removed")
+        elif line.startswith("## "):
+            keep = False
+        if keep:
+            parts.append(line)
+    return "\n".join(parts)
+
+
 def compat_violations(
     methods: dict[str, bool],
     baseline: frozenset[str],
@@ -125,6 +139,7 @@ def compat_violations(
     A method present in baseline but absent from the Protocol is a violation
     unless similarly documented in the CHANGELOG.
     """
+    changelog_text = _changed_or_removed_sections(changelog_text)
     violations: list[str] = []
     for name, has_default in methods.items():
         if name in baseline:
@@ -212,6 +227,13 @@ def test_forgeport_impl_coverage() -> None:
     assert violations == [], violations
 
 
+def test_forgeport_impl_coverage_local() -> None:
+    from ghdag.core.ports.forge import ForgePort
+    from ghdag.forge.local import LocalForge
+    violations = _check_impl_coverage(ForgePort, LocalForge, "ForgePort", "LocalForge")
+    assert violations == [], violations
+
+
 def test_github_issue_port_impl_coverage() -> None:
     from ghdag.core.ports.github import GitHubIssuePort
     from ghdag.github_client import GitHubClient
@@ -261,3 +283,18 @@ class DagHooks(Protocol):
     violations = compat_violations(methods, _DAGHOOKS_BASELINE, changelog, "DagHooks")
     names = [v.split(":")[0] for v in violations]
     assert "DagHooks.on_new_event" not in names
+
+
+def test_compat_violation_when_changelog_mentions_method_outside_changed() -> None:
+    fixture = """\
+from typing import Protocol
+
+class DagHooks(Protocol):
+    def on_task_start(self, uuid: str) -> None: ...
+    def on_new_event(self, uuid: str) -> None: ...
+"""
+    methods = protocol_methods(fixture, "DagHooks")
+    changelog = "### Added\n- `DagHooks.on_new_event`: new hook\n"
+    violations = compat_violations(methods, _DAGHOOKS_BASELINE, changelog, "DagHooks")
+    names = [v.split(":")[0] for v in violations]
+    assert "DagHooks.on_new_event" in names
