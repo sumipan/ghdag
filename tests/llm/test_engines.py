@@ -140,19 +140,72 @@ class TestCallCodexPromptRouting:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_codex_stdin_text_priority(self, mock_run: MagicMock):
-        """Explicit stdin_text takes priority over prompt."""
+        """stdin_text is joined after the prompt (nexus #3805)."""
         mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
         call("hello", engine="codex", stdin_text="override", capabilities=LLMCapabilities())
         _, kwargs = mock_run.call_args
-        assert kwargs["input"] == "override"
+        assert kwargs["input"] == "hello\n\noverride"
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_claude_stdin_text_unaffected(self, mock_run: MagicMock):
-        """claude has prompt_flag, so stdin routing does not activate."""
+        """claude is a STDIN engine, so the prompt goes to stdin (nexus #3805)."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="claude", stdin_text=None)
         _, kwargs = mock_run.call_args
-        assert kwargs["input"] is None
+        assert kwargs["input"] == "hello"
+
+
+_STDIN_ENGINE_MODELS = {
+    "claude": "claude-opus-4-6",
+    "cursor": "composer-2",
+    "codex": "gpt-5.6-terra",
+}
+
+
+class TestCallPromptViaStdin:
+    """nexus #3805: every STDIN engine gets prompt (+ stdin_text) via subprocess stdin."""
+
+    @staticmethod
+    def _run(engine: str, prompt: str, stdin_text: str | None) -> tuple[list[str], dict]:
+        with patch("ghdag.llm.engines.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+            call(
+                prompt,
+                engine=engine,
+                model=_STDIN_ENGINE_MODELS[engine],
+                stdin_text=stdin_text,
+                capabilities=LLMCapabilities(),
+            )
+            args, kwargs = mock_run.call_args
+        return args[0], kwargs
+
+    def test_claude_prompt_in_stdin_not_argv(self):
+        cmd, kwargs = self._run("claude", "hello", None)
+        assert kwargs["input"] == "hello"
+        assert "hello" not in cmd
+
+    def test_cursor_prompt_in_stdin_not_argv(self):
+        cmd, kwargs = self._run("cursor", "hello", None)
+        assert kwargs["input"] == "hello"
+        assert "hello" not in cmd
+
+    def test_codex_prompt_in_stdin_not_argv(self):
+        cmd, kwargs = self._run("codex", "hello", None)
+        assert kwargs["input"] == "hello"
+        assert "hello" not in cmd
+
+    @pytest.mark.parametrize("engine", sorted(_STDIN_ENGINE_MODELS))
+    @pytest.mark.parametrize(
+        ("prompt", "stdin_text", "expected"),
+        [
+            ("hello", None, "hello"),
+            ("", "data", "data"),
+            ("hello", "data", "hello\n\ndata"),
+        ],
+    )
+    def test_stdin_join_rule(self, engine, prompt, stdin_text, expected):
+        _, kwargs = self._run(engine, prompt, stdin_text)
+        assert kwargs["input"] == expected
 
 
 class TestCallResumeSessionId:
