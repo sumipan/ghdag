@@ -7,6 +7,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `TaskLauncher.mark_interrupted_all()`: atomically writes `interrupted_at` (ISO8601) to `jobs/running/<uuid>.json` for all currently running tasks. Called by the SIGTERM handler before entering drain mode, so a subsequent SIGKILL cannot lose the interrupt record. Returns a list of successfully recorded uuids; missing or corrupt running files are skipped with a warning (sumipan/nexus#3666).
+- `TaskLauncher.terminate_all()`: sends SIGTERM to all running task process groups and registers them in `_interrupting`. Called when the drain deadline is exceeded so that the engine can exit after kill-grace (sumipan/nexus#3666).
+- `GHDAG_PREVIOUS_ATTEMPT` environment variable: set to `"interrupted"` when a task is relaunched after a SIGTERM-interrupted run, allowing the task command to detect and resume from a prior partial execution (sumipan/nexus#3666).
+
+### Changed
+
+- `DagEngine` SIGTERM handler is now two-stage: first SIGTERM enters drain mode (`_draining = True`, calls `mark_interrupted_all`, sets `_drain_deadline = now + task_timeout`); a second SIGTERM while draining sets `_shutdown = True` for immediate exit. `task_timeout is None` sets the deadline to now (no drain: running tasks are terminated immediately and rerun after restart) (sumipan/nexus#3666).
+- `DagEngine.run()` drain loop: while `_draining`, new task launches and dependency resolution are skipped; only `check_completions` and `_apply_pending_cancels` run. Exits when `running_count == 0` or `_shutdown`. When `_drain_deadline` is exceeded, calls `terminate_all()` to force-stop remaining tasks (sumipan/nexus#3666).
+- `TaskLauncher.adopt_orphans()`: running files with `interrupted_at` are now treated as interrupted restarts instead of plain orphans. Live processes are killed (SIGTERM + kill_grace + SIGKILL); the running file is consumed and the task is queued for same-uuid rerun via `_pending_reruns`, up to `_MAX_INTERRUPTED_RERUNS = 1`. Tasks at the rerun limit fall back to `DONE_ORPHANED_ON_RESTART` with result `ORPHANED_ON_RESTART: interrupted rerun limit reached` (sumipan/nexus#3666).
+- `TaskLauncher.check_completions()`: tasks stopped by `terminate_all()` are excluded from the `--resume` fallback relaunch (sumipan/nexus#3666).
+- `TaskLauncher.check_completions()`: tasks in `_interrupting` (stopped by `terminate_all`) skip done-marker writing and `on_task_failure`; the running file is preserved so the next restart can detect and rerun them (sumipan/nexus#3666).
+- `jobs/running/<uuid>.json` gains two optional fields: `interrupted_at` (ISO8601, written by `mark_interrupted_all`) and `interrupted_reruns` (int, written by `launch` when relaunching an interrupted task) (sumipan/nexus#3666).
+
 ### Fixed
 
 - `GitHubClient.get_issue_comments`, `issue_get(fields=["comments"])`, `milestone_list`, `list_issues`, `pr_checks`, and `run_logs_failed` now fetch all pages via `_paginate` instead of stopping at the first page. Previously `get_issue_comments` was capped at 30 (no `per_page` set), and the others at 100. Resolves sumipan/nexus#3696.
