@@ -427,7 +427,39 @@ class TestSandboxCapability:
 
         caps = PRESETS["readonly_observe"]
         assert caps.sandbox == "readonly"
-        assert caps.disallowed_tools == ("Edit", "Write", "NotebookEdit")
+        assert caps.disallowed_tools == ("Edit", "NotebookEdit")
+
+    def test_readonly_observe_claude_flags(self):
+        """READONLY_OBSERVE → plan mode without Write deny (sumipan/nexus#3188)."""
+        from ghdag.llm.capabilities import READONLY_OBSERVE
+        from ghdag.llm.engines import _build_claude_flags
+
+        assert _build_claude_flags(READONLY_OBSERVE, False) == [
+            "--permission-mode",
+            "plan",
+            "--disallowed-tools",
+            "Edit,NotebookEdit",
+        ]
+
+    def test_non_plan_presets_keep_write_denied(self):
+        """TEXT_ONLY / JSON_ONLY / WEB_RESEARCH still deny Write."""
+        from ghdag.llm.capabilities import JSON_ONLY, TEXT_ONLY, WEB_RESEARCH
+
+        for caps in (TEXT_ONLY, JSON_ONLY, WEB_RESEARCH):
+            assert "Write" in caps.disallowed_tools
+
+    def test_readonly_observe_cursor_codex_argv_unchanged(self):
+        """cursor / codex argv is identical to the pre-#3188 preset value."""
+        from ghdag.llm.capabilities import READONLY_OBSERVE
+
+        previous = LLMCapabilities(
+            sandbox="readonly", disallowed_tools=("Edit", "Write", "NotebookEdit")
+        )
+        for engine, model in [("cursor", "auto"), ("codex", "gpt-5.6-terra")]:
+            current_cmd = build_llm_cmd(engine, model, "p", capabilities=READONLY_OBSERVE)
+            previous_cmd = build_llm_cmd(engine, model, "p", capabilities=previous)
+            assert current_cmd == previous_cmd
+            assert "--disallowed-tools" not in current_cmd
 
     def test_claude_sandbox_readonly_uses_permission_mode_plan(self):
         """claude + sandbox=readonly → --permission-mode plan。"""
