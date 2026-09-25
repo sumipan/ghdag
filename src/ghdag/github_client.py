@@ -99,6 +99,17 @@ def _rate_limit_wait_seconds(headers: Any, now: float) -> tuple[float, int | Non
     return 0.0, reset_at
 
 
+def _rate_limit_max_wait_from_env() -> int:
+    """Read GHDAG_RATE_LIMIT_MAX_WAIT_SEC; fall back to _RATE_LIMIT_MAX_WAIT_SEC."""
+    raw = os.environ.get("GHDAG_RATE_LIMIT_MAX_WAIT_SEC")
+    if raw is None or not raw.strip():
+        return _RATE_LIMIT_MAX_WAIT_SEC
+    try:
+        return int(raw)
+    except ValueError:
+        return _RATE_LIMIT_MAX_WAIT_SEC
+
+
 def _resolve_token(token: str | None = None) -> str:
     value = token or github_token()
     if not value:
@@ -180,8 +191,12 @@ class GitHubClient:
         token: str | None = None,
         repo: str | None = None,
         etag_cache_path: Path | None = None,
+        rate_limit_max_wait_sec: int | None = None,
     ) -> None:
         self._token = _resolve_token(token)
+        if rate_limit_max_wait_sec is None:
+            rate_limit_max_wait_sec = _rate_limit_max_wait_from_env()
+        self._rate_limit_max_wait_sec = rate_limit_max_wait_sec
         self._owner, self._repo = _resolve_repo(repo)
         self._repo_full = f"{self._owner}/{self._repo}"
         self._etag_cache: dict[str, tuple[str, Any]] = {}
@@ -375,7 +390,10 @@ class GitHubClient:
                             wait, reset_at = _rate_limit_wait_seconds(
                                 exc.headers, time.time()
                             )
-                            if rate_attempt == 0 and wait <= _RATE_LIMIT_MAX_WAIT_SEC:
+                            if (
+                                rate_attempt == 0
+                                and wait <= self._rate_limit_max_wait_sec
+                            ):
                                 if wait > 0:
                                     time.sleep(wait)
                                 break  # outer rate-limit retry

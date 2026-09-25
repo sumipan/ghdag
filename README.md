@@ -418,6 +418,7 @@ All ghdag-owned and GitHub auth reads are centralized in `ghdag.config.env` exce
 | `GHDAG_FORGE_ROOT` | when `GHDAG_FORGE=local` | none | Root directory for `LocalForge` (`.forge/` data) |
 | `GHDAG_EXEC_JSONL` | no | `jobs/exec.jsonl` | Default exec path for `ghdag status` when `--exec-jsonl` omitted |
 | `GHDAG_ETAG_CACHE` | no | none | Disk ETag cache path for `GitHubClient` (persists `If-None-Match` validators across processes; in-memory only when unset) |
+| `GHDAG_RATE_LIMIT_MAX_WAIT_SEC` | no | `900` | Max seconds `GitHubClient` sleeps for a rate-limit reset (403 + `X-RateLimit-Remaining: 0`) before retrying once; if the reset is further away, `RateLimitError` is raised immediately. The `rate_limit_max_wait_sec` constructor argument overrides it. Set a small value (e.g. `5`) for one-shot / periodic callers |
 
 `CODEX_HOME` is set internally for DAG codex launches (`/var/tmp/ghdag-dag-codex/`); it is not a user-facing configuration variable.
 
