@@ -137,16 +137,16 @@ Entry point: `ghdag.cli.main:_build_parser()`. Global options: `--verbose` / `-v
 | `version` | — |
 | `cleanup` | `repo_root`; `--dry-run`; `--cutoff-days` (`1`); `--orphan-days` (`7`); `--auto-repair` (fix orphan / dead entries; default is detect-only) |
 | `trigger` | `issue_number`; `--handler` (required); `--workflows-dir PATH` (`workflows`); `--exec-md PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto-detected when only one workflow exists); `--redispatch`; `--reason REASON`; `--state-dir PATH` (derived from `--exec-md`) |
-| `status` | `--issue N` and/or `--running` (at least one); `--handler` and `--workflow` (required with `--issue`); `--json`; `--exec-jsonl PATH` (`$GHDAG_EXEC_JSONL` or `jobs/exec.jsonl`); `--state-dir PATH` (`.pipeline-state`); `--done-dir PATH` (`<exec parent>/done`); `--running-dir PATH` (`<exec parent>/running`); `--audit-path PATH` (optional) |
-| `dag recover` | `--issue` (required); `--handler` (required); `--from STEP_NAME`; `--dry-run`; `--workflows-dir PATH` (`workflows`); `--exec-md PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto); `--state-dir PATH` (`.pipeline-state`); `--keep-results` |
-| `dag cancel` | `uuid`; `--queue-dir PATH` (`jobs`) |
+| `status` | `--issue N` and/or `--running` (at least one); `--handler` and `--workflow` (required with `--issue`); `--json`; `--exec-jsonl PATH` (`$GHDAG_EXEC_JSONL` or `jobs/exec.jsonl`); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `.pipeline-state`); `--done-dir PATH` / `--running-dir PATH` (`$GHDAG_STATE_DIR/done` / `running` or `<exec parent>/done` / `running`); `--audit-path PATH` (optional) |
+| `dag recover` | `--issue` (required); `--handler` (required); `--from STEP_NAME`; `--dry-run`; `--workflows-dir PATH` (`workflows`); `--exec-md PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `.pipeline-state`); `--keep-results` |
+| `dag cancel` | `uuid`; `--queue-dir PATH` (`$GHDAG_STATE_DIR` or `jobs`) |
 | `audit-query` | `--correlation-id`; `--burst-detect` (exit `1` when a burst is found); `--since` (ISO 8601, correlation mode only); `--audit-path` (`jobs/audit.jsonl`); `--window-sec` (`600`); `--threshold` (`10`) |
 | `tools list` | `--path PATH` (required); `--json` |
-| `quota report` | `engine`; `--status {available,paused}` (required); `--observed-at` (required, ISO 8601 with timezone); `--resume-at`; `--reason`; `--state-path` (`jobs/quota-gate.json`) |
-| `quota clear` | `engine`; `--observed-at` (required); `--state-path` (`jobs/quota-gate.json`) |
-| `quota drain` | `engine`; `--reason`; `--state-path` (`jobs/quota-gate.json`) |
-| `quota resume` | `engine`; `--state-path` (`jobs/quota-gate.json`) |
-| `quota status` | `--state-path` (`jobs/quota-gate.json`); `--exec-path` (`jobs/exec.jsonl`); `--done-dir` (`jobs/done`) |
+| `quota report` | `engine`; `--status {available,paused}` (required); `--observed-at` (required, ISO 8601 with timezone); `--resume-at`; `--reason`; `--state-path` (`$GHDAG_STATE_DIR/quota-gate.json` or `jobs/quota-gate.json`) |
+| `quota clear` | `engine`; `--observed-at` (required); `--state-path` (`$GHDAG_STATE_DIR/quota-gate.json` or `jobs/quota-gate.json`) |
+| `quota drain` | `engine`; `--reason`; `--state-path` (`$GHDAG_STATE_DIR/quota-gate.json` or `jobs/quota-gate.json`) |
+| `quota resume` | `engine`; `--state-path` (`$GHDAG_STATE_DIR/quota-gate.json` or `jobs/quota-gate.json`) |
+| `quota status` | `--state-path` (`$GHDAG_STATE_DIR/quota-gate.json` or `jobs/quota-gate.json`); `--exec-path` (`jobs/exec.jsonl`); `--done-dir` (`$GHDAG_STATE_DIR/done` or `jobs/done`) |
 
 ### Command behavior notes
 
@@ -645,6 +645,9 @@ Every variable ghdag reads (`os.environ` / `os.getenv` in `src/ghdag/`). Most re
 | `GHDAG_EXEC_JSONL` | `jobs/exec.jsonl` | `cli.commands.status` | Default `--exec-jsonl` for `ghdag status` |
 | `GHDAG_ETAG_CACHE` | unset (in-memory only) | `github_client.GitHubClient` | Path of the persistent ETag cache file |
 | `GHDAG_RATE_LIMIT_MAX_WAIT_SEC` | `900` | `github_client.GitHubClient` | Maximum rate-limit sleep before raising `RateLimitError`; non-integer values fall back to `900` |
+| `ENABLE_GIT` | off | `vcs.factory.get_sink` | `1` / `true` / `yes` lets `get_sink` return a real git sink; otherwise every sink is a no-op `NullSink` |
+| `GHDAG_VCS_CONFIG` | none | `vcs.factory.get_sink` | Path to the VCS sink YAML (`sinks.<name>`: `repo_root`, `branch`, `owner`, `allow_prefixes`, `push`, ...); required when `ENABLE_GIT` is on |
+| `GHDAG_STATE_DIR` | unset (current paths) | `config.env.state_dir` | Directory for runtime state (`done/`, `running/`, `events/`, `.sessions/`, `cancel/`, `quota-gate.json`, `.pipeline-state/`); `exec.jsonl` / `audit.jsonl` stay in `jobs/`. Explicit CLI / API paths win |
 
 Variables ghdag sets for child processes (not configuration):
 

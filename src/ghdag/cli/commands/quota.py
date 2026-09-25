@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ghdag.config.env import state_dir as resolve_state_dir
 from ghdag.dag.state import load_done_from_dir
 from ghdag.io import exec_jsonl
 from ghdag.metrics.parsers import parse_engine_model
@@ -140,9 +141,12 @@ def cmd_quota_status(args) -> None:
     print(json.dumps(payload, ensure_ascii=False))
 
 
-def _build_gate(state_path: str) -> QuotaGate:
-    path = Path(state_path)
-    return QuotaGate(path, audit_path=path.parent / "audit.jsonl")
+def _build_gate(state_path: str | None) -> QuotaGate:
+    if state_path:
+        path = Path(state_path)
+        return QuotaGate(path, audit_path=path.parent / "audit.jsonl")
+    # Default: quota state follows GHDAG_STATE_DIR, audit stays in jobs/.
+    return QuotaGate(resolve_state_dir("jobs") / "quota-gate.json", audit_path=Path("jobs") / "audit.jsonl")
 
 
 def _parse_iso_datetime(raw: str, field_name: str) -> datetime:

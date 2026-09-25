@@ -21,6 +21,7 @@ from pathlib import Path
 
 import yaml
 
+from ghdag.config.env import state_dir as resolve_state_dir
 from ghdag.io import exec_jsonl
 from ghdag.io.audit import AuditContext
 from ghdag.quota import QuotaGate
@@ -39,7 +40,7 @@ class PipelineState:
         self._state_dir = Path(state_dir)
         self._exec_jsonl_path = Path(exec_jsonl_path)
         self._quota_gate = QuotaGate(
-            self._exec_jsonl_path.parent / "quota-gate.json",
+            resolve_state_dir(self._exec_jsonl_path.parent) / "quota-gate.json",
             audit_path=self._exec_jsonl_path.parent / "audit.jsonl",
         )
 
@@ -253,10 +254,11 @@ class PipelineState:
 
         Returns:
             PipelineState(state_dir=repo_root/.pipeline-state, exec_jsonl_path=repo_root/jobs/exec.jsonl)
+            (state_dir=$GHDAG_STATE_DIR/.pipeline-state when GHDAG_STATE_DIR is set)
         """
         root = Path(repo_root)
         return cls(
-            state_dir=root / ".pipeline-state",
+            state_dir=resolve_state_dir(root) / ".pipeline-state",
             exec_jsonl_path=root / "jobs" / "exec.jsonl",
         )
 

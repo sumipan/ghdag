@@ -45,6 +45,74 @@ All reads go through `ghdag.config.env`. Other modules must not call `os.environ
 | `GHDAG_FORGE` | `ghdag.forge.get_forge` | `github` | Forge backend: `github` (default) or `local` |
 | `GHDAG_FORGE_ROOT` | `ghdag.forge.get_forge` | unset | Data directory for `GHDAG_FORGE=local` (required when local) |
 | `GHDAG_EXEC_JSONL` | CLI `ghdag status` | `jobs/exec.jsonl` | Default exec.jsonl path for status CLI |
+| `ENABLE_GIT` | `enable_git()` | off | Allow `ghdag.vcs.get_sink` to return a real `GitSink` (`1`/`true`/`yes`, case-insensitive) |
+| `GHDAG_VCS_CONFIG` | `ghdag_vcs_config()` | unset | Path to the VCS sink YAML read by `get_sink` |
+| `GHDAG_STATE_DIR` | `ghdag_state_dir()` / `state_dir(default)` | unset → current paths | Move runtime state (`done/` `running/` `events/` `.sessions/` `cancel/` `quota-gate.json` `.pipeline-state/`) out of the repo |
+
+## GHDAG_STATE_DIR (nexus #3831)
+
+`ghdag.config.env.state_dir(default)` returns `Path($GHDAG_STATE_DIR).expanduser()` when the variable is non-empty, otherwise `Path(default)`. Every caller passes its historical default, so behaviour is unchanged when the variable is unset.
+
+| Path | Unset | Set (`<S>`) |
+|---|---|---|
+| `DagConfig.exec_done_dir` | `jobs/done` | `<S>/done` |
+| `DagConfig.quota_state_path` | `<exec.jsonl parent>/quota-gate.json` | `<S>/quota-gate.json` |
+| `TaskLauncher` `running/` `events/` `.sessions/` `cancel/` | parent of `exec_done_dir` | `<S>/...` |
+| `PipelineState` quota state | `<exec.jsonl parent>/quota-gate.json` | `<S>/quota-gate.json` |
+| `PipelineState.from_repo_root` | `<root>/.pipeline-state` | `<S>/.pipeline-state` |
+| `ghdag watch` / `trigger` / `status` / `dag recover` state dir | `.pipeline-state` (derived) | `<S>/.pipeline-state` |
+| `ghdag dag cancel --queue-dir` | `jobs` | `<S>` |
+| `ghdag quota * --state-path` | `jobs/quota-gate.json` | `<S>/quota-gate.json` |
+
+`exec.jsonl`, `audit.jsonl`, `.ghdag.lock` and order/result `.md` files stay in `jobs/`. Explicit arguments (`DagConfig(exec_done_dir=...)`, `--state-dir`, `--state-path`, `--queue-dir`) always win. `ghdag ui` and `ghdag cleanup` do not follow `GHDAG_STATE_DIR` yet.
+
+## ghdag.vcs (nexus #3831)
+
+A single git sink for upper layers. `ghdag.vcs` imports only `ghdag.io` and `ghdag.config.env` (checked by import-linter).
+
+```python
+from ghdag.vcs import get_sink
+
+sink = get_sink("notes")
+result = sink.commit(["diary/2026-09-25.md"], "host(diary): 2026-09-25", trailers={"Execution-Id": "..."})
+```
+
+`get_sink(name)` resolution order:
+
+1. `ENABLE_GIT` off → `NullSink(reason="ENABLE_GIT unset")`
+2. `GHDAG_VCS_CONFIG` unset → warning + `NullSink(reason="GHDAG_VCS_CONFIG unset")`
+3. `sinks.<name>` missing → `ValueError`
+4. otherwise → `GitSink(**sinks[name], name=name, audit_path=<audit_path or GHDAG_AUDIT_PATH>)`
+
+Constructing `GitSink` / `LocalGitSink` directly bypasses the gate.
+
+```yaml
+audit_path: /abs/path/jobs/audit.jsonl   # optional
+sinks:
+  notes:
+    repo_root: /abs/path/notes
+    branch: main
+    remote: origin          # optional (default origin)
+    owner: host
+    layer: host             # optional (default owner)
+    allow_prefixes: ["diary/", "weekly/"]
+    push: immediate         # immediate | debounce:<sec> | manual
+```
+
+`GitSink.commit(paths, message, *, trailers=None)`:
+
+| Step | Behaviour |
+|---|---|
+| Ownership | Every path must start with one of `allow_prefixes`, and the subject must start with `<owner>(`; otherwise `OwnershipError` before any git call |
+| Lock | `flock` on `<git-common-dir>/ghdag-vcs.lock`, held until push finishes (shared across processes) |
+| Stage | `git add -- <paths>` only; no diff → `skipped=True, reason="no changes"` |
+| Commit | `git commit -- <paths>` with trailers `Layer:` / `Host:` / caller trailers (`Execution-Id`, `Correlation-Id`, ...) |
+| Push policy | `immediate` syncs now; `debounce:<sec>` syncs only if the last push (`<git-common-dir>/ghdag-vcs-last-push`) is older than `<sec>` (else `reason="push deferred"`); `manual` never syncs. `flush()` pushes pending commits. Invalid policy → `ValueError` |
+| Sync | `fetch` → `rebase --autostash <remote>/<branch>` → `push HEAD:<branch>`; non-fast-forward is retried up to 2 times, then `pushed=False, reason="push failed: ..."` |
+| Conflict | `rebase --abort`, save the HEAD version of each unpushed file to `<repo_root>/inbox/<YYYYmmddTHHMMSS>-<path with / as __>`, `git reset --keep <remote>/<branch>`, raise `ConflictError(inbox_paths=...)` |
+| Audit | When `audit_path` is set: one `vcs_commit` / `vcs_skipped` / `vcs_conflict` line with `sink` / `owner` / `layer` / `host` / `paths` / `sha` / `pushed` / `reason` / `execution_id` / `correlation_id` |
+
+`LocalGitSink.create(tmp_dir, owner=..., allow_prefixes=...)` builds `<tmp_dir>/remote.git` (bare) and `<tmp_dir>/work` (clone with one commit) for tests.
 
 ## ForgePort (nexus #3099 / #3100 / #3101)
 

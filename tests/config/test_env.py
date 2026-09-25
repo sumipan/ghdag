@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from ghdag.config import env
@@ -76,3 +78,43 @@ def test_session_compaction_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
         assert env.session_compaction_enabled() is False
     monkeypatch.delenv("GHDAG_SESSION_COMPACTION", raising=False)
     assert env.session_compaction_enabled() is False
+
+
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "YES", " 1 "])
+def test_enable_git_truthy(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("ENABLE_GIT", value)
+    assert env.enable_git() is True
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no", "", "  ", "on"])
+def test_enable_git_falsy(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+    monkeypatch.setenv("ENABLE_GIT", value)
+    assert env.enable_git() is False
+
+
+def test_enable_git_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ENABLE_GIT", raising=False)
+    assert env.enable_git() is False
+
+
+def test_ghdag_vcs_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GHDAG_VCS_CONFIG", "/tmp/vcs.yaml")
+    assert env.ghdag_vcs_config() == "/tmp/vcs.yaml"
+    monkeypatch.setenv("GHDAG_VCS_CONFIG", "")
+    assert env.ghdag_vcs_config() is None
+    monkeypatch.delenv("GHDAG_VCS_CONFIG", raising=False)
+    assert env.ghdag_vcs_config() is None
+
+
+def test_state_dir_unset_or_empty_returns_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GHDAG_STATE_DIR", raising=False)
+    assert env.ghdag_state_dir() is None
+    assert env.state_dir("jobs") == Path("jobs")
+    monkeypatch.setenv("GHDAG_STATE_DIR", "")
+    assert env.state_dir(Path("/x/jobs")) == Path("/x/jobs")
+
+
+def test_state_dir_set(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("GHDAG_STATE_DIR", str(tmp_path / "state"))
+    assert env.ghdag_state_dir() == str(tmp_path / "state")
+    assert env.state_dir("jobs") == tmp_path / "state"

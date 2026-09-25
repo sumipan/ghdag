@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ghdag.config.env import state_dir
+
 
 @dataclass
 class Task:
@@ -23,7 +25,9 @@ class Task:
 @dataclass
 class DagConfig:
     exec_jsonl_path: str | Path
-    exec_done_dir: str | Path = "jobs/done"
+    # ``None`` resolves to ``state_dir("jobs") / "done"`` in ``__post_init__``; readers always
+    # see a ``Path``, so the annotation omits ``None`` to keep call sites narrow.
+    exec_done_dir: str | Path = None  # type: ignore[assignment]
     poll_interval: float = 1.0
     launch_stagger: float = 0.5
     max_retry: int = 1
@@ -42,12 +46,16 @@ class DagConfig:
 
     def __post_init__(self) -> None:
         queue_dir = Path(self.exec_jsonl_path).parent
+        if self.exec_done_dir is None:
+            self.exec_done_dir = state_dir("jobs") / "done"
+        else:
+            self.exec_done_dir = Path(self.exec_done_dir)
         if self.lock_file is None:
             self.lock_file = queue_dir / ".ghdag.lock"
         else:
             self.lock_file = Path(self.lock_file)
         if self.quota_state_path is None:
-            self.quota_state_path = queue_dir / "quota-gate.json"
+            self.quota_state_path = state_dir(queue_dir) / "quota-gate.json"
         else:
             self.quota_state_path = Path(self.quota_state_path)
         if self.quota_audit_path is None:

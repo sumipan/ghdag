@@ -5,11 +5,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from ghdag.config.env import state_dir as resolve_state_dir
+
 
 def cmd_cancel(args) -> None:
     """ghdag dag cancel: jobs/cancel/<uuid> 制御ファイルを作成する（プロセスは触らない）。"""
     uuid = args.uuid.strip()
-    queue_dir = Path(args.queue_dir).resolve()
+    queue_dir = (Path(args.queue_dir) if args.queue_dir else resolve_state_dir("jobs")).resolve()
     running_path = queue_dir / "running" / f"{uuid}.json"
     if not running_path.is_file():
         print(f"error: not running: {uuid}", file=sys.stderr)
