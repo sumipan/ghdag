@@ -254,7 +254,7 @@ class PipelineState:
 
         Returns:
             PipelineState(state_dir=repo_root/.pipeline-state, exec_jsonl_path=repo_root/jobs/exec.jsonl)
-            （GHDAG_STATE_DIR 設定時は state_dir=$GHDAG_STATE_DIR/.pipeline-state）
+            (state_dir=$GHDAG_STATE_DIR/.pipeline-state when GHDAG_STATE_DIR is set)
         """
         root = Path(repo_root)
         return cls(
