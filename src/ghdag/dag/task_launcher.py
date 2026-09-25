@@ -64,6 +64,8 @@ from .state import mark_done as state_mark_done
 
 logger = logging.getLogger(__name__)
 
+_MAX_INTERRUPTED_RERUNS = 1
+
 _STDIN_REDIR_RE = re.compile(r"(?<!<)<\s+(\S+)")
 _RESUME_ERROR_RE = re.compile(
     r"(resume|session|chat_id|not found|expired|invalid)",
@@ -180,7 +182,7 @@ def _signal_process_tree(proc: subprocess.Popen[bytes], sig: signal.Signals) -> 
 
 
 
-def _task_env(uuid: str, task: Task) -> dict[str, str]:
+def _task_env(uuid: str, task: Task, previous_attempt: str | None = None) -> dict[str, str]:
     """Environment for a launched task: the parent's plus the task identity.
 
     ``GHDAG_TASK_UUID`` lets a task (for example ``issuesmith dispatch``) register itself
@@ -190,6 +192,8 @@ def _task_env(uuid: str, task: Task) -> dict[str, str]:
     env = os.environ.copy()
     env["GHDAG_TASK_UUID"] = uuid
     env["GHDAG_RESULT_PATH"] = task.result_path or ""
+    if previous_attempt is not None:
+        env["GHDAG_PREVIOUS_ATTEMPT"] = previous_attempt
     return env
 
 
@@ -221,6 +225,8 @@ class TaskLauncher:
         self._running: dict[str, RunningTask] = {}
         self._adopted: dict[str, AdoptedTask] = {}
         self._cancelled: set[str] = set()
+        self._interrupting: set[str] = set()
+        self._pending_reruns: dict[str, int] = {}
         self._session_store = SessionStore(self._queue_dir() / ".sessions")
         self._quota_gate = quota_gate or QuotaGate(
             self._queue_dir() / "quota-gate.json",
@@ -284,6 +290,9 @@ class TaskLauncher:
             )
             return False
 
+        interrupted_reruns = self._pending_reruns.pop(uuid, None)
+        previous_attempt = "interrupted" if interrupted_reruns is not None else None
+
         stdout_buf: io.BytesIO | None = None
         t_stdout: threading.Thread | None = None
         try:
@@ -293,7 +302,7 @@ class TaskLauncher:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     cwd=cwd,
-                    env=_task_env(uuid, task),
+                    env=_task_env(uuid, task, previous_attempt),
                     start_new_session=True,
                 )
                 stdout_buf = io.BytesIO()
@@ -320,7 +329,7 @@ class TaskLauncher:
                     ["bash", "-o", "pipefail", "-c", task.command],
                     stderr=subprocess.PIPE,
                     cwd=cwd,
-                    env=_task_env(uuid, task),
+                    env=_task_env(uuid, task, previous_attempt),
                     start_new_session=True,
                 )
         except Exception:
@@ -342,7 +351,7 @@ class TaskLauncher:
             stderr_thread=t_stderr,
             stdout_thread=t_stdout,
         )
-        self._write_running_file(uuid, proc, task, launch_engine)
+        self._write_running_file(uuid, proc, task, launch_engine, interrupted_reruns)
         self._hooks.on_task_start(uuid, task)
         return True
 
@@ -415,10 +424,12 @@ class TaskLauncher:
                 continue
 
             was_cancelled = uuid in self._cancelled
-            was_timeout = rt.term_sent_at is not None and not was_cancelled
+            was_interrupted = uuid in self._interrupting
+            was_timeout = rt.term_sent_at is not None and not was_cancelled and not was_interrupted
             finished_at = time.time()
             del self._running[uuid]
             self._cancelled.discard(uuid)
+            self._interrupting.discard(uuid)
             self._join_reader_threads(rt)
             stderr_bytes = rt.stderr_buf.getvalue()
             stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
@@ -501,13 +512,19 @@ class TaskLauncher:
                         resume_fallback_relaunched = True
             finally:
                 if not resume_fallback_relaunched:
-                    self._cleanup_control_files(uuid)
+                    if was_interrupted:
+                        self._cancel_path(uuid).unlink(missing_ok=True)
+                    else:
+                        self._cleanup_control_files(uuid)
                     try:
                         self._quota_gate.finish_run(task_uuid=uuid)
                     except ValueError:
                         logger.exception("Failed to update running registry for [%s]", uuid)
 
             if resume_fallback_relaunched:
+                continue
+
+            if was_interrupted:
                 continue
 
             engine_error = adapter.extract_error(stdout_data, stderr_bytes)
@@ -894,12 +911,50 @@ class TaskLauncher:
     def _events_path(self, uuid: str) -> Path:
         return self._queue_dir() / "events" / f"{uuid}.jsonl"
 
+    def mark_interrupted_all(self) -> list[str]:
+        """Add interrupted_at to running files for all currently running tasks.
+
+        Called from signal handler; no exceptions are raised.
+        Returns list of uuids that were successfully recorded.
+        """
+        recorded: list[str] = []
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for uuid in list(self._running):
+            path = self._running_path(uuid)
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+                data["interrupted_at"] = now_iso
+                fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        json.dump(data, f)
+                    os.replace(tmp, path)
+                except BaseException:
+                    Path(tmp).unlink(missing_ok=True)
+                    raise
+                recorded.append(uuid)
+            except Exception:
+                logger.warning(
+                    "mark_interrupted_all: failed to update running file for [%s]", uuid,
+                    exc_info=True,
+                )
+        return recorded
+
+    def terminate_all(self) -> None:
+        """Send SIGTERM to all running task process groups (drain deadline exceeded)."""
+        for uuid, rt in list(self._running.items()):
+            self._interrupting.add(uuid)
+            if rt.term_sent_at is None:
+                _signal_process_tree(rt.proc, signal.SIGTERM)
+                rt.term_sent_at = time.monotonic()
+
     def _write_running_file(
         self,
         uuid: str,
         proc: subprocess.Popen,
         task: Task,
         engine: str | None,
+        interrupted_reruns: int | None = None,
     ) -> None:
         raw_pid = getattr(proc, "pid", None)
         if not isinstance(raw_pid, int):
@@ -918,13 +973,15 @@ class TaskLauncher:
                 )
         except OSError:
             pass
-        payload = {
+        payload: dict = {
             "pid": raw_pid,
             "pgid": pgid,
             "engine": engine if isinstance(engine, str) else "",
             "started_at": datetime.now(timezone.utc).isoformat(),
             "has_resume": "resumed_session_id" in task.annotations,
         }
+        if interrupted_reruns is not None:
+            payload["interrupted_reruns"] = interrupted_reruns
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -1115,7 +1172,48 @@ class TaskLauncher:
                 )
                 self._finish_orphan(uuid, task, started_at)
                 continue
-            if _process_group_exists(pgid):
+            interrupted_at = data.get("interrupted_at") if isinstance(data, dict) else None
+            interrupted_reruns_val = (
+                data.get("interrupted_reruns", 0) if isinstance(data, dict) else 0
+            )
+            if interrupted_at is not None:
+                if _process_group_exists(pgid):
+                    logger.info(
+                        "adopt_orphans: interrupted task %s still alive (pgid=%s) — killing",
+                        uuid, pgid,
+                    )
+                    try:
+                        os.killpg(pgid, signal.SIGTERM)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+                    deadline = time.monotonic() + self._config.kill_grace
+                    while time.monotonic() < deadline and _process_group_exists(pgid):
+                        time.sleep(0.05)
+                    if _process_group_exists(pgid):
+                        try:
+                            os.killpg(pgid, signal.SIGKILL)
+                        except (ProcessLookupError, PermissionError):
+                            pass
+
+                if interrupted_reruns_val < _MAX_INTERRUPTED_RERUNS:
+                    self._pending_reruns[uuid] = interrupted_reruns_val + 1
+                    path.unlink(missing_ok=True)
+                    try:
+                        self._quota_gate.finish_run(task_uuid=uuid)
+                    except ValueError:
+                        pass
+                    logger.info(
+                        "adopt_orphans: interrupted task %s queued for rerun "
+                        "(interrupted_reruns=%d)",
+                        uuid, interrupted_reruns_val,
+                    )
+                else:
+                    logger.warning(
+                        "adopt_orphans: interrupted task %s reached rerun limit — orphaning",
+                        uuid,
+                    )
+                    self._finish_orphan(uuid, task, started_at)
+            elif _process_group_exists(pgid):
                 self._adopted[uuid] = AdoptedTask(
                     uuid=uuid, task=task, pgid=pgid, started_at=started_at
                 )

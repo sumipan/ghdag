@@ -43,6 +43,8 @@ class DagEngine:
             self._hooks = hooks
         self._tasks: dict[str, Task] = {}
         self._shutdown = False
+        self._draining = False
+        self._drain_deadline: float | None = None
         self._lock_fh: IO[str] | None = None
         self._adopt_done = False
 
@@ -74,6 +76,16 @@ class DagEngine:
         logger.info("DagEngine started — watching %s", exec_jsonl_path)
 
         while not self._shutdown:
+            if self._draining:
+                self._apply_pending_cancels()
+                self._launcher.check_completions()
+                if self._drain_deadline is not None and time.monotonic() >= self._drain_deadline:
+                    self._launcher.terminate_all()
+                if self._launcher.running_count == 0:
+                    break
+                time.sleep(self._config.poll_interval)
+                continue
+
             try:
                 mtime = os.path.getmtime(exec_jsonl_path)
             except FileNotFoundError:
@@ -235,7 +247,14 @@ class DagEngine:
             return
 
         def _handler(signum, frame):
-            self._shutdown = True
+            if self._draining:
+                self._shutdown = True
+                return
+            self._launcher.mark_interrupted_all()
+            self._draining = True
+            task_timeout = self._config.task_timeout
+            if task_timeout is not None:
+                self._drain_deadline = time.monotonic() + task_timeout
             self._hooks.on_shutdown(signum)
 
         signal.signal(signal.SIGINT, _handler)
