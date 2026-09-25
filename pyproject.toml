@@ -136,6 +136,7 @@ source_modules = [
   "ghdag.llm",
   "ghdag.metrics",
   "ghdag.github_client",
+  "ghdag.vcs",
 ]
 forbidden_modules = [
   "ghdag.dag",

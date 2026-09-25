@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 from typing import cast
 
+from ghdag.config.env import state_dir as resolve_state_dir
+
 
 def cmd_watch(args) -> None:
     """WorkflowDispatcher を構築し run() を呼ぶ薄いラッパー。"""
@@ -31,9 +33,9 @@ def cmd_watch(args) -> None:
     if isinstance(args.state_dir, str):
         state_dir = args.state_dir
     elif exec_jsonl_resolved.parent.name == "jobs":
-        state_dir = str(exec_jsonl_resolved.parent.parent / ".pipeline-state")
+        state_dir = str(resolve_state_dir(exec_jsonl_resolved.parent.parent) / ".pipeline-state")
     else:
-        state_dir = ".pipeline-state"
+        state_dir = str(resolve_state_dir(".") / ".pipeline-state")
     pipeline_state = PipelineState(
         state_dir=state_dir,
         exec_jsonl_path=str(exec_jsonl_resolved),

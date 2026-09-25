@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from ghdag.config.env import state_dir as resolve_state_dir
+
 
 def cmd_recover(args) -> None:
     """ghdag dag recover: 既存 run の失敗・未実行ステップを再実行可能にする。"""
@@ -55,12 +57,13 @@ def cmd_recover(args) -> None:
 
     exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
     queue_dir = exec_jsonl_resolved.parent
-    done_dir = queue_dir / "done"
-    running_uuids = running_uuids_from_queue_dir(queue_dir)
+    queue_state_dir = resolve_state_dir(queue_dir)
+    done_dir = queue_state_dir / "done"
+    running_uuids = running_uuids_from_queue_dir(queue_state_dir)
 
     try:
         plan = plan_recover(
-            state_dir=args.state_dir,
+            state_dir=args.state_dir or str(resolve_state_dir(".") / ".pipeline-state"),
             exec_jsonl_path=str(exec_jsonl_resolved),
             workflow_name=workflow.name,
             handler_name=handler_name,

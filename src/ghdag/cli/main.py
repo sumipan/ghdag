@@ -342,9 +342,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     status_parser.add_argument(
         "--state-dir",
-        default=".pipeline-state",
+        default=None,
         metavar="PATH",
-        help="Pipeline state directory (default: .pipeline-state)",
+        help="Pipeline state directory (default: $GHDAG_STATE_DIR/.pipeline-state or .pipeline-state)",
     )
     status_parser.add_argument(
         "--done-dir",
@@ -410,9 +410,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     recover_parser.add_argument(
         "--state-dir",
-        default=".pipeline-state",
+        default=None,
         metavar="PATH",
-        help="Pipeline state directory (default: .pipeline-state)",
+        help="Pipeline state directory (default: $GHDAG_STATE_DIR/.pipeline-state or .pipeline-state)",
     )
     recover_parser.add_argument(
         "--keep-results",
@@ -428,10 +428,10 @@ def _build_parser() -> argparse.ArgumentParser:
     cancel_parser.add_argument("uuid", help="Task UUID to cancel")
     cancel_parser.add_argument(
         "--queue-dir",
-        default="jobs",
+        default=None,
         dest="queue_dir",
         metavar="PATH",
-        help="Queue directory containing running/ and cancel/ (default: jobs)",
+        help="Queue directory containing running/ and cancel/ (default: $GHDAG_STATE_DIR or jobs)",
     )
     cancel_parser.set_defaults(func=cmd_cancel)
 
@@ -529,9 +529,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     quota_report.add_argument(
         "--state-path",
-        default="jobs/quota-gate.json",
+        default=None,
         dest="state_path",
-        help="Path to quota state JSON",
+        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
     )
     quota_report.set_defaults(func=cmd_quota_report)
 
@@ -545,9 +545,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     quota_clear.add_argument(
         "--state-path",
-        default="jobs/quota-gate.json",
+        default=None,
         dest="state_path",
-        help="Path to quota state JSON",
+        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
     )
     quota_clear.set_defaults(func=cmd_quota_clear)
 
@@ -560,9 +560,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     quota_drain.add_argument(
         "--state-path",
-        default="jobs/quota-gate.json",
+        default=None,
         dest="state_path",
-        help="Path to quota state JSON",
+        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
     )
     quota_drain.set_defaults(func=cmd_quota_drain)
 
@@ -570,18 +570,18 @@ def _build_parser() -> argparse.ArgumentParser:
     quota_resume.add_argument("engine", help="Engine name")
     quota_resume.add_argument(
         "--state-path",
-        default="jobs/quota-gate.json",
+        default=None,
         dest="state_path",
-        help="Path to quota state JSON",
+        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
     )
     quota_resume.set_defaults(func=cmd_quota_resume)
 
     quota_status = quota_subparsers.add_parser("status", help="Show quota state snapshot")
     quota_status.add_argument(
         "--state-path",
-        default="jobs/quota-gate.json",
+        default=None,
         dest="state_path",
-        help="Path to quota state JSON",
+        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
     )
     quota_status.add_argument(
         "--exec-path",

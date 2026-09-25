@@ -8,6 +8,8 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+from ghdag.config.env import state_dir as resolve_state_dir
+
 
 def cmd_status(args) -> None:
     """ghdag status: Issue DAG 状態または running タスク一覧を出力する。"""
@@ -26,13 +28,14 @@ def cmd_status(args) -> None:
         or "jobs/exec.jsonl"
     ).resolve()
     queue_dir = exec_jsonl.parent
-    done_dir = Path(args.done_dir).resolve() if args.done_dir else queue_dir / "done"
+    queue_state_dir = resolve_state_dir(queue_dir)
+    done_dir = Path(args.done_dir).resolve() if args.done_dir else queue_state_dir / "done"
     running_dir = (
         Path(args.running_dir).resolve()
         if args.running_dir
-        else queue_dir / "running"
+        else queue_state_dir / "running"
     )
-    state_dir = Path(args.state_dir).resolve()
+    state_dir = Path(args.state_dir or resolve_state_dir(".") / ".pipeline-state").resolve()
     audit_path = Path(args.audit_path).resolve() if args.audit_path else None
 
     if args.running and not args.issue_number:

@@ -229,8 +229,8 @@ class TaskLauncher:
         self._pending_reruns: dict[str, int] = {}
         self._session_store = SessionStore(self._queue_dir() / ".sessions")
         self._quota_gate = quota_gate or QuotaGate(
-            self._queue_dir() / "quota-gate.json",
-            audit_path=self._queue_dir() / "audit.jsonl",
+            Path(config.quota_state_path or self._queue_dir() / "quota-gate.json"),
+            audit_path=Path(config.quota_audit_path or self._queue_dir() / "audit.jsonl"),
         )
         self._engine_quarantine = EngineQuarantine()
 
