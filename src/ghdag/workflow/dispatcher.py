@@ -8,9 +8,10 @@ import re
 import shlex
 import subprocess
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
-from ghdag.exceptions import GhdagError
+from ghdag.exceptions import GhdagError, RateLimitError
 from ghdag.github_client import GitHubIssuePort
 from ghdag.io.audit import now_ts
 from ghdag.pipeline.audit import (
@@ -64,6 +65,10 @@ _BURST_COOLDOWN_SEC = 3600
 _PAUSE_REASON_MAX_CHARS = 500
 
 
+def _epoch_to_iso(ts: int) -> str:
+    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+
+
 class ContextHookError(GhdagError, ValueError):
     """Raised when context_hook stdout is not valid JSON."""
 
@@ -101,6 +106,8 @@ class WorkflowDispatcher:
         self._workflows_dir = Path(workflows_dir) if workflows_dir is not None else None
         self._last_mtime: float = self._get_max_mtime()
         self._consecutive_failures: dict[tuple[int, str], int] = {}
+        # Epoch seconds from RateLimitError.reset_at; polls are skipped until then.
+        self._rate_limited_until: int | None = None
 
     def poll_once(self) -> list[dict]:
         """1回のポーリングを実行。マッチした Issue とアクションのリストを返す。
@@ -116,6 +123,24 @@ class WorkflowDispatcher:
         for github in self._githubs:
             try:
                 all_open = github.list_all_issues("open")
+            except RateLimitError as exc:
+                if exc.reset_at is None:
+                    logger.warning(
+                        "poll_once: list_all_issues(open) rate limited (%s) — "
+                        "skipping all triggers for this client",
+                        exc,
+                    )
+                    continue
+                if (
+                    self._rate_limited_until is None
+                    or exc.reset_at > self._rate_limited_until
+                ):
+                    self._rate_limited_until = exc.reset_at
+                logger.warning(
+                    "rate limited: skip poll until %s",
+                    _epoch_to_iso(self._rate_limited_until),
+                )
+                continue
             except Exception as exc:
                 logger.warning(
                     "poll_once: list_all_issues(open) failed (%s: %s) — "
@@ -363,6 +388,18 @@ class WorkflowDispatcher:
                 self._paused = False
 
             self._maybe_reload_workflows()
+
+            if self._rate_limited_until is not None:
+                if time.time() < self._rate_limited_until:
+                    logger.info(
+                        "rate limited: skip poll until %s",
+                        _epoch_to_iso(self._rate_limited_until),
+                    )
+                    count += 1
+                    if max_iterations is None or count < max_iterations:
+                        time.sleep(self._current_polling_interval)
+                    continue
+                self._rate_limited_until = None
 
             matches = self.poll_once()
             self._observe_rate_limit()

@@ -659,3 +659,147 @@ def test_issue_update_reraises_when_not_converged(monkeypatch: pytest.MonkeyPatc
     )
     with pytest.raises(NetworkError):
         client.issue_update(1, labels_remove=["old"], labels_add=["new"])
+
+
+# --- rate_limit_max_wait_sec / GHDAG_RATE_LIMIT_MAX_WAIT_SEC (nexus #3752) ---
+
+
+def _rate_limited_error(reset_at: int) -> urllib.error.HTTPError:
+    hdrs = mock.MagicMock()
+    values = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": str(reset_at)}
+    hdrs.get = lambda k, d=None: values.get(k, d)
+    return urllib.error.HTTPError(
+        url="https://api.github.com/x",
+        code=403,
+        msg="Forbidden",
+        hdrs=hdrs,
+        fp=io.BytesIO(json.dumps({"message": "API rate limit exceeded"}).encode()),
+    )
+
+
+class _OkResp:
+    headers: dict = {}
+
+    def read(self) -> bytes:
+        return b'{"ok": true}'
+
+    def __enter__(self) -> _OkResp:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        pass
+
+
+def _fake_rate_limited_then_ok(reset_at: int, calls: list[int]):
+    def fake_urlopen(req: object, timeout: int = 120) -> _OkResp:
+        calls.append(1)
+        if len(calls) == 1:
+            raise _rate_limited_error(reset_at)
+        return _OkResp()
+
+    return fake_urlopen
+
+
+def test_rate_limit_over_max_wait_raises_without_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AC-1: reset beyond the limit -> RateLimitError immediately (< 1 s, no sleep)."""
+    import time
+
+    from ghdag.exceptions import RateLimitError
+
+    monkeypatch.delenv("GHDAG_RATE_LIMIT_MAX_WAIT_SEC", raising=False)
+    client = GitHubClient(token="tok", repo="o/r", rate_limit_max_wait_sec=5)
+    reset_at = int(time.time()) + 60
+    calls: list[int] = []
+    monkeypatch.setattr(
+        "ghdag.github_client.urllib.request.urlopen",
+        _fake_rate_limited_then_ok(reset_at, calls),
+    )
+
+    start = time.monotonic()
+    with pytest.raises(RateLimitError) as exc_info:
+        client._request("GET", "/repos/o/r/issues/1")
+    assert time.monotonic() - start < 1.0
+    assert exc_info.value.reset_at == reset_at
+    assert len(calls) == 1
+
+
+def test_rate_limit_within_max_wait_sleeps_and_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AC-3: reset within the limit -> sleep until reset and retry."""
+    import time
+
+    monkeypatch.delenv("GHDAG_RATE_LIMIT_MAX_WAIT_SEC", raising=False)
+    now = 1_700_000_000
+    monkeypatch.setattr(time, "time", lambda: now)
+    slept: list[float] = []
+    monkeypatch.setattr(time, "sleep", lambda s: slept.append(s))
+    client = GitHubClient(token="tok", repo="o/r", rate_limit_max_wait_sec=5)
+    calls: list[int] = []
+    monkeypatch.setattr(
+        "ghdag.github_client.urllib.request.urlopen",
+        _fake_rate_limited_then_ok(now + 3, calls),
+    )
+
+    assert client._request("GET", "/repos/o/r/issues/1") == {"ok": True}
+    assert slept == [3.0]
+    assert len(calls) == 2
+
+
+def test_rate_limit_max_wait_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """AC-4: GHDAG_RATE_LIMIT_MAX_WAIT_SEC=5 is used as the limit."""
+    import time
+
+    from ghdag.exceptions import RateLimitError
+
+    monkeypatch.setenv("GHDAG_RATE_LIMIT_MAX_WAIT_SEC", "5")
+    now = 1_700_000_000
+    monkeypatch.setattr(time, "time", lambda: now)
+    slept: list[float] = []
+    monkeypatch.setattr(time, "sleep", lambda s: slept.append(s))
+    client = GitHubClient(token="tok", repo="o/r")
+    assert client._rate_limit_max_wait_sec == 5
+    calls: list[int] = []
+    monkeypatch.setattr(
+        "ghdag.github_client.urllib.request.urlopen",
+        _fake_rate_limited_then_ok(now + 6, calls),
+    )
+
+    with pytest.raises(RateLimitError):
+        client._request("GET", "/repos/o/r/issues/1")
+    assert slept == []
+    assert len(calls) == 1
+
+
+def test_rate_limit_max_wait_constructor_overrides_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AC-5: the constructor argument takes precedence over the env var."""
+    import time
+
+    monkeypatch.setenv("GHDAG_RATE_LIMIT_MAX_WAIT_SEC", "5")
+    now = 1_700_000_000
+    monkeypatch.setattr(time, "time", lambda: now)
+    slept: list[float] = []
+    monkeypatch.setattr(time, "sleep", lambda s: slept.append(s))
+    client = GitHubClient(token="tok", repo="o/r", rate_limit_max_wait_sec=900)
+    assert client._rate_limit_max_wait_sec == 900
+    calls: list[int] = []
+    monkeypatch.setattr(
+        "ghdag.github_client.urllib.request.urlopen",
+        _fake_rate_limited_then_ok(now + 60, calls),
+    )
+
+    assert client._request("GET", "/repos/o/r/issues/1") == {"ok": True}
+    assert slept == [60.0]
+
+
+def test_rate_limit_max_wait_default_when_env_unset_or_invalid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GHDAG_RATE_LIMIT_MAX_WAIT_SEC", raising=False)
+    assert GitHubClient(token="tok", repo="o/r")._rate_limit_max_wait_sec == 900
+    monkeypatch.setenv("GHDAG_RATE_LIMIT_MAX_WAIT_SEC", "abc")
+    assert GitHubClient(token="tok", repo="o/r")._rate_limit_max_wait_sec == 900
