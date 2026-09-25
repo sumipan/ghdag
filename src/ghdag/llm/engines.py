@@ -317,7 +317,7 @@ _extract_stream_result = extract_stream_result
 
 
 def _compose_stdin(prompt: str, stdin_text: str | None) -> str:
-    """STDIN エンジンに渡す stdin を組み立てる（空でない方を "\n\n" で連結）。"""
+    """Build the stdin for a STDIN engine (join the non-empty parts with "\n\n")."""
     if stdin_text is None:
         return prompt
     if prompt == "":
@@ -345,9 +345,9 @@ def call(
         engine: エンジン名（デフォルト: "claude"）
         model: モデル ID（None でエンジンデフォルト）
         timeout: タイムアウト秒数（None で無制限）
-        stdin_text: 標準入力として渡すテキスト。STDIN エンジンでは prompt と連結して
-            1 本の stdin にする（prompt が空なら stdin_text のみ、None なら prompt のみ、
-            両方非空なら ``prompt + "\n\n" + stdin_text``）
+        stdin_text: text passed on standard input. STDIN engines join it with prompt
+            into a single stdin (stdin_text only when prompt is empty, prompt only when
+            None, ``prompt + "\n\n" + stdin_text`` when both are non-empty)
         cwd: サブプロセスの作業ディレクトリ（None で現行プロセス cwd）
         capabilities: 能力制約値オブジェクト（デフォルト: TEXT_ONLY）
         isolation: エンジン隔離。None のとき GHDAG_ENGINE_ISOLATION 環境変数で解決（既定 False）
@@ -369,8 +369,8 @@ def call(
     resolved_model = validate_engine_model(engine, model)
     resolved_isolation = _resolve_isolation(isolation)
 
-    # STDIN エンジン（claude / cursor / gemini / codex）は prompt を stdin で渡す
-    # （argv に載せると Linux の MAX_ARG_STRLEN で E2BIG になる。nexus #3805）。
+    # STDIN engines (claude / cursor / gemini / codex) receive the prompt via stdin
+    # (on argv it would exceed Linux MAX_ARG_STRLEN and fail with E2BIG; nexus #3805).
     spec = ENGINE_SPECS.get(engine)
     effective_stdin = stdin_text
     if spec and spec.input_mode is InputMode.STDIN:

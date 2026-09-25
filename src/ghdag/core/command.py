@@ -264,7 +264,7 @@ def build_llm_cmd(
     Args:
         engine: エンジン名
         model: 検証済みモデル ID
-        prompt: プロンプト文字列。STDIN エンジンでは argv に載せない（呼び出し側が stdin で渡す）
+        prompt: prompt text. STDIN engines do not put it on argv (the caller passes it via stdin)
         capabilities: 能力制約値オブジェクト（デフォルト: TEXT_ONLY）
         dangerously_skip_permissions: claude エンジン時に --dangerously-skip-permissions を付与
         resume_session_id: 再開対象セッションID（対応エンジンのみ）
@@ -284,8 +284,8 @@ def build_llm_cmd(
         if spec.model_flag:
             cmd += [spec.model_flag, model]
         if spec.input_mode is InputMode.STDIN and spec.prompt_flag is PromptFlag.FLAG_ONLY:
-            # STDIN エンジンは prompt 本文を argv に載せない（呼び出し側が stdin で渡す。
-            # Linux の MAX_ARG_STRLEN 回避。render_exec_command と同じ規則、nexus #3805）
+            # STDIN engines never put the prompt body on argv (the caller passes it via
+            # stdin; avoids Linux MAX_ARG_STRLEN). Same rule as render_exec_command, nexus #3805.
             cmd += [spec.prompt_flag_token]
         elif spec.prompt_flag_token:
             cmd += [spec.prompt_flag_token, prompt]
