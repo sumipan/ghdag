@@ -252,9 +252,8 @@ class DagEngine:
                 return
             self._launcher.mark_interrupted_all()
             self._draining = True
-            task_timeout = self._config.task_timeout
-            if task_timeout is not None:
-                self._drain_deadline = time.monotonic() + task_timeout
+            # task_timeout is None: no drain; terminate right away (interrupt is recorded).
+            self._drain_deadline = time.monotonic() + (self._config.task_timeout or 0)
             self._hooks.on_shutdown(signum)
 
         signal.signal(signal.SIGINT, _handler)

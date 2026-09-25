@@ -449,6 +449,7 @@ class TaskLauncher:
                 if (
                     not was_cancelled
                     and not was_timeout
+                    and not was_interrupted
                     and returncode != 0
                     and self._is_resume_fallback_target(task, stderr_text)
                 ):
@@ -1212,7 +1213,10 @@ class TaskLauncher:
                         "adopt_orphans: interrupted task %s reached rerun limit — orphaning",
                         uuid,
                     )
-                    self._finish_orphan(uuid, task, started_at)
+                    self._finish_orphan(
+                        uuid, task, started_at,
+                        detail="interrupted rerun limit reached",
+                    )
             elif _process_group_exists(pgid):
                 self._adopted[uuid] = AdoptedTask(
                     uuid=uuid, task=task, pgid=pgid, started_at=started_at
@@ -1227,16 +1231,20 @@ class TaskLauncher:
                 self._finish_orphan(uuid, task, started_at)
         return adopted_uuids
 
-    def _finish_orphan(self, uuid: str, task: Task, started_at: float) -> None:
+    def _finish_orphan(
+        self, uuid: str, task: Task, started_at: float, detail: str | None = None,
+    ) -> None:
         """Close an orphaned task with ORPHANED_ON_RESTART done marker."""
         finished_at = time.time()
         if task.result_path is not None:
+            message = (
+                f"ORPHANED_ON_RESTART: {detail}"
+                if detail is not None
+                else "ORPHANED_ON_RESTART: runner restarted while task was running; "
+                "exit code and stdout are unavailable"
+            )
             try:
-                Path(task.result_path).write_text(
-                    "ORPHANED_ON_RESTART: runner restarted while task was running; "
-                    "exit code and stdout are unavailable",
-                    encoding="utf-8",
-                )
+                Path(task.result_path).write_text(message, encoding="utf-8")
             except OSError:
                 logger.warning("Failed to write orphan result for [%s]", uuid, exc_info=True)
         state_mark_done(self._config.exec_done_dir, uuid, DONE_ORPHANED_ON_RESTART)

@@ -227,7 +227,8 @@ class TestAdoptOrphansInterrupted:
             interrupted_at="2026-09-24T02:13:00+00:00",
             interrupted_reruns=_MAX_INTERRUPTED_RERUNS,
         )
-        task = Task(uuid=UUID_A, command="sleep 30")
+        result_path = tmp_path / "result.md"
+        task = Task(uuid=UUID_A, command="sleep 30", result_path=str(result_path))
 
         adopted = launcher.adopt_orphans({UUID_A: task})
 
@@ -236,6 +237,9 @@ class TestAdoptOrphansInterrupted:
         assert is_done(str(done), UUID_A)
         content = (done / UUID_A).read_text(encoding="utf-8").strip()
         assert content == DONE_ORPHANED_ON_RESTART
+        assert result_path.read_text(encoding="utf-8") == (
+            "ORPHANED_ON_RESTART: interrupted rerun limit reached"
+        )
         launcher._hooks.on_task_failure.assert_called_once()
 
     def test_no_interrupted_at_follows_normal_orphan_path(self, tmp_path):

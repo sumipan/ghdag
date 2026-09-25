@@ -62,7 +62,7 @@ class TestDrainNormalCompletion:
         engine = _make_engine(tmp_path, task_timeout=30.0)
         result_path = str(jobs / f"result-{UUID_A}.md")
         Path(result_path).parent.mkdir(parents=True, exist_ok=True)
-        _write_exec_jsonl(jobs, UUID_A, f"echo ok > {result_path}")
+        _write_exec_jsonl(jobs, UUID_A, f"sleep 1 && echo ok > {result_path}")
 
         t = threading.Thread(target=engine.run, daemon=True)
         t.start()
