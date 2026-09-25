@@ -283,7 +283,11 @@ def build_llm_cmd(
     else:
         if spec.model_flag:
             cmd += [spec.model_flag, model]
-        if spec.input_mode is InputMode.STDIN and spec.prompt_flag is PromptFlag.FLAG_ONLY:
+        if (
+            spec.input_mode is InputMode.STDIN
+            and spec.prompt_flag is PromptFlag.FLAG_ONLY
+            and spec.prompt_flag_token
+        ):
             # STDIN engines never put the prompt body on argv (the caller passes it via
             # stdin; avoids Linux MAX_ARG_STRLEN). Same rule as render_exec_command, nexus #3805.
             cmd += [spec.prompt_flag_token]
