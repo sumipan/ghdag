@@ -6,9 +6,11 @@ without the gh CLI. Uses stdlib urllib only (no requests).
 
 from __future__ import annotations
 
+import hashlib
 import http.client
 import io
 import json
+import os
 import random
 import re
 import sys
@@ -17,6 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
+from pathlib import Path
 from typing import Any, cast
 
 from ghdag.config.env import github_repositories_raw, github_token
@@ -54,6 +57,8 @@ _MAX_ATTEMPTS = 3
 _BACKOFF_BASE_SEC = 1.0
 _BACKOFF_CAP_SEC = 8.0
 _RATE_LIMIT_MAX_WAIT_SEC = 900
+# Disk ETag cache (GHDAG_ETAG_CACHE): entries beyond this are evicted LRU-first
+_ETAG_CACHE_MAX_ENTRIES = 2000
 
 
 def _backoff_sleep(attempt: int, retry_after: str | None = None) -> None:
@@ -170,12 +175,82 @@ class GitHubClient:
     :class:`~ghdag.core.ports.github.GitHubIssuePort`.
     """
 
-    def __init__(self, token: str | None = None, repo: str | None = None) -> None:
+    def __init__(
+        self,
+        token: str | None = None,
+        repo: str | None = None,
+        etag_cache_path: Path | None = None,
+    ) -> None:
         self._token = _resolve_token(token)
         self._owner, self._repo = _resolve_repo(repo)
         self._repo_full = f"{self._owner}/{self._repo}"
         self._etag_cache: dict[str, tuple[str, Any]] = {}
         self._last_rate_limit: dict[str, int] | None = None
+        if etag_cache_path is None:
+            env_path = os.environ.get("GHDAG_ETAG_CACHE")
+            etag_cache_path = Path(env_path) if env_path else None
+        self._etag_cache_path = etag_cache_path
+        self._etag_key_prefix = (
+            hashlib.sha256(self._token.encode()).hexdigest()[:8] + ":"
+        )
+        # Full on-disk contents (all tokens), keyed by "{token_hash8}:{url}".
+        self._etag_disk: dict[str, dict[str, Any]] = {}
+        if self._etag_cache_path is not None:
+            self._load_etag_disk()
+
+    def _load_etag_disk(self) -> None:
+        assert self._etag_cache_path is not None
+        try:
+            data = json.loads(self._etag_cache_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not isinstance(data, dict):
+            return
+        for key, entry in data.items():
+            if not (
+                isinstance(entry, dict)
+                and isinstance(entry.get("etag"), str)
+                and "body" in entry
+                and isinstance(entry.get("accessed"), (int, float))
+            ):
+                continue
+            self._etag_disk[key] = entry
+            if key.startswith(self._etag_key_prefix):
+                url = key[len(self._etag_key_prefix):]
+                self._etag_cache[url] = (entry["etag"], entry["body"])
+
+    def _persist_etag(self, url: str) -> None:
+        """Record *url*'s ETag entry (fresh access time) and write the cache file."""
+        if self._etag_cache_path is None or url not in self._etag_cache:
+            return
+        etag_value, body = self._etag_cache[url]
+        self._etag_disk[self._etag_key_prefix + url] = {
+            "etag": etag_value,
+            "body": body,
+            "accessed": time.time(),
+        }
+        excess = len(self._etag_disk) - _ETAG_CACHE_MAX_ENTRIES
+        if excess > 0:
+            oldest = sorted(
+                self._etag_disk, key=lambda k: self._etag_disk[k]["accessed"]
+            )[:excess]
+            for key in oldest:
+                del self._etag_disk[key]
+                if key.startswith(self._etag_key_prefix):
+                    self._etag_cache.pop(key[len(self._etag_key_prefix):], None)
+        path = self._etag_cache_path
+        tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(json.dumps(self._etag_disk), encoding="utf-8")
+            os.replace(tmp, path)
+        except (OSError, TypeError, ValueError) as exc:
+            # キャッシュ書き込み失敗で API 呼び出し自体は失敗させない
+            print(f"ghdag: failed to write ETag cache {path}: {exc}", file=sys.stderr)
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
     @property
     def repo(self) -> str:
@@ -275,6 +350,7 @@ class GitHubClient:
                 except urllib.error.HTTPError as exc:
                     if exc.code == 304 and etag and url in self._etag_cache:
                         _, cached_body = self._etag_cache[url]
+                        self._persist_etag(url)
                         if return_link_header:
                             link = exc.headers.get("Link") if exc.headers else None
                             return cached_body, link
@@ -336,6 +412,7 @@ class GitHubClient:
             etag_value = response_headers.get("ETag")
             if etag_value:
                 self._etag_cache[url] = (etag_value, result)
+                self._persist_etag(url)
 
         if return_link_header:
             return result, link_header

@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `GitHubClient(etag_cache_path=...)` / `GHDAG_ETAG_CACHE`: disk-persistent ETag cache so conditional requests (`If-None-Match` → 304, no rate-limit consumption) work across processes (e.g. issuesmith queue ticks, `ghdag watch --once`). Single JSON file keyed by `{sha256(token)[:8]}:{url}`, capped at 2000 entries with LRU eviction by last access, written atomically via `<path>.tmp.<pid>` + `os.replace`. A corrupt cache file is ignored (falls back to normal 200 fetches). When neither the argument nor the env var is set, behaviour is unchanged (in-memory only, no file I/O) (sumipan/nexus#3761).
 - `TaskLauncher.mark_interrupted_all()`: atomically writes `interrupted_at` (ISO8601) to `jobs/running/<uuid>.json` for all currently running tasks. Called by the SIGTERM handler before entering drain mode, so a subsequent SIGKILL cannot lose the interrupt record. Returns a list of successfully recorded uuids; missing or corrupt running files are skipped with a warning (sumipan/nexus#3666).
 - `TaskLauncher.terminate_all()`: sends SIGTERM to all running task process groups and registers them in `_interrupting`. Called when the drain deadline is exceeded so that the engine can exit after kill-grace (sumipan/nexus#3666).
 - `GHDAG_PREVIOUS_ATTEMPT` environment variable: set to `"interrupted"` when a task is relaunched after a SIGTERM-interrupted run, allowing the task command to detect and resume from a prior partial execution (sumipan/nexus#3666).

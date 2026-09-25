@@ -417,6 +417,7 @@ All ghdag-owned and GitHub auth reads are centralized in `ghdag.config.env` exce
 | `GHDAG_FORGE` | no | `github` | Forge backend: `github` or `local` |
 | `GHDAG_FORGE_ROOT` | when `GHDAG_FORGE=local` | none | Root directory for `LocalForge` (`.forge/` data) |
 | `GHDAG_EXEC_JSONL` | no | `jobs/exec.jsonl` | Default exec path for `ghdag status` when `--exec-jsonl` omitted |
+| `GHDAG_ETAG_CACHE` | no | none | Disk ETag cache path for `GitHubClient` (persists `If-None-Match` validators across processes; in-memory only when unset) |
 
 `CODEX_HOME` is set internally for DAG codex launches (`/var/tmp/ghdag-dag-codex/`); it is not a user-facing configuration variable.
 
