@@ -462,7 +462,7 @@ class TestSandboxCapability:
             assert "--disallowed-tools" not in current_cmd
 
     def test_claude_sandbox_readonly_uses_permission_mode_plan(self):
-        """claude + sandbox=readonly → --permission-mode plan。"""
+        """claude + sandbox=readonly → --permission-mode plan."""
         cmd = build_llm_cmd(
             "claude",
             "claude-sonnet-4-6",
@@ -510,7 +510,7 @@ class TestSandboxCapability:
             )
 
     def test_codex_sandbox_readonly_conflicts_with_bypass(self):
-        """codex + sandbox=readonly + dangerously_skip_permissions → ValueError。"""
+        """codex + sandbox=readonly + dangerously_skip_permissions → ValueError."""
         with pytest.raises(ValueError, match="sandbox='readonly' conflicts"):
             build_llm_cmd(
                 "codex",
@@ -521,7 +521,7 @@ class TestSandboxCapability:
             )
 
     def test_cursor_sandbox_readonly_conflicts_with_force(self):
-        """cursor + sandbox=readonly + dangerously_skip_permissions → ValueError。"""
+        """cursor + sandbox=readonly + dangerously_skip_permissions → ValueError."""
         with pytest.raises(ValueError, match="sandbox='readonly' conflicts"):
             build_llm_cmd(
                 "cursor",
@@ -532,7 +532,7 @@ class TestSandboxCapability:
             )
 
     def test_gemini_sandbox_readonly_raises(self):
-        """gemini + sandbox=readonly → NotImplementedError。"""
+        """gemini + sandbox=readonly → NotImplementedError."""
         with pytest.raises(NotImplementedError, match="sandbox"):
             call(
                 "test",
@@ -541,7 +541,7 @@ class TestSandboxCapability:
             )
 
     def test_shell_sandbox_readonly_raises(self):
-        """shell + sandbox=readonly → NotImplementedError。"""
+        """shell + sandbox=readonly → NotImplementedError."""
         with pytest.raises(NotImplementedError, match="sandbox"):
             call(
                 "test",
