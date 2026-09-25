@@ -269,6 +269,29 @@ class TestEngineAdoptOnce:
         hooks = MagicMock()
         engine = DagEngine(config, hooks=hooks)
 
+        # Synchronization events replacing polling / time.sleep
+        adopt_event = threading.Event()   # set when adopt_orphans completes
+        check_proceed = threading.Event() # set by test to let engine continue past hook
+        dead_done = threading.Event()     # set when UUID_DEAD task finishes
+        live_done = threading.Event()     # set when UUID_LIVE task finishes (orphaned)
+
+        def _post_adopt_hook():
+            adopt_event.set()
+            check_proceed.wait(timeout=10.0)
+
+        engine._test_hook_post_adopt = _post_adopt_hook
+
+        def _on_task_success_side_effect(uuid, *args, **kwargs):
+            if uuid == UUID_DEAD:
+                dead_done.set()
+
+        def _on_task_failure_side_effect(uuid, *args, **kwargs):
+            if uuid == UUID_LIVE:
+                live_done.set()
+
+        hooks.on_task_success.side_effect = _on_task_success_side_effect
+        hooks.on_task_failure.side_effect = _on_task_failure_side_effect
+
         proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
         pgid = proc.pid
         t = threading.Thread(target=engine.run, daemon=True)
@@ -280,11 +303,13 @@ class TestEngineAdoptOnce:
                 engine._launcher, "launch", wraps=engine._launcher.launch
             ) as launch_spy:
                 t.start()
-                assert _wait_until(lambda: spy.call_count == 1)
+                # Wait for adopt_orphans to complete (engine paused at hook)
+                assert adopt_event.wait(timeout=10.0), "adopt_orphans did not fire"
+                # Engine is paused here: is_running check is race-free
                 assert engine._launcher.is_running(UUID_LIVE)
+                assert spy.call_count == 1
 
-                # exec reload (mtime change) must not trigger a second adopt
-                time.sleep(0.1)
+                # Append UUID_DEAD task while engine is paused, then let engine continue
                 exec_jsonl.write_text(
                     exec_jsonl.read_text(encoding="utf-8")
                     + json.dumps({"uuid": UUID_DEAD, "command": "true", "depends": []})
@@ -292,14 +317,18 @@ class TestEngineAdoptOnce:
                     encoding="utf-8",
                 )
                 os.utime(exec_jsonl, (time.time() + 5, time.time() + 5))
-                assert _wait_until(lambda: is_done(str(done), UUID_DEAD))
+                check_proceed.set()  # unblock engine
+
+                # Wait for UUID_DEAD to complete (launched normally, not adopted)
+                assert dead_done.wait(timeout=10.0), "UUID_DEAD task did not complete"
                 assert spy.call_count == 1
                 assert all(c.args[0] != UUID_LIVE for c in launch_spy.call_args_list)
                 assert not is_done(str(done), UUID_LIVE)
 
+                # Kill UUID_LIVE process and wait for orphan close
                 _force_kill_pgid(pgid)
                 proc.wait(timeout=3)
-                assert _wait_until(lambda: is_done(str(done), UUID_LIVE))
+                assert live_done.wait(timeout=10.0), "UUID_LIVE orphan close did not fire"
                 assert _read_done(done, UUID_LIVE) == DONE_ORPHANED_ON_RESTART
                 assert all(c.args[0] != UUID_LIVE for c in launch_spy.call_args_list)
         finally:
