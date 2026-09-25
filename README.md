@@ -346,7 +346,7 @@ Import-linter contracts (`pyproject.toml`) enforce the separation: the intake to
 |---|---|
 | Progress events | For claude (`--output-format stream-json`), cursor (`--output-format stream-json`), and codex (`--json`) tasks with `result_path`, stdout is drained line by line into `jobs/events/<uuid>.jsonl`. Without stream flags the runner reads stdout in bulk and sets `annotations.stream_fallback=true` |
 | cursor result text | Assistant turns are reconstructed at `tool_call` boundaries and joined with a blank line |
-| Interactive prompts | A non-zero exit whose last output line is a question (`?` / `？`) is classified `FailureClass.INTERACTIVE_PROMPT` (permanent, no retry); done marker `INTERACTIVE_PROMPT` |
+| Interactive prompts | A non-zero exit whose last output line is a question (`?` or the full-width question mark U+FF1F) is classified `FailureClass.INTERACTIVE_PROMPT` (permanent, no retry); done marker `INTERACTIVE_PROMPT` |
 | cursor `RetriableError:` | `[resource_exhausted]` → `EngineErrorKind.RATE_LIMIT`, other codes → `EngineErrorKind.CAPACITY`; both retryable and written as `ENGINE_ERROR` while retries remain |
 
 ### GitHub client
