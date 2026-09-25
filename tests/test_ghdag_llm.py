@@ -135,7 +135,8 @@ class TestBuildLLMCmd:
         assert "--model" in cmd
         assert "claude-opus-4-6" in cmd
         assert "-p" in cmd
-        assert "hello" in cmd
+        # nexus #3805: STDIN engines keep the prompt body out of argv
+        assert "hello" not in cmd
         # TEXT_ONLY default: permission-mode and disallowed-tools are attached
         assert "--permission-mode" in cmd
         assert "--disallowed-tools" in cmd
@@ -143,12 +144,12 @@ class TestBuildLLMCmd:
     def test_basic_gemini(self):
         """Basic gemini command construction (no capabilities flags)"""
         cmd = build_llm_cmd("gemini", "gemini-2.5-flash", "hello")
-        assert cmd == ["gemini", "--model", "gemini-2.5-flash", "-p", "hello"]
+        assert cmd == ["gemini", "--model", "gemini-2.5-flash", "-p"]
 
     def test_basic_cursor(self):
         """Basic cursor command construction (CLI is agent, no capabilities flags)"""
         cmd = build_llm_cmd("cursor", "composer-2", "hello")
-        assert cmd == ["agent", "--model", "composer-2", "-p", "hello"]
+        assert cmd == ["agent", "--model", "composer-2", "-p"]
 
 
 # ---------------------------------------------------------------------------
@@ -449,13 +450,13 @@ class TestCall:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_with_stdin(self, mock_run: MagicMock):
-        """stdin_text is passed through"""
+        """stdin_text is joined after the prompt on stdin (nexus #3805)"""
         mock_run.return_value = MagicMock(
             stdout="ok", stderr="", returncode=0,
         )
         call("hello", engine="claude", stdin_text="input data")
         _, kwargs = mock_run.call_args
-        assert kwargs["input"] == "input data"
+        assert kwargs["input"] == "hello\n\ninput data"
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_with_timeout(self, mock_run: MagicMock):
