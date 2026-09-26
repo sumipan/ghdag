@@ -618,9 +618,10 @@ class QuotaGate:
         if self._brake_state_path is None or not self._brake_state_path.exists():
             return None
         try:
-            return json.loads(self._brake_state_path.read_text(encoding="utf-8"))
+            loaded = json.loads(self._brake_state_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return None
+        return loaded if isinstance(loaded, dict) else None
 
     def _load_state_unlocked(self) -> dict:
         if not self._state_path.exists():
