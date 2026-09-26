@@ -184,6 +184,10 @@ class TestAuthErrorRules:
             "OAuth session expired",
             "Invalid API key",
             "Not logged in",
+            "Failed to authenticate: OAuth session expired and could not be refreshed",
+            'Failed to authenticate. API Error: 401 {"type":"error","error":'
+            '{"type":"authentication_error","message":"OAuth token has expired."}}',
+            '{"error":{"type":"authentication_error","message":"invalid x-api-key"}}',
         ],
     )
     def test_auth_tokens(self, text):

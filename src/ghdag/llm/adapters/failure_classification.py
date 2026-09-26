@@ -68,8 +68,12 @@ def _is_quota_exhausted_error(message: str) -> bool:
 
 
 # Whole-word match so that e.g. "author" is not taken as an auth error.
+# `_` counts as a separator so snake_case codes such as claude's
+# "authentication_error" (OAuth token expiry, invalid key) still match.
 _AUTH_PATTERN = re.compile(
-    r"\b(?:auth|authentication|authorization|unauthenticated|unauthorized|forbidden)\b"
+    r"(?<![a-z0-9])"
+    r"(?:auth|authenticate|authentication|authorization|unauthenticated|unauthorized|forbidden)"
+    r"(?![a-z0-9])"
     r"|oauth session expired|invalid api key|not logged in",
     re.IGNORECASE,
 )
