@@ -745,6 +745,21 @@ class TaskLauncher:
 
                 else:
                     classified = adapter.classify_failure(returncode, stdout_data, stderr_bytes)
+                    if engine == "shell" and task.result_path is not None:
+                        failure_output = adapter.extract_result_text(
+                            stdout_data, stderr_bytes
+                        ).decode("utf-8", errors="replace")
+                        if failure_output and not failure_output.endswith("\n"):
+                            failure_output += "\n"
+                        failure_output += f"EXIT_CODE: {returncode}\n"
+                        try:
+                            Path(task.result_path).write_text(failure_output, encoding="utf-8")
+                        except OSError:
+                            logger.warning(
+                                "Failed to write failure result for shell task [%s]",
+                                uuid,
+                                exc_info=True,
+                            )
                     if classified == FailureClass.QUOTA_EXHAUSTED:
                         observed = datetime.now(timezone.utc)
                         if isinstance(engine, str):

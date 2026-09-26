@@ -158,6 +158,7 @@ Entry point: `ghdag.cli.main:_build_parser()`. Global options: `--verbose` / `-v
 | `ghdag dag recover` | Clears done markers of failed/pending steps so the runner re-executes them. Steps that are still running are left alone. Existing result files are moved to `<result>.prev-<timestamp>` first; `--keep-results` keeps them in place |
 | `--redispatch` (`ghdag trigger`) | Increments the handler generation and starts a new run (use when recover is not possible); `--reason` is recorded in `audit.jsonl` |
 | `ghdag watch` rate limiting | When GitHub returns a rate-limit error with a reset time, polls are skipped until the reset passes (log: `rate limited: skip poll until <ISO8601>`) |
+| `shell` engine failure result | When a `shell` engine task exits non-zero, stdout (including stderr merged via `2>&1`) is written to `result_path` with `EXIT_CODE: <n>` appended. The done-file marker remains the exit code (non-zero), so the task is still recorded as failed |
 
 ### Module entry points
 
