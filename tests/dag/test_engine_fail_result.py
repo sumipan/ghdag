@@ -259,3 +259,113 @@ def test_pipeline_status_deferred_downstream_does_not_start(tmp_path):
 
     mock_popen.assert_not_called()
     assert not (done_dir / "downstream").exists()
+
+
+def _make_shell_running_task(uuid, returncode, stdout, result_path, stderr=b""):
+    proc = MagicMock()
+    proc.poll.return_value = returncode
+    proc.returncode = returncode
+    task = Task(uuid=uuid, command="echo boom; exit 1", engine="shell", result_path=str(result_path))
+    return RunningTask(
+        uuid=uuid,
+        task=task,
+        proc=proc,
+        started_at=time.time() - 0.1,
+        started_at_mono=time.monotonic() - 0.1,
+        stderr_buf=io.BytesIO(stderr),
+        stdout_buf=io.BytesIO(stdout),
+        retry_depth=0,
+    )
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_shell_failure_writes_stdout_and_exit_code_to_result(mock_mark_done, tmp_path):
+    engine, hooks = _make_engine(tmp_path)
+    result_file = tmp_path / "result.md"
+    rt = _make_shell_running_task("shell-fail", 1, b"boom\n", result_file)
+    engine._launcher._running[rt.uuid] = rt
+
+    engine._launcher.check_completions()
+
+    assert result_file.read_text(encoding="utf-8") == "boom\nEXIT_CODE: 1\n"
+    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, rt.uuid, 1)
+    hooks.on_task_failure.assert_called_once()
+    hooks.on_task_success.assert_not_called()
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_shell_failure_without_trailing_newline(mock_mark_done, tmp_path):
+    engine, hooks = _make_engine(tmp_path)
+    result_file = tmp_path / "result.md"
+    rt = _make_shell_running_task("shell-fail-nonl", 2, b"boom", result_file)
+    engine._launcher._running[rt.uuid] = rt
+
+    engine._launcher.check_completions()
+
+    assert result_file.read_text(encoding="utf-8") == "boom\nEXIT_CODE: 2\n"
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_shell_failure_empty_stdout_writes_exit_code_only(mock_mark_done, tmp_path):
+    engine, hooks = _make_engine(tmp_path)
+    result_file = tmp_path / "result.md"
+    rt = _make_shell_running_task("shell-fail-empty", 1, b"", result_file)
+    engine._launcher._running[rt.uuid] = rt
+
+    engine._launcher.check_completions()
+
+    assert result_file.read_text(encoding="utf-8") == "EXIT_CODE: 1\n"
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_shell_success_result_has_no_exit_code(mock_mark_done, tmp_path):
+    engine, hooks = _make_engine(tmp_path)
+    result_file = tmp_path / "result.md"
+    rt = _make_shell_running_task("shell-ok", 0, b"ok\n", result_file)
+    engine._launcher._running[rt.uuid] = rt
+
+    engine._launcher.check_completions()
+
+    assert result_file.read_text(encoding="utf-8") == "ok\n"
+    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, rt.uuid, 0)
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_non_shell_failure_does_not_write_result(mock_mark_done, tmp_path):
+    engine, hooks = _make_engine(tmp_path)
+    result_file = tmp_path / "result.md"
+    proc = MagicMock()
+    proc.poll.return_value = 1
+    proc.returncode = 1
+    task = Task(uuid="claude-fail", command="claude -p hi", engine="claude", result_path=str(result_file))
+    rt = RunningTask(
+        uuid=task.uuid,
+        task=task,
+        proc=proc,
+        started_at=time.time() - 0.1,
+        started_at_mono=time.monotonic() - 0.1,
+        stderr_buf=io.BytesIO(b"err"),
+        stdout_buf=io.BytesIO(b""),
+        retry_depth=0,
+    )
+    engine._launcher._running[rt.uuid] = rt
+
+    engine._launcher.check_completions()
+
+    assert not result_file.exists()
+
+
+def test_shell_failure_result_does_not_count_as_succeeded(tmp_path):
+    from ghdag.io.done import load_succeeded_from_dir
+
+    engine, hooks = _make_engine(tmp_path)
+    result_file = tmp_path / "result.md"
+    rt = _make_shell_running_task("shell-fail-done", 1, b"boom\n", result_file)
+    engine._launcher._running[rt.uuid] = rt
+
+    engine._launcher.check_completions()
+
+    assert result_file.exists()
+    done_file = tmp_path / "done" / rt.uuid
+    assert done_file.read_text(encoding="utf-8").strip() == "1"
+    assert rt.uuid not in load_succeeded_from_dir(engine._config.exec_done_dir)
