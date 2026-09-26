@@ -68,7 +68,7 @@ class CursorAdapter:
         stdout: bytes,
         stderr: bytes,
     ) -> FailureClass | None:
-        return classify_common_failure("cursor", stdout, stderr)
+        return classify_common_failure("cursor", stdout, stderr, returncode=returncode)
 
 
 def _parse_json_object(stdout: bytes) -> dict[Any, Any] | None:

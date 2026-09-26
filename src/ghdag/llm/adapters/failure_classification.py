@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import re
 
+from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.models.metrics import FailureClass
 
 QUOTA_DEFAULT_PAUSE_SECONDS: int = int(
@@ -27,9 +29,14 @@ def looks_like_question(text: str) -> bool:
     return last_line.endswith(("?", "？"))
 
 
-def classify_common_failure(binary: str, stdout: bytes, stderr: bytes) -> FailureClass | None:
+def classify_common_failure(
+    binary: str,
+    stdout: bytes,
+    stderr: bytes,
+    returncode: int | None = None,
+) -> FailureClass | None:
     text = _decode_streams(stdout, stderr)
-    if _is_environment_error(text, binary):
+    if _is_environment_error(text, binary, returncode):
         return FailureClass.ENGINE_ENVIRONMENT_ERROR
     if _is_quota_exhausted_error(text):
         return FailureClass.QUOTA_EXHAUSTED
@@ -60,17 +67,42 @@ def _is_quota_exhausted_error(message: str) -> bool:
     return "resets " in lower and "hit your session limit" in lower
 
 
+# Whole-word match so that e.g. "author" is not taken as an auth error.
+_AUTH_PATTERN = re.compile(
+    r"\b(?:auth|authentication|authorization|unauthenticated|unauthorized|forbidden)\b"
+    r"|oauth session expired|invalid api key|not logged in",
+    re.IGNORECASE,
+)
+
+_ENV_ERROR_REASONS = r"(?:command not found|no such file or directory|permission denied)"
+
+
 def _is_auth_error(message: str) -> bool:
-    lower = message.lower()
-    return any(
-        token in lower
-        for token in ("auth", "unauthorized", "forbidden", "oauth session expired")
-    )
+    return _AUTH_PATTERN.search(message) is not None
 
 
-def _is_environment_error(message: str, binary: str) -> bool:
+def _match_names(binary: str) -> list[str]:
+    """Names to match: the engine name and its real CLI binary (cursor -> agent)."""
+    names = [binary]
+    spec = ENGINE_SPECS.get(binary)
+    if spec is not None and spec.cli not in names:
+        names.append(spec.cli)
+    return names
+
+
+def _is_environment_error(message: str, binary: str, returncode: int | None = None) -> bool:
     lower = message.lower()
-    return binary.lower() in lower and (
-        "no such file or directory" in lower
-        or "permission denied" in lower
+    if not binary:
+        # nexus failure_classifier.py calls with binary=""; keep the legacy loose check.
+        return "no such file or directory" in lower or "permission denied" in lower
+    if returncode == 127 and "command not found" in lower:
+        return True
+    names = "|".join(re.escape(name.lower()) for name in _match_names(binary))
+    # bash / sh: "bash: line 1: agent: command not found" (name after line start, space, `:` or quote)
+    shell_format = rf"""(?:^|[\s:'"])(?:{names})['"]?: {_ENV_ERROR_REASONS}"""
+    # Python errno: "[Errno 2] No such file or directory: 'agent'"
+    errno_format = rf"(?:no such file or directory|permission denied): '(?:{names})'"
+    return (
+        re.search(shell_format, lower, re.MULTILINE) is not None
+        or re.search(errno_format, lower) is not None
     )
