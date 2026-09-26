@@ -260,7 +260,7 @@ Modules without `__all__` that are intended for direct import:
 
 ### Capability presets
 
-`LLMCapabilities` fields: `permission_mode`, `output_format`, `allowed_tools`, `disallowed_tools`, `stream`, `sandbox`, `resume`. Presets (`ghdag.core.capabilities.PRESETS`, used by `StepConfig.permission` and `GHDAG_SAFE_DEFAULT_PERMISSION`):
+`LLMCapabilities` fields: `permission_mode`, `output_format`, `allowed_tools`, `disallowed_tools`, `stream`, `sandbox`, `resume`, `container_image`, `container_readonly`, `container_mounts`, `container_env`, `docker_bin`. Presets (`ghdag.core.capabilities.PRESETS`, used by `StepConfig.permission` and `GHDAG_SAFE_DEFAULT_PERMISSION`):
 
 | Name | Constant | Settings |
 |---|---|---|
@@ -271,6 +271,16 @@ Modules without `__all__` that are intended for direct import:
 | `readonly_observe` | `READONLY_OBSERVE` | `sandbox="readonly"` (claude: `--permission-mode plan`; cursor: `--sandbox enabled`); `disallowed_tools=("Edit", "NotebookEdit")` |
 
 `readonly_observe` is available to workflow steps and the Python API but not to `ghdag llm --capabilities-preset`. `disallowed_tools` is a no-op on codex and cursor (no equivalent CLI flag); `allowed_tools` is a no-op on codex.
+
+`sandbox` accepts `"off"`, `"readonly"` and `"container"`. With `sandbox="container"`, `render_exec_command` (the `exec.jsonl` command) wraps the claude / cursor / codex CLI in `docker run` built by `ghdag.core.container.container_prefix`: only the worktree (`"$PWD"` → `/work`), `container_mounts` and the env var names in `container_env` reach the container (host `~/.ssh`, `~/.config`, `.env` are not mounted). Engine flags are the same as `sandbox="off"` (the container is the boundary); `--resume` / `exec resume` stay inside the container. `build_llm_cmd` raises `ValueError` and gemini / shell raise `NotImplementedError` for `sandbox="container"`. No preset uses it; build one with `dataclasses.replace`.
+
+| Field | Default | Meaning |
+|---|---|---|
+| `container_image` | `""` | Image to run; empty raises `ValueError` when `sandbox="container"` |
+| `container_readonly` | `False` | Adds `--read-only` and mounts the worktree `:ro` |
+| `container_mounts` | `()` | Extra `host:container[:ro]` mounts (`~` expands to the home directory) |
+| `container_env` | `()` | Env var **names** passed with `-e NAME` (values never go on argv) |
+| `docker_bin` | `"docker"` | docker executable; a path also prepends its directory to `PATH` |
 
 ### Engines
 
@@ -411,6 +421,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `config/env.py` | Central environment variable accessors |
 | `core/__init__.py` | Shared cross-tower primitives |
 | `core/capabilities.py` | `LLMCapabilities` and presets |
+| `core/container.py` | `container_prefix` (`docker run` prefix for `sandbox="container"`) |
 | `core/command.py` | Engine command-line construction and engine adapters (`AdapterNotFoundError`) |
 | `core/engine_spec.py` | `EngineSpec`, `InputMode`, `PromptFlag`, `ENGINE_SPECS` |
 | `core/exceptions.py` | `GhdagError` and GitHub API exception hierarchy |

@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import dataclasses
+
+import pytest
+
+from ghdag.core.capabilities import LLMCapabilities
 from ghdag.core.command import build_llm_cmd, render_exec_command
+from ghdag.core.container import container_prefix
 from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.llm.capabilities import TEXT_ONLY
+from ghdag.llm.engines import _validate_capabilities_for_engine
 
 
 class TestIsolationOptIn:
@@ -148,3 +155,106 @@ class TestRenderExecCommandUnchanged:
             "codex exec - --model 'gpt-5.6-terra' --json --skip-git-repo-check "
             "< jobs/order.md"
         )
+
+
+_CONTAINER = LLMCapabilities(
+    sandbox="container",
+    container_image="img:1",
+    container_mounts=("/h/.codex:/root/.codex:ro",),
+    container_env=("CURSOR_API_KEY",),
+    docker_bin="/opt/d/bin/docker",
+)
+_PREFIX = " ".join(container_prefix(_CONTAINER))
+_OFF = dataclasses.replace(_CONTAINER, sandbox="off")
+
+
+class TestRenderExecCommandContainer:
+    """sandbox='container' wraps the engine CLI with docker run for all 3 engines."""
+
+    @pytest.mark.parametrize(
+        ("engine", "model", "inner"),
+        [
+            (
+                "claude", "claude-opus-4-6",
+                "claude -p --model 'claude-opus-4-6' --output-format stream-json "
+                "--verbose --permission-mode default",
+            ),
+            (
+                "cursor", "composer-2",
+                "agent --model 'composer-2' -p --output-format stream-json "
+                "--stream-partial-output",
+            ),
+            (
+                "codex", "gpt-5.6-terra",
+                "codex exec - --model 'gpt-5.6-terra' --json --skip-git-repo-check",
+            ),
+        ],
+    )
+    def test_wrapped(self, engine: str, model: str, inner: str) -> None:
+        cmd = render_exec_command(
+            ENGINE_SPECS[engine], order_path="jobs/order.md", model=model,
+            capabilities=_CONTAINER,
+        )
+        assert cmd == f"{_PREFIX} {inner} < jobs/order.md"
+        # Engine flags are identical to sandbox="off".
+        off = render_exec_command(
+            ENGINE_SPECS[engine], order_path="jobs/order.md", model=model,
+            capabilities=_OFF,
+        )
+        assert cmd == f"{_PREFIX} {off}"
+
+    @pytest.mark.parametrize(
+        ("engine", "model", "inner"),
+        [
+            (
+                "claude", "claude-opus-4-6",
+                "claude -p --model 'claude-opus-4-6' --resume 'sess-1' "
+                "--output-format stream-json --verbose --permission-mode default",
+            ),
+            (
+                "cursor", "composer-2",
+                "agent --model 'composer-2' -p --resume 'sess-1' "
+                "--output-format stream-json --stream-partial-output",
+            ),
+            (
+                "codex", "gpt-5.6-terra",
+                "codex exec resume 'sess-1' --model 'gpt-5.6-terra' --json "
+                "--skip-git-repo-check",
+            ),
+        ],
+    )
+    def test_wrapped_resume(self, engine: str, model: str, inner: str) -> None:
+        cmd = render_exec_command(
+            ENGINE_SPECS[engine], order_path="jobs/order file.md", model=model,
+            capabilities=_CONTAINER, resume_session_id="sess-1",
+        )
+        assert cmd.startswith(_PREFIX + " ")
+        assert cmd.endswith("< 'jobs/order file.md'")
+        assert cmd == f"{_PREFIX} {inner} < 'jobs/order file.md'"
+
+    def test_no_os_sandbox_flags(self) -> None:
+        caps = dataclasses.replace(_CONTAINER, permission_mode="default")
+        for engine in ("claude", "cursor", "codex"):
+            cmd = render_exec_command(
+                ENGINE_SPECS[engine], order_path="o.md", model="m", capabilities=caps,
+            )
+            assert "--permission-mode plan" not in cmd
+            assert "--sandbox" not in cmd
+            assert "read-only" not in cmd.split("img:1", 1)[1]
+
+    def test_shell_argv_engine_rejected(self) -> None:
+        with pytest.raises(ValueError, match="container"):
+            render_exec_command(
+                ENGINE_SPECS["shell"], order_path="o.sh", model=None,
+                capabilities=_CONTAINER,
+            )
+
+    @pytest.mark.parametrize("engine", ["claude", "cursor", "codex"])
+    def test_build_llm_cmd_rejects_container(self, engine: str) -> None:
+        with pytest.raises(ValueError, match="container"):
+            build_llm_cmd(engine, "m", "prompt", capabilities=_CONTAINER)
+
+    @pytest.mark.parametrize("engine", ["gemini", "shell"])
+    def test_gemini_shell_reject_container(self, engine: str) -> None:
+        with pytest.raises(NotImplementedError, match="sandbox"):
+            _validate_capabilities_for_engine(engine, _CONTAINER)
