@@ -1,0 +1,5 @@
+{
+  "returncode": 127,
+  "stdout": "",
+  "stderr": "/bin/bash: codex: command not found\n"
+}

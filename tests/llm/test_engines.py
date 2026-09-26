@@ -642,3 +642,38 @@ class TestCallCwd:
         call("hello", engine="claude")
         _, kwargs = mock_run.call_args
         assert kwargs.get("cwd") is None
+
+
+class TestCallLaunchFailure:
+    """Launch failures of the engine binary become an LLMResult, not an exception."""
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_file_not_found_becomes_127(self, mock_run: MagicMock):
+        mock_run.side_effect = FileNotFoundError(2, "No such file or directory", "agent")
+        result = call("hello", engine="cursor")
+        assert result.returncode == 127
+        assert "agent: command not found" in result.stderr
+        assert result.stdout == ""
+        assert result.session_id is None
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_permission_error_becomes_126(self, mock_run: MagicMock):
+        mock_run.side_effect = PermissionError(13, "Permission denied", "agent")
+        result = call("hello", engine="cursor")
+        assert result.returncode == 126
+        assert "agent: permission denied" in result.stderr
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_missing_cwd_still_raises(self, mock_run: MagicMock):
+        mock_run.side_effect = FileNotFoundError(2, "No such file or directory", "/no/such/dir")
+        with pytest.raises(FileNotFoundError):
+            call("hello", engine="cursor", cwd="/no/such/dir")
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_managed_classifies_missing_binary(self, mock_run: MagicMock):
+        from ghdag.llm.managed import call_managed
+
+        mock_run.side_effect = FileNotFoundError(2, "No such file or directory", "agent")
+        managed = call_managed("hello", engine="cursor")
+        assert managed.returncode == 127
+        assert managed.failure_class == "ENGINE_ENVIRONMENT_ERROR"

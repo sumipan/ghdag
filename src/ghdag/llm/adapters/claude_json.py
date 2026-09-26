@@ -127,7 +127,7 @@ class ClaudeJsonAdapter:
         stdout: bytes,
         stderr: bytes,
     ) -> FailureClass | None:
-        classified = classify_common_failure("claude", stdout, stderr)
+        classified = classify_common_failure("claude", stdout, stderr, returncode=returncode)
         if classified is not None:
             return classified
         if returncode != 0:

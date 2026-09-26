@@ -325,6 +325,16 @@ def _compose_stdin(prompt: str, stdin_text: str | None) -> str:
     return prompt + "\n\n" + stdin_text
 
 
+def _launch_failure_result(executable: str, returncode: int, reason: str, t0: float) -> LLMResult:
+    """Turn a launch failure (FileNotFoundError / PermissionError) into a shell-style LLMResult."""
+    return LLMResult(
+        stdout="",
+        stderr=f"{executable}: {reason}\n",
+        returncode=returncode,
+        latency_ms=(time.monotonic() - t0) * 1000,
+    )
+
+
 def call(
     prompt: str,
     *,
@@ -352,7 +362,7 @@ def call(
         capabilities: 能力制約値オブジェクト（デフォルト: TEXT_ONLY）
         isolation: エンジン隔離。None のとき GHDAG_ENGINE_ISOLATION 環境変数で解決（既定 False）
     Returns:
-        LLMResult
+        LLMResult (missing binary: returncode=127; not executable: 126)
     Raises:
         EngineModelError: エンジン・モデルの検証失敗
         NotImplementedError: エンジンが対応していない capabilities 機能
@@ -406,7 +416,19 @@ def call(
                 f"(auth.json missing at {auth_path})",
                 file=sys.stderr,
             )
-    result = subprocess.run(cmd, **run_kwargs)
+    try:
+        result = subprocess.run(cmd, **run_kwargs)
+    except FileNotFoundError as e:
+        # A missing cwd raises the same exception with filename=cwd; only the binary counts.
+        if e.filename not in (None, cmd[0]):
+            raise
+        # Mirror the shell (exit 127 / "command not found") so adapters classify it
+        # as ENGINE_ENVIRONMENT_ERROR.
+        return _launch_failure_result(cmd[0], 127, "command not found", t0)
+    except PermissionError as e:
+        if e.filename not in (None, cmd[0]):
+            raise
+        return _launch_failure_result(cmd[0], 126, "permission denied", t0)
     latency_ms = (time.monotonic() - t0) * 1000
     session_id: str | None = None
     if result.returncode == 0:
