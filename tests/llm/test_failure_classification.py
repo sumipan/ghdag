@@ -229,7 +229,8 @@ class TestRealOutputFixtures:
 
 
 def test_fixtures_have_no_cjk():
-    cjk = re.compile(r"[\u3000-\u30ff\u3400-\u9fff\uff00-\uffef]")
+    ranges = ((0x3000, 0x30FF), (0x3400, 0x9FFF), (0xFF00, 0xFFEF))
+    cjk = re.compile("[" + "".join(f"{chr(lo)}-{chr(hi)}" for lo, hi in ranges) + "]")
     for path in FIXTURE_DIR.glob("*.json"):
         assert not cjk.search(path.read_text(encoding="utf-8")), path
 
