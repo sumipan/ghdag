@@ -93,7 +93,7 @@ def _match_names(binary: str) -> list[str]:
 def _is_environment_error(message: str, binary: str, returncode: int | None = None) -> bool:
     lower = message.lower()
     if not binary:
-        # nexus failure_classifier.py calls with binary=""; keep the legacy loose check.
+        # Callers that pass binary="" rely on the legacy loose check; keep it.
         return "no such file or directory" in lower or "permission denied" in lower
     if returncode == 127 and "command not found" in lower:
         return True
