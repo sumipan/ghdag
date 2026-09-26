@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Protocol
 
 from ghdag.core.capabilities import TEXT_ONLY, LLMCapabilities
+from ghdag.core.container import container_prefix
 from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
 from ghdag.core.exceptions import GhdagError
 
@@ -179,6 +180,8 @@ def render_exec_command(
     capabilities が指定された場合は _CAPABILITY_FLAG_BUILDERS 経由でフラグを生成し、
     builder が出したフラグは extra_args 側から除去する（_dedupe_extra_args）。
     isolation=True かつ claude のとき --disable-slash-commands を付与する（nexus #3174）。
+    sandbox="container" wraps the engine CLI with container_prefix (engine flags are
+    the same as sandbox="off"; stdin is redirected on the host and forwarded via -i).
     """
     del prompt  # FLAG_ONLY / NONE では argv に載せない
 
@@ -199,7 +202,13 @@ def render_exec_command(
         elif spec.name == "codex":
             subcommand = ["exec", "resume", f"'{resume_session_id}'"]
 
+    in_container = capabilities is not None and capabilities.sandbox == "container"
+
     if spec.input_mode is InputMode.ARGV:
+        if in_container:
+            raise ValueError(
+                f"sandbox='container' is not supported for ARGV engine {spec.name!r}"
+            )
         parts = [spec.cli, *spec.subcommand]
         if spec.extra_args:
             parts.extend(spec.extra_args)
@@ -209,7 +218,8 @@ def render_exec_command(
     if spec.input_mode is not InputMode.STDIN:
         raise ValueError(f"Unknown input_mode: {spec.input_mode!r}")
 
-    parts = [spec.cli, *subcommand]
+    parts = [*container_prefix(capabilities), spec.cli] if in_container else [spec.cli]
+    parts.extend(subcommand)
 
     def _append_prompt_flag() -> None:
         if spec.prompt_flag is PromptFlag.FLAG_ONLY and spec.prompt_flag_token:
@@ -271,7 +281,16 @@ def build_llm_cmd(
         isolation: True かつ claude のとき --disable-slash-commands を付与（nexus #3174）
     Returns:
         subprocess 用のコマンドリスト
+
+    Raises:
+        ValueError: capabilities.sandbox == "container" (only render_exec_command wraps
+            commands in a container).
     """
+    if capabilities.sandbox == "container":
+        raise ValueError(
+            "sandbox='container' is not supported by build_llm_cmd; "
+            "use render_exec_command"
+        )
     spec = ENGINE_SPECS.get(engine)
     cli = spec.cli if spec else engine
     cmd = [cli, *spec.subcommand] if spec else [cli]

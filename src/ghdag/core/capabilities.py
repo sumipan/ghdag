@@ -13,8 +13,14 @@ class LLMCapabilities:
     allowed_tools: tuple[str, ...] = ()  # 空 = 指定なし（CLI に渡さない）
     disallowed_tools: tuple[str, ...] = ()  # 空 = 指定なし（CLI に渡さない）
     stream: bool = False  # True 時 stream 出力（claude/cursor: stream-json、codex: --json）
-    sandbox: str = "off"  # "off" | "readonly"
+    sandbox: str = "off"  # "off" | "readonly" | "container"
     resume: bool = False  # True 時セッション再開フローを許可
+    # Container sandbox (sandbox="container"); see ghdag.core.container.container_prefix.
+    container_image: str = ""  # required when sandbox="container"
+    container_readonly: bool = False  # --read-only root FS and read-only worktree mount
+    container_mounts: tuple[str, ...] = ()  # extra "host:container[:ro]" mounts; "~" expanded
+    container_env: tuple[str, ...] = ()  # env var names passed through (values stay off argv)
+    docker_bin: str = "docker"  # docker executable; a path also prepends its dir to PATH
 
 
 TEXT_ONLY = LLMCapabilities(
