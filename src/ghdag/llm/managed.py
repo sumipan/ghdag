@@ -46,12 +46,14 @@ def call_managed(
     fallback_candidates: Sequence[tuple[str, str | None]] = (),
     additional_tags: Mapping[str, str] | None = None,
     quota_gate: QuotaGate | None = None,
+    fallback_on_timeout: bool = False,
 ) -> ManagedResult:
     """Run ``call()`` with failure classification, quota reporting, and one fallback.
 
-    Fallback runs at most once, only for ``QUOTA_EXHAUSTED`` / ``AUTH``, skipping
-    engines that ``QuotaGate.snapshot()`` reports as paused. Alternate attempts
-    do not fall back again.
+    Fallback runs at most once, only for ``QUOTA_EXHAUSTED`` / ``AUTH`` (plus
+    ``TIMEOUT`` when ``fallback_on_timeout`` is true), skipping engines that
+    ``QuotaGate.snapshot()`` reports as paused. Alternate attempts do not fall
+    back again. A timeout never reports the engine as paused to ``quota_gate``.
     """
     tags = dict(additional_tags or {})
     resolved_model = validate_engine_model(engine, model)
@@ -82,8 +84,12 @@ def call_managed(
             additional_tags=tags,
         )
 
-    if failure_class in _FALLBACK_CLASSES:
-        if quota_gate is not None:
+    fallback_classes: frozenset[str] = _FALLBACK_CLASSES
+    if fallback_on_timeout:
+        fallback_classes = fallback_classes | {FailureClass.TIMEOUT.value}
+
+    if failure_class in fallback_classes:
+        if quota_gate is not None and failure_class in _FALLBACK_CLASSES:
             quota_gate.report(
                 engine=engine_used,
                 status="paused",
@@ -149,7 +155,11 @@ def _run_once(
     body = extracted if extracted else result.stdout
     usage = adapter.extract_token_usage(stdout_bytes, stderr_bytes)
     failure_class: str | None = None
-    if result.returncode != 0:
+    if result.failure_class is not None:
+        # ``call()`` already knows why it failed (e.g. TIMEOUT); the output
+        # adapter cannot tell that from a truncated stdout / stderr.
+        failure_class = result.failure_class.value
+    elif result.returncode != 0:
         classified = adapter.classify_failure(
             result.returncode, stdout_bytes, stderr_bytes
         )

@@ -677,3 +677,83 @@ class TestCallLaunchFailure:
         managed = call_managed("hello", engine="cursor")
         assert managed.returncode == 127
         assert managed.failure_class == "ENGINE_ENVIRONMENT_ERROR"
+
+
+class TestCallTimeout:
+    """subprocess.TimeoutExpired becomes an LLMResult tagged TIMEOUT (sumipan/nexus#4304)."""
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_timeout_becomes_124_with_failure_class(self, mock_run: MagicMock):
+        import subprocess
+
+        from ghdag.core.models.metrics import FailureClass
+        from ghdag.llm.engines import TIMEOUT_RETURNCODE
+
+        mock_run.side_effect = subprocess.TimeoutExpired(
+            ["agent", "--model", "composer-2.5", "-p", "--force"], 3599
+        )
+        result = call("hello", engine="cursor", timeout=3599)
+        assert result.returncode == TIMEOUT_RETURNCODE == 124
+        assert result.failure_class is FailureClass.TIMEOUT
+        assert result.timed_out is True
+        assert result.ok is False
+        assert result.stdout == ""
+        assert result.stderr == "TIMEOUT: agent timed out after 3599s\n"
+        assert result.session_id is None
+        assert result.latency_ms > 0
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_timeout_keeps_partial_bytes_output(self, mock_run: MagicMock):
+        """subprocess.run joins the captured chunks as bytes even in text mode."""
+        import subprocess
+
+        mock_run.side_effect = subprocess.TimeoutExpired(
+            ["claude"], 10, output=b'{"type":"assistant"}\n', stderr=b"warn"
+        )
+        result = call("hello", engine="claude", timeout=10)
+        assert result.stdout == '{"type":"assistant"}\n'
+        assert result.stderr == "warn\nTIMEOUT: claude timed out after 10s\n"
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_timeout_keeps_partial_str_output(self, mock_run: MagicMock):
+        import subprocess
+
+        mock_run.side_effect = subprocess.TimeoutExpired(
+            ["claude"], 10, output="partial", stderr="err\n"
+        )
+        result = call("hello", engine="claude", timeout=10)
+        assert result.stdout == "partial"
+        assert result.stderr == "err\nTIMEOUT: claude timed out after 10s\n"
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_timeout_skips_json_validation(self, mock_run: MagicMock):
+        """A truncated stdout must not raise LLMParseError on top of the timeout."""
+        import subprocess
+
+        mock_run.side_effect = subprocess.TimeoutExpired(
+            ["claude"], 10, output=b'{"unterminated'
+        )
+        result = call(
+            "hello",
+            engine="claude",
+            timeout=10,
+            capabilities=LLMCapabilities(output_format="json"),
+        )
+        assert result.returncode == 124
+
+    def test_llm_result_failure_class_defaults_to_none(self):
+        r = LLMResult(stdout="", stderr="", returncode=1)
+        assert r.failure_class is None
+        assert r.timed_out is False
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_managed_reports_timeout(self, mock_run: MagicMock):
+        import subprocess
+
+        from ghdag.llm.managed import call_managed
+
+        mock_run.side_effect = subprocess.TimeoutExpired(["agent"], 5)
+        managed = call_managed("hello", engine="cursor", timeout=5)
+        assert managed.returncode == 124
+        assert managed.failure_class == "TIMEOUT"
+        assert managed.attempts == 1
