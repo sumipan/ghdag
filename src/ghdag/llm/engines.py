@@ -22,6 +22,7 @@ from ghdag.core.command import (
     _build_cursor_flags,
     build_llm_cmd,
 )
+from ghdag.core.models.metrics import FailureClass
 from ghdag.core.ports.output import EngineError
 from ghdag.exceptions import GhdagError
 from ghdag.llm._config import load_engine_models
@@ -43,6 +44,7 @@ __all__ = [
     "validate_engine_model",
     "ENGINE_CLI",
     "ENGINE_DEFAULTS",
+    "TIMEOUT_RETURNCODE",
     "_CAPABILITY_FLAG_BUILDERS",
     "_build_claude_flags",
     "_build_codex_flags",
@@ -241,10 +243,20 @@ class LLMResult:
     returncode: int
     latency_ms: float = 0.0
     session_id: str | None = None
+    failure_class: FailureClass | None = None
+    """Failure class decided by ``call()`` itself (e.g. ``TIMEOUT``).
+
+    ``None`` means the caller must classify from ``stdout`` / ``stderr``
+    (``call_managed`` does this through the engine's output adapter).
+    """
 
     @property
     def ok(self) -> bool:
         return self.returncode == 0
+
+    @property
+    def timed_out(self) -> bool:
+        return self.failure_class is FailureClass.TIMEOUT
 
     def validate(
         self,
@@ -335,6 +347,46 @@ def _launch_failure_result(executable: str, returncode: int, reason: str, t0: fl
     )
 
 
+# Exit status of coreutils ``timeout(1)`` when the command is killed on expiry.
+TIMEOUT_RETURNCODE = 124
+
+
+def _partial_output(data: bytes | str | None) -> str:
+    """Decode the partial stdout / stderr that ``TimeoutExpired`` carries.
+
+    ``subprocess.run`` joins the raw chunks as bytes even in text mode, and
+    leaves the attribute ``None`` when nothing was captured.
+    """
+    if data is None:
+        return ""
+    if isinstance(data, bytes):
+        return data.decode("utf-8", errors="replace")
+    return data
+
+
+def _timeout_result(
+    executable: str, exc: subprocess.TimeoutExpired, t0: float
+) -> LLMResult:
+    """Turn ``subprocess.TimeoutExpired`` into an ``LLMResult`` tagged ``TIMEOUT``.
+
+    The process has already been killed by ``subprocess.run``. The partial
+    stdout / stderr are kept so the caller can still inspect what the engine
+    produced before the deadline, and a ``TIMEOUT: ...`` line is appended to
+    stderr in the same shape as the exec-path task timeout (sumipan/nexus#4304).
+    """
+    stderr = _partial_output(exc.stderr)
+    if stderr and not stderr.endswith("\n"):
+        stderr += "\n"
+    stderr += f"TIMEOUT: {executable} timed out after {exc.timeout}s\n"
+    return LLMResult(
+        stdout=_partial_output(exc.stdout),
+        stderr=stderr,
+        returncode=TIMEOUT_RETURNCODE,
+        latency_ms=(time.monotonic() - t0) * 1000,
+        failure_class=FailureClass.TIMEOUT,
+    )
+
+
 def call(
     prompt: str,
     *,
@@ -362,11 +414,12 @@ def call(
         capabilities: 能力制約値オブジェクト（デフォルト: TEXT_ONLY）
         isolation: エンジン隔離。None のとき GHDAG_ENGINE_ISOLATION 環境変数で解決（既定 False）
     Returns:
-        LLMResult (missing binary: returncode=127; not executable: 126)
+        LLMResult (missing binary: returncode=127; not executable: 126;
+        timeout: returncode=124 with ``failure_class=FailureClass.TIMEOUT`` and
+        the partial stdout / stderr captured before the process was killed)
     Raises:
         EngineModelError: エンジン・モデルの検証失敗
         NotImplementedError: エンジンが対応していない capabilities 機能
-        subprocess.TimeoutExpired: タイムアウト
     """
     _validate_capabilities_for_engine(engine, capabilities)
     if resume_session_id:
@@ -429,6 +482,11 @@ def call(
         if e.filename not in (None, cmd[0]):
             raise
         return _launch_failure_result(cmd[0], 126, "permission denied", t0)
+    except subprocess.TimeoutExpired as e:
+        # The engine kept running past ``timeout`` (e.g. cursor ``agent -p`` idling
+        # after it had already committed). Report it as a classified failure
+        # instead of unwinding the caller (sumipan/nexus#4304).
+        return _timeout_result(cmd[0], e, t0)
     latency_ms = (time.monotonic() - t0) * 1000
     session_id: str | None = None
     if result.returncode == 0:

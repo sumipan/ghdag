@@ -235,9 +235,9 @@ Import from the package paths below. Modules and attributes whose names start wi
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
 | `issue_status` | `(issue_number, *, handler=None, workflow=None, exec_jsonl_path, state_dir, done_dir, running_uuids=None, audit_path=None, running_dir=None) -> IssueStatus` |
 | `running_tasks` | `(running_dir) -> list[RunningTask]` |
-| `ghdag.llm.call` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, capabilities=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=None) -> LLMResult` |
+| `ghdag.llm.call` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, capabilities=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=None) -> LLMResult`; never raises on timeout: `returncode=124`, `failure_class=FailureClass.TIMEOUT`, partial stdout / stderr kept |
 | `ghdag.llm.call_text` | same parameters as `call`, returns `TextResult` (`body`, `success`, `raw`, `error`) |
-| `ghdag.llm.call_managed` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, capabilities=TEXT_ONLY, fallback_candidates=(), additional_tags=None, quota_gate=None) -> ManagedResult` |
+| `ghdag.llm.call_managed` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, capabilities=TEXT_ONLY, fallback_candidates=(), additional_tags=None, quota_gate=None, fallback_on_timeout=False) -> ManagedResult` |
 | `ghdag.llm.build_llm_cmd` | `(engine, model, prompt, *, capabilities=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=False) -> list[str]` |
 | `ghdag.core.command.render_exec_command` | `(spec, *, order_path, model, prompt=None, capabilities=None, resume_session_id=None, isolation=False) -> str` |
 | `ghdag.core.container.container_prefix` | `(capabilities, *, workdir='"$PWD"') -> list[str]` |

@@ -351,3 +351,89 @@ class TestCallManagedExport:
 
         assert MR is ManagedResult
         assert cm is call_managed
+
+
+class TestCallManagedTimeout:
+    """LLMResult.failure_class set by call() wins over adapter classification (sumipan/nexus#4304)."""
+
+    @staticmethod
+    def _timeout_llm() -> LLMResult:
+        return LLMResult(
+            stdout="partial",
+            stderr="TIMEOUT: agent timed out after 5s\n",
+            returncode=124,
+            failure_class=FailureClass.TIMEOUT,
+        )
+
+    def test_timeout_is_classified_without_adapter(self):
+        mock_adapter = _adapter(failure=FailureClass.UNKNOWN_FAILURE)
+        with (
+            patch("ghdag.llm.managed.call", return_value=self._timeout_llm()),
+            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
+            patch("ghdag.llm.managed.validate_engine_model", return_value="m"),
+        ):
+            result = call_managed("p", engine="cursor")
+
+        mock_adapter.classify_failure.assert_not_called()
+        assert result.returncode == 124
+        assert result.failure_class == FailureClass.TIMEOUT.value
+        assert result.body == "extracted"
+
+    def test_timeout_does_not_fallback_by_default(self, tmp_path: Path):
+        gate = QuotaGate(tmp_path / "quota-gate.json")
+        calls: list[str] = []
+
+        def fake_call(prompt, *, engine, **kwargs):
+            del prompt, kwargs
+            calls.append(engine)
+            return self._timeout_llm()
+
+        with (
+            patch("ghdag.llm.managed.call", side_effect=fake_call),
+            patch("ghdag.llm.managed.get_output_adapter", return_value=_adapter()),
+            patch("ghdag.llm.managed.validate_engine_model", side_effect=lambda e, m: m or "d"),
+        ):
+            result = call_managed(
+                "p",
+                engine="cursor",
+                fallback_candidates=[("claude", None)],
+                quota_gate=gate,
+            )
+
+        assert calls == ["cursor"]
+        assert result.failure_class == "TIMEOUT"
+        assert result.attempts == 1
+        assert result.quota_reported is False
+        assert gate.snapshot().engines.get("cursor") is None
+
+    def test_fallback_on_timeout_runs_alternate_without_quota_report(self, tmp_path: Path):
+        gate = QuotaGate(tmp_path / "quota-gate.json")
+        calls: list[str] = []
+
+        def fake_call(prompt, *, engine, **kwargs):
+            del prompt, kwargs
+            calls.append(engine)
+            if engine == "cursor":
+                return self._timeout_llm()
+            return _llm(stdout="ok")
+
+        with (
+            patch("ghdag.llm.managed.call", side_effect=fake_call),
+            patch("ghdag.llm.managed.get_output_adapter", return_value=_adapter(body=b"ok")),
+            patch("ghdag.llm.managed.validate_engine_model", side_effect=lambda e, m: m or "d"),
+        ):
+            result = call_managed(
+                "p",
+                engine="cursor",
+                fallback_candidates=[("claude", None)],
+                quota_gate=gate,
+                fallback_on_timeout=True,
+            )
+
+        assert calls == ["cursor", "claude"]
+        assert result.returncode == 0
+        assert result.failure_class is None
+        assert result.engine_used == "claude"
+        assert result.attempts == 2
+        assert result.quota_reported is False
+        assert gate.snapshot().engines.get("cursor") is None
