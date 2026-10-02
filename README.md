@@ -6,13 +6,13 @@ Unlike CI-hosted orchestrators (GitHub Actions, Dagger), ghdag runs on your own 
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.85.0-blue)
+![version](https://img.shields.io/badge/version-v0.87.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.85.0** (`pyproject.toml` `version = "0.85.0"`) |
+| Current release | **v0.87.0** (`pyproject.toml` `version = "0.87.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | License | MIT (SPDX: `MIT`) |
@@ -28,7 +28,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.85.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.87.0"
 ```
 
 Install from a checkout with the development tools:
@@ -235,9 +235,9 @@ Import from the package paths below. Modules and attributes whose names start wi
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
 | `issue_status` | `(issue_number, *, handler=None, workflow=None, exec_jsonl_path, state_dir, done_dir, running_uuids=None, audit_path=None, running_dir=None) -> IssueStatus` |
 | `running_tasks` | `(running_dir) -> list[RunningTask]` |
-| `ghdag.llm.call` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, capabilities=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=None) -> LLMResult`; never raises on timeout: `returncode=124`, `failure_class=FailureClass.TIMEOUT`, partial stdout / stderr kept |
+| `ghdag.llm.call` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, capabilities=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=None) -> LLMResult`; on timeout returns `LLMResult` with `returncode=124` (`TIMEOUT_RETURNCODE`), `failure_class=FailureClass.TIMEOUT`, and partial stdout / stderr preserved (does not raise `subprocess.TimeoutExpired`) |
 | `ghdag.llm.call_text` | same parameters as `call`, returns `TextResult` (`body`, `success`, `raw`, `error`) |
-| `ghdag.llm.call_managed` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, capabilities=TEXT_ONLY, fallback_candidates=(), additional_tags=None, quota_gate=None, fallback_on_timeout=False) -> ManagedResult` |
+| `ghdag.llm.call_managed` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, capabilities=TEXT_ONLY, fallback_candidates=(), additional_tags=None, quota_gate=None, fallback_on_timeout=False) -> ManagedResult`; classifies failures, reports quota, and may retry once on `QUOTA_EXHAUSTED` / `AUTH` (and on `TIMEOUT` only when `fallback_on_timeout=True`); timeouts never mark the engine paused in `QuotaGate` |
 | `ghdag.llm.build_llm_cmd` | `(engine, model, prompt, *, capabilities=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=False) -> list[str]` |
 | `ghdag.core.command.render_exec_command` | `(spec, *, order_path, model, prompt=None, capabilities=None, resume_session_id=None, isolation=False) -> str` |
 | `ghdag.core.container.container_prefix` | `(capabilities, *, workdir='"$PWD"') -> list[str]` |
@@ -264,6 +264,25 @@ Import from the package paths below. Modules and attributes whose names start wi
 | `ghdag.vcs.LocalGitSink.create` | `(tmp_dir, *, owner, allow_prefixes, branch="main", push="immediate", audit_path=None) -> GitSink` |
 | `ghdag.github_client.GitHubClient` | `(token=None, repo=None, etag_cache_path=None, rate_limit_max_wait_sec=None)` |
 | `ghdag.forge.local.LocalForge` | `(root, *, repo="local/forge", checks_command=None)` |
+
+### `LLMResult` and timeout behavior
+
+`LLMResult` (`ghdag.llm.engines`) is the return type of `call()`. `TIMEOUT_RETURNCODE` is `124`.
+
+| Field / member | Type | Meaning |
+|---|---|---|
+| `stdout` | `str` | Raw process stdout |
+| `stderr` | `str` | Raw process stderr |
+| `returncode` | `int` | Process exit code; `124` (`TIMEOUT_RETURNCODE`) when the subprocess timed out |
+| `latency_ms` | `float` | Wall-clock latency in milliseconds |
+| `session_id` | `str \| None` | Engine session ID when the adapter extracts one |
+| `failure_class` | `FailureClass \| None` | Failure class assigned by `call()` itself (e.g. `FailureClass.TIMEOUT`); `None` when the caller must classify from stdout / stderr (as `call_managed` does via the engine output adapter) |
+| `ok` | property | `True` when `returncode == 0` |
+| `timed_out` | property | `True` when `failure_class is FailureClass.TIMEOUT` |
+
+When `timeout` is set, `call()` catches `subprocess.TimeoutExpired` internally and returns an `LLMResult` with partial stdout / stderr preserved. It does **not** propagate `TimeoutExpired` to the caller.
+
+`call_managed(..., fallback_on_timeout=False)` (default) classifies timeouts but does not run the one-shot fallback to `fallback_candidates`. Pass `fallback_on_timeout=True` to treat `TIMEOUT` like `QUOTA_EXHAUSTED` / `AUTH` for fallback purposes. A timeout never reports the engine as paused to `QuotaGate`.
 
 ### Package `__all__`
 
@@ -310,7 +329,7 @@ Modules that declare their own `__all__` (private `_` names omitted). Modules ma
 | `ghdag.io.audit_query` | `read_task_exit_events`, `get_latest_status`, `detect_correlation_bursts`, `get_correlation_top_n` |
 | `ghdag.io.exec_jsonl` | `build_idempotency_key`, `handler_generation_key`, `get_generation`, `read`, `parse`, `parse_as_dict`, `check_idempotency`, `find_records_by_idempotency_key`, `append`, `remove_by_predicate`, `remove_by_uuids`, `prune`, `load_uuids`, `validate`, `repair`, `extract_uuid` |
 | `ghdag.llm.capabilities` | `LLMParseError`, `LLMCapabilities`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `READONLY_OBSERVE`, `PRESETS` |
-| `ghdag.llm.engines` | `EngineModelError`, `LLMResult`, `TextResult`, `build_llm_cmd`, `call`, `call_text`, `extract_stream_result`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model`, `ENGINE_CLI`, `ENGINE_DEFAULTS`, `supports_capability` |
+| `ghdag.llm.engines` | `EngineModelError`, `LLMResult`, `TextResult`, `build_llm_cmd`, `call`, `call_text`, `extract_stream_result`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model`, `ENGINE_CLI`, `ENGINE_DEFAULTS`, `TIMEOUT_RETURNCODE`, `supports_capability` |
 | `ghdag.llm.managed` | `ManagedResult`, `call_managed` |
 | `ghdag.llm.spec` (shim) | `InputMode`, `PromptFlag`, `DangerFlagPosition`, `EngineSpec`, `ENGINE_SPECS`, `render_exec_command` |
 | `ghdag.metrics.models` (shim) | `FailureClass`, `TokenUsage`, `TaskMetrics` |
@@ -894,7 +913,7 @@ Any other content is the task's non-zero exit code.
 
 ## API Stability
 
-ghdag is pre-1.0 (`0.Y.Z`). A minor version bump may change or remove public symbols, CLI options and file formats. Pin an exact tag (`@v0.85.0`) in production and read `CHANGELOG.md` before upgrading.
+ghdag is pre-1.0 (`0.Y.Z`). A minor version bump may change or remove public symbols, CLI options and file formats. Pin an exact tag (`@v0.87.0`) in production and read `CHANGELOG.md` before upgrading.
 
 ## License
 
