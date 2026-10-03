@@ -8,7 +8,7 @@ from ghdag.core.models.metrics import TokenUsage
 
 
 def parse_token_usage_json(stdout_json: dict) -> TokenUsage:
-    """claude --output-format json のレスポンスから TokenUsage を生成する。"""
+    """Build TokenUsage from a claude --output-format json response."""
     usage = stdout_json.get("usage") or {}
     input_tokens = usage.get("input_tokens") or 0
     output_tokens = usage.get("output_tokens") or 0
@@ -22,7 +22,7 @@ def parse_token_usage_json(stdout_json: dict) -> TokenUsage:
 
 
 def parse_token_count(engine: str | None, stderr_text: str) -> int | None:
-    """stderr からトークン数を抽出する。取得不能なら None。"""
+    """Extract token counts from stderr. Returns None if unavailable."""
     if engine != "claude":
         return None
 

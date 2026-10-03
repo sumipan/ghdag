@@ -2,13 +2,13 @@
 
 
 class GhdagError(Exception):
-    """ghdag 共通基底例外。"""
+    """Common base exception for ghdag."""
 
     pass
 
 
 class GitHubApiError(GhdagError):
-    """GitHub API 操作の共通基底。status_code と message を保持する。"""
+    """Common base for GitHub API operations. Holds status_code and message."""
 
     def __init__(self, message: str, status_code: int | None = None):
         self.status_code = status_code
@@ -16,11 +16,11 @@ class GitHubApiError(GhdagError):
 
 
 class AuthError(GitHubApiError):
-    """認証失敗（401、トークン未設定）。"""
+    """Authentication failure (401, token not set)."""
 
 
 class RateLimitError(GitHubApiError):
-    """レート制限超過（403 + X-RateLimit-Remaining: 0）。"""
+    """Rate limit exceeded (403 + X-RateLimit-Remaining: 0)."""
 
     def __init__(
         self,
@@ -33,8 +33,8 @@ class RateLimitError(GitHubApiError):
 
 
 class PermissionDeniedError(GitHubApiError):
-    """権限不足（403、404 private repo）。"""
+    """Insufficient permissions (403, 404 private repo)."""
 
 
 class NetworkError(GitHubApiError):
-    """接続タイムアウト・DNS 解決失敗等のネットワークエラー。"""
+    """Network error such as connection timeout or DNS resolution failure."""

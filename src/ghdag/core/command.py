@@ -1,4 +1,4 @@
-"""ghdag.core.command — 純粋なコマンド文字列構築と Engine Adapter。"""
+"""ghdag.core.command — pure command-string construction and Engine Adapter."""
 
 from __future__ import annotations
 
@@ -30,19 +30,19 @@ __all__ = [
 def _dedupe_extra_args(
     extra_args: tuple[str, ...], perm_flags: list[str]
 ) -> list[str]:
-    """perm_flags が既に出しているフラグを extra_args 側から取り除く。
+    """Remove flags already emitted by perm_flags from extra_args.
 
-    _CAPABILITY_FLAG_BUILDERS 由来のフラグ（perm_flags）と EngineSpec.extra_args は
-    独立に組み立てられるため、同じフラグが両方から出て argv に重複しうる。
-    codex の `--json` のように重複を許さない CLI では
-    `error: the argument '--json' cannot be used multiple times` で即死するため、
-    builder 側を優先して extra_args から落とす。
+    Flags from _CAPABILITY_FLAG_BUILDERS (perm_flags) and EngineSpec.extra_args are
+    assembled independently, so the same flag can come from both and be duplicated in argv.
+    CLIs that reject duplicates, such as codex's `--json`, die immediately with
+    `error: the argument '--json' cannot be used multiple times`,
+    so the builder side wins and the flag is dropped from extra_args.
 
-    フラグに値が続くか（`--output-format json`）はトークンが `-` で始まるかで判定する。
+    Whether a flag takes a value (`--output-format json`) is decided by whether the next token starts with `-`.
 
-    claude の DAG 既定 extra_args は `--output-format stream-json --verbose`（#2966）。
-    builder が別の `--output-format`（例: json_only）を出した場合は stream-json ペアを
-    落とすだけでなく、対になる `--verbose` も除去する（stream 専用フラグのため）。
+    claude's DAG default extra_args is `--output-format stream-json --verbose` (#2966).
+    When the builder emits a different `--output-format` (e.g. json_only), not only the
+    stream-json pair is dropped but also its companion `--verbose` (a stream-only flag).
     """
     emitted = {tok for tok in perm_flags if tok.startswith("-")}
     result: list[str] = []
@@ -81,8 +81,8 @@ def _dedupe_extra_args(
 def _build_claude_flags(
     capabilities: LLMCapabilities, dangerously_skip_permissions: bool
 ) -> list[str]:
-    # sandbox=readonly → --permission-mode plan（read-only Bash 可・変更系 deny）。
-    # permission_mode 明示指定との同時指定は意味が衝突するため拒否する。
+    # sandbox=readonly → --permission-mode plan (read-only Bash allowed, mutations denied).
+    # Combining it with an explicit permission_mode is rejected because the meanings conflict.
     if capabilities.sandbox == "readonly":
         if capabilities.permission_mode != "default":
             raise ValueError(
@@ -92,8 +92,8 @@ def _build_claude_flags(
         flags = ["--permission-mode", "plan"]
     else:
         flags = ["--permission-mode", capabilities.permission_mode]
-    # stream=True → stream-json --verbose。EngineSpec.extra_args も同フラグのため
-    # render_exec_command では _dedupe_extra_args で重複排除する（#2966）。
+    # stream=True → stream-json --verbose. EngineSpec.extra_args carries the same flags, so
+    # render_exec_command deduplicates them with _dedupe_extra_args (#2966).
     if capabilities.stream:
         flags += ["--output-format", "stream-json", "--verbose"]
     elif capabilities.output_format != "text":
@@ -102,8 +102,8 @@ def _build_claude_flags(
         flags += ["--allowed-tools", ",".join(capabilities.allowed_tools)]
     if capabilities.disallowed_tools:
         flags += ["--disallowed-tools", ",".join(capabilities.disallowed_tools)]
-    # --disable-slash-commands は isolation=True 時のみ
-    # build_llm_cmd / render_exec_command が付与する（nexus #3174）。
+    # --disable-slash-commands is added by build_llm_cmd / render_exec_command
+    # only when isolation=True (nexus #3174).
     if dangerously_skip_permissions:
         flags += ["--dangerously-skip-permissions"]
     return flags
@@ -112,11 +112,11 @@ def _build_claude_flags(
 def _build_cursor_flags(
     capabilities: LLMCapabilities, dangerously_skip_permissions: bool
 ) -> list[str]:
-    # cursor CLI `--sandbox <enabled|disabled>` は config を上書きする二値モード
-    # （agent --help 実測）。enabled 時は Cursor のサンドボックスを強制する。
-    # 書き込み・ネットワーク遮断の詳細は CLI/設定依存。--force との同時指定は矛盾。
-    # stream=True 時は --output-format stream-json --stream-partial-output を出し、
-    # EngineSpec.extra_args と _dedupe_extra_args で重複しないようにする（#2967 / #2968）。
+    # cursor CLI `--sandbox <enabled|disabled>` is a binary mode that overrides config
+    # (observed via agent --help). When enabled, Cursor's sandbox is enforced.
+    # Details of write/network blocking depend on the CLI/config. Combining with --force is contradictory.
+    # When stream=True, emit --output-format stream-json --stream-partial-output and
+    # avoid duplicates with EngineSpec.extra_args via _dedupe_extra_args (#2967 / #2968).
     flags: list[str] = []
     bypass = dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions"
     if capabilities.sandbox == "readonly":
@@ -137,12 +137,12 @@ def _build_cursor_flags(
 def _build_codex_flags(
     capabilities: LLMCapabilities, dangerously_skip_permissions: bool
 ) -> list[str]:
-    # permission_mode も見るのは exec.jsonl 経路（render_exec_command）のため。
-    # render_exec_command は dangerously_skip_permissions=False 固定で builder を呼ぶので、
-    # capabilities を見ないと DANGEROUS_FULL_ACCESS が CLI フラグに落ちず、
-    # codex が workspace-write サンドボックスのまま起動して cwd 外へ書けない。
-    # 一方 call() 経路は _validate_capabilities_for_engine が codex の
-    # permission_mode != "default" を弾くため、この分岐には到達しない。
+    # permission_mode is also checked for the exec.jsonl path (render_exec_command).
+    # render_exec_command calls the builder with dangerously_skip_permissions=False fixed, so
+    # without looking at capabilities DANGEROUS_FULL_ACCESS would not become a CLI flag and
+    # codex would start in the workspace-write sandbox, unable to write outside cwd.
+    # The call() path never reaches this branch, because _validate_capabilities_for_engine
+    # rejects codex with permission_mode != "default".
     flags = ["--json", "--skip-git-repo-check"]
     bypass = dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions"
     if capabilities.sandbox == "readonly":
@@ -173,17 +173,17 @@ def render_exec_command(
     resume_session_id: str | None = None,
     isolation: bool = False,
 ) -> str:
-    """exec.jsonl の command フィールド用（tee パイプを含まない）。
+    """For the command field of exec.jsonl (does not include the tee pipe).
 
-    prompt は FLAG_ONLY / NONE では無視する（argv に載せない。入力は stdin / ARGV のみ）。
-    capabilities が None の場合は従来通り EngineSpec.danger_flag を使用。
-    capabilities が指定された場合は _CAPABILITY_FLAG_BUILDERS 経由でフラグを生成し、
-    builder が出したフラグは extra_args 側から除去する（_dedupe_extra_args）。
-    isolation=True かつ claude のとき --disable-slash-commands を付与する（nexus #3174）。
+    prompt is ignored for FLAG_ONLY / NONE (not put in argv; input is stdin / ARGV only).
+    When capabilities is None, EngineSpec.danger_flag is used as before.
+    When capabilities is given, flags are generated via _CAPABILITY_FLAG_BUILDERS and
+    flags emitted by the builder are removed from extra_args (_dedupe_extra_args).
+    When isolation=True and the engine is claude, --disable-slash-commands is added (nexus #3174).
     sandbox="container" wraps the engine CLI with container_prefix (engine flags are
     the same as sandbox="off"; stdin is redirected on the host and forwarded via -i).
     """
-    del prompt  # FLAG_ONLY / NONE では argv に載せない
+    del prompt  # not put in argv for FLAG_ONLY / NONE
 
     perm_flags: list[str] = []
     if capabilities is not None:
@@ -269,18 +269,18 @@ def build_llm_cmd(
     resume_session_id: str | None = None,
     isolation: bool = False,
 ) -> list[str]:
-    """LLM CLI コマンドのリストを構築する。
+    """Build the LLM CLI command list.
 
     Args:
-        engine: エンジン名
-        model: 検証済みモデル ID
+        engine: Engine name
+        model: Validated model ID
         prompt: prompt text. STDIN engines do not put it on argv (the caller passes it via stdin)
-        capabilities: 能力制約値オブジェクト（デフォルト: TEXT_ONLY）
-        dangerously_skip_permissions: claude エンジン時に --dangerously-skip-permissions を付与
-        resume_session_id: 再開対象セッションID（対応エンジンのみ）
-        isolation: True かつ claude のとき --disable-slash-commands を付与（nexus #3174）
+        capabilities: Capability-constraint value object (default: TEXT_ONLY)
+        dangerously_skip_permissions: Add --dangerously-skip-permissions for the claude engine
+        resume_session_id: Session ID to resume (supported engines only)
+        isolation: When True and the engine is claude, add --disable-slash-commands (nexus #3174)
     Returns:
-        subprocess 用のコマンドリスト
+        Command list for subprocess
 
     Raises:
         ValueError: capabilities.sandbox == "container" (only render_exec_command wraps
@@ -328,11 +328,11 @@ def build_llm_cmd(
 
 
 class EngineAdapter(Protocol):
-    """エンジンごとの exec レコード組み立てを担う"""
+    """Responsible for assembling exec records per engine."""
 
     @property
     def name(self) -> str:
-        """エンジン名（"claude", "gemini"）"""
+        """Engine name ("claude", "gemini")."""
         ...
 
     def build_exec_record(
@@ -346,14 +346,14 @@ class EngineAdapter(Protocol):
         prompt: str | None = None,
         capabilities: LLMCapabilities | None = None,
     ) -> dict:
-        """exec.jsonl に書き込む 1 レコード（dict）を組み立てる。
-        command フィールドに tee パイプを含めない。
+        """Assemble one record (dict) to write to exec.jsonl.
+        The command field does not include the tee pipe.
         """
         ...
 
 
 class _GenericAdapter:
-    """ENGINE_SPECS から生成される汎用アダプター。4 Adapter クラスを統合。"""
+    """Generic adapter generated from ENGINE_SPECS. Unifies the 4 Adapter classes."""
 
     def __init__(self, spec: EngineSpec) -> None:
         self._spec = spec

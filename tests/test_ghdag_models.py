@@ -1,4 +1,4 @@
-"""Tests for ghdag.dag.models — Task model field defaults (M1〜M3)."""
+"""Tests for ghdag.dag.models — Task model field defaults (M1-M3)."""
 
 from ghdag.dag.models import Task
 
