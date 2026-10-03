@@ -797,7 +797,7 @@ Managed by `QuotaGate` and `ghdag quota`. Top-level keys: `engines` (per engine:
 
 ### Language pack (`GHDAG_LANGUAGE_PACK`)
 
-State labels and Web UI strings come from a language pack. ghdag bundles only English (`ghdag.config.language.EN`); a host can replace every field by pointing `GHDAG_LANGUAGE_PACK` at a YAML file. The pack is loaded once per process (`get_language_pack()`, cached). Both sections must list exactly the keys below with non-empty string values; a missing file, invalid YAML, missing keys or unknown keys raise `GhdagError`. CLI, log and exception messages are not part of the pack.
+State labels and Web UI strings come from a language pack. ghdag bundles only English (`ghdag.config.language.EN`); a host can replace every field by pointing `GHDAG_LANGUAGE_PACK` at a YAML file. The pack is loaded once per process (`get_language_pack()`, cached). Each section may list any of the keys below with non-empty string values; a section or key the pack leaves out falls back to `EN`, so a pack written for an older release keeps loading after a release adds a key. A missing file, invalid YAML, unknown keys or empty / non-string values raise `GhdagError`. CLI, log and exception messages are not part of the pack.
 
 ```yaml
 state_labels:
