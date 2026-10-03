@@ -1,8 +1,8 @@
 """
-llm/engines.py — エンジン・モデルのホワイトリストとワンショット LLM 呼び出し
+llm/engines.py — engine/model allowlist and one-shot LLM invocation
 
-ワークフローを伴わない単発の LLM 呼び出しを提供する。
-ghdag 側でエンジンごとの許可モデルを管理し、スクリプト側の責務を軽減する。
+Provides single-shot LLM calls that do not involve a workflow.
+ghdag manages the allowed models per engine, reducing the burden on scripts.
 """
 
 from __future__ import annotations
@@ -61,37 +61,37 @@ class EngineModelError(GhdagError):
 
 
 # ---------------------------------------------------------------------------
-# エンジン・モデル ホワイトリスト（遅延初期化 — import 時に env / cwd を読まない）
+# Engine/model allowlist (lazy init — env / cwd are not read at import time)
 # ---------------------------------------------------------------------------
 
 _ENGINE_MODELS: dict[str, list[str]] | None = None
 
 
 def get_engine_models() -> dict[str, list[str]]:
-    """ENGINE_MODELS 相当を返す（初回呼び出しで load_engine_models を実行しキャッシュ）。"""
+    """Return the ENGINE_MODELS equivalent (runs load_engine_models on first call and caches it)."""
     global _ENGINE_MODELS
     if _ENGINE_MODELS is None:
         _ENGINE_MODELS = load_engine_models()
     return _ENGINE_MODELS
 
 
-# エンジンごとの CLI コマンド名（spec から派生）
+# CLI command name per engine (derived from spec)
 ENGINE_CLI: dict[str, str] = {name: spec.cli for name, spec in ENGINE_SPECS.items()}
 
-# エンジンごとのデフォルトモデル（spec から派生）
+# Default model per engine (derived from spec)
 ENGINE_DEFAULTS: dict[str, str | None] = {name: spec.default_model for name, spec in ENGINE_SPECS.items()}
 
 
 def list_engines() -> list[str]:
-    """利用可能なエンジン名の一覧を返す。"""
+    """Return the list of available engine names."""
     return sorted(get_engine_models().keys())
 
 
 def list_models(engine: str) -> list[str]:
-    """指定エンジンの許可モデル一覧を返す。
+    """Return the allowed models for the given engine.
 
     Raises:
-        EngineModelError: 未知のエンジン
+        EngineModelError: unknown engine
     """
     models = get_engine_models()
     if engine not in models:
@@ -103,15 +103,15 @@ def list_models(engine: str) -> list[str]:
 
 
 def validate_engine_model(engine: str, model: str | None) -> str:
-    """エンジンとモデルの組み合わせを検証し、解決済みモデル ID を返す。
+    """Validate the engine/model combination and return the resolved model ID.
 
     Args:
-        engine: エンジン名（"claude", "gemini" など）
-        model: モデル ID（None の場合はデフォルト）
+        engine: engine name ("claude", "gemini", etc.)
+        model: model ID (None means the default)
     Returns:
-        検証済みモデル ID
+        the validated model ID
     Raises:
-        EngineModelError: 未知のエンジンまたは許可外モデル
+        EngineModelError: unknown engine or disallowed model
     """
     models = get_engine_models()
     if engine not in models:
@@ -141,37 +141,39 @@ def validate_engine_model(engine: str, model: str | None) -> str:
 # Engine-specific capability validation — data-driven, no engine string branching
 # ---------------------------------------------------------------------------
 
-# 非デフォルト値を渡されたら NotImplementedError を送出する未対応 capability。
-# "isolation" は LLMCapabilities 属性ではなく supports_capability 用のメタ capability
-# （グローバル設定隔離の可否）。cursor CLI にスキル/rules 隔離フラグが無いため非対応
-# （nexus #3044。代替は nexus #2972 の物理隔離）。
+# Unsupported capabilities: passing a non-default value raises NotImplementedError.
+# "isolation" is not an LLMCapabilities attribute but a meta capability for supports_capability
+# (whether global config isolation is possible). Unsupported on cursor because its CLI has no
+# skills/rules isolation flag (nexus #3044; the alternative is physical isolation, nexus #2972).
 _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
     "gemini": {"disallowed_tools", "allowed_tools", "permission_mode", "stream", "sandbox", "resume"},
     "cursor": {"allowed_tools", "permission_mode", "isolation"},
     "shell": {"stream", "sandbox", "resume"},
-    # codex の stream は --json JSONL。output_format 非対応は維持（#2967）。
+    # codex stream is --json JSONL. output_format remains unsupported (#2967).
     "codex": {"permission_mode", "output_format"},
 }
 
-# call() 経由の codex 隔離用 CODEX_HOME（ユーザー ~/.codex を読まない）。
-# GHDAG_ENGINE_ISOLATION=1 かつ auth.json が存在するときだけ注入する（nexus #3174）。
+# CODEX_HOME for codex isolation via call() (does not read the user's ~/.codex).
+# Injected only when GHDAG_ENGINE_ISOLATION=1 and auth.json exists (nexus #3174).
 _CODEX_DAG_HOME = "/var/tmp/ghdag-dag-codex/"
 
 
 def _resolve_isolation(isolation: bool | None) -> bool:
-    """isolation 明示値、無ければ環境変数 GHDAG_ENGINE_ISOLATION で解決する。"""
+    """Resolve from the explicit isolation value, else from the GHDAG_ENGINE_ISOLATION env var."""
     if isolation is not None:
         return isolation
     return bool(os.environ.get("GHDAG_ENGINE_ISOLATION"))
 
-# エンジン側に等価概念がないため noop（値を受理するが CLI フラグに反映しない）で扱う capability。
-# codex: allowed_tools / disallowed_tools は codex-cli には存在せず、権限制御は
-#   OS レベルの --sandbox / --dangerously-bypass-approvals-and-sandbox で行う。
-#   TEXT_ONLY / JSON_ONLY プリセットが既定で disallowed_tools を持つため、これを
-#   NotImplementedError にせず noop 化することで、呼び出し側がラッパを書かずに
-#   既定 capabilities のまま codex を呼べるようにする。
-# cursor: disallowed_tools 相当の CLI フラグがなく、_build_cursor_flags も参照しない。
-#   --force 不付与時の approval-deny が実質の防壁。黙って無視されていたのを文書化。
+# Capabilities treated as noop (value accepted but not reflected in CLI flags) because
+# the engine has no equivalent concept.
+# codex: allowed_tools / disallowed_tools do not exist in codex-cli; permission control is done
+#   at the OS level via --sandbox / --dangerously-bypass-approvals-and-sandbox.
+#   Since the TEXT_ONLY / JSON_ONLY presets carry disallowed_tools by default, making these
+#   noop instead of NotImplementedError lets callers invoke codex with the default capabilities
+#   without writing a wrapper.
+# cursor: there is no CLI flag equivalent to disallowed_tools, and _build_cursor_flags does not
+#   reference it. The approval-deny when --force is not given is the effective guard. This
+#   documents what was previously silently ignored.
 _IGNORED_CAPABILITIES: dict[str, set[str]] = {
     "codex": {"allowed_tools", "disallowed_tools"},
     "cursor": {"disallowed_tools"},
@@ -179,11 +181,11 @@ _IGNORED_CAPABILITIES: dict[str, set[str]] = {
 
 
 def supports_capability(engine: str, capability: str) -> bool:
-    """エンジンが capability をサポートするか（公開 API）。
+    """Whether the engine supports the capability (public API).
 
-    effective_unsupported = _UNSUPPORTED_CAPABILITIES - _IGNORED_CAPABILITIES。
-    capability がそこに含まれるなら False、さもなくば True。
-    未知のエンジン・未知の capability は True（conservative: 弾かない）。
+    effective_unsupported = _UNSUPPORTED_CAPABILITIES - _IGNORED_CAPABILITIES.
+    Returns False if capability is in it, True otherwise.
+    Unknown engines and unknown capabilities return True (conservative: do not reject).
     """
     unsupported = _UNSUPPORTED_CAPABILITIES.get(engine, set())
     ignored = _IGNORED_CAPABILITIES.get(engine, set())
@@ -192,19 +194,19 @@ def supports_capability(engine: str, capability: str) -> bool:
 
 
 def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities) -> None:
-    """エンジンが capabilities の機能をサポートしているか検証する。
+    """Verify that the engine supports the features in capabilities.
 
-    _IGNORED_CAPABILITIES に列挙された attr は検証をスキップして受理する（noop）。
+    Attributes listed in _IGNORED_CAPABILITIES skip validation and are accepted (noop).
 
     Raises:
-        NotImplementedError: エンジンが対応していない機能が指定された場合
+        NotImplementedError: if a feature the engine does not support is specified
     """
     unsupported = _UNSUPPORTED_CAPABILITIES.get(engine, set())
     ignored = _IGNORED_CAPABILITIES.get(engine, set())
     if ignored:
         unsupported = unsupported - ignored
     for attr in unsupported:
-        # isolation 等のメタ capability は LLMCapabilities に無い（supports_capability 専用）
+        # Meta capabilities such as isolation are not on LLMCapabilities (supports_capability only)
         if not hasattr(capabilities, attr):
             continue
         val = getattr(capabilities, attr)
@@ -224,7 +226,7 @@ def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities
                     f"{engine} engine does not support {attr} != 'text' (got {val!r})"
                 )
         elif attr == "sandbox":
-            # "off" は truthy なため汎用 `elif val` では弾いてしまう。明示比較する。
+            # "off" is truthy, so the generic `elif val` would reject it. Compare explicitly.
             if val != "off":
                 raise NotImplementedError(
                     f"{engine} engine does not support {attr} != 'off' (got {val!r})"
@@ -237,7 +239,7 @@ def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities
 
 @dataclass
 class LLMResult:
-    """ワンショット LLM 呼び出しの結果。"""
+    """Result of a one-shot LLM call."""
     stdout: str
     stderr: str
     returncode: int
@@ -264,16 +266,16 @@ class LLMResult:
         *,
         engine: str | None = None,
     ) -> "LLMResult":
-        """output_format 契約を検証する。失敗時は LLMParseError を送出。
+        """Validate the output_format contract. Raises LLMParseError on failure.
 
-        returncode != 0 の場合は検証をスキップ（エラー出力を優先）。
-        stream=True かつ cursor の場合は assistant ターン再構成本文を優先し、
-        無ければ従来の stream result へフォールバックする。claude は JSONL の
-        最終 result を抽出して stdout を置換する。codex は生 JSONL を維持する。
+        Validation is skipped when returncode != 0 (error output takes precedence).
+        With stream=True on cursor, the reconstructed assistant-turn body is preferred,
+        falling back to the legacy stream result if absent. For claude, the final result
+        is extracted from the JSONL and replaces stdout. For codex, raw JSONL is kept.
         Returns:
-            self（チェーン呼び出し可能）
+            self (allows chaining)
         Raises:
-            LLMParseError: output_format == "json" かつ stdout が有効な JSON でない場合
+            LLMParseError: if output_format == "json" and stdout is not valid JSON
         """
         if not self.ok:
             return self
@@ -298,7 +300,7 @@ class LLMResult:
 
 @dataclass(frozen=True)
 class TextResult:
-    """call_text() の呼び出し結果。adapter でテキスト抽出済みのスナップショット。"""
+    """Result of call_text(). A snapshot with text already extracted by the adapter."""
     body: str
     success: bool
     raw: LLMResult
@@ -318,13 +320,13 @@ class TextResult:
 
 
 def extract_stream_result(stdout: str) -> str:
-    """stream-json JSONL から最終 result テキストを抽出（claude_json と共用）。"""
+    """Extract the final result text from stream-json JSONL (shared with claude_json)."""
     from ghdag.llm.adapters.claude_json import extract_stream_result as _impl
 
     return _impl(stdout)
 
 
-# 後方互換エイリアス（既存テスト・呼び出し元）
+# Backward-compatible alias (existing tests and callers)
 _extract_stream_result = extract_stream_result
 
 
@@ -400,26 +402,27 @@ def call(
     resume_session_id: str | None = None,
     isolation: bool | None = None,
 ) -> LLMResult:
-    """ワンショットで LLM を呼び出し、結果を返す。
+    """Call the LLM one-shot and return the result.
 
     Args:
-        prompt: プロンプト文字列
-        engine: エンジン名（デフォルト: "claude"）
-        model: モデル ID（None でエンジンデフォルト）
-        timeout: タイムアウト秒数（None で無制限）
+        prompt: prompt string
+        engine: engine name (default: "claude")
+        model: model ID (None for the engine default)
+        timeout: timeout in seconds (None for no limit)
         stdin_text: text passed on standard input. STDIN engines join it with prompt
             into a single stdin (stdin_text only when prompt is empty, prompt only when
             None, ``prompt + "\n\n" + stdin_text`` when both are non-empty)
-        cwd: サブプロセスの作業ディレクトリ（None で現行プロセス cwd）
-        capabilities: 能力制約値オブジェクト（デフォルト: TEXT_ONLY）
-        isolation: エンジン隔離。None のとき GHDAG_ENGINE_ISOLATION 環境変数で解決（既定 False）
+        cwd: subprocess working directory (None for the current process cwd)
+        capabilities: capability-constraint value object (default: TEXT_ONLY)
+        isolation: engine isolation. When None, resolved from the GHDAG_ENGINE_ISOLATION env var
+            (default False)
     Returns:
         LLMResult (missing binary: returncode=127; not executable: 126;
         timeout: returncode=124 with ``failure_class=FailureClass.TIMEOUT`` and
         the partial stdout / stderr captured before the process was killed)
     Raises:
-        EngineModelError: エンジン・モデルの検証失敗
-        NotImplementedError: エンジンが対応していない capabilities 機能
+        EngineModelError: engine/model validation failed
+        NotImplementedError: capabilities feature not supported by the engine
     """
     _validate_capabilities_for_engine(engine, capabilities)
     if resume_session_id:
@@ -457,7 +460,7 @@ def call(
         "timeout": timeout,
         "cwd": cwd,
     }
-    # codex: isolation=True かつ auth.json があるときだけ空 CODEX_HOME で起動（nexus #3174）
+    # codex: start with an empty CODEX_HOME only when isolation=True and auth.json exists (nexus #3174)
     if engine == "codex" and resolved_isolation:
         auth_path = Path(_CODEX_DAG_HOME) / "auth.json"
         if auth_path.exists():
@@ -519,10 +522,10 @@ def call_text(
     resume_session_id: str | None = None,
     isolation: bool | None = None,
 ) -> TextResult:
-    """ワンショットで LLM を呼び出し、adapter でテキスト抽出した TextResult を返す。
+    """Call the LLM one-shot and return a TextResult with text extracted by the adapter.
 
-    call() と同一シグネチャ。ドロップイン上位互換として利用できる。
-    adapter 出力が空の場合は raw.stdout にフォールバックする。
+    Same signature as call(). Usable as a drop-in, backward-compatible superset.
+    Falls back to raw.stdout when the adapter output is empty.
     """
     result = call(
         prompt,

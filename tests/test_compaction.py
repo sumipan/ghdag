@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -56,9 +57,12 @@ def test_policy_opt_in_disabled_by_default():
 
 
 def test_genshijin_prompt_is_machine_handoff_style():
-    # Japanese text intentionally kept for CJK processing test
-    assert "敬語" in GENSHIJIN_HANDOFF_PROMPT or "背景説明" in GENSHIJIN_HANDOFF_PROMPT
-    assert "facts" in GENSHIJIN_HANDOFF_PROMPT.lower() or "事実" in GENSHIJIN_HANDOFF_PROMPT
+    assert "honorific" in GENSHIJIN_HANDOFF_PROMPT or "background" in GENSHIJIN_HANDOFF_PROMPT
+    assert "facts" in GENSHIJIN_HANDOFF_PROMPT.lower()
+    for key in ("facts", "unresolved", "next", "files", "constraints"):
+        assert f'"{key}"' in GENSHIJIN_HANDOFF_PROMPT
+    assert "language of the conversation" in GENSHIJIN_HANDOFF_PROMPT
+    assert not re.search(r"[\u3000-\u30ff\u4e00-\u9fff\uff00-\uffef]", GENSHIJIN_HANDOFF_PROMPT)
     # Must not be a general output_style knob name
     assert "output_style" not in GENSHIJIN_HANDOFF_PROMPT
 

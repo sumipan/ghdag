@@ -1,8 +1,8 @@
-"""ghdag.llm._constants — エンジン・モデルのデフォルト値"""
+"""ghdag.llm._constants — default values for engines and models"""
 
 from __future__ import annotations
 
-# フォールバック用デフォルト値（YAML 設定ファイルが存在しない場合に使用）
+# Fallback defaults (used when no YAML config file exists)
 DEFAULT_ENGINE_MODELS: dict[str, list[str]] = {
     "claude": [
         "claude-opus-4-7",
@@ -14,8 +14,8 @@ DEFAULT_ENGINE_MODELS: dict[str, list[str]] = {
         "gemini-2.5-pro",
         "gemini-2.5-flash",
     ],
-    # cursor agent CLI (https://cursor.com)。`agent --model <id> -p <prompt>` で呼び出す。
-    # 利用可能モデルは `agent --list-models` で確認可能。代表的なものだけホワイトリスト化。
+    # cursor agent CLI (https://cursor.com). Invoked as `agent --model <id> -p <prompt>`.
+    # Available models can be listed with `agent --list-models`. Only representative ones are allowlisted.
     "cursor": [
         "auto",
         "composer-2",
@@ -27,13 +27,13 @@ DEFAULT_ENGINE_MODELS: dict[str, list[str]] = {
         "gpt-5.3-codex-high-fast",
         "gpt-5.4-medium-fast",
     ],
-    # shell エンジンは bash スクリプトを order_path から直接実行する。LLM 呼び出しは行わない。
+    # The shell engine runs the bash script at order_path directly. It does not call an LLM.
     "shell": [
         "bash",
     ],
-    # codex CLI (https://github.com/openai/codex) の許可モデル。
-    # ChatGPT アカウント認証時の実測値（2026-08-11 / codex-cli 0.147.0）。
-    # API キー認証では通る集合が変わる可能性がある。
+    # Allowed models for codex CLI (https://github.com/openai/codex).
+    # Measured with ChatGPT account auth (2026-08-11 / codex-cli 0.147.0).
+    # The accepted set may differ under API key auth.
     "codex": [
         "gpt-5.6-terra",
         "gpt-5.6-luna",

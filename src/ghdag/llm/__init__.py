@@ -1,4 +1,4 @@
-"""ghdag.llm — ワンショット LLM 呼び出しインタフェース"""
+"""ghdag.llm — one-shot LLM invocation interface"""
 
 from ghdag.llm import _config
 from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
