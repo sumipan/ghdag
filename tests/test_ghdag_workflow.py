@@ -1,4 +1,4 @@
-"""Tests for ghdag.workflow — TC-1 〜 TC-11 (Issue #79 extended schema)."""
+"""Tests for ghdag.workflow — TC-1 to TC-11 (Issue #79 extended schema)."""
 
 from __future__ import annotations
 

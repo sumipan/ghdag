@@ -1,4 +1,4 @@
-"""ghdag.workflow — Layer 2 ワークフローエンジン公開 API"""
+"""ghdag.workflow — Layer 2 workflow engine public API"""
 
 from ghdag.core.ports.forge import ForgePort
 from ghdag.forge import get_forge

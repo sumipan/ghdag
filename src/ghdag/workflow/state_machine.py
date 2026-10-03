@@ -21,10 +21,11 @@ def get_current_phase(
     labels: list[str],
     transitions: dict[str, list[str]],
 ) -> str | None:
-    """transitions 定義順で最も後方（最も進んだ）フェーズラベルを返す。
+    """Return the last (most advanced) phase label in transitions definition order.
 
-    labels に複数のフェーズラベルが含まれる場合、transitions の挿入順（パイプライン
-    進行順）で最も後ろにあるものを現在フェーズとする。ラベル配列の順序に依存しない。
+    When labels contain several phase labels, the one that comes last in the insertion
+    order of transitions (pipeline progression order) is the current phase. The order of
+    the label list does not matter.
     """
     label_set = set(labels)
     current = None
@@ -40,24 +41,24 @@ def validate_transition(
     transitions: dict[str, list[str]] | None = None,
     reset_label: str | None = None,
 ) -> tuple[bool, str]:
-    """(有効か, 理由) を返す。transitions=None の場合は (True, "バリデーションスキップ") を返す。"""
+    """Return (is_valid, reason). Returns (True, "validation skipped") when transitions is None."""
     if transitions is None:
-        return True, "バリデーションスキップ"
+        return True, "validation skipped"
 
     if reset_label is not None and target == reset_label:
-        return True, f"{reset_label} は任意の状態から有効"
+        return True, f"{reset_label} is valid from any state"
 
     current = get_current_phase(current_labels, transitions)
     if current is None:
-        return False, "フェーズラベルがない — 遷移元を特定できない"
+        return False, "no phase label: cannot determine the source state"
 
     allowed = transitions.get(current, [])
     if target in allowed:
         return True, f"{current} -> {target}"
 
     return False, (
-        f"不正遷移: {current} -> {target} は許可されていない。"
-        f"許可された遷移先: {allowed}"
+        f"invalid transition: {current} -> {target} is not allowed. "
+        f"allowed targets: {allowed}"
     )
 
 
@@ -72,7 +73,7 @@ def transition(
     transitions: dict[str, list[str]],
     reset_label: str | None = None,
 ) -> None:
-    """バリデーション → ラベル付替 → 検証 の 3 ステップで遷移する。失敗時は ValueError。"""
+    """Transition in 3 steps: validate -> relabel -> verify. Raises ValueError on failure."""
     client = get_forge()
     current_labels = _label_names(client, issue_number)
 
@@ -95,8 +96,8 @@ def transition(
     new_labels = _label_names(client, issue_number)
     if target not in new_labels:
         raise ValueError(
-            f"#{issue_number}: ラベル付与後に {target} が確認できない。"
-            f"現在のラベル: {new_labels}"
+            f"#{issue_number}: {target} not found after adding the label. "
+            f"current labels: {new_labels}"
         )
 
 
@@ -145,7 +146,7 @@ def main() -> int:
             config.transitions,
             config.reset_label,
         )
-        print(f"#{args.issue_number}: {args.target_label} に遷移しました")
+        print(f"#{args.issue_number}: transitioned to {args.target_label}")
         return 0
     except (ValueError, RuntimeError) as e:
         print(str(e), file=sys.stderr)

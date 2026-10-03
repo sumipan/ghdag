@@ -53,7 +53,8 @@ def test_undefined_transition_rejected():
         ["test:a"], "test:c", transitions={"test:a": ["test:b"]}
     )
     assert ok is False
-    assert msg
+    assert msg.startswith("invalid transition: test:a -> test:c is not allowed.")
+    assert "allowed targets: ['test:b']" in msg
 
 
 def test_no_phase_label_rejected():
@@ -61,8 +62,7 @@ def test_no_phase_label_rejected():
         [], "test:b", transitions={"test:a": ["test:b"]}
     )
     assert ok is False
-    # Japanese text intentionally kept for CJK processing test
-    assert "遷移元を特定できない" in msg
+    assert msg == "no phase label: cannot determine the source state"
 
 
 # --- validate_transition transitions=None ---
@@ -70,8 +70,7 @@ def test_no_phase_label_rejected():
 def test_transitions_none_skips_validation():
     ok, msg = validate_transition(["test:a"], "test:b", transitions=None)
     assert ok is True
-    # Japanese text intentionally kept for CJK processing test
-    assert msg == "バリデーションスキップ"
+    assert msg == "validation skipped"
 
 
 # --- reset_label ---
