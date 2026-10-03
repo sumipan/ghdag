@@ -301,7 +301,7 @@ When `timeout` is set, `call()` catches `subprocess.TimeoutExpired` internally a
 | `ghdag.llm` | `DEFAULT_ENGINE_MODELS`, `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineModelError`, `EngineSpec`, `InputMode`, `PromptFlag`, `LLMCapabilities`, `LLMParseError`, `LLMResult`, `ManagedResult`, `TextResult`, `SessionRecord`, `SessionStore`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `build_llm_cmd`, `call`, `call_managed`, `call_text`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model` (plus the private submodule `_config`) |
 | `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
 | `ghdag.metrics` | `MetricsRecorder`, `TaskMetrics` |
-| `ghdag.pipeline` | `AuditHooks`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `resolve_models`, `status_rank`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `task_status`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `STATE_EMPTY`, `STATE_DEFERRED`, `STATE_ENGINE_ERROR`, `STATE_FAIL`, `STATE_OK`, `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_REJECTED`, `STATE_RUNNING`, `STATE_UNKNOWN_DONE`, `make_order_record`, `submit_order` |
+| `ghdag.pipeline` | `AuditHooks`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `resolve_models`, `status_rank`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `task_status`, `state_label`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `STATE_EMPTY`, `STATE_DEFERRED`, `STATE_ENGINE_ERROR`, `STATE_FAIL`, `STATE_OK`, `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_REJECTED`, `STATE_RUNNING`, `STATE_UNKNOWN_DONE`, `make_order_record`, `submit_order` |
 | `ghdag.tool` | `FallbackEntry`, `TOOL_EXIT_CODES`, `ToolDef`, `ToolRegistry`, `write_tool_fallback_audit` |
 | `ghdag.vcs` | `CommitResult`, `ConflictError`, `GitSink`, `LocalGitSink`, `NullSink`, `OwnershipError`, `get_sink`, `git_enabled` |
 | `ghdag.workflow` | `WorkflowConfig`, `TriggerConfig`, `HandlerConfig`, `StepConfig`, `OnTriggerConfig`, `DispatchResult`, `load_workflows`, `WorkflowDispatcher`, `GitHubIssueClient`, `create_github_client`, `ForgePort`, `get_forge` |
@@ -317,7 +317,8 @@ Modules that declare their own `__all__` (private `_` names omitted). Modules ma
 | `ghdag.status` | `IssueStatus`, `StepStatus`, `RunningTask`, `issue_status`, `running_tasks` |
 | `ghdag.github_cli` | `GitHubClient`, `DEFAULT_REPO`, `API_BASE`, `GRAPHQL_URL`, `get_forge` |
 | `ghdag.audit.span` | `EVENT_TYPE_E2E_COMPLETED`, `EVENT_TYPE_E2E_FAILED`, `EVENT_TYPE_LATENCY_SPAN`, `LATENCY_SPAN_JSONL`, `emit_span`, `make_span_id` |
-| `ghdag.config.env` | `github_token`, `github_repositories_raw`, `ghdag_audit_path`, `ghdag_token_warn_threshold`, `ghdag_safe_default_permission`, `ghdag_llm_models`, `latency_span_path`, `session_compaction_enabled`, `enable_git`, `ghdag_vcs_config`, `ghdag_state_dir`, `state_dir` |
+| `ghdag.config.env` | `github_token`, `github_repositories_raw`, `ghdag_audit_path`, `ghdag_token_warn_threshold`, `ghdag_safe_default_permission`, `ghdag_llm_models`, `latency_span_path`, `session_compaction_enabled`, `enable_git`, `ghdag_vcs_config`, `ghdag_state_dir`, `state_dir`, `ghdag_language_pack` |
+| `ghdag.config.language` | `STATE_IDS`, `UI_KEYS`, `LanguagePack`, `EN`, `load_language_pack`, `get_language_pack` |
 | `ghdag.core.command` | `AdapterNotFoundError`, `EngineAdapter`, `build_llm_cmd`, `get_adapter`, `register_adapter`, `render_exec_command` |
 | `ghdag.core.container` | `CONTAINER_WORKDIR`, `container_prefix` |
 | `ghdag.dag.hooks` | `DagHooks`, `DefaultHooks` |
@@ -340,7 +341,7 @@ Modules that declare their own `__all__` (private `_` names omitted). Modules ma
 | `ghdag.pipeline.order` | `OrderBuilder`, `InlineOrderBuilder`, `TemplateOrderBuilder`, `TemplateVariableError` |
 | `ghdag.pipeline.result` (shim) | `QueueTask`, `QueueTaskStore` |
 | `ghdag.ui.dashboard` | `aggregate_task_status`, `aggregate_token_usage`, `aggregate_cb_firing`, `resolve_audit_path` |
-| `ghdag.ui.monitor` | `STATE_*` constants, `read_done_content`, `interpret_done`, `dep_succeeded`, `label_for_done`, `task_status`, `task_state`, `Row`, `MonitorTask`, `build_rows`, `filter_rows`, `relayout_tree_for_visible_rows`, `apply_default_monitor_filters` |
+| `ghdag.ui.monitor` | `STATE_*` constants, `read_done_content`, `interpret_done`, `dep_succeeded`, `label_for_done`, `task_status`, `task_state`, `Row` (`state_id`: state identifier; `state`: its language-pack label), `MonitorTask`, `build_rows`, `filter_rows`, `relayout_tree_for_visible_rows`, `apply_default_monitor_filters` |
 | `ghdag.vcs.factory` | `get_sink`, `git_enabled` |
 | `ghdag.vcs.local` | `LocalGitSink` |
 | `ghdag.vcs.sink` | `CommitResult`, `ConflictError`, `GitSink`, `NullSink`, `OwnershipError` |
@@ -546,6 +547,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `cli/commands/watch.py` | `ghdag watch` |
 | `config/__init__.py` | Exports `env` |
 | `config/env.py` | Central environment variable accessors and `state_dir` resolution |
+| `config/language.py` | Language packs (`EN`, `GHDAG_LANGUAGE_PACK`) for state labels and UI strings |
 | `core/__init__.py` | Shared cross-tower primitives |
 | `core/capabilities.py` | `LLMCapabilities` and presets |
 | `core/command.py` | Engine command-line construction (`render_exec_command`, `build_llm_cmd`) and engine adapters (`AdapterNotFoundError`) |
@@ -630,7 +632,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `pipeline/order.py` | Template order builders (`TemplateVariableError`) |
 | `pipeline/result.py` | Shim for `QueueTask` / `QueueTaskStore` |
 | `pipeline/state.py` | `PipelineState` |
-| `pipeline/status.py` | Human-readable task status (`task_status`, `STATE_*`) |
+| `pipeline/status.py` | Task state identifiers (`task_status`, `STATE_*`) and display labels (`state_label`) |
 | `pipeline/submit.py` | `make_order_record`, `submit_order` |
 | `pipeline/wait.py` | `wait_for_result` done-marker polling |
 | `tool/__init__.py` | Tool definition API |
@@ -793,6 +795,50 @@ sinks:
 
 Managed by `QuotaGate` and `ghdag quota`. Top-level keys: `engines` (per engine: `status`, `observed_at`, `resume_at`, `reason`, `override_until`), `deferred_tasks`, `draining_engines`, `running_tasks`. An engine is unavailable while it is draining, reported `paused`, or marked `paused` in the optional brake file (`QuotaGate(brake_state_path=...)`, same `engines.<name>.status` shape). `ghdag quota status` adds per-engine `queued` / `deferred` / `running` / `idle` counts.
 
+### Language pack (`GHDAG_LANGUAGE_PACK`)
+
+State labels and Web UI strings come from a language pack. ghdag bundles only English (`ghdag.config.language.EN`); a host can replace every field by pointing `GHDAG_LANGUAGE_PACK` at a YAML file. The pack is loaded once per process (`get_language_pack()`, cached). Both sections must list exactly the keys below with non-empty string values; a missing file, invalid YAML, missing keys or unknown keys raise `GhdagError`. CLI, log and exception messages are not part of the pack.
+
+```yaml
+state_labels:
+  pending_deps: "Pending (waiting on deps)"
+  pending_run: "Pending (ready)"
+  running: "Running"
+  deferred: "Deferred"
+  ok: "Done (success)"
+  fail: "Done (failed)"
+  rejected: "Done (REJECTED)"
+  empty: "Done (EMPTY_RESULT)"
+  engine_error: "Done (ENGINE_ERROR)"
+  unknown: "Done (other)"
+ui:
+  page_size_option: "{n} rows"
+  tab_tasks: "Tasks"
+  tab_bursts: "Bursts"
+  col_time_tree: "Time / Tree"
+  col_state: "State"
+  col_engine_model: "Engine / Model"
+  col_label: "Label"
+  empty_tasks: "No tasks"
+  col_count: "Count"
+  col_last_seen: "Last seen"
+  empty_bursts: "No burst data"
+  confirm_stop: "Force-stop the agent process?"
+```
+
+| Section | Keys | Meaning |
+|---|---|---|
+| `state_labels` (10) | `pending_deps`, `pending_run`, `running`, `deferred`, `ok`, `fail`, `rejected`, `empty`, `engine_error`, `unknown` | Display label per state identifier (`STATE_IDS`, the values of `ghdag.pipeline.STATE_*`); read via `ghdag.pipeline.state_label(state_id, pack=None)`, which returns unknown identifiers unchanged |
+| `ui` (12) | `page_size_option` (`{n}` is the row count), `tab_tasks`, `tab_bursts`, `col_time_tree`, `col_state`, `col_engine_model`, `col_label`, `empty_tasks`, `col_count`, `col_last_seen`, `empty_bursts`, `confirm_stop` | Web UI strings (`UI_KEYS`), served by `/api/config` |
+
+### Web UI API (`ghdag ui`)
+
+| Endpoint | Response |
+|---|---|
+| `GET /api/rows` | JSON list of rows (newest `max_visible`, default 30). Each row has `uuid`, `state_id` (state identifier), `state` (language-pack label for `state_id`), `cmd_preview`, `tree_ts`, `engine_model`, `order_path`, `result_path`, and `progress` when `jobs/events/<uuid>.jsonl` has one. `?state=<name>` (repeatable or comma-separated; identifiers or aliases such as `success` / `failed` / `empty_result`, case-insensitive) keeps only matching rows; `?max_visible=N` overrides the row cap |
+| `GET /api/stream` | SSE stream of the same rows (unfiltered), sent when they change |
+| `GET /api/config` | `{"github_base_url": str \| null, "i18n": {"ui": {...12 keys}, "state_labels": {...10 keys}}}` from the active language pack |
+
 ### Environment variables
 
 Every variable ghdag reads (`os.environ` / `os.getenv` in `src/ghdag/`). Most reads go through `ghdag.config.env`.
@@ -818,6 +864,7 @@ Every variable ghdag reads (`os.environ` / `os.getenv` in `src/ghdag/`). Most re
 | `GHDAG_EXEC_JSONL` | `jobs/exec.jsonl` | `cli.commands.status` | Default `--exec-jsonl` for `ghdag status` |
 | `GHDAG_ETAG_CACHE` | unset (in-memory only) | `github_client.GitHubClient` | Path of the persistent ETag cache file |
 | `GHDAG_RATE_LIMIT_MAX_WAIT_SEC` | `900` | `github_client.GitHubClient` | Maximum rate-limit sleep before raising `RateLimitError`; non-integer values fall back to `900` |
+| `GHDAG_LANGUAGE_PACK` | unset (bundled `EN`) | `config.env.ghdag_language_pack` (`config.language.get_language_pack`) | Path to a [language pack](#language-pack-ghdag_language_pack) YAML for state labels and UI strings; invalid packs raise `GhdagError` (`ghdag ui` fails at startup) |
 
 Variables ghdag sets for child processes (not configuration):
 

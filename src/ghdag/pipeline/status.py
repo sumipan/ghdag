@@ -1,28 +1,46 @@
-"""pipeline/status.py — タスク状態の日本語表示（判定コアは ghdag.status）"""
+"""pipeline/status.py — task state identifiers and display labels.
+
+The status core lives in ``ghdag.status``. State values are language-neutral
+identifiers (see :data:`ghdag.config.language.STATE_IDS`); use
+:func:`state_label` to get the display string from the active language pack.
+"""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
 
+from ghdag.config.language import LanguagePack, get_language_pack
 from ghdag.io.done import dep_succeeded, interpret_done
 from ghdag.io.done import read_done_content as read_done_content  # re-export for shim compat
 from ghdag.status import _step_status_core
 
-# 状態定数
-STATE_PENDING_DEPS = "待機（依存未充足）"
-STATE_PENDING_RUN  = "待機（実行可能）"
-STATE_RUNNING      = "実行中"
-STATE_DEFERRED     = "保留（DEFERRED）"
-STATE_OK           = "完了（成功）"
-STATE_FAIL         = "完了（失敗）"
-STATE_REJECTED     = "完了（REJECTED）"
-STATE_EMPTY        = "完了（EMPTY_RESULT）"
-STATE_ENGINE_ERROR = "完了（ENGINE_ERROR）"
-STATE_UNKNOWN_DONE = "完了（その他）"
+# State identifiers (keys of LanguagePack.state_labels)
+STATE_PENDING_DEPS = "pending_deps"
+STATE_PENDING_RUN  = "pending_run"
+STATE_RUNNING      = "running"
+STATE_DEFERRED     = "deferred"
+STATE_OK           = "ok"
+STATE_FAIL         = "fail"
+STATE_REJECTED     = "rejected"
+STATE_EMPTY        = "empty"
+STATE_ENGINE_ERROR = "engine_error"
+STATE_UNKNOWN_DONE = "unknown"
+
+
+def state_label(state_id: str, pack: Optional[LanguagePack] = None) -> str:
+    """Return the display label for *state_id* from *pack*.
+
+    *pack* defaults to :func:`ghdag.config.language.get_language_pack`.
+    Unknown identifiers are returned unchanged.
+    """
+    if pack is None:
+        pack = get_language_pack()
+    return pack.state_labels.get(state_id, state_id)
 
 
 def label_for_done(raw: Optional[str]) -> Optional[str]:
+    """Map raw done-marker content to a state identifier (``None`` if absent)."""
     if raw is None:
         return None
     kind = interpret_done(raw)
@@ -39,7 +57,7 @@ def label_for_done(raw: Optional[str]) -> Optional[str]:
     return STATE_UNKNOWN_DONE
 
 
-_CORE_TO_JP = {
+_CORE_TO_STATE_ID = {
     "success": STATE_OK,
     "failed_exit": STATE_FAIL,
     "rejected": STATE_REJECTED,
@@ -62,9 +80,10 @@ def task_status(
     running_uuids: set[str] | None = None,
     deferred_uuids: set[str] | None = None,
 ) -> str:
-    """タスクの現在状態を判定して日本語状態定数を返す。
+    """Determine the task's current state and return its state identifier.
 
-    判定コアは ``ghdag.status._step_status_core``（UI / issue_status と共有）。
+    The status core is ``ghdag.status._step_status_core`` (shared with the UI
+    and issue_status). Use :func:`state_label` for the display string.
     """
     core = _step_status_core(
         uuid,
@@ -73,8 +92,8 @@ def task_status(
         running_uuids=running_uuids,
         deferred_uuids=deferred_uuids,
     )
-    if core in _CORE_TO_JP:
-        return _CORE_TO_JP[core]
+    if core in _CORE_TO_STATE_ID:
+        return _CORE_TO_STATE_ID[core]
     if core == "pending":
         # Distinguish ready-to-run vs waiting on incomplete (non-failed) deps.
         if task_depends:

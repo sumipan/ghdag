@@ -1,4 +1,4 @@
-"""ghdag.pipeline — Layer 1 パイプライン公開 API"""
+"""ghdag.pipeline — Layer 1 pipeline public API."""
 
 from ghdag.io.audit_query import get_latest_status, read_task_exit_events
 from ghdag.pipeline.config import (
@@ -21,6 +21,7 @@ from ghdag.pipeline.status import (
     STATE_REJECTED,
     STATE_RUNNING,
     STATE_UNKNOWN_DONE,
+    state_label,
     task_status,
 )
 from ghdag.pipeline.submit import make_order_record, submit_order
@@ -40,6 +41,7 @@ __all__ = [
     "LLMPipelineAPI",
     "SubmittedStep",
     "task_status",
+    "state_label",
     "wait_for_result",
     "read_task_exit_events",
     "get_latest_status",
