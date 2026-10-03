@@ -9,7 +9,7 @@ import json
 import re
 import subprocess
 from collections import defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional, cast
@@ -28,6 +28,7 @@ from ghdag.pipeline.status import (
     STATE_UNKNOWN_DONE,
     interpret_done,
     label_for_done,
+    state_label,
     task_status,
 )
 
@@ -43,6 +44,7 @@ __all__ = [
     "relayout_tree_for_visible_rows", "apply_default_monitor_filters",
 ]
 
+# Filter name (case-insensitive) -> state identifier.
 STATE_ALIASES = {
     "pending_deps": STATE_PENDING_DEPS,
     "pending_run": STATE_PENDING_RUN,
@@ -72,6 +74,8 @@ class MonitorTask:
 
 @dataclass
 class Row:
+    """One display row. ``state`` is the language-pack label for ``state_id``."""
+
     uuid: str
     state: str
     cmd_preview: str
@@ -79,6 +83,7 @@ class Row:
     engine_model: str = ""
     order_path: str = ""
     result_path: str = ""
+    state_id: str = ""
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -141,7 +146,7 @@ def task_state(
     running_uuids: Optional[set[str]] = None,
     deferred_uuids: Optional[set[str]] = None,
 ) -> str:
-    """Return Japanese UI state via ``pipeline.status.task_status``.
+    """Return the state identifier via ``pipeline.status.task_status``.
 
     Status judgment is centralized in ``ghdag.status._step_status_core``
     (shared with ``issue_status``); this wrapper only forwards arguments.
@@ -236,7 +241,7 @@ def extract_result_path(cmd: str) -> str:
 
 
 def _normalize_result_path(result_path: str, repo_root: Path) -> str:
-    """絶対パスの result_path をリポジトリルートからの相対パスに正規化する。"""
+    """Normalize an absolute result_path to a path relative to the repo root."""
     if not result_path or not result_path.startswith("/"):
         return result_path
     try:
@@ -266,10 +271,10 @@ _WORKFLOW_KEY_RE = re.compile(r"^([^:]+):([^:]+):(\d+)$")
 
 
 def cmd_preview(cmd: str, n: int = 48, repo_root: Optional[Path] = None, *, idempotency_key: Optional[str] = "") -> str:
-    # 防御: idempotency_key は他の subsystem (submit/audit/hooks) では
-    # `str | None = None` 仕様で扱われるため、API 利用者が直接 None を
-    # 渡してくる可能性がある。`_WORKFLOW_KEY_RE.match(None)` で
-    # TypeError にならないよう空文字に正規化する。
+    # Defensive: other subsystems (submit/audit/hooks) type idempotency_key as
+    # `str | None = None`, so API callers may pass None directly. Normalize to
+    # an empty string so `_WORKFLOW_KEY_RE.match(None)` does not raise
+    # TypeError.
     if not idempotency_key:
         idempotency_key = ""
     m = _WORKFLOW_KEY_RE.match(idempotency_key)
@@ -335,18 +340,7 @@ def _rows_with_tree_layout(
         else:
             conn = "\u2514\u2500\u2500 " if is_last_child else "\u251c\u2500\u2500 "
             left = base_prefix + conn + ts
-        r = pending[u]
-        rows.append(
-            Row(
-                uuid=r.uuid,
-                state=r.state,
-                cmd_preview=r.cmd_preview,
-                tree_ts=left,
-                engine_model=r.engine_model,
-                order_path=r.order_path,
-                result_path=r.result_path,
-            )
-        )
+        rows.append(replace(pending[u], tree_ts=left))
         ch = children.get(u, [])
         for i, c in enumerate(ch):
             last = i == len(ch) - 1
@@ -360,7 +354,7 @@ def _rows_with_tree_layout(
 
 
 def _parse_exec_jsonl(path: str) -> tuple[dict[str, MonitorTask], list[str]]:
-    """JSONL 形式の exec ファイルをパースして MonitorTask を返す。"""
+    """Parse a JSONL exec file into MonitorTask entries."""
     from ghdag.io import exec_jsonl
 
     tasks: dict[str, MonitorTask] = {}
@@ -386,12 +380,11 @@ def _parse_exec_jsonl(path: str) -> tuple[dict[str, MonitorTask], list[str]]:
         depends = set(depends_raw) if isinstance(depends_raw, list) else set()
         retry = int(data.get("retry", 0))
         result_path = data.get("result_path") or ""
-        # `data.get(k, default)` の default は「キー欠落」時のみ適用される。
-        # 値が JSON null (= Python None) の場合は素通しで None が返るため、
-        # `or ""` で空文字に正規化しないと下流の `_WORKFLOW_KEY_RE.match(None)`
-        # で TypeError になる。exec.jsonl には submit/audit/hooks 経路の
-        # `idempotency_key: str | None = None` 仕様により `"idempotency_key": null`
-        # が混入する。
+        # The default of `data.get(k, default)` only applies when the key is
+        # missing. A JSON null (Python None) value passes through, so normalize
+        # with `or ""`; otherwise the downstream `_WORKFLOW_KEY_RE.match(None)`
+        # raises TypeError. exec.jsonl can contain `"idempotency_key": null`
+        # because submit/audit/hooks type it as `str | None = None`.
         idempotency_key = data.get("idempotency_key") or ""
         if uuid not in tasks:
             file_order.append(uuid)
@@ -408,12 +401,12 @@ def _parse_exec_jsonl(path: str) -> tuple[dict[str, MonitorTask], list[str]]:
 
 
 def _detect_exec_path(repo_root: Path) -> Path:
-    """exec.jsonl のパスを返す。"""
+    """Return the exec.jsonl path."""
     return repo_root / "jobs" / "exec.jsonl"
 
 
 def _detect_exec_done_dir(repo_root: Path) -> Path:
-    """完了マーカーディレクトリのパスを返す（jobs/done/）。"""
+    """Return the done-marker directory path (jobs/done/)."""
     return repo_root / "jobs" / "done"
 
 
@@ -455,7 +448,8 @@ def build_rows(
         st = task_state(uuid, task.depends, exec_done_dir, run_set, deferred_set)
         pending[uuid] = Row(
             uuid=uuid,
-            state=st,
+            state=state_label(st),
+            state_id=st,
             cmd_preview=cmd_preview(
                 task.command, n=cmd_preview_len, repo_root=repo_root, idempotency_key=task.idempotency_key,
             ),
@@ -522,6 +516,11 @@ def filter_rows(
     uuid_prefix: Optional[str],
     states: Optional[set[str]],
 ) -> list[Row]:
+    """Filter rows by uuid prefix and by state.
+
+    *states* holds identifiers or :data:`STATE_ALIASES` names (case-insensitive)
+    and is matched against ``Row.state_id``.
+    """
     out = rows
     if uuid_prefix:
         p = uuid_prefix.lower()
@@ -530,5 +529,5 @@ def filter_rows(
         resolved = set()
         for s in states:
             resolved.add(STATE_ALIASES.get(s.lower(), s))
-        out = [r for r in out if r.state in resolved]
+        out = [r for r in out if r.state_id in resolved]
     return out

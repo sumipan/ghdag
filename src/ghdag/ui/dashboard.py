@@ -69,7 +69,7 @@ def aggregate_task_status(
     *,
     since_sec: float = _DEFAULT_SINCE_SEC,
 ) -> dict:
-    """指定期間内のタスク完了イベントを status / failure_class 別に集計する。"""
+    """Count task exit events in the period by status and by failure_class."""
     now = time.time()
     since_epoch = now - since_sec
     events = read_task_exit_events(audit_path, since=since_epoch)
@@ -104,7 +104,7 @@ def aggregate_token_usage(
     since_sec: float = _DEFAULT_SINCE_SEC,
     warn_threshold: int | None = None,
 ) -> dict:
-    """correlation_id 単位のトークン消費を集計する。"""
+    """Aggregate token usage per correlation_id."""
     now = time.time()
     since_epoch = now - since_sec
     events = read_task_exit_events(audit_path, since=since_epoch)
@@ -147,7 +147,7 @@ def aggregate_cb_firing(
     since_sec: float = _DEFAULT_SINCE_SEC,
     window_minutes: int = _DEFAULT_WINDOW_MINUTES,
 ) -> dict:
-    """failure_class 別の失敗頻度を時間窓で集計する。"""
+    """Count failures per failure_class in fixed time windows."""
     now = time.time()
     period_start = now - since_sec
     window_sec = window_minutes * 60

@@ -13,6 +13,7 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, urlparse
 
+from ghdag.config.language import LanguagePack, get_language_pack
 from ghdag.io.audit_query import get_correlation_top_n
 
 from .dashboard import (
@@ -24,6 +25,7 @@ from .dashboard import (
 from .monitor import (
     apply_default_monitor_filters,
     build_rows,
+    filter_rows,
     relayout_tree_for_visible_rows,
 )
 
@@ -71,7 +73,7 @@ _ASSISTANT_TEXT_PREVIEW = 200
 
 
 def _progress_from_event(event: dict) -> dict:
-    """SSE 向けに tool 名・対象パス・assistant テキスト先頭を抽出する。"""
+    """Extract tool name, target path and leading assistant text for SSE."""
     out: dict = {}
     event_type = event.get("type")
     if event_type == "assistant":
@@ -107,7 +109,7 @@ def _progress_from_event(event: dict) -> dict:
 
 
 def _latest_progress(repo_root: Path, uuid: str) -> dict | None:
-    """jobs/events/<uuid>.jsonl の最新の意味ある進捗を返す。"""
+    """Return the latest meaningful progress from jobs/events/<uuid>.jsonl."""
     path = repo_root / "jobs" / "events" / f"{uuid}.jsonl"
     if not path.is_file():
         return None
@@ -132,8 +134,14 @@ def _latest_progress(repo_root: Path, uuid: str) -> dict | None:
     return last
 
 
-def _build_snapshot(repo_root: Path, max_visible: int = 30) -> list[dict]:
+def _build_snapshot(
+    repo_root: Path,
+    max_visible: int = 30,
+    states: set[str] | None = None,
+) -> list[dict]:
     rows, tasks, file_order = build_rows(repo_root)
+    if states:
+        rows = filter_rows(rows, None, states)
     if not rows:
         return []
     rows, _ = apply_default_monitor_filters(
@@ -170,6 +178,7 @@ class _Handler(BaseHTTPRequestHandler):
     poll_interval: float
     max_visible: int
     github_base_url: str | None
+    language_pack: LanguagePack | None = None
 
     def log_message(self, format, *args):
         logger.debug(format, *args)
@@ -191,6 +200,17 @@ class _Handler(BaseHTTPRequestHandler):
             except ValueError:
                 pass
         return self.max_visible
+
+    def _parse_states(self) -> set[str] | None:
+        """Parse ``?state=`` (repeatable, comma-separated) into filter names."""
+        qs = parse_qs(urlparse(self.path).query)
+        states = {
+            s.strip()
+            for v in qs.get("state", [])
+            for s in v.split(",")
+            if s.strip()
+        }
+        return states or None
 
     def _parse_query_float(self, name: str, default: float) -> float:
         qs = parse_qs(urlparse(self.path).query)
@@ -311,7 +331,14 @@ class _Handler(BaseHTTPRequestHandler):
             self._send_json_response(404, {"ok": False, "error": err})
 
     def _serve_config(self):
-        data = {"github_base_url": self.github_base_url}
+        pack = self.language_pack or get_language_pack()
+        data = {
+            "github_base_url": self.github_base_url,
+            "i18n": {
+                "ui": dict(pack.ui),
+                "state_labels": dict(pack.state_labels),
+            },
+        }
         self._send_json_response(200, data)
 
     def _serve_dashboard_status(self):
@@ -359,7 +386,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _serve_json(self):
-        data = _build_snapshot(self.repo_root, self._parse_max_visible())
+        data = _build_snapshot(
+            self.repo_root, self._parse_max_visible(), self._parse_states(),
+        )
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -399,6 +428,9 @@ def run_server(
     poll_interval: float = 3.0,
     max_visible: int = 30,
 ) -> None:
+    # Load the language pack once so a bad GHDAG_LANGUAGE_PACK fails at startup
+    # (GhdagError) instead of on the first request.
+    _Handler.language_pack = get_language_pack()
     _Handler.repo_root = repo_root
     _Handler.poll_interval = poll_interval
     _Handler.max_visible = max_visible
