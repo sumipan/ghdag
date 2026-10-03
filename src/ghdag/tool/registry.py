@@ -16,14 +16,15 @@ _SKIP_FILES = frozenset({"__init__.py"})
 class ToolRegistry:
     @staticmethod
     def discover(path: Path) -> dict[str, ToolDef]:
-        """指定ディレクトリを walk し、.py ファイルから ToolDef を収集する。
+        """Walk the given directory and collect ToolDef instances from .py files.
 
-        各 .py ファイルはモジュールレベルの `tool` 変数に ToolDef インスタンスを
-        export する規約。importlib.util で動的インポートし tool 変数を取得する。
+        By convention, each .py file exports a ToolDef instance via a module-level
+        `tool` variable. Modules are imported dynamically with importlib.util and
+        the `tool` variable is read.
 
         Raises:
-            FileNotFoundError: path が存在しない場合
-            ToolRegistryError: ファイル名規約違反または同名 Tool の多重定義
+            FileNotFoundError: If path does not exist.
+            ToolRegistryError: On a file naming violation or duplicate Tool names.
         """
         if not path.exists():
             raise FileNotFoundError(f"Directory not found: {path}")

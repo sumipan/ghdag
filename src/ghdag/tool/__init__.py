@@ -1,4 +1,4 @@
-"""ghdag.tool — Tool 定義スキーマとレジストリ"""
+"""ghdag.tool — Tool definition schema and registry"""
 
 from ghdag.tool.audit import write_tool_fallback_audit
 from ghdag.tool.registry import ToolRegistry

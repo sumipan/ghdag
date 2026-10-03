@@ -1,4 +1,4 @@
-"""ForgePort Protocol — Issue / PR / milestone / runner 操作の抽象 I/F."""
+"""ForgePort Protocol — abstract interface for Issue / PR / milestone / runner operations."""
 
 from __future__ import annotations
 
@@ -7,10 +7,11 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class ForgePort(Protocol):
-    """Forge（Issue / PR / label / milestone / Actions）操作の抽象インタフェース。
+    """Abstract interface for forge operations (Issue / PR / label / milestone / Actions).
 
-    メソッド名は GitHubClient の primary 名に合わせる。
-    既存 GitHubIssuePort（get_issue / add_comment 等）は互換のため別途維持する。
+    Method names follow the primary names of GitHubClient.
+    The existing GitHubIssuePort (get_issue / add_comment, etc.) is kept separately
+    for compatibility.
     """
 
     @property
