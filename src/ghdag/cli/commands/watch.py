@@ -1,4 +1,4 @@
-"""ghdag watch コマンド。"""
+"""ghdag watch command."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from ghdag.config.env import state_dir as resolve_state_dir
 
 
 def cmd_watch(args) -> None:
-    """WorkflowDispatcher を構築し run() を呼ぶ薄いラッパー。"""
+    """Thin wrapper that builds a WorkflowDispatcher and calls run()."""
     from ghdag.github_client import create_github_clients
     from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
     from ghdag.pipeline.order import OrderBuilder, TemplateOrderBuilder
