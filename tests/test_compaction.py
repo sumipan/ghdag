@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -62,7 +61,8 @@ def test_genshijin_prompt_is_machine_handoff_style():
     for key in ("facts", "unresolved", "next", "files", "constraints"):
         assert f'"{key}"' in GENSHIJIN_HANDOFF_PROMPT
     assert "language of the conversation" in GENSHIJIN_HANDOFF_PROMPT
-    assert not re.search(r"[\u3000-\u30ff\u4e00-\u9fff\uff00-\uffef]", GENSHIJIN_HANDOFF_PROMPT)
+    cjk_ranges = ((0x3000, 0x30FF), (0x4E00, 0x9FFF), (0xFF00, 0xFFEF))
+    assert not any(lo <= ord(c) <= hi for c in GENSHIJIN_HANDOFF_PROMPT for lo, hi in cjk_ranges)
     # Must not be a general output_style knob name
     assert "output_style" not in GENSHIJIN_HANDOFF_PROMPT
 
