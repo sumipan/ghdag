@@ -1,4 +1,4 @@
-"""workflow/schema.py — WorkflowConfig dataclass, YAML → dataclass 変換"""
+"""workflow/schema.py — WorkflowConfig dataclass, YAML → dataclass conversion"""
 
 from __future__ import annotations
 
@@ -7,35 +7,35 @@ from dataclasses import dataclass, field
 
 @dataclass
 class StepConfig:
-    template: str           # order テンプレートファイル名（拡張子なし）
-    model: str              # 実行モデル（必須）
-    id: str | None = None   # ステップ ID（depends 参照用）
-    engine: str = "claude"  # LLM エンジン名（"claude", "gemini", "cursor" 等）
-    depends: list[str] = field(default_factory=list)  # 依存ステップ ID リスト
-    resume_from: str | None = None  # 親ステップのセッション継続元 ID
-    permission: str | None = None  # capabilities プリセット名（None = エンジンデフォルト）
-    skill_name: str | None = None  # このステップが呼び出すスキル名
-    render: str = "frozen"  # "frozen"（enqueue 時展開）| "live"（実行時再展開 trampoline）
-    role: str | None = None  # QuotaGate ロール名（省略時はエンジン単位チェック）
+    template: str           # order template file name (without extension)
+    model: str              # execution model (required)
+    id: str | None = None   # step ID (referenced by depends)
+    engine: str = "claude"  # LLM engine name ("claude", "gemini", "cursor", etc.)
+    depends: list[str] = field(default_factory=list)  # list of dependency step IDs
+    resume_from: str | None = None  # ID of the parent step whose session is continued
+    permission: str | None = None  # capabilities preset name (None = engine default)
+    skill_name: str | None = None  # skill name invoked by this step
+    render: str = "frozen"  # "frozen" (expanded at enqueue) | "live" (re-expanded at run time via trampoline)
+    role: str | None = None  # QuotaGate role name (per-engine check when omitted)
 
 
 @dataclass
 class OnTriggerConfig:
-    issue_context: bool = False  # True: Issue body + comments を design.md に書き出し
+    issue_context: bool = False  # True: write Issue body + comments to design.md
 
 
 @dataclass
 class HandlerConfig:
     steps: list[StepConfig]
     on_trigger: OnTriggerConfig | None = None
-    type: str | None = None  # "reset" 等の特殊ハンドラー種別
-    context_hook: str | None = None  # context 生成カスタムスクリプト
+    type: str | None = None  # special handler kind such as "reset"
+    context_hook: str | None = None  # custom script for context generation
 
 
 @dataclass
 class TriggerConfig:
-    label: str     # マッチするラベル（例: "pipeline:draft-ready"）
-    handler: str   # ハンドラー名（handlers の key）
+    label: str     # label to match (e.g. "pipeline:draft-ready")
+    handler: str   # handler name (key in handlers)
 
 
 @dataclass
@@ -48,22 +48,22 @@ class DispatchResult:
 @dataclass
 class NonterminalClosedConfig:
     action: str                          # "reopen" | "trigger"
-    terminal_labels: list[str]           # 終端ラベル（いずれかを持つ CLOSED issue は対象外）
-    trigger: str | None = None           # action="trigger" 時に起動する handler のラベル
+    terminal_labels: list[str]           # terminal labels (CLOSED issues with any of them are excluded)
+    trigger: str | None = None           # label of the handler to start when action="trigger"
 
 
 @dataclass
 class WorkflowConfig:
-    name: str                              # ワークフロー名
-    triggers: list[TriggerConfig]          # トリガー条件リスト（定義順が序列）
-    handlers: dict[str, HandlerConfig]     # ハンドラー名 → HandlerConfig
-    polling_interval: int = 30             # ポーリング間隔（秒）
-    template_dir: str | None = None        # テンプレートディレクトリ（相対パスは workflow ファイル基準）
-    label_namespace: str | None = None     # ラベルプレフィックス（例: "issuesmith"）
-    transitions: dict[str, list[str]] | None = None  # 状態遷移マップ
-    reset_label: str | None = None         # 任意の状態から遷移可能な特殊ラベル
-    roles: dict[str, list[str]] = field(default_factory=dict)  # ロール名 → エンジン名リスト
-    nonterminal_closed: NonterminalClosedConfig | None = None  # CLOSED 非終端 issue 検出設定
+    name: str                              # workflow name
+    triggers: list[TriggerConfig]          # list of trigger conditions (definition order is priority)
+    handlers: dict[str, HandlerConfig]     # handler name → HandlerConfig
+    polling_interval: int = 30             # polling interval (seconds)
+    template_dir: str | None = None        # template directory (relative paths resolve from the workflow file)
+    label_namespace: str | None = None     # label prefix (e.g. "issuesmith")
+    transitions: dict[str, list[str]] | None = None  # state transition map
+    reset_label: str | None = None         # special label that can be transitioned to from any state
+    roles: dict[str, list[str]] = field(default_factory=dict)  # role name → list of engine names
+    nonterminal_closed: NonterminalClosedConfig | None = None  # detection settings for CLOSED non-terminal issues
 
 
 def validate_workflow_roles(config: WorkflowConfig) -> None:

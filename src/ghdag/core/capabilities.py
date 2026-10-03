@@ -1,4 +1,4 @@
-"""ghdag.core.capabilities — LLM 呼び出しの能力制約値オブジェクトとプリセット"""
+"""ghdag.core.capabilities — capability-constraint value object and presets for LLM calls"""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class LLMCapabilities:
-    """LLM 呼び出しの能力制約を束ねる値オブジェクト。"""
+    """Value object bundling the capability constraints of an LLM call."""
     permission_mode: str = "default"
     output_format: str = "text"  # "text" | "json"
-    allowed_tools: tuple[str, ...] = ()  # 空 = 指定なし（CLI に渡さない）
-    disallowed_tools: tuple[str, ...] = ()  # 空 = 指定なし（CLI に渡さない）
-    stream: bool = False  # True 時 stream 出力（claude/cursor: stream-json、codex: --json）
+    allowed_tools: tuple[str, ...] = ()  # empty = unspecified (not passed to the CLI)
+    disallowed_tools: tuple[str, ...] = ()  # empty = unspecified (not passed to the CLI)
+    stream: bool = False  # when True, stream output (claude/cursor: stream-json, codex: --json)
     sandbox: str = "off"  # "off" | "readonly" | "container"
-    resume: bool = False  # True 時セッション再開フローを許可
+    resume: bool = False  # when True, allow the session-resume flow
     # Container sandbox (sandbox="container"); see ghdag.core.container.container_prefix.
     container_image: str = ""  # required when sandbox="container"
     container_readonly: bool = False  # --read-only root FS and read-only worktree mount
@@ -47,12 +47,13 @@ DANGEROUS_FULL_ACCESS = LLMCapabilities(
     output_format="text",
 )
 
-# 観測系 Bash を許可しつつ編集をサンドボックスで封じる（TEXT_ONLY のツール剥奪代替）。
-# disallowed_tools は claude 向け二重防壁。codex / cursor では各エンジンの
-# _IGNORED_CAPABILITIES で noop になるが、プリセット定義はエンジン非依存に保つ。
-# Write は禁止しない: claude の plan モード（sandbox=readonly）ではハーネスが計画
-# ファイル（~/.claude/plans/*.md）を Write させ、計画ファイル以外への Write は
-# plan モード自体が拒否する（sumipan/nexus#3188）。
+# Allow observational Bash while sealing edits with the sandbox (an alternative to
+# TEXT_ONLY's tool stripping). disallowed_tools is a second line of defense for claude.
+# On codex / cursor it is a noop via each engine's _IGNORED_CAPABILITIES, but the
+# preset definition stays engine-agnostic.
+# Write is not disallowed: in claude's plan mode (sandbox=readonly) the harness has
+# Write the plan file (~/.claude/plans/*.md), and plan mode itself rejects Write to
+# anything other than the plan file (sumipan/nexus#3188).
 READONLY_OBSERVE = LLMCapabilities(
     sandbox="readonly",
     disallowed_tools=("Edit", "NotebookEdit"),

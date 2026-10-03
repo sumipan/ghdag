@@ -1,4 +1,4 @@
-"""ghdag.core.engine_spec — EngineSpec 単一情報源"""
+"""ghdag.core.engine_spec — single source of truth for EngineSpec"""
 
 from __future__ import annotations
 
@@ -8,13 +8,13 @@ from typing import Literal
 
 
 class InputMode(Enum):
-    STDIN = auto()  # `< <order>` で食わせる（既定）
-    ARGV = auto()   # order パスを argv 末尾に置く（shell）
+    STDIN = auto()  # feed via `< <order>` (default)
+    ARGV = auto()   # put the order path at the end of argv (shell)
 
 
 class PromptFlag(Enum):
-    NONE = auto()       # フラグ自体を出さない（shell, codex）
-    FLAG_ONLY = auto()  # `-p` のみ、値なし（claude, gemini, cursor）
+    NONE = auto()       # do not emit the flag at all (shell, codex)
+    FLAG_ONLY = auto()  # `-p` only, no value (claude, gemini, cursor)
 
 
 DangerFlagPosition = Literal["leading", "trailing"]
@@ -26,13 +26,13 @@ class EngineSpec:
     cli: str
     input_mode: InputMode
     prompt_flag: PromptFlag
-    prompt_flag_token: str | None  # 例 "-p"。NONE のとき None
+    prompt_flag_token: str | None  # e.g. "-p". None when NONE
     model_flag: str | None
     default_model: str | None
     danger_flag: str | None = None
     danger_flag_position: DangerFlagPosition = "trailing"
     extra_args: tuple[str, ...] = ()
-    subcommand: tuple[str, ...] = ()  # cli 直後に展開されるサブコマンド（例: codex → ("exec", "-")）
+    subcommand: tuple[str, ...] = ()  # subcommand expanded right after cli (e.g. codex → ("exec", "-"))
 
 
 ENGINE_SPECS: dict[str, EngineSpec] = {
@@ -45,7 +45,7 @@ ENGINE_SPECS: dict[str, EngineSpec] = {
         default_model="claude-sonnet-4-6",
         danger_flag="--dangerously-skip-permissions",
         danger_flag_position="trailing",
-        # --disable-slash-commands は isolation=True（GHDAG_ENGINE_ISOLATION）時のみ付与（nexus #3174）
+        # --disable-slash-commands is added only when isolation=True (GHDAG_ENGINE_ISOLATION) (nexus #3174)
         extra_args=("--output-format", "stream-json", "--verbose"),
     ),
     "gemini": EngineSpec(
@@ -68,7 +68,7 @@ ENGINE_SPECS: dict[str, EngineSpec] = {
         default_model="auto",
         danger_flag="--force",
         danger_flag_position="leading",
-        # DAG 既定は stream-json（#2967）。--print(-p) 必須は prompt_flag で担保。
+        # DAG default is stream-json (#2967). The required --print(-p) is ensured by prompt_flag.
         extra_args=("--output-format", "stream-json", "--stream-partial-output"),
     ),
     "shell": EngineSpec(
