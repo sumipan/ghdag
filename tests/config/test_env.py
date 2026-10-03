@@ -118,3 +118,13 @@ def test_state_dir_set(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("GHDAG_STATE_DIR", str(tmp_path / "state"))
     assert env.ghdag_state_dir() == str(tmp_path / "state")
     assert env.state_dir("jobs") == tmp_path / "state"
+
+
+def test_ghdag_language_pack(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GHDAG_LANGUAGE_PACK", "/cfg/ja.yaml")
+    assert env.ghdag_language_pack() == "/cfg/ja.yaml"
+    monkeypatch.setenv("GHDAG_LANGUAGE_PACK", "")
+    assert env.ghdag_language_pack() is None
+    monkeypatch.delenv("GHDAG_LANGUAGE_PACK", raising=False)
+    assert env.ghdag_language_pack() is None
+    assert "ghdag_language_pack" in env.__all__

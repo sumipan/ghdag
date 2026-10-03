@@ -22,6 +22,7 @@ __all__ = [
     "ghdag_vcs_config",
     "ghdag_state_dir",
     "state_dir",
+    "ghdag_language_pack",
 ]
 
 
@@ -96,3 +97,8 @@ def state_dir(default: str | Path) -> Path:
     if raw:
         return Path(raw).expanduser()
     return Path(default)
+
+
+def ghdag_language_pack() -> str | None:
+    """Return ``GHDAG_LANGUAGE_PACK`` (path to a language pack YAML) if set and non-empty."""
+    return os.environ.get("GHDAG_LANGUAGE_PACK") or None
