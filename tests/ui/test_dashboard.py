@@ -219,6 +219,12 @@ class TestAggregateCbFiring:
 
 
 class TestDashboardApiEndpoints:
+    @pytest.fixture(autouse=True)
+    def _pin_audit_path(self, monkeypatch, tmp_path):
+        # Endpoints resolve the audit path from GHDAG_AUDIT_PATH; pin it to the
+        # audit file each test writes so the runner environment cannot leak in.
+        monkeypatch.setenv("GHDAG_AUDIT_PATH", str(tmp_path / "jobs" / "audit.jsonl"))
+
     def _start_server(self, repo_root: Path):
         import urllib.request
         from http.server import HTTPServer
