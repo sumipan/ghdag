@@ -1,4 +1,4 @@
-"""AuditHooks — DefaultHooks + audit.jsonl 書き込み。"""
+"""AuditHooks — DefaultHooks + audit.jsonl writing."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from ghdag.metrics.models import FailureClass, TaskMetrics
 
 
 class AuditHooks(DefaultHooks):
-    """DefaultHooks に audit.jsonl 書き込みを追加した実装。"""
+    """Implementation that adds audit.jsonl writing to DefaultHooks."""
 
     def __init__(
         self,

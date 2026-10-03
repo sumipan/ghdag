@@ -77,9 +77,9 @@ _STREAM_EVENT_ENGINES = frozenset({"claude", "cursor", "codex"})
 
 
 def _command_supports_streaming(engine: str | None, command: str) -> bool:
-    """コマンドに stream 出力に必要なフラグがあるか。"""
+    """Whether the command has the flags required for stream output."""
     if engine == "claude":
-        # DAG 既定は常に stream-json。後方互換で engine 判定のみ（#2966）。
+        # DAG default is always stream-json; check engine only for backward compatibility (#2966).
         return True
     tokens = command.split()
     if engine == "cursor":
@@ -91,12 +91,12 @@ def _command_supports_streaming(engine: str | None, command: str) -> bool:
 
 
 def _engine_emits_stream_events(engine: str | None) -> bool:
-    """DAG 経路で jobs/events へ行単位追記しうるエンジンか。"""
+    """Whether the engine can append per-line events to jobs/events on the DAG path."""
     return engine in _STREAM_EVENT_ENGINES
 
 
 def _should_use_line_reader(engine: str | None, command: str, annotations: dict) -> bool:
-    """行単位ドレインを使うか。使えない場合は stream_fallback を記録して False。"""
+    """Whether to use the per-line drain. If unavailable, record stream_fallback and return False."""
     if not _engine_emits_stream_events(engine):
         return False
     if _command_supports_streaming(engine, command):
