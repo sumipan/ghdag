@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
+from ghdag.config.language import STATE_IDS, UI_KEYS, get_language_pack
 from ghdag.core.vocabulary import (
     DONE_ENGINE_ENV_ERROR,
     DONE_ENGINE_ERROR,
@@ -30,8 +34,35 @@ from ghdag.metrics.models import FailureClass
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
+# Non-CJK suffix used to exercise ``question_suffixes.extra`` (U+203D INTERROBANG).
+_EXTRA_SUFFIX = "\u203d"
+
+
 def _load_fixture(name: str) -> bytes:
     return (_FIXTURES / name).read_bytes()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_language_pack(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Run every test with the EN pack unless a test sets its own pack."""
+    monkeypatch.delenv("GHDAG_LANGUAGE_PACK", raising=False)
+    get_language_pack.cache_clear()
+    yield
+    get_language_pack.cache_clear()
+
+
+@pytest.fixture
+def extra_suffix_pack(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Load a pack whose ``question_suffixes.extra`` holds :data:`_EXTRA_SUFFIX`."""
+    data = {
+        "state_labels": {k: f"S-{k}" for k in STATE_IDS},
+        "ui": {k: f"U-{k}" for k in UI_KEYS},
+        "question_suffixes": {"extra": [_EXTRA_SUFFIX]},
+    }
+    path = tmp_path / "pack.yaml"
+    path.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    monkeypatch.setenv("GHDAG_LANGUAGE_PACK", str(path))
+    get_language_pack.cache_clear()
 
 
 def _make_config(tmp_path):
@@ -336,11 +367,50 @@ def test_retry_and_quarantine_audit_events_are_written(mock_mark_done, tmp_path)
 
 def test_looks_like_question_last_line_endswith_question_mark() -> None:
     assert looks_like_question("Choose an option?\n") is True
-    # full-width question mark (U+FF1F), escaped to keep the source CJK-free
-    assert looks_like_question("".join(map(chr, [0x9078, 0x629E, 0x3057, 0x3066, 0x304F, 0x3060, 0x3055, 0x3044, 0xFF1F]))) is True
     assert looks_like_question("Done.\nAll good.") is False
     assert looks_like_question("") is False
     assert looks_like_question("   \n  ") is False
+
+
+def test_looks_like_question_without_pack_ignores_extra_suffix() -> None:
+    assert looks_like_question(f"Choose an option{_EXTRA_SUFFIX}") is False
+
+
+def test_looks_like_question_with_pack_extra_suffix(extra_suffix_pack: None) -> None:
+    assert looks_like_question(f"Choose an option{_EXTRA_SUFFIX}\n") is True
+    # ASCII ? stays built in even when the pack adds extra suffixes.
+    assert looks_like_question("Choose an option?") is True
+    assert looks_like_question("Done.") is False
+
+
+def test_looks_like_question_pack_load_failure_falls_back_to_ascii(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv("GHDAG_LANGUAGE_PACK", str(tmp_path / "missing.yaml"))
+    with caplog.at_level(
+        logging.WARNING, logger="ghdag.llm.adapters.failure_classification"
+    ):
+        assert looks_like_question("Choose an option?") is True
+        assert looks_like_question(f"Choose an option{_EXTRA_SUFFIX}") is False
+    assert any(
+        r.levelno == logging.WARNING and "missing.yaml" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_classify_failure_pack_load_failure_still_detects_ascii_question(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.setenv("GHDAG_LANGUAGE_PACK", str(tmp_path / "missing.yaml"))
+    stdout = _load_fixture("claude_json_interactive_prompt.json")
+    with caplog.at_level(logging.WARNING):
+        result = ClaudeJsonAdapter().classify_failure(1, stdout, b"")
+    assert result == FailureClass.INTERACTIVE_PROMPT
+    assert any(r.levelno == logging.WARNING for r in caplog.records)
 
 
 def test_failure_class_interactive_prompt_meta() -> None:
@@ -356,14 +426,10 @@ def test_failure_class_interactive_prompt_meta() -> None:
         (CursorStreamAdapter(), "cursor_stream_interactive_prompt.jsonl"),
         (CodexJsonlAdapter(), "codex_jsonl_interactive_prompt.jsonl"),
         (CodexAdapter(), "codex_jsonl_interactive_prompt.jsonl"),
-        (ClaudeJsonAdapter(), "claude_json_interactive_prompt_fullwidth.json"),
-        (CursorStreamAdapter(), "cursor_stream_interactive_prompt_fullwidth.jsonl"),
-        (CodexJsonlAdapter(), "codex_jsonl_interactive_prompt_fullwidth.jsonl"),
-        (CodexAdapter(), "codex_jsonl_interactive_prompt_fullwidth.jsonl"),
     ],
 )
 def test_adapters_exit0_question_is_not_interactive_prompt(adapter, fixture: str) -> None:
-    """AC-1 / AC-2: exit 0 must not become INTERACTIVE_PROMPT even with ASCII/fullwidth ? ending."""
+    """AC-1 / AC-2: exit 0 must not become INTERACTIVE_PROMPT even with a trailing ?."""
     stdout = _load_fixture(fixture)
     assert adapter.classify_failure(0, stdout, b"") is None
 
@@ -375,16 +441,39 @@ def test_adapters_exit0_question_is_not_interactive_prompt(adapter, fixture: str
         (CursorStreamAdapter(), "cursor_stream_interactive_prompt.jsonl"),
         (CodexJsonlAdapter(), "codex_jsonl_interactive_prompt.jsonl"),
         (CodexAdapter(), "codex_jsonl_interactive_prompt.jsonl"),
-        (ClaudeJsonAdapter(), "claude_json_interactive_prompt_fullwidth.json"),
-        (CursorStreamAdapter(), "cursor_stream_interactive_prompt_fullwidth.jsonl"),
-        (CodexJsonlAdapter(), "codex_jsonl_interactive_prompt_fullwidth.jsonl"),
-        (CodexAdapter(), "codex_jsonl_interactive_prompt_fullwidth.jsonl"),
     ],
 )
 def test_adapters_exit_nonzero_question_is_interactive_prompt(adapter, fixture: str) -> None:
-    """AC-3 / AC-4: exit != 0 with trailing ? / fullwidth ? is INTERACTIVE_PROMPT."""
+    """AC-3 / AC-4: exit != 0 with a trailing ? is INTERACTIVE_PROMPT."""
     stdout = _load_fixture(fixture)
     assert adapter.classify_failure(1, stdout, b"") == FailureClass.INTERACTIVE_PROMPT
+
+
+_EXTRA_SUFFIX_CASES = [
+    (ClaudeJsonAdapter(), "claude_json_interactive_prompt_extra_suffix.json"),
+    (CursorStreamAdapter(), "cursor_stream_interactive_prompt_extra_suffix.jsonl"),
+    (CodexJsonlAdapter(), "codex_jsonl_interactive_prompt_extra_suffix.jsonl"),
+    (CodexAdapter(), "codex_jsonl_interactive_prompt_extra_suffix.jsonl"),
+]
+
+
+@pytest.mark.parametrize(("adapter", "fixture"), _EXTRA_SUFFIX_CASES)
+def test_adapters_extra_suffix_with_pack_is_interactive_prompt(
+    adapter, fixture: str, extra_suffix_pack: None
+) -> None:
+    """Pack ``question_suffixes.extra`` endings count as questions on exit != 0 only."""
+    stdout = _load_fixture(fixture)
+    assert adapter.classify_failure(1, stdout, b"") == FailureClass.INTERACTIVE_PROMPT
+    assert adapter.classify_failure(0, stdout, b"") is None
+
+
+@pytest.mark.parametrize(("adapter", "fixture"), _EXTRA_SUFFIX_CASES)
+def test_adapters_extra_suffix_without_pack_is_not_interactive_prompt(
+    adapter, fixture: str
+) -> None:
+    stdout = _load_fixture(fixture)
+    assert adapter.classify_failure(1, stdout, b"") != FailureClass.INTERACTIVE_PROMPT
+    assert adapter.classify_failure(0, stdout, b"") is None
 
 
 @pytest.mark.parametrize(
