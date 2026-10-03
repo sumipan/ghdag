@@ -1,4 +1,4 @@
-"""ghdag.io.sessions — task uuid ごとの session_id 永続化ストア。"""
+"""ghdag.io.sessions — persistent store of session_id per task uuid."""
 
 from __future__ import annotations
 
