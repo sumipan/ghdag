@@ -1,4 +1,4 @@
-"""ghdag/pipeline/submit.py — order 送信ヘルパー"""
+"""ghdag/pipeline/submit.py — order submission helpers"""
 
 from __future__ import annotations
 
@@ -24,10 +24,10 @@ def make_order_record(
     annotations: dict[str, str] | None = None,
     idempotency_key: str | None = None,
 ) -> tuple[dict, str]:
-    """order ファイルを書き込み、exec record を構築して返す。append しない。
+    """Write the order file, build an exec record and return it. Does not append.
 
     Returns:
-        (record, uuid) — record は build_exec_record の戻り値 dict。
+        (record, uuid) — record is the dict returned by build_exec_record.
     """
     ts = datetime.now(_TZ).strftime("%Y%m%d%H%M%S")
     uid = str(uuid.uuid4())
@@ -66,10 +66,10 @@ def submit_order(
     idempotency_key: str | None = None,
     correlation_id: str | None = None,
 ) -> dict:
-    """order 作成 → exec record 構築 → exec.jsonl 追記を一括実行。
+    """Create order → build exec record → append to exec.jsonl in one call.
 
     Returns:
-        record dict（build_exec_record の戻り値に annotations 等を付与したもの）。
+        record dict (build_exec_record return value with annotations etc. added).
     """
     record, uid = make_order_record(
         state,

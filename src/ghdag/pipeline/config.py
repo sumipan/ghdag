@@ -1,7 +1,7 @@
 """
-pipeline/config.py — パイプライン設定とモデル解決（Claude 前提）
+pipeline/config.py — pipeline config and model resolution (assumes Claude)
 
-移植元: tools/stash-developer/stash_developer/model_resolver.py
+Ported from: tools/stash-developer/stash_developer/model_resolver.py
 """
 
 from __future__ import annotations
@@ -24,20 +24,20 @@ class PipelineConfig:
 
 
 def resolve_models(config: PipelineConfig, overrides: dict[str, str]) -> dict[str, str]:
-    """system_defaults に overrides をマージし、allowlist で検証。
+    """Merge overrides into system_defaults and validate against the allowlist.
 
     Args:
-        config: パイプライン設定
-        overrides: フェーズごとのモデル上書き。system_defaults に存在しないキーは無視
+        config: pipeline config
+        overrides: per-phase model overrides. Keys absent from system_defaults are ignored
     Returns:
-        phase → model の dict（system_defaults のキーすべてを含む）
+        dict of phase → model (contains all keys of system_defaults)
     Raises:
-        ModelValidationError: validate_allowlist=True かつ allowed_models に含まれないモデル
+        ModelValidationError: validate_allowlist=True and a model is not in allowed_models
     """
     result = dict(config.system_defaults)
     for phase, model in overrides.items():
         if phase not in config.system_defaults:
-            print(f"WARNING: 未知フェーズ {phase!r} は無視します", file=sys.stderr)
+            print(f"WARNING: unknown phase {phase!r} ignored", file=sys.stderr)
             continue
         result[phase] = model
 

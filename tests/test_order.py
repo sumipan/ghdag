@@ -18,8 +18,7 @@ class TestBuildOrderExceptionMessages:
             builder.build_order("brushup", {})
 
         msg = str(exc_info.value)
-        # Japanese text intentionally kept for CJK processing test
-        assert "テンプレート展開エラー" in msg
+        assert "template render error" in msg
         assert "brushup.md" in msg
         assert "undefined_var" in msg
 
@@ -33,8 +32,7 @@ class TestBuildOrderExceptionMessages:
             builder.build_order("invalid", {})
 
         msg = str(exc_info.value)
-        # Japanese text intentionally kept for CJK processing test
-        assert "テンプレート展開エラー" in msg
+        assert "template render error" in msg
         assert "invalid.md" in msg
 
     def test_tc6_file_not_found_existing_behavior(self, tmp_path):
@@ -115,6 +113,5 @@ class TestBuildOrderExceptionMessages:
             builder.build_order("test", {"name": "Alice"})
 
         msg = str(exc_info.value)
-        # Japanese text intentionally kept for CJK processing test
-        assert "未定義変数: ['age']" in msg
-        assert "利用可能なキー: ['name']" in msg
+        assert "undefined variables: ['age']" in msg
+        assert "available keys: ['name']" in msg

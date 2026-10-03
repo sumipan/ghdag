@@ -1,8 +1,8 @@
 """
-pipeline/llm_pipeline.py — LLMPipelineAPI: order/result/exec.jsonl 投入を一括で担う
+pipeline/llm_pipeline.py — LLMPipelineAPI: handles order/result/exec.jsonl submission in one place
 
-dispatcher は submit() を呼ぶだけで、ファイル命名規則や
-exec 行フォーマットを知る必要がない。
+The dispatcher only calls submit() and does not need to know file naming
+conventions or the exec line format.
 """
 
 from __future__ import annotations
@@ -29,10 +29,10 @@ if TYPE_CHECKING:
 
 
 def _validate_depends(steps: "list[StepConfig]") -> None:
-    """depends の事前検証: 未定義参照と循環参照を検出する。
+    """Pre-validate depends: detect undefined references and cycles.
 
     Raises:
-        ValueError: 未定義の dep_id が存在する場合、または循環参照がある場合
+        ValueError: an undefined dep_id exists, or there is a cycle
     """
     step_ids = {s.id for s in steps if s.id is not None}
 
@@ -41,7 +41,7 @@ def _validate_depends(steps: "list[StepConfig]") -> None:
             if dep_id not in step_ids:
                 raise DependencyError(f"Unknown dependency: {dep_id!r}")
 
-    # トポロジカルソートで循環参照を検出
+    # Detect cycles via topological sort
     in_degree: dict[str, int] = {s.id: 0 for s in steps if s.id is not None}
     adjacency: dict[str, list[str]] = {s.id: [] for s in steps if s.id is not None}
 
@@ -104,7 +104,7 @@ def _validate_depends(steps: "list[StepConfig]") -> None:
 
 @dataclass
 class SubmittedStep:
-    """submit() の戻り値に含まれる、投入済みステップの情報。"""
+    """Information about a submitted step, included in the return value of submit()."""
     step_id: str
     uuid: str
     order_filename: str
@@ -113,10 +113,10 @@ class SubmittedStep:
 
 
 class LLMPipelineAPI:
-    """order/result ファイル管理と exec.jsonl 投入を一括で担う。
+    """Handles order/result file management and exec.jsonl submission in one place.
 
-    dispatcher は submit() を呼ぶだけで、ファイル命名規則や
-    exec 行フォーマットを知る必要がない。
+    The dispatcher only calls submit() and does not need to know file naming
+    conventions or the exec line format.
     """
 
     def __init__(
@@ -129,18 +129,18 @@ class LLMPipelineAPI:
     ):
         """
         Args:
-            pipeline_state: PipelineState インスタンス
-            order_builder: デフォルト OrderBuilder。
-                base_context["workflow_name"] が ``order_builders`` に含まれない、
-                もしくは ``order_builders`` が None のときに使われるフォールバック。
-            queue_dir: order/result ファイルを書き出すディレクトリ
-            order_builders: workflow_name → OrderBuilder のマップ。
-                複数ワークフローを横断する dispatcher（``ghdag watch``）は
-                ワークフローごとに異なる ``template_dir`` を持つことがあるため、
-                ここに per-workflow な OrderBuilder を渡してテンプレート解決を
-                ワークフロー単位に切り替えられるようにする。
-                単一ワークフロー前提の呼び出し（``ghdag trigger``）では
-                ``None`` のままで問題ない。
+            pipeline_state: PipelineState instance
+            order_builder: default OrderBuilder.
+                Fallback used when base_context["workflow_name"] is not in
+                ``order_builders``, or when ``order_builders`` is None.
+            queue_dir: directory where order/result files are written
+            order_builders: map of workflow_name → OrderBuilder.
+                A dispatcher spanning multiple workflows (``ghdag watch``) may
+                have a different ``template_dir`` per workflow, so pass
+                per-workflow OrderBuilders here to switch template resolution
+                on a per-workflow basis.
+                Single-workflow callers (``ghdag trigger``) can leave it
+                as ``None``.
         """
         self._state = pipeline_state
         self._order_builder = order_builder
@@ -148,33 +148,33 @@ class LLMPipelineAPI:
         self._order_builders: dict[str, OrderBuilder] = dict(order_builders or {})
 
     def check_idempotency(self, key: str) -> bool:
-        """冪等性チェックを PipelineState に委譲する。"""
+        """Delegate the idempotency check to PipelineState."""
         return self._state.check_idempotency(key)
 
     def get_generation(
         self, workflow_name: str, handler_name: str, issue_number: int,
     ) -> int:
-        """現在の redispatch 世代を返す。"""
+        """Return the current redispatch generation."""
         return self._state.get_generation(workflow_name, handler_name, issue_number)
 
     def increment_generation(
         self, workflow_name: str, handler_name: str, issue_number: int,
     ) -> int:
-        """redispatch 世代を +1 して返す。"""
+        """Increment the redispatch generation by 1 and return it."""
         return self._state.increment_generation(workflow_name, handler_name, issue_number)
 
     def find_records_by_idempotency_key(self, key: str) -> list[dict]:
-        """冪等キーに一致する exec.jsonl レコードを返す。"""
+        """Return the exec.jsonl record matching the idempotency key."""
         return self._state.find_records_by_idempotency_key(key)
 
     def remove_idempotency_matching(self, workflow_name: str, issue_number: int) -> None:
-        """冪等キー削除を PipelineState に委譲する。"""
+        """Delegate idempotency key removal to PipelineState."""
         self._state.remove_idempotency_matching(workflow_name, issue_number)
 
     def remove_idempotency_for_handler(
         self, workflow_name: str, handler_name: str, issue_number: int
     ) -> int:
-        """handler 単位の冪等キー削除を PipelineState に委譲する。"""
+        """Delegate per-handler idempotency key removal to PipelineState."""
         return self._state.remove_idempotency_for_handler(workflow_name, handler_name, issue_number)
 
     def submit(
@@ -188,19 +188,19 @@ class LLMPipelineAPI:
         order_builder: OrderBuilder | None = None,
         workflow_roles: dict[str, list[str]] | None = None,
     ) -> list[str]:
-        """ステップ群を order/exec.jsonl ファイルに投入する。
+        """Submit steps to order/exec.jsonl files.
 
         Args:
-            steps: 実行する StepConfig のリスト
-            base_context: 全ステップ共通のコンテキスト変数
-            idempotency_key: 冪等性キー（省略時は記録しない）
-            audit_context: enqueue audit に記録するコンテキスト
-            metadata: 全ステップ共通のメタデータ（exec.jsonl の annotations に格納）
-            order_builder: 指定時は `_resolve_order_builder` を使わずこちらを使う
-            workflow_roles: ロール名 → エンジン名リスト（step.role の annotations 用）
+            steps: list of StepConfig to run
+            base_context: context variables shared by all steps
+            idempotency_key: idempotency key (not recorded when omitted)
+            audit_context: context recorded in the enqueue audit
+            metadata: metadata shared by all steps (stored in exec.jsonl annotations)
+            order_builder: if given, used instead of `_resolve_order_builder`
+            workflow_roles: role name → list of engine names (for step.role annotations)
 
         Returns:
-            書き込んだ JSON レコードを文字列化したリスト（DispatchResult 用）
+            list of written JSON records as strings (for DispatchResult)
         """
         _validate_depends(steps)
 
@@ -231,7 +231,7 @@ class LLMPipelineAPI:
         metadata: dict[str, str] | None = None,
         workflow_roles: dict[str, list[str]] | None = None,
     ) -> list[str]:
-        """JSONL 形式（exec.jsonl）への書き込み。"""
+        """Write in JSONL format (exec.jsonl)."""
         import json as _json
 
         records: list[dict] = []
@@ -295,10 +295,10 @@ class LLMPipelineAPI:
         return [_json.dumps(r, ensure_ascii=False) for r in records]
 
     def _resolve_order_builder(self, workflow_name: str | None) -> OrderBuilder:
-        """workflow_name から OrderBuilder を解決する。
+        """Resolve the OrderBuilder from workflow_name.
 
-        ``order_builders`` に該当エントリがあればそれを返し、なければ
-        ``order_builder`` (デフォルト) を返す。
+        Returns the matching entry in ``order_builders`` if present, otherwise
+        the (default) ``order_builder``.
         """
         if workflow_name and workflow_name in self._order_builders:
             return self._order_builders[workflow_name]
@@ -315,7 +315,7 @@ class LLMPipelineAPI:
         model: str,
         permission: str | None = None,
     ) -> dict:
-        """exec.jsonl の 1 レコードを構築する（内部メソッド）。"""
+        """Build one exec.jsonl record (internal method)."""
         from ghdag.llm.capabilities import PRESETS
         from ghdag.llm.spec import ENGINE_SPECS, render_exec_command
 
@@ -340,7 +340,7 @@ class LLMPipelineAPI:
                 capabilities = PRESETS[safe_default_env]
                 safe_default_applied = True
             else:
-                safe_default_env = "text_only"  # 安全デフォルト（hardcoded）
+                safe_default_env = "text_only"  # safe default (hardcoded)
                 capabilities = PRESETS["text_only"]
                 safe_default_applied = True
 

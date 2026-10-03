@@ -11,10 +11,10 @@ __all__ = ["parse_engine_model", "parse_token_usage_json", "parse_token_count"]
 
 
 def parse_engine_model(command: str) -> tuple[str | None, str | None]:
-    """コマンド文字列から engine と model を抽出する。判定不能なら (None, None)。
+    """Extract engine and model from a command string. Returns (None, None) if undeterminable.
 
-    cat パイプ形式（例: cat order.md | claude -p ...）やパイプ後のトークンも検出する。
-    spec.cli の集合に一致するトークンを左から探すため、_KNOWN_ENGINES の直書きが不要。
+    Also detects the cat-pipe form (e.g. cat order.md | claude -p ...) and tokens after a pipe.
+    Tokens matching the set of spec.cli are searched left to right, so no hard-coded _KNOWN_ENGINES is needed.
     """
     if not command:
         return None, None
