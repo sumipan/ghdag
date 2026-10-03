@@ -7,7 +7,7 @@ from typing import Protocol, runtime_checkable
 
 @runtime_checkable
 class GitHubIssuePort(Protocol):
-    """GitHub Issues 操作の抽象インタフェース。dispatcher はこの Protocol にのみ依存する。"""
+    """Abstract interface for GitHub Issues operations. The dispatcher depends only on this Protocol."""
 
     def get_issue(self, number: int) -> dict: ...
     def reopen_issue(self, number: int) -> None: ...

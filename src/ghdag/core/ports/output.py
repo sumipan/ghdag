@@ -28,22 +28,22 @@ class EngineError:
 
 @runtime_checkable
 class EngineOutputAdapter(Protocol):
-    """engine 固有の stdout 形式から本文テキストと使用量を抽出する。"""
+    """Extract body text and usage from an engine-specific stdout format."""
 
     def extract_result_text(self, stdout: bytes, stderr: bytes) -> bytes:
-        """stdout から result_path に書くべきテキスト bytes を返す。"""
+        """Return the text bytes to write to result_path from stdout."""
         ...
 
     def extract_token_usage(self, stdout: bytes, stderr: bytes) -> TokenUsage | None:
-        """stdout/stderr から TokenUsage を抽出する。取得不能なら None。"""
+        """Extract TokenUsage from stdout/stderr. Return None if unavailable."""
         ...
 
     def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
-        """stdout/stderr から再開可能な session_id を抽出する。取得不能なら None。"""
+        """Extract a resumable session_id from stdout/stderr. Return None if unavailable."""
         ...
 
     def extract_error(self, stdout: bytes, stderr: bytes) -> EngineError | None:
-        """stdout/stderr からエンジンエラーを抽出する。エラー未検出なら None。"""
+        """Extract an engine error from stdout/stderr. Return None if no error is detected."""
         ...
 
     def classify_failure(
@@ -52,5 +52,5 @@ class EngineOutputAdapter(Protocol):
         stdout: bytes,
         stderr: bytes,
     ) -> FailureClass | None:
-        """異常終了時に stdout/stderr から FailureClass を推定する。不明なら None。"""
+        """Infer a FailureClass from stdout/stderr on abnormal exit. Return None if unknown."""
         ...
