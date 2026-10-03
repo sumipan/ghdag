@@ -108,10 +108,13 @@ def test_unknown_state_key(tmp_path: Path) -> None:
     _assert_error(_write(tmp_path, data), "foo")
 
 
-def test_missing_ui_key(tmp_path: Path) -> None:
+def test_missing_ui_key_falls_back_to_en(tmp_path: Path) -> None:
     data = _full_data()
     del data["ui"]["tab_tasks"]
-    _assert_error(_write(tmp_path, data), "tab_tasks")
+    pack = load_language_pack(_write(tmp_path, data))
+    assert pack.ui["tab_tasks"] == EN.ui["tab_tasks"]
+    assert pack.ui["tab_bursts"] == "U-tab_bursts"
+    assert set(pack.ui) == set(UI_KEYS)
 
 
 def test_extra_top_level_key(tmp_path: Path) -> None:
@@ -120,10 +123,24 @@ def test_extra_top_level_key(tmp_path: Path) -> None:
     _assert_error(_write(tmp_path, data), "extra")
 
 
-def test_missing_top_level_key(tmp_path: Path) -> None:
+def test_missing_top_level_key_falls_back_to_en(tmp_path: Path) -> None:
     data = _full_data()
     del data["ui"]
-    _assert_error(_write(tmp_path, data), "ui")
+    pack = load_language_pack(_write(tmp_path, data))
+    assert dict(pack.ui) == dict(EN.ui)
+    assert pack.state_labels["running"] == "S-running"
+
+
+def test_empty_pack_is_en(tmp_path: Path) -> None:
+    assert load_language_pack(_write(tmp_path, {})) == EN
+
+
+def test_fallback_does_not_mutate_en(tmp_path: Path) -> None:
+    before = dict(EN.ui)
+    data = _full_data()
+    del data["ui"]["tab_tasks"]
+    load_language_pack(_write(tmp_path, data))
+    assert dict(EN.ui) == before
 
 
 def test_empty_value(tmp_path: Path) -> None:
@@ -179,6 +196,12 @@ def test_question_suffixes_extra_loaded_as_tuple(tmp_path: Path) -> None:
     assert pack.question_suffixes == ("\u203d", "!?", "\u203d")
 
 
+def test_question_suffixes_without_extra_is_empty(tmp_path: Path) -> None:
+    data = _full_data()
+    data["question_suffixes"] = {}
+    assert load_language_pack(_write(tmp_path, data)).question_suffixes == ()
+
+
 def test_question_suffixes_empty_list(tmp_path: Path) -> None:
     data = _full_data()
     data["question_suffixes"] = {"extra": []}
@@ -189,7 +212,6 @@ def test_question_suffixes_empty_list(tmp_path: Path) -> None:
     ("section", "needle"),
     [
         ({"extra": ["?"], "other": ["x"]}, "other"),
-        ({}, "extra"),
         ({"extra": "?"}, "extra"),
         ({"extra": None}, "extra"),
         ({"extra": ["?", 3]}, "extra"),

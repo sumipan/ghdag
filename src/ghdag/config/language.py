@@ -12,8 +12,11 @@ as a YAML file pointed to by ``GHDAG_LANGUAGE_PACK``::
     question_suffixes:   # optional
       extra: ["..."]
 
-``state_labels`` and ``ui`` are required and must list exactly the keys in
-:data:`STATE_IDS` / :data:`UI_KEYS` with non-empty string values.
+``state_labels`` and ``ui`` may list any of the keys in :data:`STATE_IDS` /
+:data:`UI_KEYS` with non-empty string values. A section or key the pack leaves
+out falls back to :data:`EN`, so a pack written for an older release keeps
+loading after a release adds a key. Unknown keys and invalid values raise
+:class:`~ghdag.core.exceptions.GhdagError`.
 
 ``question_suffixes`` is optional. Its only key ``extra`` lists non-empty
 strings that, in addition to the built-in ASCII ``?``, mark a line as a
@@ -140,39 +143,38 @@ def _validate(data: Any, source: Path) -> LanguagePack:
             f"{', '.join(_SECTIONS)}"
         )
     problems: list[str] = []
-    missing_top = [k for k in _SECTIONS if k not in data]
     extra_top = sorted(
         str(k) for k in data if k not in _SECTIONS and k not in _OPTIONAL_SECTIONS
     )
-    if missing_top:
-        problems.append(f"missing top-level keys: {', '.join(missing_top)}")
     if extra_top:
         problems.append(f"unknown top-level keys: {', '.join(extra_top)}")
 
+    defaults: dict[str, Mapping[str, str]] = {
+        "state_labels": EN.state_labels,
+        "ui": EN.ui,
+    }
     sections: dict[str, dict[str, str]] = {}
     for name, expected in _SECTIONS.items():
         if name not in data:
+            sections[name] = dict(defaults[name])
             continue
         section = data[name]
         if not isinstance(section, dict):
             problems.append(f"{name} must be a mapping")
             continue
-        missing = [k for k in expected if k not in section]
         extra = sorted(str(k) for k in section if k not in expected)
         invalid = [
             k
             for k in expected
             if k in section and (not isinstance(section[k], str) or not section[k])
         ]
-        if missing:
-            problems.append(f"{name}: missing keys: {', '.join(missing)}")
         if extra:
             problems.append(f"{name}: unknown keys: {', '.join(extra)}")
         if invalid:
             problems.append(
                 f"{name}: values must be non-empty strings: {', '.join(invalid)}"
             )
-        sections[name] = section
+        sections[name] = {**defaults[name], **section}
 
     question_suffixes: tuple[str, ...] = ()
     if _QUESTION_SUFFIXES in data:
@@ -192,10 +194,7 @@ def _validate_question_suffixes(section: Any, problems: list[str]) -> tuple[str,
     if not isinstance(section, dict):
         problems.append(f"{name} must be a mapping")
         return ()
-    missing = [k for k in _QUESTION_SUFFIXES_KEYS if k not in section]
     extra = sorted(str(k) for k in section if k not in _QUESTION_SUFFIXES_KEYS)
-    if missing:
-        problems.append(f"{name}: missing keys: {', '.join(missing)}")
     if extra:
         problems.append(f"{name}: unknown keys: {', '.join(extra)}")
     if "extra" not in section:
@@ -213,9 +212,10 @@ def _validate_question_suffixes(section: Any, problems: list[str]) -> tuple[str,
 def load_language_pack(path: str | Path) -> LanguagePack:
     """Load and validate a language pack YAML file.
 
-    Raises :class:`GhdagError` when the file is missing or unreadable, is not
-    valid YAML, does not match :data:`STATE_IDS` / :data:`UI_KEYS` exactly, or
-    has a malformed ``question_suffixes`` section.
+    Sections and keys the file leaves out fall back to :data:`EN`. Raises
+    :class:`GhdagError` when the file is missing or unreadable, is not valid
+    YAML, has keys outside :data:`STATE_IDS` / :data:`UI_KEYS`, has empty or
+    non-string values, or has a malformed ``question_suffixes`` section.
     """
     source = Path(path)
     try:
