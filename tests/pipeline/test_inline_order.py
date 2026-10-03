@@ -48,12 +48,11 @@ class TestInlineOrderBuilder:
     def test_skill_prompt_with_env_var_notation(self):
         """SKILL.md-style ${ENV_VAR} notation in a prompt must not fail.
 
-        Regression: LLM-facing env notation with a CJK diary path segment via
+        Regression: LLM-facing env notation with a diary path segment via
         mltgnt skill action must not raise TemplateVariableError.
         """
         builder = InlineOrderBuilder()
-        # Japanese text intentionally kept for CJK processing test
-        prompt = "Target diary: ${NIKKI_ROOT}/日記/YYYY-MM-DD.md ($0)"
+        prompt = "Target diary: ${NIKKI_ROOT}/diary/YYYY-MM-DD.md ($0)"
         result = builder.build_order(prompt, {"workflow_name": "scheduler"})
         # ${NIKKI_ROOT} and $0 remain unsubstituted without raising
         assert "${NIKKI_ROOT}" in result

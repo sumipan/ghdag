@@ -1,12 +1,12 @@
 """
-pipeline/state.py — パイプライン状態管理
+pipeline/state.py — pipeline state management
 
-移植元: tools/stash-developer/stash_developer/pipeline_state.py +
-        tools/stash-developer/stash_developer/exec_writer.py
+Ported from: tools/stash-developer/stash_developer/pipeline_state.py +
+              tools/stash-developer/stash_developer/exec_writer.py
 
-2つの永続化先を管理:
-  (1) {state_dir}/{id}.json — パイプライン実行状態
-  (2) exec.jsonl — 冪等性キー（idempotency_key フィールドを持つ JSONL レコード）
+Manages two persistence targets:
+  (1) {state_dir}/{id}.json — pipeline execution state
+  (2) exec.jsonl — idempotency keys (JSONL records with an idempotency_key field)
 """
 
 from __future__ import annotations
@@ -34,8 +34,8 @@ class PipelineState:
     def __init__(self, state_dir: str | Path, exec_jsonl_path: str | Path):
         """
         Args:
-            state_dir: JSON 状態ファイルの保存先ディレクトリ（例: .pipeline-state/）
-            exec_jsonl_path: exec.jsonl のパス（冪等性キーの読み書き先）
+            state_dir: directory for JSON state files (e.g. .pipeline-state/)
+            exec_jsonl_path: path to exec.jsonl (where idempotency keys are read/written)
         """
         self._state_dir = Path(state_dir)
         self._exec_jsonl_path = Path(exec_jsonl_path)
@@ -44,13 +44,13 @@ class PipelineState:
             audit_path=self._exec_jsonl_path.parent / "audit.jsonl",
         )
 
-    # --- 冪等性（exec.jsonl レコード） ---
+    # --- Idempotency (exec.jsonl records) ---
 
     def check_idempotency(self, key: str) -> bool:
-        """exec.jsonl 内に指定キーの idempotency 記録がなければ True（未処理）。
+        """Return True (not yet processed) if exec.jsonl has no idempotency record for the key.
 
-        JSONL レコードの "idempotency_key" フィールドで判定する。
-        ファイルが存在しない場合も True を返す。
+        Determined by the "idempotency_key" field of JSONL records.
+        Also returns True if the file does not exist.
         """
         return exec_jsonl.check_idempotency(self._exec_jsonl_path, key)
 
@@ -118,12 +118,12 @@ class PipelineState:
         return {str(k): int(v) for k, v in data.items() if isinstance(v, int)}
 
     def remove_idempotency_matching(self, workflow_name: str, issue_number: int) -> int:
-        """exec.jsonl から workflow_name:*:issue_number にマッチする冪等性記録を削除。
+        """Remove idempotency records matching workflow_name:*:issue_number from exec.jsonl.
 
-        世代なし (:issue_number 末尾) と世代あり (:issue_number:N) の両方にマッチする。
+        Matches both without generation (ending in :issue_number) and with generation (:issue_number:N).
 
         Returns:
-            削除したレコード数
+            number of records removed
         """
         prefix = f"{workflow_name}:"
         suffix_exact = f":{issue_number}"
@@ -140,36 +140,36 @@ class PipelineState:
         handler_name: str,
         issue_number: int,
     ) -> int:
-        """exec.jsonl から workflow_name:handler_name:issue_number に完全一致する冪等性記録を削除。
+        """Remove idempotency records exactly matching workflow_name:handler_name:issue_number from exec.jsonl.
 
         Returns:
-            削除したレコード数
+            number of records removed
         """
         target_key = f"{workflow_name}:{handler_name}:{issue_number}"
         return self._remove_by_predicate(lambda rec: rec.get("idempotency_key") == target_key)
 
     def _remove_by_predicate(self, predicate: Callable[[dict], bool]) -> int:
-        """exec.jsonl から predicate が True を返すレコードを削除する内部ヘルパー。
+        """Internal helper that removes records for which predicate returns True from exec.jsonl.
 
         Args:
-            predicate: dict レコードを受け取り True なら削除対象とする関数
+            predicate: function taking a dict record; returns True if it should be removed
 
         Returns:
-            削除したレコード数
+            number of records removed
         """
         return exec_jsonl.remove_by_predicate(self._exec_jsonl_path, predicate)
 
-    # --- JSON 状態永続化 ---
+    # --- JSON state persistence ---
 
     def save(self, pipeline_id: str, metadata: dict) -> None:
-        """state_dir/{pipeline_id}.json に metadata を JSON で書き出し。"""
+        """Write metadata as JSON to state_dir/{pipeline_id}.json."""
         self._state_dir.mkdir(parents=True, exist_ok=True)
         out_path = self._state_dir / f"{pipeline_id}.json"
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(metadata, f, ensure_ascii=False, indent=2)
 
     def load(self, pipeline_id: str) -> dict | None:
-        """state_dir/{pipeline_id}.json を読み出し。存在しなければ None。"""
+        """Read state_dir/{pipeline_id}.json. Returns None if it does not exist."""
         json_path = self._state_dir / f"{pipeline_id}.json"
         if not json_path.exists():
             return None
@@ -180,21 +180,21 @@ class PipelineState:
         return data
 
     def remove(self, pipeline_id: str) -> bool:
-        """state_dir/{pipeline_id}.json を削除。存在しなければ False。"""
+        """Delete state_dir/{pipeline_id}.json. Returns False if it does not exist."""
         json_path = self._state_dir / f"{pipeline_id}.json"
         if not json_path.exists():
             return False
         json_path.unlink()
         return True
 
-    # --- exec 追記 ---
+    # --- exec append ---
 
     def append_exec_records(
         self,
         records: list[dict],
         audit_context: AuditContext | None = None,
     ) -> None:
-        """exec.jsonl に records を JSONL 形式で追記。fcntl 排他ロック付き。"""
+        """Append records to exec.jsonl in JSONL format, with an fcntl exclusive lock."""
         exec_jsonl.append(
             self._exec_jsonl_path,
             records,
@@ -212,21 +212,21 @@ class PipelineState:
         engine: str = "claude",
         order_footer_fn: Callable[[str, str, str], str] | None = None,
     ) -> str:
-        """queue_dir/{ts}-{engine}-order-{order_uuid}.md に content を書き出し。
+        """Write content to queue_dir/{ts}-{engine}-order-{order_uuid}.md.
 
         Args:
-            ts: タイムスタンプ "YYYYMMDDHHmmSS"
-            order_uuid: UUID 文字列
-            content: order ファイル本文
-            queue_dir: 書き込み先ディレクトリパス
-            engine: engine prefix（"claude", "cursor", "gemini" 等）。デフォルト "claude"。
-            order_footer_fn: 指定時、content 末尾にフッター文字列を付与してから書き込む。
+            ts: timestamp "YYYYMMDDHHmmSS"
+            order_uuid: UUID string
+            content: order file body
+            queue_dir: destination directory path
+            engine: engine prefix ("claude", "cursor", "gemini", etc.). Defaults to "claude".
+            order_footer_fn: if given, appends a footer string to content before writing.
 
         Returns:
-            書き出したファイル名（ディレクトリ含まず）
+            written file name (without directory)
 
         Raises:
-            ValueError: engine が空文字の場合
+            ValueError: if engine is an empty string
         """
         if not engine:
             raise ValueError("engine must not be empty")
@@ -247,10 +247,10 @@ class PipelineState:
 
     @classmethod
     def from_repo_root(cls, repo_root: str | Path) -> "PipelineState":
-        """リポジトリルートから標準パスで PipelineState を生成する。
+        """Create a PipelineState with standard paths from the repository root.
 
         Args:
-            repo_root: リポジトリルートのパス
+            repo_root: path to the repository root
 
         Returns:
             PipelineState(state_dir=repo_root/.pipeline-state, exec_jsonl_path=repo_root/jobs/exec.jsonl)
@@ -263,29 +263,29 @@ class PipelineState:
         )
 
     def parse_exec_tasks(self) -> dict[str, str]:
-        """exec.jsonl をパースし {uuid: command} の辞書を返す。
+        """Parse exec.jsonl and return a {uuid: command} dict.
 
-        ファイルが存在しない場合は空辞書を返す。
+        Returns an empty dict if the file does not exist.
 
         Returns:
-            {uuid: command} の辞書。
+            {uuid: command} dict.
         """
         return exec_jsonl.parse_as_dict(self._exec_jsonl_path)
 
     def remove_exec_entries(self, uuids: set[str]) -> int:
-        """exec.jsonl から指定 UUID のエントリ行を削除する。fcntl ロック付き。
+        """Remove entry lines for the given UUIDs from exec.jsonl, with an fcntl lock.
 
         Args:
-            uuids: 削除対象の UUID 集合
+            uuids: set of UUIDs to remove
 
         Returns:
-            削除した行数
+            number of lines removed
         """
         return exec_jsonl.remove_by_uuids(self._exec_jsonl_path, uuids)
 
 
 def status_rank(status: str, status_order: tuple[str, ...]) -> int:
-    """status_order 内の status のインデックスを返す。不明なら -1。"""
+    """Return the index of status in status_order, or -1 if unknown."""
     try:
         return status_order.index(status)
     except ValueError:
@@ -293,9 +293,9 @@ def status_rank(status: str, status_order: tuple[str, ...]) -> int:
 
 
 def parse_frontmatter(path: str | Path) -> dict:
-    """ファイル先頭の YAML frontmatter（--- で囲まれた部分）をパースして dict を返す。
+    """Parse the YAML frontmatter (enclosed by ---) at the top of a file and return a dict.
 
-    frontmatter がない場合は空 dict を返す。
+    Returns an empty dict if there is no frontmatter.
     """
     with open(path, encoding="utf-8") as f:
         content = f.read()

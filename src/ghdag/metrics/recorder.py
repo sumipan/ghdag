@@ -19,7 +19,7 @@ class MetricsRecorder:
         self._tz_name = tz_name
 
     def record(self, metrics: TaskMetrics) -> None:
-        """JSONL 1行を追記（fcntl.LOCK_EX で排他ロック）。例外は内部で捕捉。"""
+        """Append one JSONL line (exclusive lock via fcntl.LOCK_EX). Exceptions are caught internally."""
         try:
             self._write(metrics)
         except Exception as exc:

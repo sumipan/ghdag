@@ -1,4 +1,4 @@
-"""pipeline/wait.py — jobs/done/ polling ユーティリティ"""
+"""pipeline/wait.py — jobs/done/ polling utility"""
 
 from __future__ import annotations
 
@@ -16,24 +16,24 @@ def wait_for_result(
     timeout: float,
     poll_interval: float = 0.5,
 ) -> tuple[str, str]:
-    """jobs/done/<uuid> ファイルの出現を polling し、完了ステータスを返す。
+    """Poll for the jobs/done/<uuid> file to appear and return the completion status.
 
     Args:
-        exec_done_dir: jobs/done/ ディレクトリのパス
-        uuid: 待機対象のタスク UUID
-        timeout: 最大待機秒数
-        poll_interval: polling 間隔（秒）
+        exec_done_dir: path to the jobs/done/ directory
+        uuid: UUID of the task to wait for
+        timeout: maximum wait in seconds
+        poll_interval: polling interval (seconds)
     Returns:
-        (status, raw_first_line) のタプル。
-        status は interpret_done の結果:
-          "success"     — exit code 0 または空
+        tuple of (status, raw_first_line).
+        status is the result of interpret_done:
+          "success"     — exit code 0 or empty
           "rejected"    — REJECTED / REJECTED_FINAL
           "engine_error" — ENGINE_ERROR / ENGINE_ERROR_FINAL
           "empty_result" — EMPTY_RESULT
-          "failed_exit" — 非ゼロ exit code
-          "other"       — 上記以外
+          "failed_exit" — non-zero exit code
+          "other"       — anything else
     Raises:
-        TimeoutError: timeout 秒以内に jobs/done/<uuid> が出現しなかった場合
+        TimeoutError: jobs/done/<uuid> did not appear within timeout seconds
     """
     deadline = time.monotonic() + timeout
     while True:
