@@ -1,4 +1,4 @@
-"""cursor agent --output-format stream-json の JSONL から本文・TokenUsage を抽出する。"""
+"""Extract body text and TokenUsage from cursor agent --output-format stream-json JSONL."""
 
 from __future__ import annotations
 
@@ -22,15 +22,15 @@ _STDERR_AUTH_CODES = frozenset({"unauthenticated", "permission_denied"})
 
 
 def reconstruct_assistant_turns(stdout: bytes) -> str | None:
-    """stream-json JSONL から各 assistant ターン本文を空行区切りで再構成する。
+    """Reconstruct each assistant turn body from stream-json JSONL, separated by blank lines.
 
-    ターン境界は ``type == "tool_call"``。直前ターンを確定し、assistant text を
-    挟まない連続 tool_call は空ターンを生成しない。末尾は ``type == "result"``
-    または入力終端で確定する。
+    Turn boundaries are ``type == "tool_call"``, which finalize the preceding turn;
+    consecutive tool_calls without assistant text in between produce no empty turn.
+    The last turn is finalized at ``type == "result"`` or end of input.
 
-    ターン内では完結全文（非空 ``model_call_id``、または直前 delta 連結と完全一致
-    する assistant text）があれば最後の 1 件を採用し、無ければ delta を順に連結する。
-    空でないターン本文が 1 件も無ければ ``None``。
+    Within a turn, if complete full texts exist (non-empty ``model_call_id``, or assistant
+    text exactly matching the preceding delta concatenation), the last one is used;
+    otherwise deltas are concatenated in order. Returns ``None`` if no turn body is non-empty.
     """
     if not stdout:
         return None
@@ -102,7 +102,7 @@ def reconstruct_assistant_turns(stdout: bytes) -> str | None:
 
 
 def _assistant_text_content(obj: dict[Any, Any]) -> str:
-    """assistant イベントの text content だけを連結する（非 text / 非 str は無視）。"""
+    """Concatenate only the text content of an assistant event (non-text / non-str ignored)."""
     message = obj.get("message")
     if not isinstance(message, dict):
         return ""
@@ -122,11 +122,11 @@ def _assistant_text_content(obj: dict[Any, Any]) -> str:
 
 
 class CursorStreamAdapter:
-    """stream-json / 単一 JSON の両方を処理する cursor 用アダプター。
+    """Cursor adapter handling both stream-json and single JSON.
 
-    assistant ターン再構成本文があればそれを優先し、無ければ最終
-    ``{"type":"result"}`` 行の result・単一 JSON・生 stdout へフォールバックする。
-    従来の ``--output-format json`` 単一オブジェクトも受理する。
+    Prefers the reconstructed assistant turn body if present; otherwise falls back to the
+    result of the final ``{"type":"result"}`` line, then single JSON, then raw stdout.
+    The legacy ``--output-format json`` single object is also accepted.
     """
 
     def extract_result_text(self, stdout: bytes, stderr: bytes) -> bytes:
@@ -142,7 +142,7 @@ class CursorStreamAdapter:
         if isinstance(result, str):
             return result.encode("utf-8")
         if result is None:
-            # type=result だが result キー無し → 空ではなく raw を返す（壊さない）
+            # type=result but no result key -> return raw rather than empty (do not corrupt)
             if data.get("type") == "result":
                 return b""
             return stdout
@@ -182,7 +182,7 @@ class CursorStreamAdapter:
             chat_id = data.get("chat_id")
             if isinstance(chat_id, str) and chat_id:
                 return chat_id
-        # result 行に無い場合は JSONL 全体を走査（後方互換）
+        # If absent from the result line, scan the entire JSONL (backward compatibility)
         fallback: str | None = None
         for obj in _iter_json_objects(stdout):
             session_id = obj.get("session_id")
@@ -227,12 +227,12 @@ class CursorStreamAdapter:
         return None
 
     def is_terminal_result_event(self, event: dict[str, Any]) -> bool:
-        """このイベント行が最終 result か（進捗イベントか）を判定する。"""
+        """Return whether this event line is the final result (vs. a progress event)."""
         return isinstance(event, dict) and event.get("type") == "result"
 
 
 def _classify_stderr(stderr: bytes) -> EngineError | None:
-    """stderr の末尾から RetriableError 行を探して EngineError に変換する。"""
+    """Find a RetriableError line at the tail of stderr and convert it to EngineError."""
     text = stderr.decode("utf-8", errors="replace")
     for line in reversed(text.splitlines()):
         stripped = line.strip()
@@ -248,7 +248,7 @@ def _classify_stderr(stderr: bytes) -> EngineError | None:
 
 
 def _classify_result_message(message: str) -> tuple[EngineErrorKind, bool]:
-    """result payload の message 文字列を (EngineErrorKind, retryable) に変換する。"""
+    """Convert the message string of a result payload to (EngineErrorKind, retryable)."""
     lower = message.lower()
     if "quota" in lower and "exhaust" in lower:
         return EngineErrorKind.QUOTA_EXHAUSTED, False
@@ -262,7 +262,7 @@ def _classify_result_message(message: str) -> tuple[EngineErrorKind, bool]:
 
 
 def parse_cursor_result_payload(stdout: bytes) -> dict[Any, Any] | None:
-    """単一 JSON または stream-json JSONL から最終 result オブジェクトを返す。"""
+    """Return the final result object from a single JSON or stream-json JSONL."""
     if not stdout:
         return None
     try:

@@ -1,7 +1,7 @@
-"""ghdag.llm.adapters — CLI 出力→テキスト/メトリクス変換アダプター。
+"""ghdag.llm.adapters — adapters converting CLI output to text/metrics.
 
-EngineOutputAdapter Protocol は engine 固有の stdout 形式から
-本文テキストと TokenUsage を抽出する責務を持つ。
+The EngineOutputAdapter Protocol is responsible for extracting the body text
+and TokenUsage from an engine-specific stdout format.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from ghdag.core.ports.output import EngineError, EngineOutputAdapter
 
 
 class _PassthroughAdapter:
-    """未知エンジン用デフォルト: stdout パススルー、usage は None。"""
+    """Default for unknown engines: stdout passthrough, usage is None."""
 
     def extract_result_text(self, stdout: bytes, stderr: bytes) -> bytes:
         return stdout
@@ -38,10 +38,10 @@ _DEFAULT_ADAPTER = _PassthroughAdapter()
 
 
 def get_output_adapter(engine: str | None) -> EngineOutputAdapter:
-    """エンジン名から適切な EngineOutputAdapter を返す。
+    """Return the appropriate EngineOutputAdapter for an engine name.
 
-    claude エンジンの output_format デフォルトは json / stream-json。
-    cursor / codex は stream 対応アダプター（単一 JSON / JSONL 両対応）を返す。
+    The claude engine output_format defaults to json / stream-json.
+    cursor / codex return stream-capable adapters (accepting both single JSON and JSONL).
     """
     if engine == "claude":
         from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter

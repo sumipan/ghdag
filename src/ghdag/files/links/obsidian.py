@@ -13,9 +13,9 @@ def job_footer(ts: str, uuid: str, engine: str) -> str:
     result_fn = f"{ts}-{engine}-result-{uuid}.md"
     return (
         "\n\n---\n\n"
-        "## DAG（Obsidian）\n"
-        f"- 完了マーカー: [[jobs/done/{uuid}]]\n"
-        f"- この order: [[jobs/{order_fn}]]\n"
+        "## DAG (Obsidian)\n"
+        f"- Done marker: [[jobs/done/{uuid}]]\n"
+        f"- This order: [[jobs/{order_fn}]]\n"
         f"- result: [[jobs/{result_fn}]]\n"
     )
 
@@ -29,17 +29,17 @@ def summary_footer(
     """Return footer wiki-links for a summary job."""
     lines = [
         "\n\n---\n\n",
-        "## DAG（Obsidian）\n",
-        f"- 完了マーカー: [[jobs/done/{summary_uuid}]]\n",
-        f"- この order: [[jobs/{ts}-claude-order-{summary_uuid}.md]]\n",
+        "## DAG (Obsidian)\n",
+        f"- Done marker: [[jobs/done/{summary_uuid}]]\n",
+        f"- This order: [[jobs/{ts}-claude-order-{summary_uuid}.md]]\n",
         f"- result: [[jobs/{ts}-claude-result-{summary_uuid}.md]]\n",
-        "- 先行ジョブの result:\n",
+        "- Upstream job results:\n",
     ]
     for p in job_result_paths:
         name = p.replace("jobs/", "", 1) if p.startswith("jobs/") else p
         lines.append(f"  - [[jobs/{name}]]\n")
     if slack_uuid:
-        lines.append(f"- Slack 返信ステップの完了マーカー: [[jobs/done/{slack_uuid}]]\n")
+        lines.append(f"- Slack reply step done marker: [[jobs/done/{slack_uuid}]]\n")
     return "".join(lines)
 
 

@@ -14,7 +14,7 @@ QUOTA_DEFAULT_PAUSE_SECONDS: int = int(
 
 
 def last_nonempty_line(text: str) -> str:
-    """末尾の非空行を返す（無ければ空文字）。"""
+    """Return the last non-empty line (empty string if none)."""
     stripped = text.rstrip()
     if not stripped:
         return ""
@@ -22,11 +22,11 @@ def last_nonempty_line(text: str) -> str:
 
 
 def looks_like_question(text: str) -> bool:
-    """最終行がユーザーへの質問で終わるかを判定する（ASCII `?` / 全角 `？`）。"""
+    """Return whether the last line ends with a question to the user (ASCII `?` / fullwidth U+FF1F)."""
     last_line = last_nonempty_line(text)
     if not last_line:
         return False
-    return last_line.endswith(("?", "？"))
+    return last_line.endswith(("?", "\uff1f"))
 
 
 def classify_common_failure(
@@ -59,9 +59,9 @@ def _is_quota_exhausted_error(message: str) -> bool:
         return True
     if "you've reached your monthly" in lower:
         return True
-    # codex（ChatGPT アカウント認証）: "You've hit your usage limit. ... try again at Sep 10th, 2026 2:13 AM."
-    # 2026-09-09 実測。quota / rate limit のどの語も含まないため未検知で PROCESS_ERROR 扱いになり、
-    # pause も fallback も効かず後続ステップが連鎖失敗した。
+    # codex (ChatGPT account auth): "You've hit your usage limit. ... try again at Sep 10th, 2026 2:13 AM."
+    # Observed 2026-09-09. It contains none of the quota / rate limit words, so it went undetected and
+    # was treated as PROCESS_ERROR; neither pause nor fallback kicked in and downstream steps failed in cascade.
     if "usage limit" in lower:
         return True
     return "resets " in lower and "hit your session limit" in lower

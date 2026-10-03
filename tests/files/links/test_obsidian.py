@@ -12,7 +12,7 @@ class TestJobFooter:
     def test_ac1_job_footer_links(self) -> None:
         out = job_footer(TS, UUID, "cursor")
         # Japanese text intentionally kept for CJK processing test
-        assert out.startswith("\n\n---\n\n## DAG（Obsidian）\n")
+        assert out.startswith("\n\n---\n\n## DAG (Obsidian)\n")
         assert "[[jobs/done/abc-def-123]]" in out
         assert "[[jobs/20260509120000-cursor-order-abc-def-123.md]]" in out
         assert "[[jobs/20260509120000-cursor-result-abc-def-123.md]]" in out

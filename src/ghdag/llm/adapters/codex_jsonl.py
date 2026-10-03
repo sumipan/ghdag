@@ -1,4 +1,4 @@
-"""codex exec --json の JSONL から本文・TokenUsage を抽出する（stream 対応）。"""
+"""Extract body text and TokenUsage from codex exec --json JSONL (stream capable)."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ from ghdag.llm.adapters.codex import CodexAdapter
 
 
 class CodexJsonlAdapter(CodexAdapter):
-    """CodexAdapter の JSONL 抽出に、行種別判定を加えた stream 用アダプター。
+    """Stream adapter adding line-type classification to CodexAdapter JSONL extraction.
 
-    ``--json`` 出力は常に JSONL のため、本文抽出ロジックは CodexAdapter と同一。
-    DAG の行単位ドレインで「最終 agent_message か」を判定するメソッドを公開する。
+    ``--json`` output is always JSONL, so the body extraction logic is identical to CodexAdapter.
+    Exposes a method to decide "is this the final agent_message" for line-by-line draining in the DAG.
     """
 
     def is_terminal_result_event(self, event: dict[str, Any]) -> bool:
-        """最終 assistant メッセージ（item.completed + agent_message）か。"""
+        """Whether this is the final assistant message (item.completed + agent_message)."""
         if not isinstance(event, dict):
             return False
         if event.get("type") != "item.completed":
