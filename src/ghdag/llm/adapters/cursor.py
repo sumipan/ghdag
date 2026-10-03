@@ -1,4 +1,4 @@
-"""cursor agent CLI 用アダプター（JSON / テキスト stdout 両対応）。"""
+"""Adapter for the cursor agent CLI (accepts both JSON and text stdout)."""
 
 from __future__ import annotations
 
@@ -72,7 +72,7 @@ class CursorAdapter:
 
 
 def _parse_json_object(stdout: bytes) -> dict[Any, Any] | None:
-    """単一 JSON オブジェクト、または JSONL 先頭のオブジェクトを返す。"""
+    """Return a single JSON object, or the first object of a JSONL."""
     text = stdout.decode("utf-8", errors="replace").strip()
     if not text:
         return None

@@ -1,4 +1,4 @@
-"""codex --json の JSONL stdout から本文テキストと TokenUsage を抽出するアダプター。"""
+"""Adapter extracting body text and TokenUsage from codex --json JSONL stdout."""
 
 from __future__ import annotations
 
@@ -16,13 +16,13 @@ from ghdag.llm.adapters.failure_classification import (
 
 
 class CodexAdapter:
-    """JSONL 形式の codex stdout を処理し、result テキストと使用量を取り出す。
+    """Process codex stdout in JSONL format and extract result text and usage.
 
-    codex --json は複数行 JSONL を出力する。本文は item.completed + agent_message の
-    item.text に、使用量は turn.completed の usage に格納される。
+    codex --json emits multi-line JSONL. The body is stored in item.text of
+    item.completed + agent_message, and usage in the usage of turn.completed.
 
-    LLMResult.stdout は生 JSONL のままであり、テキストが必要な呼び出し側は
-    extract_result_text() を通すこと（claude エンジンとの非対称に注意）。
+    LLMResult.stdout stays raw JSONL; callers that need text must go through
+    extract_result_text() (note the asymmetry with the claude engine).
     """
 
     def extract_result_text(self, stdout: bytes, stderr: bytes) -> bytes:
@@ -71,7 +71,7 @@ class CodexAdapter:
         return None
 
     def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
-        """thread.started.thread_id を優先し、旧形式 session_id を後方互換で受け付ける。"""
+        """Prefer thread.started.thread_id; accept legacy session_id for backward compatibility."""
         fallback: str | None = None
         for line in stdout.decode("utf-8", errors="replace").splitlines():
             line = line.strip()
@@ -139,7 +139,7 @@ class CodexAdapter:
 
 
 def _last_agent_message_text(stdout: bytes) -> str:
-    """stdout JSONL の最終 agent_message item の text を返す。"""
+    """Return the text of the last agent_message item in the stdout JSONL."""
     last = ""
     for line in stdout.decode("utf-8", errors="replace").splitlines():
         line = line.strip()
@@ -179,9 +179,9 @@ _RESET_AT_RE = re.compile(
 )
 
 
-# ChatGPT アカウント認証の codex が返す人間向け表記（2026-09-09 実測）:
+# Human-readable format returned by codex with ChatGPT account auth (observed 2026-09-09):
 #   "You've hit your usage limit. ... or try again at Sep 10th, 2026 2:13 AM."
-# タイムゾーン表記が無いのでローカル時刻として解釈する。
+# No timezone is given, so it is interpreted as local time.
 _HUMAN_RESET_AT_RE = re.compile(
     r"try again at\s+([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)",
     re.IGNORECASE,
@@ -226,7 +226,7 @@ def _classify_error(message: str, observed_at: datetime) -> tuple[EngineErrorKin
         )
         return EngineErrorKind.QUOTA_EXHAUSTED, False, resume_at
     if "usage limit" in lower:
-        # "You've hit your usage limit. ... try again at Sep 10th, 2026 2:13 AM."（2026-09-09 実測）
+        # "You've hit your usage limit. ... try again at Sep 10th, 2026 2:13 AM." (observed 2026-09-09)
         resume_at = _parse_reset_at(message) or (
             observed_at + timedelta(seconds=QUOTA_DEFAULT_PAUSE_SECONDS)
         )

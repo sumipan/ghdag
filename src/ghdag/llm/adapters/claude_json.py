@@ -1,4 +1,4 @@
-"""claude --output-format json / stream-json の stdout から本文・TokenUsage を抽出する。"""
+"""Extract the body text and TokenUsage from claude --output-format json / stream-json stdout."""
 
 from __future__ import annotations
 
@@ -18,9 +18,9 @@ from ghdag.llm.capabilities import LLMParseError
 
 
 def extract_stream_result(stdout: str) -> str:
-    """stream-json JSONL 出力から最終 result テキストを抽出する。
+    """Extract the final result text from stream-json JSONL output.
 
-    DAG 経路の result ファイル書き出しと call() の stream 検証で共用する。
+    Shared by result-file writing on the DAG path and stream validation in call().
     """
     last_result: str | None = None
     for line in stdout.splitlines():
@@ -42,10 +42,10 @@ def extract_stream_result(stdout: str) -> str:
 
 
 def parse_claude_result_payload(stdout: bytes) -> dict | None:
-    """単一 JSON または stream-json JSONL から最終 result オブジェクト（dict）を返す。
+    """Return the final result object (dict) from a single JSON or stream-json JSONL.
 
-    JSONL の場合は最後の ``{"type":"result"}`` 行を優先する。
-    従来の ``--output-format json`` 単一オブジェクト（type 無し含む）も受理する。
+    For JSONL, the last ``{"type":"result"}`` line takes precedence.
+    The legacy ``--output-format json`` single object (including without type) is also accepted.
     """
     if not stdout:
         return None
@@ -76,10 +76,10 @@ def parse_claude_result_payload(stdout: bytes) -> dict | None:
 
 
 class ClaudeJsonAdapter:
-    """JSON / stream-json 形式の claude stdout を処理し、result テキストと使用量を取り出す。
+    """Process claude stdout in JSON / stream-json format and extract result text and usage.
 
-    JSON parse に失敗した場合はフォールバックとして raw stdout を返し、
-    TokenUsage は None を返す。result_path の中身が壊れない安全弁として機能する。
+    If JSON parsing fails, fall back to returning raw stdout with TokenUsage None.
+    This acts as a safety valve so the result_path content is never corrupted.
     """
 
     def extract_result_text(self, stdout: bytes, stderr: bytes) -> bytes:

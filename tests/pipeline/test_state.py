@@ -46,7 +46,7 @@ class TestWriteOrderFileFooter:
         )
 
         content = (queue_dir / filename).read_text(encoding="utf-8")
-        assert "## DAG（Obsidian）" in content
+        assert "## DAG (Obsidian)" in content
         assert "[[jobs/done/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee]]" in content
 
     def test_ac8_default_no_dag_section(self, tmp_path) -> None:
@@ -63,7 +63,7 @@ class TestWriteOrderFileFooter:
         )
 
         content = (queue_dir / filename).read_text(encoding="utf-8")
-        assert "## DAG（Obsidian）" not in content
+        assert "## DAG (Obsidian)" not in content
 
 
 class TestSubmitWithoutAuditContext:
