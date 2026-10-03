@@ -1,4 +1,4 @@
-"""ghdag cleanup — queue ディレクトリのクリーンアップロジック。"""
+"""ghdag cleanup — cleanup logic for the queue directory."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ class CleanupResult:
 
 
 def file_timestamp(path: Path) -> float:
-    """ファイルのタイムスタンプを返す。st_birthtime 優先、fallback st_mtime。"""
+    """Return the file timestamp. Prefers st_birthtime, falls back to st_mtime."""
     try:
         st = path.stat()
     except OSError:

@@ -13,8 +13,8 @@ class LinkRewriter:
         self._dry_run = dry_run
 
     def rewrite(self, all_moved: list[tuple[Path, Path]]) -> None:
-        """移動されたファイルのパスマップに基づき、queue_dir 内の .md ファイルの
-        wiki リンクを書き換える。"""
+        """Rewrite wiki links in .md files under queue_dir based on the path
+        map of moved files."""
         if self._dry_run or not all_moved:
             return
 
