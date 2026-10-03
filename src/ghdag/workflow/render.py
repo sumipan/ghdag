@@ -25,7 +25,7 @@ def parse_context(args: list[str]) -> dict[str, str]:
     context: dict[str, str] = {}
     for arg in args:
         if "=" not in arg:
-            raise ValueError(f"key=value 形式ではありません: {arg!r}")
+            raise ValueError(f"not in key=value form: {arg!r}")
         key, value = arg.split("=", 1)
         context[key] = value
     return context
@@ -34,14 +34,14 @@ def parse_context(args: list[str]) -> dict[str, str]:
 def render_template(template_path: Path, context: dict[str, str]) -> tuple[str, str]:
     """Expand template with string.Template.substitute; return (body, sha12)."""
     if not template_path.exists():
-        raise FileNotFoundError(f"テンプレートファイルが見つかりません: {template_path}")
+        raise FileNotFoundError(f"template file not found: {template_path}")
     text = template_path.read_text(encoding="utf-8")
     tmpl = string.Template(text)
     missing = sorted(set(tmpl.get_identifiers()) - set(context))
     if missing:
         raise KeyError(
-            f"テンプレート展開エラー ({template_path}): 未定義変数: {missing}, "
-            f"利用可能なキー: {sorted(context)}"
+            f"template render error ({template_path}): undefined variables: {missing}, "
+            f"available keys: {sorted(context)}"
         )
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
     return tmpl.substitute(context), digest

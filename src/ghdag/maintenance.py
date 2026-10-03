@@ -1,4 +1,4 @@
-"""ghdag.maintenance — キュー検査・修復 API。"""
+"""ghdag.maintenance — queue inspection and repair API."""
 
 from __future__ import annotations
 
@@ -10,15 +10,15 @@ from ghdag.io.done import mark_done as _mark_done
 
 
 def validate_exec_jsonl(exec_jsonl_path: Path) -> list[tuple[int, str]]:
-    """exec.jsonl の各行を json.loads() で検証し、失敗した行を返す。
+    """Validate each line of exec.jsonl with json.loads() and return the failing lines.
 
     Args:
-        exec_jsonl_path: exec.jsonl のパス
+        exec_jsonl_path: path to exec.jsonl
     Returns:
-        [(1始まり行番号, 不正行テキスト), ...]
-        空行・空白のみの行はスキップし、報告対象外とする。
+        [(1-based line number, invalid line text), ...]
+        Empty and whitespace-only lines are skipped and not reported.
     Raises:
-        FileNotFoundError: exec_jsonl_path が存在しない場合
+        FileNotFoundError: if exec_jsonl_path does not exist
     """
     from ghdag.io import exec_jsonl
 
@@ -26,16 +26,16 @@ def validate_exec_jsonl(exec_jsonl_path: Path) -> list[tuple[int, str]]:
 
 
 def repair_exec_jsonl(exec_jsonl_path: Path, *, dry_run: bool = False) -> int:
-    """json.loads() で解析できない行を exec.jsonl から除去する。
+    """Remove lines that json.loads() cannot parse from exec.jsonl.
 
     Args:
-        exec_jsonl_path: exec.jsonl のパス
-        dry_run: True の場合、ファイルを変更せず除去対象行数のみ返す
+        exec_jsonl_path: path to exec.jsonl
+        dry_run: if True, do not modify the file; only return the number of lines to remove
     Returns:
-        除去した（または除去対象の）行数
+        Number of lines removed (or to be removed)
     Note:
-        書き込み時は fcntl.LOCK_EX で排他ロックを取得する。
-        空行・空白のみの行も除去対象とする。
+        Takes an exclusive lock with fcntl.LOCK_EX when writing.
+        Empty and whitespace-only lines are also removed.
     """
     from ghdag.io import exec_jsonl
 
@@ -48,18 +48,18 @@ def repair_jobs_done(
     *,
     dry_run: bool = False,
 ) -> dict[str, int]:
-    """exec.jsonl のエントリから done マーカーを復元する。
+    """Restore done markers from exec.jsonl entries.
 
     Args:
-        exec_jsonl_path: exec.jsonl のパス
-        done_dir: done マーカーディレクトリのパス
-        dry_run: True の場合、マーカーファイルを作成せず対象数のみ返す
+        exec_jsonl_path: path to exec.jsonl
+        done_dir: path to the done marker directory
+        dry_run: if True, do not create marker files; only return the counts
     Returns:
         {"restored": int, "skipped": int}
     Note:
-        result_path は exec_jsonl_path.parent を基準に相対パスを解決する。
-        result_path が存在しないエントリは restored にも skipped にもカウントしない。
-        done マーカーの書き込みには ``ghdag.io.done.mark_done`` を使用する（ops 層は dag に依存しない）。
+        result_path is resolved relative to exec_jsonl_path.parent.
+        Entries whose result_path does not exist are counted as neither restored nor skipped.
+        Done markers are written with ``ghdag.io.done.mark_done`` (the ops layer does not depend on dag).
     """
     base = Path(exec_jsonl_path).parent
     done_dir = Path(done_dir)

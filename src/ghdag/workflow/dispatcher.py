@@ -1,4 +1,4 @@
-"""workflow/dispatcher.py — WorkflowDispatcher: ポーリング + イベントマッチング + exec.jsonl 投入"""
+"""workflow/dispatcher.py — WorkflowDispatcher: polling + event matching + exec.jsonl enqueue"""
 
 from __future__ import annotations
 
@@ -74,8 +74,8 @@ class ContextHookError(GhdagError, ValueError):
 
 
 class WorkflowDispatcher:
-    """ポーリングループで GitHub Issues を監視し、トリガー条件に一致する Issue を検出して
-    対応するハンドラーを exec.jsonl 経由で実行する。
+    """Watch GitHub Issues in a polling loop, detect Issues matching trigger conditions, and
+    run the corresponding handler via exec.jsonl.
     """
 
     def __init__(
@@ -88,8 +88,8 @@ class WorkflowDispatcher:
         workflows_dir: Path | None = None,
     ):
         self._workflows = workflows
-        # 単一クライアントとクライアントのリストの両方を受け付ける。
-        # 複数リポ watch 時はリポジトリごとのクライアントを渡す。
+        # Accept both a single client and a list of clients.
+        # When watching multiple repos, pass one client per repository.
         if isinstance(github_client, (list, tuple)):
             self._githubs: list[GitHubIssuePort] = list(github_client)
         else:
@@ -110,11 +110,11 @@ class WorkflowDispatcher:
         self._rate_limited_until: int | None = None
 
     def poll_once(self) -> list[dict]:
-        """1回のポーリングを実行。マッチした Issue とアクションのリストを返す。
+        """Run one poll. Return the list of matched Issues and actions.
 
-        リポジトリごとに open Issue を 1 回一括取得し、trigger ラベル判定はローカルで行う。
-        一括取得が失敗した場合はそのクライアントの全 trigger をスキップする。
-        ラベルフィルタ中の個別例外は trigger 単位でスキップする（per-trigger isolation）。
+        Fetch open Issues once per repository in bulk and evaluate trigger labels locally.
+        If the bulk fetch fails, all triggers for that client are skipped.
+        Individual exceptions during label filtering skip only that trigger (per-trigger isolation).
 
         Returns:
             [{"issue": <number>, "workflow": <name>, "handler": <name>, ...}, ...]
@@ -216,29 +216,29 @@ class WorkflowDispatcher:
         redispatch: bool = False,
         redispatch_reason: str | None = None,
     ) -> DispatchResult:
-        """Issue に対してハンドラーを実行。
+        """Run a handler for an Issue.
 
         Args:
             issue: GitHub Issue dict
             workflow: WorkflowConfig
             handler: HandlerConfig
-            trigger: 対応する TriggerConfig（省略時は workflow から解決）
-            trigger_rank: triggers リスト内の序列（省略時は workflow から解決）
-            github: この Issue を取得したクライアント（省略時は先頭クライアント）
-            redispatch: True のとき世代を +1 して新しい run を開始する
-            redispatch_reason: redispatch 時の理由（audit.jsonl に記録）
+            trigger: the matching TriggerConfig (resolved from the workflow if omitted)
+            trigger_rank: rank within the triggers list (resolved from the workflow if omitted)
+            github: the client that fetched this Issue (the first client if omitted)
+            redispatch: when True, bump the generation by 1 and start a new run
+            redispatch_reason: reason for the redispatch (recorded in audit.jsonl)
 
         Returns:
-            DispatchResult: status が "dispatched" | "skipped" | "reset"
+            DispatchResult: status is "dispatched" | "skipped" | "reset"
         """
         github = github if github is not None else self._githubs[0]
         issue_number = issue["number"] if isinstance(issue, dict) else issue
 
-        # trigger / trigger_rank を解決
+        # Resolve trigger / trigger_rank
         if trigger is None or trigger_rank is None:
             trigger, trigger_rank = self._resolve_trigger(workflow, handler)
 
-        # 1. 後退遷移ガード
+        # 1. Backward-transition guard
         current_running_rank = self._get_current_running_rank(issue, workflow)
         if current_running_rank is not None and trigger_rank <= current_running_rank:
             logger.info(
@@ -247,14 +247,14 @@ class WorkflowDispatcher:
             )
             return DispatchResult(status="skipped", reason="backward transition")
 
-        # 2. reset ハンドラー
+        # 2. reset handler
         if handler.type == "reset":
             if trigger is None:
                 return DispatchResult(status="skipped", reason="no trigger for reset")
             self._handle_reset(issue, workflow, trigger, github)
             return DispatchResult(status="reset", reason="reset handler")
 
-        # 3. 冪等性チェック
+        # 3. Idempotency check
         handler_name = trigger.handler if trigger else ""
         generation = 0
         if redispatch:
@@ -292,11 +292,11 @@ class WorkflowDispatcher:
             )
             return DispatchResult(status="skipped", reason="already dispatched")
 
-        # 4. Issue コンテキスト取得
+        # 4. Fetch Issue context
         if handler.on_trigger and handler.on_trigger.issue_context:
             self._write_design_md(issue, github)
 
-        # 4b. context_hook 実行
+        # 4b. Run context_hook
         base_context: dict[str, str] = {
             "issue_number": str(issue_number),
             "workflow_name": workflow.name,
@@ -305,7 +305,7 @@ class WorkflowDispatcher:
         if handler.context_hook:
             base_context.update(self._run_context_hook(handler.context_hook, issue_number))
 
-        # 5. パイプライン投入（render: live は trampoline をインラインオーダーとして渡す）
+        # 5. Enqueue to the pipeline (render: live passes the trampoline as an inline order)
         audit_ctx = AuditContext(source=workflow.name, correlation_id=idempotency_key)
         exec_lines = self._submit_steps(
             workflow=workflow,
@@ -315,7 +315,7 @@ class WorkflowDispatcher:
             audit_ctx=audit_ctx,
         )
 
-        # 6. ラベル遷移（*-ready / *:ready → *-running / *:running）
+        # 6. Label transition (*-ready / *:ready -> *-running / *:running)
         if trigger:
             m = _READY_LABEL_RE.match(trigger.label)
             if m:
@@ -362,7 +362,7 @@ class WorkflowDispatcher:
         )
 
     def run(self, max_iterations: int | None = None) -> None:
-        """ポーリングループを開始。max_iterations=None で無限ループ。"""
+        """Start the polling loop. max_iterations=None loops forever."""
         count = 0
         while max_iterations is None or count < max_iterations:
             if self._pause_file is not None and self._pause_file.exists():
@@ -534,9 +534,10 @@ class WorkflowDispatcher:
         return reason[:_PAUSE_REASON_MAX_CHARS]
 
     def _observe_rate_limit(self) -> None:
-        """各クライアントの直近応答ヘッダ由来 rate limit を audit.jsonl に記録する。
+        """Record each client's rate limit from its latest response headers to audit.jsonl.
 
-        GET /rate_limit は呼ばない。remaining が閾値以下なら polling_interval を一時的に 2 倍にする。
+        Does not call GET /rate_limit. If remaining is at or below the threshold,
+        polling_interval is temporarily doubled.
         """
         observed_any = False
         any_low = False
@@ -575,7 +576,7 @@ class WorkflowDispatcher:
             )
 
     def _observe_correlation_burst(self) -> None:
-        """audit.jsonl から correlation_id バーストを検出し warning を出力する。"""
+        """Detect correlation_id bursts from audit.jsonl and emit a warning."""
         try:
             audit_path = Path(self._queue_dir) / "audit.jsonl"
             bursts = detect_correlation_bursts(
@@ -608,7 +609,7 @@ class WorkflowDispatcher:
         results: list[dict],
         all_closed: list[dict],
     ) -> None:
-        """CLOSED かつ非終端ラベルの issue を検出し reopen / trigger action を実行する。"""
+        """Detect CLOSED issues with non-terminal labels and run the reopen / trigger action."""
         config = workflow.nonterminal_closed
         if config is None:
             return
@@ -764,7 +765,7 @@ class WorkflowDispatcher:
     def _resolve_trigger(
         self, workflow: WorkflowConfig, handler: HandlerConfig
     ) -> tuple[TriggerConfig | None, int]:
-        """handler に対応する trigger と rank を workflow から解決する。"""
+        """Resolve the trigger and rank for a handler from the workflow."""
         for rank, trigger in enumerate(workflow.triggers):
             if trigger.handler in workflow.handlers:
                 if workflow.handlers[trigger.handler] is handler:
@@ -772,7 +773,7 @@ class WorkflowDispatcher:
         return None, 0
 
     def _get_current_running_rank(self, issue: dict, workflow: WorkflowConfig) -> int | None:
-        """Issue の現在 -running ラベルのうち最大序列を返す。なければ None。"""
+        """Return the highest rank among the Issue's current -running labels, or None."""
         issue_label_names = {lb["name"] for lb in issue.get("labels", [])}
         max_rank: int | None = None
 
@@ -788,7 +789,7 @@ class WorkflowDispatcher:
         return max_rank
 
     def _write_design_md(self, issue: dict, github: GitHubIssuePort) -> None:
-        """Issue body + comments を queue/issue-{N}-design.md に書き出す。"""
+        """Write the Issue body + comments to queue/issue-{N}-design.md."""
         issue_number = issue["number"]
         comments = github.get_issue_comments(issue_number)
 
@@ -813,13 +814,13 @@ class WorkflowDispatcher:
         trigger: TriggerConfig,
         github: GitHubIssuePort,
     ) -> None:
-        """冪等キー削除 + トリガーラベルと同プレフィックスのラベルをすべてクリア。"""
+        """Delete the idempotency key and clear all labels sharing the trigger label's prefix."""
         issue_number = issue["number"]
 
-        # 冪等キー削除
+        # Delete the idempotency key
         self._pipeline.remove_idempotency_matching(workflow.name, issue_number)
 
-        # ラベルプレフィックス: label_namespace 優先、未設定時は trigger.label から抽出
+        # Label prefix: label_namespace takes precedence; otherwise extracted from trigger.label
         if workflow.label_namespace:
             prefix = workflow.label_namespace + ":"
         elif ":" in trigger.label:
@@ -827,7 +828,7 @@ class WorkflowDispatcher:
         else:
             prefix = ""
 
-        # 同プレフィックスのラベルをすべて除去
+        # Remove all labels with the same prefix
         if prefix:
             issue_label_names = [lb["name"] for lb in issue.get("labels", [])]
             for label in issue_label_names:
@@ -837,17 +838,17 @@ class WorkflowDispatcher:
     def _run_context_hook(
         self, hook_cmd: str, issue_number: int, *, timeout: int = 30
     ) -> dict[str, str]:
-        """context_hook コマンドを実行し、stdout の JSON を dict として返す。
+        """Run the context_hook command and return its stdout JSON as a dict.
 
         Args:
-            hook_cmd: シェルコマンド文字列（shlex.split で分割）
-            issue_number: Issue 番号（引数として渡す）
-            timeout: タイムアウト秒数
+            hook_cmd: shell command string (split with shlex.split)
+            issue_number: Issue number (passed as an argument)
+            timeout: timeout in seconds
         Returns:
-            hook の stdout を JSON パースした dict（全値を str に変換）
+            dict parsed from the hook's stdout JSON (all values converted to str)
         Raises:
-            subprocess.TimeoutExpired: hook がタイムアウト
-            ValueError: stdout が有効な JSON でない
+            subprocess.TimeoutExpired: if the hook times out
+            ValueError: if stdout is not valid JSON
         """
         full_cmd = f"{hook_cmd} {shlex.quote(str(issue_number))}"
         logger.info("Running context_hook: %s", full_cmd)

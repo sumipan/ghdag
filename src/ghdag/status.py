@@ -1,4 +1,4 @@
-"""ghdag.status — Issue × handler の現在状態を返す公開 API (nexus #3084)."""
+"""ghdag.status — public API returning the current state per Issue x handler (nexus #3084)."""
 
 from __future__ import annotations
 

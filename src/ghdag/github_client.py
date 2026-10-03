@@ -34,7 +34,7 @@ from ghdag.exceptions import (
     RateLimitError,
 )
 
-# GitHub Link ヘッダーの rel="next"（実測 2026-09-10）:
+# rel="next" in the GitHub Link header (observed 2026-09-10):
 #   <https://api.github.com/repositories/.../issues?per_page=1&...&page=2>; rel="next"
 _LINK_NEXT_RE = re.compile(r'<([^>]+)>\s*;\s*rel="next"', re.IGNORECASE)
 
@@ -42,8 +42,8 @@ API_BASE = "https://api.github.com"
 GRAPHQL_URL = "https://api.github.com/graphql"
 DEFAULT_REPO = "sumipan/nexus"
 
-# 一過性障害の限定再試行（nexus#2563: RemoteDisconnected 1 発でパイプラインが停止した）。
-# 認証・権限・入力不正などの恒久エラーは再試行しない。
+# Bounded retry for transient failures (nexus#2563: a single RemoteDisconnected stopped the pipeline).
+# Permanent errors (auth, permission, invalid input, etc.) are not retried.
 _TRANSIENT_HTTP_STATUS = frozenset({502, 503, 504})
 _TRANSIENT_EXCEPTIONS = (
     http.client.RemoteDisconnected,
@@ -118,7 +118,7 @@ def _resolve_token(token: str | None = None) -> str:
 
 
 def _resolve_repos() -> list[tuple[str, str]]:
-    """GITHUB_REPOSITORIES（カンマ区切り owner/repo リスト）を解決する。"""
+    """Resolve GITHUB_REPOSITORIES (comma-separated owner/repo list)."""
     raw = github_repositories_raw()
     repos: list[tuple[str, str]] = []
     for part in raw.split(","):
@@ -137,7 +137,7 @@ def _resolve_repos() -> list[tuple[str, str]]:
 
 
 def _parse_link_next(link_header: str | None) -> str | None:
-    """Link レスポンスヘッダーから rel=\"next\" URL を抽出する。"""
+    """Extract the rel=\"next\" URL from the Link response header."""
     if not link_header:
         return None
     for part in link_header.split(","):
@@ -260,7 +260,7 @@ class GitHubClient:
             tmp.write_text(json.dumps(self._etag_disk), encoding="utf-8")
             os.replace(tmp, path)
         except (OSError, TypeError, ValueError) as exc:
-            # キャッシュ書き込み失敗で API 呼び出し自体は失敗させない
+            # A cache write failure must not fail the API call itself
             print(f"ghdag: failed to write ETag cache {path}: {exc}", file=sys.stderr)
             try:
                 tmp.unlink()
@@ -403,8 +403,8 @@ class GitHubClient:
                         raise PermissionDeniedError(error_msg, status_code=403) from exc
                     raise GitHubApiError(error_msg, status_code=exc.code) from exc
                 except _TRANSIENT_EXCEPTIONS as exc:
-                    # urlopen は接続断を URLError に包まず素通しすることがある
-                    # （nexus#2563: RemoteDisconnected が生で送出された実績）
+                    # urlopen may let connection drops through without wrapping them in URLError
+                    # (nexus#2563: a raw RemoteDisconnected was actually raised)
                     if attempt < _MAX_ATTEMPTS - 1:
                         _backoff_sleep(attempt)
                         continue
@@ -571,11 +571,11 @@ class GitHubClient:
         *,
         attempts: int = 2,
     ) -> None:
-        """ラベル遷移を冪等に収束させる（nexus#2563）.
+        """Converge a label transition idempotently (nexus#2563).
 
-        DELETE + POST は非原子的なため、応答喪失（NetworkError）時は現在ラベルを
-        再取得して残作業だけを再実行する。「サーバーでは適用されたが応答を受け取れ
-        なかった」ケースは再取得で吸収される。DELETE の 404（既に無い）は成功扱い。
+        DELETE + POST is not atomic, so on a lost response (NetworkError) the current labels
+        are re-fetched and only the remaining work is re-run. The "applied on the server but
+        the response was not received" case is absorbed by the re-fetch. A DELETE 404 (already gone) counts as success.
         """
         add = list(labels_add)
         remove = list(labels_remove)
@@ -1053,9 +1053,9 @@ def create_github_client(
     owner: str | None = None,
     repo: str | None = None,
 ) -> GitHubIssuePort:
-    """単一リポジトリ用クライアントを生成する。
+    """Create a client for a single repository.
 
-    owner/repo を明示しない場合は GITHUB_REPOSITORIES の先頭エントリを使う。
+    If owner/repo is not given, the first entry of GITHUB_REPOSITORIES is used.
     """
     token_value = _resolve_token(token)
     if owner and repo:
@@ -1065,7 +1065,7 @@ def create_github_client(
 
 
 def create_github_clients(*, token: str | None = None) -> list[GitHubIssuePort]:
-    """GITHUB_REPOSITORIES の各リポジトリに対するクライアントのリストを生成する。"""
+    """Create a list of clients, one per repository in GITHUB_REPOSITORIES."""
     token_value = _resolve_token(token)
     return [
         GitHubClient(token=token_value, repo=f"{owner}/{repo}")
