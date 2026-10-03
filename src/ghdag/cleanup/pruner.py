@@ -11,22 +11,22 @@ class ExecJsonlPruner:
         self._dry_run = dry_run
 
     def load(self) -> tuple[list[str], set[str]]:
-        """exec.jsonl を読み込み、(行リスト, UUID集合) を返す。"""
+        """Load exec.jsonl and return (list of lines, set of UUIDs)."""
         return exec_jsonl.load_uuids(self._exec_md)
 
     def prune(self, exec_lines: list[str], prune_uuids: set[str]) -> int:
-        """prune_uuids に該当する行を除去し、ファイルを書き換える。
+        """Remove lines matching prune_uuids and rewrite the file.
 
-        ``exec_lines`` は呼び出し側の走査用キャッシュ。実際の rewrite は
-        ``io.exec_jsonl.prune`` が LOCK_EX 付きで行う。
+        ``exec_lines`` is the caller's scan cache. The actual rewrite is
+        performed by ``io.exec_jsonl.prune`` under LOCK_EX.
 
         Returns:
-            除去した行数
+            Number of lines removed
         """
-        del exec_lines  # 走査は orchestrator 側; 書き込みは path 基準で再読込
+        del exec_lines  # scanning is done by the orchestrator; writes re-read by path
         return exec_jsonl.prune(self._exec_md, prune_uuids, dry_run=self._dry_run)
 
     @staticmethod
     def extract_uuid(line: str) -> str | None:
-        """JSON 行から UUID を抽出する。"""
+        """Extract the UUID from a JSON line."""
         return exec_jsonl.extract_uuid(line)

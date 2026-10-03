@@ -31,7 +31,7 @@ class OrphanDetector:
         done_uuids: set[str],
         prune_uuids: set[str],
     ) -> tuple[int, int, list[tuple[Path, Path]]]:
-        """exec.jsonl に存在しないファイルを走査し、条件に応じてアーカイブする。
+        """Scan files not present in exec.jsonl and archive them as conditions apply.
 
         Returns:
             (archived_done, archived_orphan, moved_files)

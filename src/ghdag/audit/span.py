@@ -1,4 +1,4 @@
-"""Latency span writer for E2E tracing (nexus #3323 / #3301 サブ8).
+"""Latency span writer for E2E tracing (nexus #3323 / #3301 sub-issue 8).
 
 Public API migrated from nexus ``tools.measurement.latency_span``.
 Writes one JSON object per line to ``jobs/latency_span.jsonl`` (or ``LATENCY_SPAN_PATH``).

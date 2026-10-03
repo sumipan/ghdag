@@ -9,10 +9,10 @@ class QueueArchiver:
         self._dry_run = dry_run
 
     def archive_files(self, entry: dict, orphan: bool) -> list[tuple[Path, Path]]:
-        """entry 内のファイル群を archive_dir/YYYY-MM/ に移動する。
+        """Move the files in entry to archive_dir/YYYY-MM/.
 
         Returns:
-            (旧パス, 新パス) のリスト（dry_run 時は空）
+            List of (old path, new path) (empty when dry_run)
         """
         ts = entry["ts"]
         dest_dir = self._month_dir(ts, orphan=orphan)
@@ -31,7 +31,7 @@ class QueueArchiver:
         return moved
 
     def _month_dir(self, ts_str: str, orphan: bool = False) -> Path:
-        """archive/YYYY-MM/ または archive/YYYY-MM/orphan/ を返す（作成含む）。"""
+        """Return archive/YYYY-MM/ or archive/YYYY-MM/orphan/ (creating it if needed)."""
         year, month = ts_str[:4], ts_str[4:6]
         d = self._archive_dir / f"{year}-{month}"
         if orphan:

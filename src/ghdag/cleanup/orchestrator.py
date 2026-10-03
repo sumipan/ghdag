@@ -43,14 +43,14 @@ def cleanup_queue(
     dry_run: bool = False,
     auto_repair: bool = False,
 ) -> CleanupResult:
-    """jobs/ ディレクトリのクリーンアップを実行する。
+    """Run cleanup of the jobs/ directory.
 
-    Phase 1: exec.jsonl 起点のクリーンアップ（Case A〜F）
-    Phase 2: exec.jsonl に存在しないファイルの sweep（OrphanDetector）
-    Phase 3: QUEUE_FILE_RE 不一致ファイルの catch-all sweep
+    Phase 1: cleanup driven by exec.jsonl (Case A-F)
+    Phase 2: sweep of files not present in exec.jsonl (OrphanDetector)
+    Phase 3: catch-all sweep of files not matching QUEUE_FILE_RE
     """
     if not queue_dir.is_dir():
-        print(f"error: jobs/ が存在しません: {queue_dir}", file=sys.stderr)
+        print(f"error: jobs/ does not exist: {queue_dir}", file=sys.stderr)
         sys.exit(1)
 
     now = datetime.now(timezone.utc)
@@ -87,7 +87,7 @@ def cleanup_queue(
     detected_uuids: set[str] = set()
     deferred_done_deletes: set[str] = set()
 
-    # ── Phase 1: exec.jsonl 起点のクリーンアップ ──────────────────────────
+    # ── Phase 1: cleanup driven by exec.jsonl ──────────────────────────
     for line in exec_lines:
         uuid = ExecJsonlPruner.extract_uuid(line)
         if not uuid:
@@ -109,7 +109,7 @@ def cleanup_queue(
                     archived_done += 1
                 # else Case B: new → keep
             else:
-                # Case C: done あり・ファイルなし（stuck）
+                # Case C: done present, file missing (stuck)
                 if dry_run:
                     print(f"[dry] prune stuck exec entry: {uuid}")
                 prune_uuids.add(uuid)
@@ -142,7 +142,7 @@ def cleanup_queue(
                         detected_uuids.add(uuid)
                 # else Case E: new → keep
             else:
-                # Case F: done なし・ファイルなし（dead entry）
+                # Case F: done absent, file missing (dead entry)
                 if auto_repair:
                     if dry_run:
                         print(f"[dry] prune dead exec entry: {uuid}")
@@ -164,7 +164,7 @@ def cleanup_queue(
             else:
                 flag.unlink()
 
-    # ── Phase 2: exec.jsonl に存在しないファイルの sweep ─────────────────
+    # ── Phase 2: sweep of files not present in exec.jsonl ─────────────────
     active_uuids = all_exec_uuids - prune_uuids
     detector = OrphanDetector(queue_dir, done_dir, archiver, cutoff_ts, orphan_ts, dry_run)
     p2_done, p2_orphan, p2_moved = detector.sweep(by_uuid, active_uuids, done_uuids, prune_uuids)
@@ -172,7 +172,7 @@ def cleanup_queue(
     archived_orphan += p2_orphan
     all_moved.extend(p2_moved)
 
-    # ── Phase 3: catch-all sweep — QUEUE_FILE_RE 不一致ファイルの一括アーカイブ ──
+    # ── Phase 3: catch-all sweep — bulk-archive files not matching QUEUE_FILE_RE ──
     swept_extras = 0
     for path in queue_dir.iterdir():
         if not path.is_file():
