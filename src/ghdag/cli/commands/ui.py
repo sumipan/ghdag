@@ -1,4 +1,4 @@
-"""ghdag ui コマンド。"""
+"""ghdag ui command."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def cmd_ui(args) -> None:
-    """ghdag ui: Web UI ダッシュボードを起動する。"""
+    """ghdag ui: launch the Web UI dashboard."""
     from ghdag.ui.server import run_server
 
     repo_root = Path(args.repo_root).resolve()

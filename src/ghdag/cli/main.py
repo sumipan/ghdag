@@ -1,4 +1,4 @@
-"""ghdag CLI — argparse ベースのエントリポイント。"""
+"""ghdag CLI — argparse-based entry point."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sys
 
 
 def main(argv: list[str] | None = None) -> None:
-    """CLI メインエントリポイント。argv=None → sys.argv[1:]。テスト時に引数注入可能。"""
+    """CLI main entry point. argv=None → sys.argv[1:]. Arguments can be injected in tests."""
     parser = _build_parser()
     args = parser.parse_args(argv)
     _setup_logging(args)
@@ -611,7 +611,7 @@ def _setup_logging(args: argparse.Namespace) -> None:
 
 
 def _cmd_version(args: argparse.Namespace) -> None:
-    """stdout に __version__ を出力。"""
+    """Print __version__ to stdout."""
     from ghdag import __version__
 
     print(__version__)
