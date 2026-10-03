@@ -9,7 +9,9 @@ import re
 import shutil
 from pathlib import Path
 
-_CJK = re.compile("[\u3000-\u30ff\u4e00-\u9fff\uff00-\uffef]")
+_CJK = re.compile(
+    "[%s-%s%s-%s%s-%s]" % tuple(map(chr, (0x3000, 0x30FF, 0x4E00, 0x9FFF, 0xFF00, 0xFFEF)))
+)
 _TEXT_SUFFIXES = {
     ".py", ".html", ".js", ".css", ".json", ".jsonl", ".md", ".txt",
     ".yaml", ".yml", ".toml", ".cfg", ".ini", ".sh", ".j2", ".tmpl",
@@ -77,7 +79,7 @@ def test_find_cjk_detects_inserted_character(tmp_path: Path) -> None:
 def test_find_cjk_detects_each_range(tmp_path: Path) -> None:
     for ch in (0x3000, 0x30FF, 0x4E00, 0x9FFF, 0xFF00, 0xFFEF):
         (tmp_path / f"u{ch:04x}.md").write_text(chr(ch), encoding="utf-8")
-    (tmp_path / "escaped.py").write_text('s = "\\u3042"\n', encoding="utf-8")
+    (tmp_path / "escaped.py").write_text('s = "' + "\\" + 'u3042"\n', encoding="utf-8")
     assert sorted(rel for rel, _ in find_cjk(tmp_path)) == [
         "u3000.md", "u30ff.md", "u4e00.md", "u9fff.md", "uff00.md", "uffef.md",
     ]
