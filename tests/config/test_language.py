@@ -166,6 +166,45 @@ def test_env_pack_invalid_raises(
         get_language_pack()
 
 
+def test_question_suffixes_omitted_defaults_to_empty(tmp_path: Path) -> None:
+    pack = load_language_pack(_write(tmp_path, _full_data()))
+    assert pack.question_suffixes == ()
+    assert EN.question_suffixes == ()
+
+
+def test_question_suffixes_extra_loaded_as_tuple(tmp_path: Path) -> None:
+    data = _full_data()
+    data["question_suffixes"] = {"extra": ["\u203d", "!?", "\u203d"]}
+    pack = load_language_pack(_write(tmp_path, data))
+    assert pack.question_suffixes == ("\u203d", "!?", "\u203d")
+
+
+def test_question_suffixes_empty_list(tmp_path: Path) -> None:
+    data = _full_data()
+    data["question_suffixes"] = {"extra": []}
+    assert load_language_pack(_write(tmp_path, data)).question_suffixes == ()
+
+
+@pytest.mark.parametrize(
+    ("section", "needle"),
+    [
+        ({"extra": ["?"], "other": ["x"]}, "other"),
+        ({}, "extra"),
+        ({"extra": "?"}, "extra"),
+        ({"extra": None}, "extra"),
+        ({"extra": ["?", 3]}, "extra"),
+        ({"extra": ["?", ""]}, "extra"),
+        (["?"], "question_suffixes"),
+    ],
+)
+def test_question_suffixes_invalid(
+    tmp_path: Path, section: Any, needle: str
+) -> None:
+    data = _full_data()
+    data["question_suffixes"] = section
+    _assert_error(_write(tmp_path, data), "question_suffixes", needle)
+
+
 def test_module_exports() -> None:
     assert set(language.__all__) >= {
         "EN",

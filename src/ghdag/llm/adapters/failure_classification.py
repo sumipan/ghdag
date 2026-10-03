@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 
+from ghdag.config.language import get_language_pack
 from ghdag.core.engine_spec import ENGINE_SPECS
+from ghdag.core.exceptions import GhdagError
 from ghdag.core.models.metrics import FailureClass
+
+logger = logging.getLogger(__name__)
+
+# Always treated as a question ending; language packs can only add to it.
+_BUILTIN_QUESTION_SUFFIXES: tuple[str, ...] = ("?",)
 
 QUOTA_DEFAULT_PAUSE_SECONDS: int = int(
     os.environ.get("GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS", 18000)
@@ -14,7 +22,7 @@ QUOTA_DEFAULT_PAUSE_SECONDS: int = int(
 
 
 def last_nonempty_line(text: str) -> str:
-    """末尾の非空行を返す（無ければ空文字）。"""
+    """Return the last non-empty line, stripped (empty string if none)."""
     stripped = text.rstrip()
     if not stripped:
         return ""
@@ -22,11 +30,21 @@ def last_nonempty_line(text: str) -> str:
 
 
 def looks_like_question(text: str) -> bool:
-    """最終行がユーザーへの質問で終わるかを判定する（ASCII `?` / 全角 `？`）。"""
+    """Return True if the last non-empty line ends like a question to the user.
+
+    ASCII ``?`` always counts; the active language pack's
+    ``question_suffixes`` are added to it. If the pack cannot be loaded, a
+    warning is logged and only ASCII ``?`` is used.
+    """
     last_line = last_nonempty_line(text)
     if not last_line:
         return False
-    return last_line.endswith(("?", "？"))
+    try:
+        extra = get_language_pack().question_suffixes
+    except GhdagError as exc:
+        logger.warning("language pack unavailable, using ASCII '?' only: %s", exc)
+        extra = ()
+    return last_line.endswith(_BUILTIN_QUESTION_SUFFIXES + extra)
 
 
 def classify_common_failure(
@@ -59,9 +77,10 @@ def _is_quota_exhausted_error(message: str) -> bool:
         return True
     if "you've reached your monthly" in lower:
         return True
-    # codex（ChatGPT アカウント認証）: "You've hit your usage limit. ... try again at Sep 10th, 2026 2:13 AM."
-    # 2026-09-09 実測。quota / rate limit のどの語も含まないため未検知で PROCESS_ERROR 扱いになり、
-    # pause も fallback も効かず後続ステップが連鎖失敗した。
+    # codex (ChatGPT account auth): "You've hit your usage limit. ... try again at Sep 10th, 2026 2:13 AM."
+    # Observed 2026-09-09. It contains none of the quota / rate limit words, so it went
+    # undetected as PROCESS_ERROR; neither pause nor fallback kicked in and later steps
+    # failed in a chain.
     if "usage limit" in lower:
         return True
     return "resets " in lower and "hit your session limit" in lower

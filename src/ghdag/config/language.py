@@ -1,4 +1,4 @@
-"""Language packs for user-facing state labels and UI strings.
+"""Language packs for user-facing state labels, UI strings and question suffixes.
 
 ghdag ships only the English pack (:data:`EN`). Hosts may supply another pack
 as a YAML file pointed to by ``GHDAG_LANGUAGE_PACK``::
@@ -9,10 +9,19 @@ as a YAML file pointed to by ``GHDAG_LANGUAGE_PACK``::
     ui:
       page_size_option: "{n} rows"
       ...
+    question_suffixes:   # optional
+      extra: ["..."]
 
-Both sections must list exactly the keys in :data:`STATE_IDS` / :data:`UI_KEYS`
-with non-empty string values. CLI, log and exception messages are not part of
-the pack.
+``state_labels`` and ``ui`` are required and must list exactly the keys in
+:data:`STATE_IDS` / :data:`UI_KEYS` with non-empty string values.
+
+``question_suffixes`` is optional. Its only key ``extra`` lists non-empty
+strings that, in addition to the built-in ASCII ``?``, mark a line as a
+question when classifying engine failures (see
+:func:`ghdag.llm.adapters.failure_classification.looks_like_question`).
+Omitting the section is the same as ``extra: []``; :data:`EN` adds nothing.
+
+CLI, log and exception messages are not part of the pack.
 """
 
 from __future__ import annotations
@@ -71,6 +80,10 @@ _SECTIONS: dict[str, tuple[str, ...]] = {
     "ui": UI_KEYS,
 }
 
+_QUESTION_SUFFIXES = "question_suffixes"
+_QUESTION_SUFFIXES_KEYS: tuple[str, ...] = ("extra",)
+_OPTIONAL_SECTIONS: tuple[str, ...] = (_QUESTION_SUFFIXES,)
+
 
 def _freeze(mapping: Mapping[str, str]) -> Mapping[str, str]:
     return MappingProxyType(dict(mapping))
@@ -78,10 +91,12 @@ def _freeze(mapping: Mapping[str, str]) -> Mapping[str, str]:
 
 @dataclass(frozen=True)
 class LanguagePack:
-    """State labels (keyed by :data:`STATE_IDS`) and UI strings (keyed by :data:`UI_KEYS`)."""
+    """State labels (keyed by :data:`STATE_IDS`), UI strings (keyed by :data:`UI_KEYS`)
+    and extra question suffixes (added to the built-in ASCII ``?``)."""
 
     state_labels: Mapping[str, str] = field(default_factory=dict)
     ui: Mapping[str, str] = field(default_factory=dict)
+    question_suffixes: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "state_labels", _freeze(self.state_labels))
@@ -126,7 +141,9 @@ def _validate(data: Any, source: Path) -> LanguagePack:
         )
     problems: list[str] = []
     missing_top = [k for k in _SECTIONS if k not in data]
-    extra_top = sorted(str(k) for k in data if k not in _SECTIONS)
+    extra_top = sorted(
+        str(k) for k in data if k not in _SECTIONS and k not in _OPTIONAL_SECTIONS
+    )
     if missing_top:
         problems.append(f"missing top-level keys: {', '.join(missing_top)}")
     if extra_top:
@@ -157,16 +174,48 @@ def _validate(data: Any, source: Path) -> LanguagePack:
             )
         sections[name] = section
 
+    question_suffixes: tuple[str, ...] = ()
+    if _QUESTION_SUFFIXES in data:
+        question_suffixes = _validate_question_suffixes(data[_QUESTION_SUFFIXES], problems)
+
     if problems:
         raise GhdagError(f"invalid language pack {source}: " + "; ".join(problems))
-    return LanguagePack(state_labels=sections["state_labels"], ui=sections["ui"])
+    return LanguagePack(
+        state_labels=sections["state_labels"],
+        ui=sections["ui"],
+        question_suffixes=question_suffixes,
+    )
+
+
+def _validate_question_suffixes(section: Any, problems: list[str]) -> tuple[str, ...]:
+    name = _QUESTION_SUFFIXES
+    if not isinstance(section, dict):
+        problems.append(f"{name} must be a mapping")
+        return ()
+    missing = [k for k in _QUESTION_SUFFIXES_KEYS if k not in section]
+    extra = sorted(str(k) for k in section if k not in _QUESTION_SUFFIXES_KEYS)
+    if missing:
+        problems.append(f"{name}: missing keys: {', '.join(missing)}")
+    if extra:
+        problems.append(f"{name}: unknown keys: {', '.join(extra)}")
+    if "extra" not in section:
+        return ()
+    values = section["extra"]
+    if not isinstance(values, list):
+        problems.append(f"{name}: extra must be a list")
+        return ()
+    if any(not isinstance(v, str) or not v for v in values):
+        problems.append(f"{name}: extra values must be non-empty strings")
+        return ()
+    return tuple(values)
 
 
 def load_language_pack(path: str | Path) -> LanguagePack:
     """Load and validate a language pack YAML file.
 
     Raises :class:`GhdagError` when the file is missing or unreadable, is not
-    valid YAML, or does not match :data:`STATE_IDS` / :data:`UI_KEYS` exactly.
+    valid YAML, does not match :data:`STATE_IDS` / :data:`UI_KEYS` exactly, or
+    has a malformed ``question_suffixes`` section.
     """
     source = Path(path)
     try:
