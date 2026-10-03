@@ -47,7 +47,7 @@ class FanOutManager:
             child_uuid = f"{parent_uuid}{FANOUT_SEPARATOR}{child.id}"
             child_uuids.add(child_uuid)
             line = build_child_jsonl_record(child_uuid, child.command)
-            # parent_uuid を渡し、AuditContext 構築は DagEngine 側ラッパーに委ねる
+            # Pass parent_uuid; AuditContext construction is delegated to the DagEngine-side wrapper
             self._append_task_fn(line, parent_uuid)
             logger.info("FanOut [%s]: spawned child [%s]", parent_uuid, child_uuid)
         self._pending[parent_uuid] = child_uuids

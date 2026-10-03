@@ -16,10 +16,10 @@ _TEE_RE = re.compile(r'\btee\s+(?:-a\s+)?(?:"([^"]+)"|(\S+))')
 
 
 def check_pipeline_status(result_path: str) -> "str | None":
-    """result ファイルから PIPELINE_STATUS 行を探し、最後にマッチした値を返す。
+    """Find PIPELINE_STATUS lines in the result file and return the last matched value.
 
     Returns:
-        マッチしたステータス文字列（例: "IMPL_FAILED"）。なければ None。
+        The matched status string (e.g. "IMPL_FAILED"), or None if not found.
     """
     try:
         content = Path(result_path).read_text(encoding="utf-8", errors="replace")
@@ -72,7 +72,7 @@ def _stdout_line_reader(
     """Read stdout line-by-line into buf, appending each line to events_path.
 
     Used for stream-json engines (claude). Non-stream engines keep `_stdout_reader`.
-    fsync は不要（追記のみ）。on_event は JSON としてパースできた行だけ呼ばれる。
+    No fsync needed (append-only). on_event is called only for lines that parse as JSON.
     """
     try:
         stdout = proc.stdout
@@ -115,11 +115,11 @@ def _extract_tee_target(command: str, result_path: str | None = None) -> str | N
     """Extract the tee output path from a command string.
 
     Args:
-        command: タスクのコマンド文字列
-        result_path: Task.result_path（JSONL 形式で明示指定された場合）
+        command: The task command string
+        result_path: Task.result_path (when explicitly specified in JSONL format)
 
     Returns:
-        結果ファイルパス。取得できなければ None
+        The result file path, or None if it cannot be determined
     """
     if result_path is not None:
         return result_path

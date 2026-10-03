@@ -15,14 +15,14 @@ def validate_dependencies(
     tasks: list[Task],
     done: set[str],
 ) -> dict[str, str]:
-    """依存グラフを検証し、問題のあるタスクの UUID と理由を返す。
+    """Validate the dependency graph and return UUIDs of problematic tasks with reasons.
 
     Args:
-        tasks: パース済みタスクリスト
-        done: 完了済み UUID の集合（jobs/done/ から取得）
+        tasks: List of parsed tasks
+        done: Set of completed UUIDs (taken from jobs/done/)
 
     Returns:
-        {uuid: reason} の辞書。reason は "orphan_dep:<missing_uuid>" または "cycle"
+        A {uuid: reason} dict. reason is "orphan_dep:<missing_uuid>" or "cycle"
     """
     task_uuids = {t.uuid for t in tasks}
     all_known = task_uuids | done
