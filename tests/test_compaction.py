@@ -56,9 +56,13 @@ def test_policy_opt_in_disabled_by_default():
 
 
 def test_genshijin_prompt_is_machine_handoff_style():
-    # Japanese text intentionally kept for CJK processing test
-    assert "敬語" in GENSHIJIN_HANDOFF_PROMPT or "背景説明" in GENSHIJIN_HANDOFF_PROMPT
-    assert "facts" in GENSHIJIN_HANDOFF_PROMPT.lower() or "事実" in GENSHIJIN_HANDOFF_PROMPT
+    assert "honorific" in GENSHIJIN_HANDOFF_PROMPT or "background" in GENSHIJIN_HANDOFF_PROMPT
+    assert "facts" in GENSHIJIN_HANDOFF_PROMPT.lower()
+    for key in ("facts", "unresolved", "next", "files", "constraints"):
+        assert f'"{key}"' in GENSHIJIN_HANDOFF_PROMPT
+    assert "language of the conversation" in GENSHIJIN_HANDOFF_PROMPT
+    cjk_ranges = ((0x3000, 0x30FF), (0x4E00, 0x9FFF), (0xFF00, 0xFFEF))
+    assert not any(lo <= ord(c) <= hi for c in GENSHIJIN_HANDOFF_PROMPT for lo, hi in cjk_ranges)
     # Must not be a general output_style knob name
     assert "output_style" not in GENSHIJIN_HANDOFF_PROMPT
 

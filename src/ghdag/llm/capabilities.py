@@ -1,4 +1,4 @@
-"""ghdag.llm.capabilities — LLM 呼び出しの能力制約値オブジェクトとプリセット (re-export shim)."""
+"""ghdag.llm.capabilities — capability-constraint value objects and presets for LLM calls (re-export shim)."""
 
 from __future__ import annotations
 

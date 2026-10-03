@@ -1,4 +1,4 @@
-"""Issue body の H2 セクションを決定論的に編集するユーティリティ。"""
+"""Utilities for deterministically editing H2 sections of an Issue body."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from collections.abc import Iterable
 
 
 def split_h2_sections(body: str) -> list[tuple[str, str]]:
-    """body を H2 見出し単位で分割する。"""
+    """Split body into H2-heading units."""
     lines = body.splitlines()
     sections: list[tuple[str, str]] = []
     n = len(lines)
@@ -34,7 +34,7 @@ def split_h2_sections(body: str) -> list[tuple[str, str]]:
 
 
 def count_heading(body: str, heading: str) -> int:
-    """指定 H2 見出しの出現回数を返す。"""
+    """Return the number of occurrences of the given H2 heading."""
     h2 = f"## {heading}"
     return sum(1 for section_heading, _ in split_h2_sections(body) if section_heading == h2)
 
@@ -55,7 +55,7 @@ def _get_unique_section(body: str, heading: str) -> str | None:
 
 
 def get_section(body: str, heading: str) -> str | None:
-    """指定 H2 見出しのセクション本文（見出し行を除く）を返す。"""
+    """Return the section body of the given H2 heading (excluding the heading line)."""
     section = _get_unique_section(body, heading)
     if section is None:
         return None
@@ -67,7 +67,7 @@ def _normalize_content(content: str) -> str:
 
 
 def upsert_section(body: str, heading: str, content: str) -> str:
-    """セクションを置換または末尾に追加し、重複見出しは拒否する。"""
+    """Replace the section or append it at the end; reject duplicate headings."""
     h2 = f"## {heading}"
     target = _get_unique_section(body, heading)
     normalized_content = _normalize_content(content)
@@ -110,7 +110,7 @@ def _iter_h4_sections(content: str) -> Iterable[tuple[str, str]]:
 
 
 def filter_section_by_paths(section_content: str, sub_paths: list[str]) -> list[str]:
-    """行フィルタリングアルゴリズム（R3・R4 共通）。"""
+    """Line-filtering algorithm (shared by R3 and R4)."""
     lines = section_content.splitlines()
     groups: list[tuple[str | None, list[str]]] = []
     cur_h3: str | None = None
@@ -150,7 +150,7 @@ def filter_section_by_paths(section_content: str, sub_paths: list[str]) -> list[
 
 
 def get_subsections(body: str, parent_heading: str, prefix: str) -> list[tuple[str, str]]:
-    """親 H2 セクション内で prefix に一致する H4 サブセクションを返す。"""
+    """Return H4 subsections matching prefix within the parent H2 section."""
     parent_content = get_section(body, parent_heading)
     if parent_content is None:
         return []

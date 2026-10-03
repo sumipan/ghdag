@@ -14,22 +14,23 @@ from ghdag.llm.session import SessionRecord, SessionStore
 # genshijin is a handoff-summary style for compaction prompts only.
 # It must NOT be applied to result files, Slack replies, diary, or reviews.
 GENSHIJIN_HANDOFF_PROMPT = """\
-あなたはセッション申し送りの圧縮器です。人間向けの口調・敬語・経緯の再掲は不要です。
-次のセッションが同一作業を継続できる最小文脈だけを、高密度に出力してください。
+You are a session handoff compressor. No human-facing tone, honorifics, or recap of history is needed.
+Output, as densely as possible, only the minimal context the next session needs to continue the same work.
 
-出力は次の JSON schema に厳密に従ってください（マーカーを削らない）:
+Strictly follow this JSON schema for the output (do not drop any markers):
 {
-  "facts": ["確定した事実"],
-  "unresolved": ["未解決事項"],
-  "next": ["次の実行指示"],
-  "files": ["必要なファイル参照"],
-  "constraints": ["制約"]
+  "facts": ["established facts"],
+  "unresolved": ["unresolved items"],
+  "next": ["next action instructions"],
+  "files": ["required file references"],
+  "constraints": ["constraints"]
 }
 
-ルール:
-- 事実・未解決・次の指示・ファイル参照・制約を優先する
-- 敬語、重複した背景説明、経緯の再掲を避ける
-- 不要な前置きや結びの文は書かない
+Rules:
+- Prioritize facts, unresolved items, next instructions, file references, and constraints
+- Avoid honorifics, duplicated background explanations, and recaps of history
+- Do not write unnecessary preambles or closing remarks
+- Write values in the language of the conversation being summarized.
 """
 
 DEFAULT_TOKEN_THRESHOLD = 100_000
