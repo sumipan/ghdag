@@ -11,7 +11,7 @@ from ghdag.io.done import load_done_from_dir
 
 @dataclass(frozen=True)
 class QueueTask:
-    """queue ディレクトリ内の1タスクを表す。UUID をキーに order/result/stderr を紐付ける。"""
+    """A single task in the queue directory. Links order/result/stderr keyed by UUID."""
 
     uuid: str
     timestamp: str
@@ -45,14 +45,14 @@ class QueueTaskStore:
         return {uuid.lower() for uuid in load_done_from_dir(self._done_dir)}
 
     def read_result(self, uuid: str) -> str | None:
-        """UUID に対応する result ファイルのテキストを返す。存在しなければ None。"""
+        """Return the text of the result file for the UUID. None if it does not exist."""
         path = self.get_result_path(uuid)
         if path is None:
             return None
         return path.read_text(encoding="utf-8")
 
     def get_result_path(self, uuid: str) -> Path | None:
-        """UUID に対応する result ファイルの Path を返す。存在しなければ None。"""
+        """Return the Path of the result file for the UUID. None if it does not exist."""
         by_uuid = self._scan()
         entry = by_uuid.get(uuid.lower())
         if entry is None:
@@ -60,7 +60,7 @@ class QueueTaskStore:
         return entry.get("result")
 
     def list_tasks(self) -> list[QueueTask]:
-        """queue_dir 内の全ファイルを走査し、UUID ごとに QueueTask を返す。"""
+        """Scan all files in queue_dir and return a QueueTask per UUID."""
         by_uuid = self._scan()
         done = self._done_uuids()
         tasks: list[QueueTask] = []

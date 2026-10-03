@@ -83,7 +83,7 @@ def interpret_done(raw: Optional[str]) -> Optional[str]:
 
 
 def read_done_content(exec_done_dir: Path, uuid: str) -> Optional[str]:
-    """jobs/done/<uuid> の内容を読み取る。存在しなければ None。"""
+    """Read the contents of jobs/done/<uuid>. None if it does not exist."""
     p = Path(exec_done_dir) / uuid
     if not p.is_file():
         return None
@@ -94,8 +94,8 @@ def read_done_content(exec_done_dir: Path, uuid: str) -> Optional[str]:
 
 
 def dep_succeeded(exec_done_dir: Path, dep_uuid: str) -> bool:
-    """依存タスクが成功完了しているか。
+    """Whether the dependency task has completed successfully.
 
-    ``interpret_done`` の success 判定と同等（io 層で完結）。
+    Equivalent to the success check in ``interpret_done`` (self-contained in the io layer).
     """
     return interpret_done(read_done_content(exec_done_dir, dep_uuid)) == "success"

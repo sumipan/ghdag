@@ -59,7 +59,7 @@ def append_audit_record(audit_path: Path, record: dict) -> None:
 
 @dataclass
 class AuditContext:
-    """enqueue 経路のメタデータ。"""
+    """Metadata about the enqueue path."""
 
     source: str = "unknown"
     correlation_id: str | None = None
@@ -104,7 +104,7 @@ def write_audit_log(
 
 
 def compute_prompt_hash(prompt: str) -> str:
-    """プロンプト文字列の SHA-256 ハッシュ先頭16文字を返す。"""
+    """Return the first 16 characters of the SHA-256 hash of the prompt string."""
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
 
 
@@ -118,7 +118,7 @@ def write_llm_inference_audit(
     correlation_id: str | None = None,
     tz_name: str = "UTC",
 ) -> None:
-    """LLM 推論イベントを audit.jsonl に 1 行追記する。"""
+    """Append one LLM inference event line to audit.jsonl."""
     record = {
         "schema_version": 1,
         "event_type": "llm.inference",
@@ -150,7 +150,7 @@ def write_llm_audit_log(
     request_id: str | None = None,
     tz_name: str = "UTC",
 ) -> None:
-    """llm サブコマンド用の監査ログを 1 行追記する。"""
+    """Append one audit log line for the llm subcommand."""
     record = {
         "schema_version": 3,
         "event": "llm_call",
@@ -221,7 +221,7 @@ def write_rate_limit_audit(
     correlation_id: str | None = None,
     tz_name: str = "UTC",
 ) -> None:
-    """rate limit snapshot を audit.jsonl に 1 行追記する。"""
+    """Append one rate limit snapshot line to audit.jsonl."""
     record = {
         "event": "github_rate_limit",
         "timestamp": now_ts(tz_name),

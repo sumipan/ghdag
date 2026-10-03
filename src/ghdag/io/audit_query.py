@@ -17,7 +17,7 @@ __all__ = [
 
 
 def _list_audit_files(audit_path: Path) -> list[Path]:
-    """rotated ファイル（名前順＝時系列順）+ current を返す。"""
+    """Return rotated files (name order == chronological order) + current."""
     directory = audit_path.parent
     rotated = sorted(directory.glob("audit.*.jsonl"))
     result = list(rotated)
@@ -35,12 +35,13 @@ def read_task_exit_events(
     since: float | None = None,
     limit: int | None = None,
 ) -> list[dict]:
-    """audit.jsonl から task_exit 系イベントをフィルタして返す。
+    """Filter and return task_exit-family events from audit.jsonl.
 
-    rotated ファイル（audit.*.jsonl）+ current（audit.jsonl）を時系列順に結合して読む。
-    フィルタは AND 条件。since は ISO 8601 timestamp を epoch 比較する。
-    limit は結果リストの末尾（最新側）から切り出す。
-    ファイルが存在しない場合は空リストを返す。JSON パース失敗行はスキップする。
+    Reads rotated files (audit.*.jsonl) + current (audit.jsonl) concatenated in
+    chronological order. Filters are ANDed. ``since`` is an ISO 8601 timestamp
+    compared as epoch. ``limit`` slices from the tail (newest side) of the result
+    list. Returns an empty list if no file exists. Lines that fail JSON parsing
+    are skipped.
     """
     files = _list_audit_files(Path(audit_path))
     if not files:
@@ -84,7 +85,7 @@ def read_task_exit_events(
 
 
 def get_latest_status(audit_path: Path, correlation_id: str) -> str | None:
-    """correlation_id に対応する最新 status を返す。None は未記録。"""
+    """Return the latest status for correlation_id. None means not recorded."""
     events = read_task_exit_events(audit_path, correlation_id=correlation_id)
     if not events:
         return None
@@ -92,7 +93,7 @@ def get_latest_status(audit_path: Path, correlation_id: str) -> str | None:
 
 
 def _aggregate_correlation_counts(events: list[dict]) -> list[dict]:
-    """correlation_id ごとの件数と最新 timestamp を集計し count 降順で返す。"""
+    """Aggregate count and latest timestamp per correlation_id, sorted by count desc."""
     counts: Counter[str] = Counter()
     latest_ts: dict[str, str] = {}
     for ev in events:
@@ -120,7 +121,7 @@ def detect_correlation_bursts(
     window_sec: float = 600.0,
     threshold: int = 10,
 ) -> list[dict]:
-    """直近 window_sec 内の correlation_id バーストを検出する。"""
+    """Detect correlation_id bursts within the last window_sec seconds."""
     since = time.time() - window_sec
     events = read_task_exit_events(audit_path, since=since)
     aggregated = _aggregate_correlation_counts(events)
@@ -133,7 +134,7 @@ def get_correlation_top_n(
     since_sec: float,
     top_n: int = 20,
 ) -> list[dict]:
-    """直近 since_sec 内の correlation_id を count 降順で上位 top_n 件返す。"""
+    """Return the top_n correlation_ids within the last since_sec, by count desc."""
     since = time.time() - since_sec
     events = read_task_exit_events(audit_path, since=since)
     aggregated = _aggregate_correlation_counts(events)
