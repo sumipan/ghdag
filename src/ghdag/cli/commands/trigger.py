@@ -1,4 +1,4 @@
-"""ghdag trigger コマンド。"""
+"""ghdag trigger command."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from ghdag.config.env import state_dir as resolve_state_dir
 
 
 def cmd_trigger(args) -> None:
-    """ghdag trigger: Issue に対してワンショットでハンドラーを実行する。"""
+    """ghdag trigger: run a handler one-shot against an Issue."""
     from ghdag.github_client import create_github_client
     from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
     from ghdag.pipeline.order import TemplateOrderBuilder

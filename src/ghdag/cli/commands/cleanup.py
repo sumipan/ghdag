@@ -1,4 +1,4 @@
-"""ghdag cleanup コマンド。"""
+"""ghdag cleanup command."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 def cmd_cleanup(args) -> None:
-    """ghdag cleanup: queue/ のクリーンアップ。"""
+    """ghdag cleanup: clean up queue/."""
     from ghdag.cleanup import cleanup_queue
 
     repo_root = Path(args.repo_root).resolve()

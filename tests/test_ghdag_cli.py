@@ -1,4 +1,4 @@
-"""Tests for ghdag.cli — AC1 〜 AC11.
+"""Tests for ghdag.cli — AC1 - AC11.
 
 Test approach:
 - Parse validation via main(argv=[...])

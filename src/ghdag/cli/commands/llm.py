@@ -1,4 +1,4 @@
-"""ghdag llm コマンド。"""
+"""ghdag llm command."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from ghdag.config.env import ghdag_audit_path
 
 
 def cmd_llm(args) -> None:
-    """ghdag llm: ワンショット LLM 呼び出し（ワークフロー不要）。"""
+    """ghdag llm: one-shot LLM call (no workflow required)."""
     from ghdag.llm.engines import (
         EngineModelError,
         call,
