@@ -19,7 +19,6 @@ from ghdag.metrics.models import TokenUsage
 class TestClaudeJsonAdapterExtractResultText:
     def test_valid_json_extracts_result_field(self):
         """Valid JSON stdout → UTF-8 bytes of the result field are returned."""
-        # Japanese text intentionally kept for CJK processing test
         payload = {"result": "body text", "usage": {"input_tokens": 10, "output_tokens": 5}}
         adapter = ClaudeJsonAdapter()
         out = adapter.extract_result_text(json.dumps(payload).encode(), b"")
