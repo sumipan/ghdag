@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -216,16 +216,16 @@ tbody tr:hover { background: var(--surface); }
     ghdag Dashboard
   </h1>
   <select class="limit-select" id="limit-select">
-    <option value="20" selected>20件</option>
-    <option value="40">40件</option>
-    <option value="60">60件</option>
-    <option value="80">80件</option>
-    <option value="100">100件</option>
+    <option value="20" selected>20 rows</option>
+    <option value="40">40 rows</option>
+    <option value="60">60 rows</option>
+    <option value="80">80 rows</option>
+    <option value="100">100 rows</option>
   </select>
 </div>
 <div class="tab-bar">
-  <button class="tab-btn active" data-tab="tasks">タスク</button>
-  <button class="tab-btn" data-tab="bursts">バースト</button>
+  <button class="tab-btn active" data-tab="tasks" data-i18n="tab_tasks">Tasks</button>
+  <button class="tab-btn" data-tab="bursts" data-i18n="tab_bursts">Bursts</button>
 </div>
 <div class="meta" id="meta">Connecting...</div>
 
@@ -234,11 +234,11 @@ tbody tr:hover { background: var(--surface); }
     <table>
       <thead>
         <tr>
-          <th>時刻/ツリー</th>
-          <th>状態</th>
-          <th class="hide-mobile">エンジン/モデル</th>
+          <th data-i18n="col_time_tree">Time / Tree</th>
+          <th data-i18n="col_state">State</th>
+          <th class="hide-mobile" data-i18n="col_engine_model">Engine / Model</th>
           <th class="hide-mobile">UUID</th>
-          <th>ラベル</th>
+          <th data-i18n="col_label">Label</th>
           <th></th>
         </tr>
       </thead>
@@ -246,19 +246,17 @@ tbody tr:hover { background: var(--surface); }
     </table>
   </div>
 
-  <div class="empty-msg" id="empty-msg" style="display:none">
-    タスクがありません
-  </div>
+  <div class="empty-msg" id="empty-msg" style="display:none" data-i18n="empty_tasks">No tasks</div>
 </div>
 
 <div id="bursts-view" style="display:none">
   <table>
     <thead>
-      <tr><th>correlation_id</th><th>件数</th><th>最終発生</th></tr>
+      <tr><th>correlation_id</th><th data-i18n="col_count">Count</th><th data-i18n="col_last_seen">Last seen</th></tr>
     </thead>
     <tbody id="bursts-tbody"></tbody>
   </table>
-  <div class="empty-msg" id="bursts-empty" style="display:none">バーストデータがありません</div>
+  <div class="empty-msg" id="bursts-empty" style="display:none" data-i18n="empty_bursts">No burst data</div>
 </div>
 
 <script>
@@ -273,21 +271,47 @@ tbody tr:hover { background: var(--surface); }
   const stoppingUuids = {};  // uuid -> 'pending' | 'done' | 'error'
   let githubBaseUrl = null;
   let currentEs = null;
+  const i18n = { ui: {} };
 
-  // Load GitHub base URL from config once
+  // Strings default to the English markup; /api/config i18n.ui overrides them
+  function uiText(value, fallback) {
+    return typeof value === 'string' && value ? value : fallback;
+  }
+
+  function applyI18n() {
+    document.querySelectorAll('[data-i18n]').forEach(function(el) {
+      el.textContent = uiText(i18n.ui[el.dataset.i18n], el.textContent);
+    });
+    Array.prototype.forEach.call(limitSelect.options, function(opt) {
+      opt.textContent = uiText(i18n.ui.page_size_option, '{n} rows').replace('{n}', opt.value);
+    });
+  }
+
+  // Load GitHub base URL and language pack from config once
   fetch('/api/config')
     .then(function(r) { return r.json(); })
-    .then(function(cfg) { githubBaseUrl = cfg.github_base_url || null; })
+    .then(function(cfg) {
+      githubBaseUrl = cfg.github_base_url || null;
+      if (cfg.i18n && cfg.i18n.ui) i18n.ui = cfg.i18n.ui;
+      applyI18n();
+    })
     .catch(function() {});
 
-  function badgeClass(state) {
-    if (state.includes('成功')) return 'badge-ok';
-    if (state.includes('失敗')) return 'badge-fail';
-    if (state.includes('REJECTED')) return 'badge-rejected';
-    if (state.includes('EMPTY')) return 'badge-empty';
-    if (state === '実行中') return 'badge-running';
-    if (state.includes('待機')) return 'badge-pending';
+  const OK_STATES = ['ok', 'unknown'];
+  const FAIL_STATES = ['fail', 'rejected', 'empty', 'engine_error'];
+  const PENDING_STATES = ['pending_deps', 'pending_run'];
+  const RETRYABLE_STATES = ['fail', 'rejected', 'empty', 'unknown'];
+
+  function badgeClass(stateId) {
+    if (OK_STATES.indexOf(stateId) >= 0) return 'badge-ok';
+    if (FAIL_STATES.indexOf(stateId) >= 0) return 'badge-fail';
+    if (stateId === 'running') return 'badge-running';
+    if (PENDING_STATES.indexOf(stateId) >= 0) return 'badge-pending';
     return 'badge-unknown';
+  }
+
+  function isDone(stateId) {
+    return OK_STATES.indexOf(stateId) >= 0 || FAIL_STATES.indexOf(stateId) >= 0;
   }
 
   function escapeHtml(s) {
@@ -296,12 +320,12 @@ tbody tr:hover { background: var(--surface); }
     return d.innerHTML;
   }
 
-  function isRetryable(state) {
-    return state.includes('失敗') || state.includes('REJECTED') || state.includes('EMPTY') || state.includes('その他');
+  function isRetryable(stateId) {
+    return RETRYABLE_STATES.indexOf(stateId) >= 0;
   }
 
-  function isStoppable(state) {
-    return state === '実行中';
+  function isStoppable(stateId) {
+    return stateId === 'running';
   }
 
   function retryTask(uuid, btn) {
@@ -331,7 +355,7 @@ tbody tr:hover { background: var(--surface); }
   }
 
   function stopTask(uuid, btn) {
-    if (!confirm('エージェントプロセスを強制停止しますか？')) return;
+    if (!confirm(uiText(i18n.ui.confirm_stop, 'Force-stop the agent process?'))) return;
     btn.disabled = true;
     btn.textContent = '...';
     stoppingUuids[uuid] = 'pending';
@@ -400,9 +424,9 @@ tbody tr:hover { background: var(--surface); }
         actions += '<span class="btn-stop" style="color:var(--ok)">stopped</span> ';
       } else if (ss === 'error') {
         actions += '<button class="btn-stop" onclick="window._stop(\'' + escapeHtml(r.uuid) + '\', this)">stop</button> ';
-      } else if (r.state.includes('完了') && r.result_path) {
+      } else if (isDone(r.state_id) && r.result_path) {
         actions += buildResultLink(r.result_path) + ' ';
-      } else if (isStoppable(r.state)) {
+      } else if (isStoppable(r.state_id)) {
         actions += '<button class="btn-stop" onclick="window._stop(\'' + escapeHtml(r.uuid) + '\', this)">stop</button> ';
       }
 
@@ -414,13 +438,13 @@ tbody tr:hover { background: var(--surface); }
         actions += '<span class="btn-retry" style="color:var(--ok)">done</span>';
       } else if (rs === 'error') {
         actions += '<button class="btn-retry" onclick="window._retry(\'' + escapeHtml(r.uuid) + '\', this)">retry</button>';
-      } else if (isRetryable(r.state)) {
+      } else if (isRetryable(r.state_id)) {
         actions += '<button class="btn-retry" onclick="window._retry(\'' + escapeHtml(r.uuid) + '\', this)">retry</button>';
       }
 
       return '<tr>'
         + '<td class="col-tree">' + escapeHtml(r.tree_ts) + '</td>'
-        + '<td class="col-state"><span class="badge ' + badgeClass(r.state) + '">' + escapeHtml(r.state) + '</span></td>'
+        + '<td class="col-state"><span class="badge ' + badgeClass(r.state_id) + '">' + escapeHtml(r.state) + '</span></td>'
         + '<td class="col-engine hide-mobile">' + escapeHtml(r.engine_model) + '</td>'
         + '<td class="col-uuid hide-mobile">' + escapeHtml(r.uuid) + '</td>'
         + '<td class="col-label">' + escapeHtml(r.cmd_preview) + '</td>'
@@ -454,7 +478,7 @@ tbody tr:hover { background: var(--surface); }
       try {
         const rows = JSON.parse(e.data);
         renderRows(rows);
-        const now = new Date().toLocaleTimeString('ja-JP');
+        const now = new Date().toLocaleTimeString();
         meta.textContent = 'Updated ' + now + ' — ' + rowCount + ' tasks';
       } catch (err) {
         console.error('Parse error:', err);
