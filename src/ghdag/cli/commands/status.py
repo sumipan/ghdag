@@ -1,4 +1,4 @@
-"""ghdag status コマンド — Issue / running タスクの現在状態を表示する。"""
+"""ghdag status command — show the current state of an Issue / running tasks."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from ghdag.config.env import state_dir as resolve_state_dir
 
 
 def cmd_status(args) -> None:
-    """ghdag status: Issue DAG 状態または running タスク一覧を出力する。"""
+    """ghdag status: print the Issue DAG state or the list of running tasks."""
     from ghdag.status import issue_status, running_tasks
 
     if not args.issue_number and not args.running:

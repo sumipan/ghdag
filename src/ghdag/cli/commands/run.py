@@ -1,4 +1,4 @@
-"""ghdag run コマンド。"""
+"""ghdag run command."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 
 def cmd_run(args) -> None:
-    """DagConfig を構築し DagEngine.run() を呼ぶ薄いラッパー。"""
+    """Thin wrapper that builds a DagConfig and calls DagEngine.run()."""
     if not os.path.exists(args.exec_jsonl):
         print(f"error: file not found: {args.exec_jsonl}", file=sys.stderr)
         sys.exit(1)
@@ -39,14 +39,14 @@ def cmd_run(args) -> None:
 
 
 def _load_hooks(module_path: str) -> DagHooks:
-    """モジュールパスから DagHooks 実装クラスをインスタンス化して返す。
+    """Instantiate and return a DagHooks implementation class from a module path.
 
-    クラスの探索順:
-    1. モジュールに `HOOKS_CLASS` 属性がある場合はそれを使用
-    2. `on_task_success` を持つ最初の公開クラスを使用
+    Class lookup order:
+    1. If the module has a `HOOKS_CLASS` attribute, use it
+    2. Otherwise, use the first public class that has `on_task_success`
 
     Raises:
-        SystemExit: モジュールが見つからない、またはクラスが見つからない場合
+        SystemExit: If the module or the class cannot be found
     """
     import importlib
     import inspect

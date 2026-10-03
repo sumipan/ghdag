@@ -1,4 +1,4 @@
-"""ghdag dag cancel コマンド。"""
+"""ghdag dag cancel command."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from ghdag.config.env import state_dir as resolve_state_dir
 
 
 def cmd_cancel(args) -> None:
-    """ghdag dag cancel: jobs/cancel/<uuid> 制御ファイルを作成する（プロセスは触らない）。"""
+    """ghdag dag cancel: create the jobs/cancel/<uuid> control file (does not touch processes)."""
     uuid = args.uuid.strip()
     queue_dir = (Path(args.queue_dir) if args.queue_dir else resolve_state_dir("jobs")).resolve()
     running_path = queue_dir / "running" / f"{uuid}.json"

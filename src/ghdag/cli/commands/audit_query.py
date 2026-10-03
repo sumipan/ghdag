@@ -1,4 +1,4 @@
-"""ghdag audit-query コマンド。"""
+"""ghdag audit-query command."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import sys
 
 
 def cmd_audit_query(args) -> None:
-    """ghdag audit-query: audit.jsonl の相関イベント照会またはバースト検出。"""
+    """ghdag audit-query: query correlated events in audit.jsonl or detect bursts."""
     import json
     from datetime import datetime
     from pathlib import Path

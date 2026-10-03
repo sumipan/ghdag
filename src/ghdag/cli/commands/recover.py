@@ -1,4 +1,4 @@
-"""ghdag dag recover コマンド。"""
+"""ghdag dag recover command."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from ghdag.config.env import state_dir as resolve_state_dir
 
 
 def cmd_recover(args) -> None:
-    """ghdag dag recover: 既存 run の失敗・未実行ステップを再実行可能にする。"""
+    """ghdag dag recover: make failed and not-yet-run steps of an existing run re-runnable."""
     from ghdag.dag.recover import (
         RecoverError,
         execute_recover,
