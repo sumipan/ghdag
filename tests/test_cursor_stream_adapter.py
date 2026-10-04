@@ -20,6 +20,7 @@ _STREAM_SUCCESS = (_FIXTURES / "cursor_stream_success.jsonl").read_bytes()
 _STREAM_EMPTY = (_FIXTURES / "cursor_stream_empty.jsonl").read_bytes()
 _AUTH_STDOUT = (_FIXTURES / "cursor_stream_auth_fail.stdout").read_bytes()
 _AUTH_STDERR = (_FIXTURES / "cursor_stream_auth_fail.stderr").read_bytes()
+_STREAM_REPRO = (_FIXTURES / "cursor_stream_repro.jsonl").read_bytes()
 _LEGACY_JSON = (_FIXTURES / "cursor_legacy_json.json").read_bytes()
 _RETRIABLE_STDERR = (_FIXTURES / "cursor_stream_retriable_error.stderr").read_bytes()
 _RETRIABLE_RECONNECT_STDERR = (
@@ -37,6 +38,11 @@ class TestCursorStreamAdapterExtraction:
         stream_text = adapter.extract_result_text(_STREAM_SUCCESS, b"")
         legacy_text = adapter.extract_result_text(_LEGACY_JSON, b"")
         assert stream_text == legacy_text == b"pong"
+
+    def test_extract_result_text_repeated_leading_delta(self):
+        # Deltas "l" / "l" / "amas are great." then a complete text without timestamp_ms.
+        adapter = CursorStreamAdapter()
+        assert adapter.extract_result_text(_STREAM_REPRO, b"") == b"llamas are great."
 
     def test_extract_result_text_empty_result(self):
         adapter = CursorStreamAdapter()

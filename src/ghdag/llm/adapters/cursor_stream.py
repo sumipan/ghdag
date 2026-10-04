@@ -28,9 +28,11 @@ def reconstruct_assistant_turns(stdout: bytes) -> str | None:
     consecutive tool_calls without assistant text in between produce no empty turn.
     The last turn is finalized at ``type == "result"`` or end of input.
 
-    Within a turn, if complete full texts exist (non-empty ``model_call_id``, or assistant
-    text exactly matching the preceding delta concatenation), the last one is used;
-    otherwise deltas are concatenated in order. Returns ``None`` if no turn body is non-empty.
+    Within a turn, if complete full texts exist (see ``_is_complete_assistant_event``), the
+    last one is used; otherwise deltas are concatenated in order. Completeness is decided by
+    event structure only, never by comparing text with the delta concatenation (a repeated
+    leading delta such as ``"l"`` / ``"l"`` must not be mistaken for a complete text).
+    Returns ``None`` if no turn body is non-empty.
     """
     if not stdout:
         return None
@@ -79,14 +81,7 @@ def reconstruct_assistant_turns(stdout: bytes) -> str | None:
         if not piece:
             continue
 
-        model_call_id = obj.get("model_call_id")
-        if isinstance(model_call_id, str) and model_call_id:
-            last_complete = piece
-            partials = []
-            continue
-
-        concat = "".join(partials)
-        if concat and piece == concat:
+        if _is_complete_assistant_event(obj):
             last_complete = piece
             partials = []
             continue
@@ -99,6 +94,18 @@ def reconstruct_assistant_turns(stdout: bytes) -> str | None:
     if not turns:
         return None
     return "\n\n".join(turns)
+
+
+def _is_complete_assistant_event(obj: dict[Any, Any]) -> bool:
+    """Whether an assistant event carries the complete text rather than a streaming delta.
+
+    Complete texts have a non-empty ``model_call_id`` or lack ``timestamp_ms``
+    (``--stream-partial-output`` deltas carry ``timestamp_ms``).
+    """
+    model_call_id = obj.get("model_call_id")
+    if isinstance(model_call_id, str) and model_call_id:
+        return True
+    return "timestamp_ms" not in obj
 
 
 def _assistant_text_content(obj: dict[Any, Any]) -> str:

@@ -46,7 +46,12 @@ _HOST_PERSONA_LEAKS = (
 )
 
 
-def _assistant(text: str, *, model_call_id: str | None = None) -> dict:
+def _assistant(
+    text: str,
+    *,
+    model_call_id: str | None = None,
+    timestamp_ms: int | None = None,
+) -> dict:
     obj: dict = {
         "type": "assistant",
         "message": {"role": "assistant", "content": [{"type": "text", "text": text}]},
@@ -54,6 +59,8 @@ def _assistant(text: str, *, model_call_id: str | None = None) -> dict:
     }
     if model_call_id is not None:
         obj["model_call_id"] = model_call_id
+    if timestamp_ms is not None:
+        obj["timestamp_ms"] = timestamp_ms
     return obj
 
 
@@ -70,7 +77,15 @@ def _jsonl(*events: dict) -> str:
 
 
 def _partials(text: str, size: int = 3) -> list[dict]:
-    return [_assistant(text[i : i + size]) for i in range(0, len(text), size)]
+    # Deltas from --stream-partial-output carry timestamp_ms; complete texts do not.
+    return [
+        _assistant(text[i : i + size], timestamp_ms=i + 1)
+        for i in range(0, len(text), size)
+    ]
+
+
+def _deltas(*pieces: str) -> list[dict]:
+    return [_assistant(p, timestamp_ms=i + 1) for i, p in enumerate(pieces)]
 
 
 class TestReconstructAssistantTurns:
@@ -136,8 +151,47 @@ class TestReconstructAssistantTurns:
     def test_ac3_boundaries(self, stdout: bytes, expected: str | None):
         assert reconstruct_assistant_turns(stdout) == expected
 
+    def test_repro_fixture_repeated_leading_delta(self):
+        stdout = (_FIXTURES / "cursor_stream_repro.jsonl").read_bytes()
+        assert reconstruct_assistant_turns(stdout) == "llamas are great."
+
+    def test_repeated_delta_equal_to_concat_is_not_complete(self):
+        events = [*_deltas("ab", "ab", "c"), _result("ababc")]
+        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "ababc"
+
+    def test_complete_without_timestamp_is_not_doubled(self):
+        events = [
+            *_deltas("l", "l", "amas are great."),
+            _assistant("llamas are great."),
+            _result("llamas are great."),
+        ]
+        text = reconstruct_assistant_turns(_jsonl(*events).encode())
+        assert text == "llamas are great."
+        assert text != "llamas are great.llamas are great."
+
+    def test_model_call_id_with_timestamp_is_complete(self):
+        events = [
+            *_deltas("he", "llo"),
+            _assistant("hello", model_call_id="c1", timestamp_ms=9),
+            _result("hello"),
+        ]
+        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "hello"
+
+    def test_turns_with_and_without_complete_across_tool_calls(self):
+        events = [
+            *_deltas("o", "o", "ps"),
+            _assistant("oops"),
+            _tool_call("started"),
+            _tool_call("completed"),
+            *_deltas("x", "x", "y"),
+            _tool_call("started"),
+            *_deltas("z", "z"),
+            _assistant("zz", model_call_id="c3"),
+            _result("oopsxxyzz"),
+        ]
+        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "oops\n\nxxy\n\nzz"
+
     def test_ac4_consecutive_tool_calls_do_not_create_empty_turns(self):
-        # Use mutually non-matching chunk text so a partial is not mistaken for complete
         events = [
             *_partials("ABCD", 2),
             _tool_call("started"),
@@ -186,6 +240,20 @@ class TestCursorStreamAdapterFinalMessage:
     def test_ac5_adapter_prefers_reconstructed_turns(self):
         adapter = CursorStreamAdapter()
         assert adapter.extract_result_text(_FINAL_MESSAGE.encode(), b"") == _JOINED.encode()
+
+    def test_repro_fixture_result_text(self):
+        adapter = CursorStreamAdapter()
+        raw = (_FIXTURES / "cursor_stream_repro.jsonl").read_bytes()
+        assert adapter.extract_result_text(raw, b"") == b"llamas are great."
+
+    def test_complete_without_timestamp_result_text_not_doubled(self):
+        adapter = CursorStreamAdapter()
+        raw = _jsonl(
+            *_deltas("ab", "ab", "cd"),
+            _assistant("ababcd"),
+            _result("ababcd"),
+        ).encode()
+        assert adapter.extract_result_text(raw, b"") == b"ababcd"
 
     def test_ac5_fallback_typed_result(self):
         adapter = CursorStreamAdapter()
