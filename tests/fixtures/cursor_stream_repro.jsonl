@@ -1,0 +1,5 @@
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"l"}]},"session_id":"s","timestamp_ms":1}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"l"}]},"session_id":"s","timestamp_ms":2}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"amas are great."}]},"session_id":"s","timestamp_ms":3}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"llamas are great."}]},"session_id":"s"}
+{"type":"result","subtype":"success","is_error":false,"result":"llamas are great.","session_id":"s"}
