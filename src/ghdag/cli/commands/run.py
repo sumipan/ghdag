@@ -26,6 +26,7 @@ def cmd_run(args) -> None:
         poll_interval=args.interval,
         cwd=cwd,
         max_concurrency=args.max_concurrency,
+        brake_state_path=getattr(args, "brake_state", None),
     )
     if args.hooks:
         hooks: DagHooks = _load_hooks(args.hooks)
