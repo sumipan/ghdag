@@ -12,13 +12,13 @@ Unlike CI-hosted orchestrators (GitHub Actions, Dagger), nothing runs on a hoste
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.100.0-blue)
+![version](https://img.shields.io/badge/version-v0.101.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.100.0** (`pyproject.toml` `version = "0.100.0"`) |
+| Current release | **v0.101.0** (`pyproject.toml` `version = "0.101.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -35,7 +35,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.100.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.101.0"
 ```
 
 Install from a checkout with the development tools:
@@ -175,7 +175,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 
 | Command | Arguments (defaults) |
 |---|---|
-| `run` | `exec_jsonl`; `--interval SEC` (`1.0`); `--hooks MODULE` (module with a `DagHooks` implementation; default `AuditHooks`); `--max-concurrency N` (unlimited) |
+| `run` | `exec_jsonl`; `--interval SEC` (`1.0`); `--hooks MODULE` (module with a `DagHooks` implementation; default `AuditHooks`); `--max-concurrency N` (unlimited); `--brake-state PATH` (optional budget-brake JSON for `QuotaGate`, e.g. `jobs/issuesmith-brake.json` — wired to `DagConfig.brake_state_path`) |
 | `watch` | `workflows_dir`; `--interval SEC` (`30`); `--exec-md PATH` (`jobs/exec.jsonl`); `--once`; `--pause-file PATH` (disabled); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `<exec-md parent's parent>/.pipeline-state`) |
 | `trigger` | `issue_number`; `--handler NAME` (required); `--workflows-dir PATH` (`workflows`); `--exec-md PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto-detected when there is only one workflow); `--redispatch`; `--reason TEXT`; `--state-dir PATH` (same default as `watch`) |
 | `status` | `--issue N` and/or `--running` (at least one); `--handler` and `--workflow` (required with `--issue`); `--json`; `--exec-jsonl PATH` (`$GHDAG_EXEC_JSONL` or `jobs/exec.jsonl`); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `.pipeline-state`); `--done-dir PATH` / `--running-dir PATH` (`$GHDAG_STATE_DIR/done` / `running` or `<exec.jsonl parent>/done` / `running`); `--audit-path PATH` (optional; adds `started_at` / `elapsed_sec` to completed steps) |
@@ -199,6 +199,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 |---|---|
 | `ghdag run` working directory | Tasks run with `cwd` set to the parent of the `exec.jsonl` directory (for `jobs/exec.jsonl`, the repository root) |
 | One runner per queue | `DagEngine` holds `<queue dir>/.ghdag.lock`; a second runner on the same queue logs "Another DagEngine is already running" and stops |
+| `ghdag run --brake-state` | Passes `brake_state_path` into `DagConfig` and `QuotaGate`; deferred tasks are not released while the brake file marks an engine `paused` (same `engines.<name>.status` shape as quota state) |
 | `ghdag run --hooks` | Imports the module (the current directory is put on `sys.path`) and instantiates its `HOOKS_CLASS` attribute, or else the first public class in the module that defines `on_task_success` |
 | `ghdag trigger --redispatch` | Increments the handler generation and starts a new run (for when `dag recover` is not possible); `--reason` is written to `audit.jsonl` |
 | `ghdag watch` and rate limits | When GitHub reports a rate limit with a reset time, polls are skipped until the reset (log: `rate limited: skip poll until <ISO8601>`) |
@@ -342,7 +343,7 @@ Modules that declare their own `__all__` (private `_` names omitted). Modules ma
 | `ghdag.status` | `IssueStatus`, `StepStatus`, `RunningTask`, `issue_status`, `running_tasks` |
 | `ghdag.github_cli` | `GitHubClient`, `DEFAULT_REPO`, `API_BASE`, `GRAPHQL_URL`, `get_forge` |
 | `ghdag.audit.span` | `EVENT_TYPE_E2E_COMPLETED`, `EVENT_TYPE_E2E_FAILED`, `EVENT_TYPE_LATENCY_SPAN`, `LATENCY_SPAN_JSONL`, `emit_span`, `make_span_id` |
-| `ghdag.config.env` | `github_token`, `github_repositories_raw`, `ghdag_audit_path`, `ghdag_token_warn_threshold`, `ghdag_safe_default_permission`, `ghdag_llm_models`, `latency_span_path`, `session_compaction_enabled`, `enable_git`, `ghdag_vcs_config`, `ghdag_state_dir`, `state_dir`, `ghdag_language_pack` |
+| `ghdag.config.env` | `github_token`, `github_repositories_raw`, `ghdag_audit_path`, `ghdag_token_warn_threshold`, `ghdag_safe_default_permission`, `ghdag_llm_models`, `latency_span_path`, `session_compaction_enabled`, `enable_git`, `ghdag_vcs_config`, `ghdag_state_dir`, `state_dir`, `ghdag_language_pack`, `stall_guard_enabled`, `stall_guard_stall_sec`, `stall_guard_interval_sec` |
 | `ghdag.config.language` | `STATE_IDS`, `UI_KEYS`, `LanguagePack`, `EN`, `load_language_pack`, `get_language_pack` |
 | `ghdag.core.command` | `AdapterNotFoundError`, `EngineAdapter`, `build_llm_cmd`, `get_adapter`, `register_adapter`, `render_exec_command` |
 | `ghdag.core.container` | `CONTAINER_WORKDIR`, `container_prefix` |
@@ -489,6 +490,7 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 | First SIGTERM / SIGINT | Writes `interrupted_at` into every `running/<uuid>.json`, stops launching, and drains running tasks until `task_timeout` elapses (no drain when `task_timeout` is `None`); the remaining tasks are then terminated and the runner exits |
 | Second SIGTERM / SIGINT | Exits immediately |
 | Restart | After the first `exec.jsonl` load, `adopt_orphans` inspects `running/*.json`: live tasks are adopted and tracked to completion, dead tasks are closed with `ORPHANED_ON_RESTART`, and interrupted tasks (`interrupted_at` set) are killed if still alive and relaunched once with the same UUID and `GHDAG_PREVIOUS_ATTEMPT=interrupted` |
+| Engine stall guard | When `stall_guard_enabled()` is true (default), `TaskLauncher.check_completions` uses `ghdag.dag.stall_guard` to detect cursor DAG tasks whose shell state-transfer `cat` children are stuck at zero CPU; after `stall_guard_stall_sec()` (default 180s) it sends SIGTERM and writes a `stall_guard` audit event |
 
 ### Engine output and failure classification
 
@@ -613,7 +615,8 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `dag/parser.py` | `parse_jsonl` for `exec.jsonl` |
 | `dag/recover.py` | `plan_recover` / `execute_recover` (`RecoverError`) |
 | `dag/state.py` | Done-directory state helpers |
-| `dag/task_launcher.py` | `TaskLauncher`: subprocess launch, streaming, completion, orphan adoption |
+| `dag/stall_guard.py` | Detect and SIGTERM stalled `cat` children under cursor shell state-transfer (`StallTracker`, `stall_guard_enabled` thresholds from `config.env`) |
+| `dag/task_launcher.py` | `TaskLauncher`: subprocess launch, streaming, completion, orphan adoption, stall-guard scans |
 | `files/__init__.py` | Markdown file operations API |
 | `files/_rotate.py` | Shim for `ghdag.io._rotate` |
 | `files/append.py` | `md_append`: idempotent section append (`AppendRecoverError`) |
@@ -725,7 +728,7 @@ Every variable ghdag reads (`os.environ` / `os.getenv` in `src/ghdag/`). Most re
 | `GHDAG_RATE_LIMIT_MAX_WAIT_SEC` | `900` | `github_client.GitHubClient` | Longest rate-limit sleep before `RateLimitError` is raised; non-integer values fall back to `900` |
 | `ENABLE_GIT` | off | `config.env.enable_git` (`vcs.get_sink`) | `1` / `true` / `yes` lets `get_sink` return a real `GitSink`; otherwise every sink is a `NullSink` |
 | `GHDAG_VCS_CONFIG` | none | `config.env.ghdag_vcs_config` (`vcs.get_sink`) | Path to the [VCS sink config](#vcs-sink-config-ghdag_vcs_config); required for real sinks when `ENABLE_GIT` is on |
-| `LATENCY_SPAN_PATH` | `jobs/latency_span.jsonl` | `config.env.latency_span_path` | Output of `ghdag.audit.emit_span` when no `log_path` is given |
+| `LATENCY_SPAN_PATH` | unset (`LATENCY_SPAN_JSONL` = `jobs/latency_span.jsonl`) | `config.env.latency_span_path` | Overrides the default span JSONL path used by `ghdag.audit.emit_span` when `log_path` is omitted (`ghdag.audit.span.LATENCY_SPAN_JSONL`) |
 
 Variables ghdag sets for child processes (not configuration):
 
@@ -1012,7 +1015,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.100.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.101.0"
 ```
 
 and read `CHANGELOG.md` before upgrading.
