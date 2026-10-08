@@ -57,13 +57,18 @@ class DagEngine:
         self._fanout_manager = FanOutManager(
             config, self._hooks, self._append_fanout_child, self._run_promote
         )
+        self._pending_requeue: set[str] = set()
         quota_state_path = config.quota_state_path
         if quota_state_path is None:
             raise ValueError("DagConfig.quota_state_path must be set")
         self._launcher = TaskLauncher(
             config, self._hooks, self._circuit_breaker,
             self._fanout_manager, self._run_promote,
-            quota_gate=QuotaGate(quota_state_path, audit_path=config.quota_audit_path),
+            quota_gate=QuotaGate(
+                quota_state_path,
+                audit_path=config.quota_audit_path,
+                brake_state_path=getattr(config, "brake_state_path", None),
+            ),
         )
         self._quota_gate = self._launcher.quota_gate
 
@@ -283,16 +288,37 @@ class DagEngine:
 
     def _requeue_deferred(self, released_uuids: list[str]) -> None:
         """Remove DONE_DEFERRED done files so released tasks can be re-launched."""
-        done_dir = self._config.exec_done_dir
-        for uuid in released_uuids:
-            content = read_done_content(Path(done_dir), uuid)
-            if content is not None and content.strip() == DONE_DEFERRED:
-                done_file = Path(done_dir) / uuid
+        done_dir = Path(self._config.exec_done_dir)
+        candidates = set(released_uuids) | self._pending_requeue
+        if not candidates:
+            return
+
+        deferred_in_gate: set[str] | None = None
+        need_deferred_lookup = bool(self._pending_requeue)
+
+        for uuid in candidates:
+            content = read_done_content(done_dir, uuid)
+            if content is None:
+                self._pending_requeue.add(uuid)
+                continue
+
+            if content.strip() == DONE_DEFERRED:
+                if need_deferred_lookup:
+                    if deferred_in_gate is None:
+                        deferred_in_gate = set(self._quota_gate.snapshot().deferred_tasks)
+                    if uuid in deferred_in_gate:
+                        self._pending_requeue.discard(uuid)
+                        continue
+                done_file = done_dir / uuid
                 try:
                     done_file.unlink()
                     logger.info("Task [%s] requeued after deferred release", uuid)
                 except OSError:
                     logger.warning("Failed to remove done file for requeued task [%s]", uuid)
+                self._pending_requeue.discard(uuid)
+                continue
+
+            self._pending_requeue.discard(uuid)
 
     def _propagate_dep_failed(
         self,
