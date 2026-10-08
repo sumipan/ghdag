@@ -18,7 +18,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
 
-from ghdag.config.env import session_compaction_enabled
+from ghdag.config.env import (
+    session_compaction_enabled,
+    stall_guard_enabled,
+    stall_guard_interval_sec,
+    stall_guard_stall_sec,
+)
 from ghdag.core.vocabulary import (
     DONE_CANCELLED,
     DONE_DEFERRED,
@@ -37,6 +42,8 @@ from ghdag.core.vocabulary import (
     DONE_UNKNOWN_FAILURE,
 )
 from ghdag.io.audit import (
+    append_audit_record,
+    now_ts,
     write_compaction_audit,
     write_quarantine_audit,
     write_task_retry_audit,
@@ -60,6 +67,7 @@ from .fanout import parse_fanout_spec
 from .fanout_manager import FanOutManager
 from .hooks import DagHooks
 from .models import DagConfig, RunningTask, Task
+from .stall_guard import StallTracker
 from .state import mark_done as state_mark_done
 
 logger = logging.getLogger(__name__)
@@ -339,6 +347,17 @@ class TaskLauncher:
         stderr_buf = io.BytesIO()
         t_stderr = threading.Thread(target=_stderr_reader, args=(proc, stderr_buf), daemon=True)
         t_stderr.start()
+        stall_tracker: StallTracker | None = None
+        if (
+            launch_engine == "cursor"
+            and stall_guard_enabled()
+            and isinstance(proc.pid, int)
+        ):
+            stall_tracker = StallTracker(
+                proc.pid,
+                stall_sec=stall_guard_stall_sec(),
+                interval_sec=stall_guard_interval_sec(),
+            )
         self._running[uuid] = RunningTask(
             uuid=uuid,
             task=task,
@@ -350,6 +369,7 @@ class TaskLauncher:
             stdout_buf=stdout_buf,
             stderr_thread=t_stderr,
             stdout_thread=t_stdout,
+            stall_tracker=stall_tracker,
         )
         self._write_running_file(uuid, proc, task, launch_engine, interrupted_reruns)
         self._hooks.on_task_start(uuid, task)
@@ -396,6 +416,33 @@ class TaskLauncher:
                         _signal_process_tree(rt.proc, signal.SIGTERM)
                         rt.term_sent_at = now
                     else:
+                        if rt.stall_tracker is not None:
+                            for event in rt.stall_tracker.check(now):
+                                logger.warning(
+                                    "[stall-guard] task=%s sent SIGTERM to pid=%d after %.0fs: %s",
+                                    uuid,
+                                    event.pid,
+                                    event.stalled_sec,
+                                    event.parent_args_head,
+                                )
+                                try:
+                                    append_audit_record(
+                                        self._queue_audit_path(),
+                                        {
+                                            "schema_version": 1,
+                                            "event_type": "stall_guard",
+                                            "timestamp": now_ts(),
+                                            "task_uuid": uuid,
+                                            "pid": event.pid,
+                                            "stalled_sec": event.stalled_sec,
+                                            "parent_args_head": event.parent_args_head,
+                                        },
+                                    )
+                                except OSError as exc:
+                                    logger.warning(
+                                        "[stall-guard] audit write failed: %s",
+                                        exc,
+                                    )
                         continue
 
             if rt.term_sent_at is not None:

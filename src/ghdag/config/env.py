@@ -23,6 +23,9 @@ __all__ = [
     "ghdag_state_dir",
     "state_dir",
     "ghdag_language_pack",
+    "stall_guard_enabled",
+    "stall_guard_stall_sec",
+    "stall_guard_interval_sec",
 ]
 
 
@@ -102,3 +105,31 @@ def state_dir(default: str | Path) -> Path:
 def ghdag_language_pack() -> str | None:
     """Return ``GHDAG_LANGUAGE_PACK`` (path to a language pack YAML) if set and non-empty."""
     return os.environ.get("GHDAG_LANGUAGE_PACK") or None
+
+
+def stall_guard_enabled() -> bool:
+    """Return whether engine stall guard is on (default on; ``GHDAG_ENGINE_STALL_GUARD=0`` disables)."""
+    return os.environ.get("GHDAG_ENGINE_STALL_GUARD", "1").strip() != "0"
+
+
+def _positive_float_env(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = float(raw.strip())
+    except ValueError:
+        return default
+    if value <= 0:
+        return default
+    return value
+
+
+def stall_guard_stall_sec() -> float:
+    """Seconds a stalled ``cat`` must persist before SIGTERM (``GHDAG_ENGINE_STALL_SEC``, default 180)."""
+    return _positive_float_env("GHDAG_ENGINE_STALL_SEC", 180.0)
+
+
+def stall_guard_interval_sec() -> float:
+    """Minimum seconds between stall scans (``GHDAG_ENGINE_STALL_INTERVAL_SEC``, default 30)."""
+    return _positive_float_env("GHDAG_ENGINE_STALL_INTERVAL_SEC", 30.0)

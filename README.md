@@ -711,6 +711,9 @@ Every variable ghdag reads (`os.environ` / `os.getenv` in `src/ghdag/`). Most re
 | `GHDAG_SAFE_DEFAULT_PERMISSION` | `text_only` | `config.env.ghdag_safe_default_permission` | Capability preset for workflow steps without `permission`; unknown names raise `ValueError` |
 | `GHDAG_LLM_MODELS` | unset | `config.env.ghdag_llm_models` | Path to [`llm-models.yml`](#llm-modelsyml) |
 | `GHDAG_SESSION_COMPACTION` | off | `config.env.session_compaction_enabled` | `1` / `true` / `yes` / `on` enables resume-session compaction |
+| `GHDAG_ENGINE_STALL_GUARD` | `1` (on) | `config.env.stall_guard_enabled` | `0` disables SIGTERM to stalled `cat` children under cursor DAG tasks |
+| `GHDAG_ENGINE_STALL_SEC` | `180` | `config.env.stall_guard_stall_sec` | Seconds a matching stalled `cat` must persist before SIGTERM |
+| `GHDAG_ENGINE_STALL_INTERVAL_SEC` | `30` | `config.env.stall_guard_interval_sec` | Minimum seconds between stall scans in `check_completions` |
 | `GHDAG_LANGUAGE_PACK` | unset (bundled `EN`) | `config.env.ghdag_language_pack` (`config.language.get_language_pack`) | Path to a [language pack](#language-pack-ghdag_language_pack) YAML; an invalid pack raises `GhdagError` (`ghdag ui` fails at start-up) |
 | `GHDAG_STATE_DIR` | unset | `config.env.state_dir` | Directory for runtime state (`done/`, `running/`, `events/`, `.sessions/`, `cancel/`, `quota-gate.json`, `.pipeline-state/`); `exec.jsonl` and `audit.jsonl` stay in `jobs/`. Explicit CLI / API paths win |
 | `GHDAG_EXEC_JSONL` | `jobs/exec.jsonl` | `cli.commands.status` | Default `--exec-jsonl` of `ghdag status` |

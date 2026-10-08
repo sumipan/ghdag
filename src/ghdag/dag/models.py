@@ -6,8 +6,12 @@ import io
 import subprocess
 import threading
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from ghdag.core.models.dag import DagConfig, Task
+
+if TYPE_CHECKING:
+    from ghdag.dag.stall_guard import StallTracker
 
 __all__ = ["Task", "DagConfig", "RunningTask"]
 
@@ -25,3 +29,4 @@ class RunningTask:
     stdout_buf: io.BytesIO | None = None
     stderr_thread: threading.Thread | None = None
     stdout_thread: threading.Thread | None = None
+    stall_tracker: StallTracker | None = None
