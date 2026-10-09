@@ -9,11 +9,9 @@ import argparse
 import sys
 from pathlib import Path
 
-import yaml
-
 from ghdag.core.ports.forge import ForgePort
 from ghdag.forge import get_forge
-from ghdag.workflow.loader import _parse
+from ghdag.workflow.loader import load_workflow_file
 from ghdag.workflow.schema import WorkflowConfig
 
 
@@ -102,10 +100,8 @@ def transition(
 
 
 def _load_workflow_config(path: Path) -> WorkflowConfig:
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    if not isinstance(data, dict):
-        raise ValueError(f"Invalid workflow YAML: {path}")
-    return _parse(data, workflow_dir=path.parent.resolve())
+    """Deprecated: use ghdag.workflow.loader.load_workflow_file."""
+    return load_workflow_file(path)
 
 
 def main() -> int:

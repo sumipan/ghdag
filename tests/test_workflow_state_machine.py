@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+
+from ghdag.workflow.loader import ValidationError, load_workflow_file
 from ghdag.workflow.schema import WorkflowConfig
 from ghdag.workflow.state_machine import (
+    _load_workflow_config,
     get_current_phase,
     validate_transition,
 )
@@ -27,6 +33,48 @@ def test_workflow_config_transitions_default_none():
     assert cfg.transitions is None
     assert cfg.label_namespace is None
     assert cfg.reset_label is None
+
+
+def test_load_workflow_config_uses_validating_file_loader(tmp_path: Path) -> None:
+    path = tmp_path / "workflow.yml"
+    path.write_text(
+        """\
+name: example
+triggers:
+  - label: ready
+    handler: reset
+handlers:
+  reset:
+    type: reset
+label_namespace: example
+transitions:
+  ready: [done]
+reset_label: reset
+""",
+        encoding="utf-8",
+    )
+
+    assert _load_workflow_config(path) == load_workflow_file(path)
+
+
+def test_load_workflow_config_rejects_unknown_key(tmp_path: Path) -> None:
+    path = tmp_path / "workflow.yml"
+    path.write_text(
+        """\
+name: example
+triggers:
+  - label: ready
+    handler: reset
+handlers:
+  reset:
+    type: reset
+    on_complete: archive
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match=r"handlers\.reset\.on_complete"):
+        _load_workflow_config(path)
 
 
 # --- validate_transition happy path ---

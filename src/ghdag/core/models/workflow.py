@@ -4,6 +4,39 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+WORKFLOW_KEYS = frozenset(
+    {
+        "name",
+        "triggers",
+        "handlers",
+        "polling_interval",
+        "template_dir",
+        "label_namespace",
+        "transitions",
+        "reset_label",
+        "roles",
+        "nonterminal_closed",
+    }
+)
+TRIGGER_KEYS = frozenset({"label", "handler"})
+HANDLER_KEYS = frozenset({"steps", "on_trigger", "type", "context_hook"})
+ON_TRIGGER_KEYS = frozenset({"issue_context"})
+STEP_KEYS = frozenset(
+    {
+        "id",
+        "template",
+        "model",
+        "engine",
+        "depends",
+        "resume_from",
+        "permission",
+        "skill_name",
+        "render",
+        "role",
+    }
+)
+NONTERMINAL_CLOSED_KEYS = frozenset({"action", "terminal_labels", "trigger"})
+
 
 @dataclass
 class StepConfig:

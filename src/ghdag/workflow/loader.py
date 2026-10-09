@@ -10,7 +10,16 @@ from pathlib import Path
 
 import yaml
 
-from ghdag.core.models.workflow import NonterminalClosedConfig, validate_workflow_roles
+from ghdag.core.models.workflow import (
+    HANDLER_KEYS,
+    NONTERMINAL_CLOSED_KEYS,
+    ON_TRIGGER_KEYS,
+    STEP_KEYS,
+    TRIGGER_KEYS,
+    WORKFLOW_KEYS,
+    NonterminalClosedConfig,
+    validate_workflow_roles,
+)
 from ghdag.exceptions import GhdagError
 from ghdag.workflow.schema import (
     HandlerConfig,
@@ -43,28 +52,43 @@ def load_workflows(directory: str | Path) -> list[WorkflowConfig]:
         raise FileNotFoundError(f"Directory not found: {directory}")
 
     paths = sorted(directory.glob("*.yml")) + sorted(directory.glob("*.yaml"))
-    configs: list[WorkflowConfig] = []
+    return [load_workflow_file(path) for path in paths]
 
-    for path in paths:
-        try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except yaml.YAMLError as e:
-            raise ValidationError(f"YAML parse error ({path.name}): {e}") from e
 
-        if not isinstance(data, dict):
-            raise ValidationError(f"YAML root must be a mapping: {path.name}")
+def load_workflow_file(path: str | Path) -> WorkflowConfig:
+    """Load and validate one workflow YAML file."""
+    path = Path(path)
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as e:
+        raise ValidationError(f"YAML parse error ({path.name}): {e}") from e
 
-        _validate(data, path.name)
-        config = _parse(data, workflow_dir=directory.resolve())
-        validate_workflow_roles(config)
-        _validate_references(config, workflow_dir=directory.resolve())
-        configs.append(config)
+    if not isinstance(data, dict):
+        raise ValidationError(f"YAML root must be a mapping: {path.name}")
 
-    return configs
+    workflow_dir = path.parent.resolve()
+    _validate(data, path.name)
+    config = _parse(data, workflow_dir=workflow_dir)
+    validate_workflow_roles(config)
+    _validate_references(config, workflow_dir=workflow_dir)
+    return config
+
+
+def _reject_unknown_keys(
+    mapping: dict, allowed: frozenset[str], path: str, filename: str
+) -> None:
+    unknown = sorted(set(mapping) - allowed)
+    if unknown:
+        unknown_paths = ", ".join(f"{path}.{key}" for key in unknown)
+        raise ValidationError(
+            f"{filename}: unknown key(s) in {path}: {unknown_paths}. "
+            f"Allowed: {', '.join(sorted(allowed))}"
+        )
 
 
 def _validate(data: dict, filename: str) -> None:
     """Check for required fields."""
+    _reject_unknown_keys(data, WORKFLOW_KEYS, "workflow", filename)
     if "name" not in data:
         raise ValidationError(f"'name' field is required: {filename}")
     if "triggers" not in data or not data["triggers"]:
@@ -76,6 +100,7 @@ def _validate(data: dict, filename: str) -> None:
     for i, trigger in enumerate(data["triggers"]):
         if not isinstance(trigger, dict):
             raise ValidationError(f"triggers[{i}] must be a mapping: {filename}")
+        _reject_unknown_keys(trigger, TRIGGER_KEYS, f"triggers[{i}]", filename)
         if "label" not in trigger:
             raise ValidationError(f"triggers[{i}] requires 'label': {filename}")
         if "handler" not in trigger:
@@ -91,6 +116,17 @@ def _validate(data: dict, filename: str) -> None:
             continue
         if not isinstance(handler_data, dict):
             raise ValidationError(f"handler '{handler_name}' must be a mapping: {filename}")
+        handler_path = f"handlers.{handler_name}"
+        _reject_unknown_keys(handler_data, HANDLER_KEYS, handler_path, filename)
+
+        on_trigger = handler_data.get("on_trigger")
+        if isinstance(on_trigger, dict):
+            _reject_unknown_keys(
+                on_trigger,
+                ON_TRIGGER_KEYS,
+                f"{handler_path}.on_trigger",
+                filename,
+            )
 
         # reset handlers do not require steps
         handler_type = handler_data.get("type")
@@ -105,6 +141,12 @@ def _validate(data: dict, filename: str) -> None:
         for i, step in enumerate(steps):
             if not isinstance(step, dict):
                 raise ValidationError(f"handler '{handler_name}' step[{i}] must be a mapping: {filename}")
+            _reject_unknown_keys(
+                step,
+                STEP_KEYS,
+                f"{handler_path}.steps[{i}]",
+                filename,
+            )
             if "template" not in step:
                 raise ValidationError(f"handler '{handler_name}' step[{i}] requires 'template': {filename}")
             if "model" not in step:
@@ -156,6 +198,12 @@ def _validate(data: dict, filename: str) -> None:
             raise ValidationError(
                 f"'nonterminal_closed' must be a mapping: {filename}"
             )
+        _reject_unknown_keys(
+            nonterminal_closed,
+            NONTERMINAL_CLOSED_KEYS,
+            "nonterminal_closed",
+            filename,
+        )
         action = nonterminal_closed.get("action")
         if action not in ("reopen", "trigger"):
             raise ValidationError(

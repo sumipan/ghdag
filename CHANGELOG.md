@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `load_workflow_file(path)` loads and validates a single workflow YAML file (sumipan/nexus#5030).
 - `QuotaGate.read_state()` / `QuotaGate.modify(fn)`: public access to the raw quota state dict. `read_state()` reads under a shared lock (missing file → default state, no file created; invalid JSON / unknown schema → `ValueError`). `modify(fn)` runs `fn(state)` under an exclusive lock and writes the in-place-mutated state (when `fn` returns `None`) or the returned dict, then returns it; if `fn` raises, nothing is written. Unknown top-level keys (e.g. `resources`) are preserved. Replaces direct use of `_lock` / `_load_state_unlocked` / `_write_state_unlocked` (sumipan/nexus#5033).
 - `GitHubClient.graphql(query, variables=None)`: POSTs to `GRAPHQL_URL` via `_request`, so auth headers, transient retries, rate-limit waits / `RateLimitError` and `AuthError` are shared with REST calls. Returns the response `data` (`{}` when absent); a non-empty `errors` raises `GitHubApiError` (sumipan/nexus#5033).
 - `LocalForge.graphql()`: raises `NotImplementedError` (sumipan/nexus#5033).
@@ -30,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **BREAKING** workflow loading rejects unknown YAML keys at the workflow, trigger, handler, `on_trigger`, step, and `nonterminal_closed` levels instead of silently ignoring them (sumipan/nexus#5030).
 - `ForgePort.graphql`: new Protocol method `graphql(query, variables=None) -> dict`. Implementers of `ForgePort` must provide it (`GitHubClient` and `LocalForge` do) (sumipan/nexus#5033).
 - `ghdag.forge.get_forge()`: `LocalForge` is imported directly instead of via `importlib` with a `ModuleNotFoundError` fallback; behaviour is unchanged (sumipan/nexus#5033).
 - **BREAKING** task state values are language-neutral identifiers (sumipan/nexus#4456): `STATE_PENDING_DEPS` / `STATE_PENDING_RUN` / `STATE_RUNNING` / `STATE_DEFERRED` / `STATE_OK` / `STATE_FAIL` / `STATE_REJECTED` / `STATE_EMPTY` / `STATE_ENGINE_ERROR` / `STATE_UNKNOWN_DONE` are now `pending_deps` / `pending_run` / `running` / `deferred` / `ok` / `fail` / `rejected` / `empty` / `engine_error` / `unknown` (previously Japanese display strings), and `pipeline.task_status()`, `ui.monitor.task_state()` and `label_for_done()` return these identifiers. Use `state_label()` for the display string. `ui.monitor.STATE_ALIASES` maps filter names to identifiers and `filter_rows` matches `Row.state_id`. `/api/rows` keeps `state` as the display label, so a host that sets `GHDAG_LANGUAGE_PACK` to a pack with its previous labels sees the same values as before; without a pack the labels are English.
