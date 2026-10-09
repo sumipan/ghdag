@@ -83,6 +83,7 @@ def test_paused_launch_does_not_call_subprocess(tmp_path: Path) -> None:
         engine="claude",
         status="paused",
         observed_at=datetime(2026, 9, 2, 12, 0, tzinfo=JST),
+        resume_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
     )
 
     def stop_after_first_sleep(*_args, **_kwargs):
@@ -282,6 +283,7 @@ def test_enqueue_records_are_kept_and_deferred_registry_updated(tmp_path: Path) 
         engine="claude",
         status="paused",
         observed_at=datetime(2026, 9, 2, 12, 0, tzinfo=JST),
+        resume_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
     )
     record = {"uuid": "task-1", "command": "claude -p hello", "engine": "claude", "depends": []}
     engine.append_task(json.dumps(record))
@@ -497,6 +499,35 @@ def test_pending_requeue_clears_when_late_done_is_success(tmp_path: Path) -> Non
     engine._requeue_deferred([])
     assert (done_dir / "t1").exists()
     assert engine._pending_requeue == set()
+
+
+def test_dag_config_quota_limits_and_pause_ttl_propagate(tmp_path: Path) -> None:
+    exec_path = tmp_path / "jobs" / "exec.jsonl"
+    done_dir = tmp_path / "jobs" / "done"
+    done_dir.mkdir(parents=True, exist_ok=True)
+    exec_path.write_text(
+        json.dumps({"uuid": "task-1", "command": "claude -p hello", "depends": []}) + "\n",
+        encoding="utf-8",
+    )
+    config = DagConfig(
+        exec_jsonl_path=exec_path,
+        exec_done_dir=done_dir,
+        engine_limits={"claude": 2},
+        quota_pause_ttl_seconds=600,
+    )
+    hooks = MagicMock()
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = None
+    engine = DagEngine(config, hooks)
+    gate = engine._quota_gate
+    assert gate._limits == {"claude": 2}
+    assert gate._pause_ttl_seconds == 600
+
+    config_default = DagConfig(exec_jsonl_path=exec_path, exec_done_dir=done_dir)
+    engine_default = DagEngine(config_default, hooks)
+    assert engine_default._quota_gate._limits is None
+    assert engine_default._quota_gate._pause_ttl_seconds is None
+    assert config_default.quota_pause_ttl_seconds is None
 
 
 def test_pending_requeue_skips_unlink_when_task_re_deferred_in_gate(tmp_path: Path) -> None:

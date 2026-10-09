@@ -44,6 +44,8 @@ class DagConfig:
     quota_audit_path: str | Path | None = None
     brake_state_path: str | Path | None = None
     audit_path: Path | None = None
+    quota_pause_ttl_seconds: int | None = None
+    engine_limits: dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         queue_dir = Path(self.exec_jsonl_path).parent

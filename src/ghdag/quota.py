@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -35,6 +36,7 @@ class AdmissionDecision:
     status: str
     reason: str | None
     resume_at: datetime | None
+    admitted_engine: str | None = None
 
 
 @dataclass(frozen=True)
@@ -62,6 +64,7 @@ class QuotaSnapshot:
     deferred_tasks: dict[str, DeferredTaskState]
     draining_engines: dict[str, "DrainState"]
     running_tasks: dict[str, "RunningTaskState"]
+    limits: dict[str, int]
 
 
 @dataclass(frozen=True)
@@ -84,11 +87,22 @@ class QuotaGate:
         state_path: str | Path,
         audit_path: str | Path | None = None,
         brake_state_path: str | Path | None = None,
+        pause_ttl_seconds: int | None = None,
+        limits: Mapping[str, int] | None = None,
     ):
+        if pause_ttl_seconds is not None and pause_ttl_seconds <= 0:
+            raise ValueError("pause_ttl_seconds must be positive when set")
+        if limits is not None:
+            for engine_name, limit in limits.items():
+                if not isinstance(limit, int) or limit <= 0:
+                    raise ValueError("limits values must be positive integers")
+                _require_non_empty(str(engine_name), "limits engine name")
         self._state_path = Path(state_path)
         self._lock_path = self._state_path.with_suffix(self._state_path.suffix + ".lock")
         self._audit_path = Path(audit_path) if audit_path else None
         self._brake_state_path = Path(brake_state_path) if brake_state_path else None
+        self._pause_ttl_seconds = pause_ttl_seconds
+        self._limits = dict(limits) if limits is not None else None
 
     def report(
         self,
@@ -105,6 +119,8 @@ class QuotaGate:
             raise ValueError("status must be 'available' or 'paused'")
         if resume_at is not None:
             resume_at = _require_aware(resume_at, "resume_at")
+        elif status == "paused" and self._pause_ttl_seconds is not None:
+            resume_at = observed + timedelta(seconds=self._pause_ttl_seconds)
 
         with self._lock(exclusive=True):
             state = self._load_state_unlocked()
@@ -311,6 +327,7 @@ class QuotaGate:
                 fallback_reason=reason,
                 role=role,
                 role_engines=role_engines,
+                task_uuid=task_uuid,
             )
             if decision.allowed:
                 return AdmissionDecision(True, "ALLOWED", None, None)
@@ -393,6 +410,7 @@ class QuotaGate:
 
         engine_name = _require_non_empty(engine, "engine") if engine is not None else ""
         current = _aware_now(now)
+        changed = False
 
         with self._lock(exclusive=True):
             state = self._load_state_unlocked()
@@ -403,18 +421,32 @@ class QuotaGate:
                 fallback_reason=None,
                 role=role,
                 role_engines=role_engines,
+                task_uuid=task_uuid,
+                check_engine_limits=True,
             )
             if decision.allowed:
                 removed_deferred = state["deferred_tasks"].pop(task_uuid, None) is not None
                 previous_running = state["running_tasks"].get(task_uuid)
-                running_payload = {
-                    "engine": engine_name,
+                if decision.admitted_engine is not None:
+                    record_engine = decision.admitted_engine
+                elif engine is not None:
+                    record_engine = engine_name
+                else:
+                    record_engine = "unknown"
+                running_payload: dict[str, Any] = {
+                    "engine": record_engine,
                     "started_at": _iso(current),
                 }
+                if role is not None:
+                    running_payload["role"] = role
+                if self._limits is not None:
+                    state["limits"] = dict(self._limits)
                 changed = previous_running != running_payload or removed_deferred
                 state["running_tasks"][task_uuid] = running_payload
                 if changed:
                     self._write_state_unlocked(state)
+            elif decision.reason == "engine_limit":
+                pass
             else:
                 deferred_payload = _deferred_payload(
                     engine=engine_name,
@@ -432,16 +464,21 @@ class QuotaGate:
                     self._write_state_unlocked(state)
 
         if changed:
+            audit_engine = (
+                decision.admitted_engine
+                if decision.admitted_engine is not None
+                else (engine_name or (role_engines[0] if role_engines else "unknown"))
+            )
             if decision.allowed:
                 self._audit_task_running_started(
                     task_uuid=task_uuid,
-                    engine=engine_name,
+                    engine=audit_engine,
                     observed_at=current,
                 )
             else:
                 self._audit_task_deferred(
                     task_uuid=task_uuid,
-                    engine=engine_name or (role_engines[0] if role_engines else "unknown"),
+                    engine=audit_engine,
                     phase="launch",
                     observed_at=current,
                     resume_at=decision.resume_at,
@@ -599,11 +636,18 @@ class QuotaGate:
             task_uuid: _to_running_state(payload)
             for task_uuid, payload in state["running_tasks"].items()
         }
+        limits: dict[str, int] = {}
+        limits_raw = state.get("limits")
+        if isinstance(limits_raw, dict):
+            for name, value in limits_raw.items():
+                if isinstance(value, int):
+                    limits[str(name)] = value
         return QuotaSnapshot(
             engines=engines,
             deferred_tasks=deferred_tasks,
             draining_engines=draining_engines,
             running_tasks=running_tasks,
+            limits=limits,
         )
 
     def _release_for_engine(self, state: dict, engine: str, observed_at: datetime) -> list[str]:
@@ -680,6 +724,8 @@ class QuotaGate:
         fallback_reason: str | None,
         role: str | None = None,
         role_engines: list[str] | None = None,
+        task_uuid: str = "",
+        check_engine_limits: bool = False,
     ) -> AdmissionDecision:
         if role is not None and role_engines:
             return self._evaluate_role_admission_unlocked(
@@ -688,6 +734,8 @@ class QuotaGate:
                 role_engines=role_engines,
                 now=now,
                 fallback_reason=fallback_reason,
+                task_uuid=task_uuid,
+                check_engine_limits=check_engine_limits,
             )
 
         engine_state = _to_engine_state(state["engines"].get(engine))
@@ -708,6 +756,14 @@ class QuotaGate:
                 reason=deferred_reason,
                 resume_at=None,
             )
+        if check_engine_limits and self._limits is not None and engine in self._limits:
+            if self._count_running_for_engine(state, engine, task_uuid) >= self._limits[engine]:
+                return AdmissionDecision(
+                    allowed=False,
+                    status="DEFERRED",
+                    reason="engine_limit",
+                    resume_at=None,
+                )
         return AdmissionDecision(True, "ALLOWED", None, None)
 
     def _evaluate_role_admission_unlocked(
@@ -718,15 +774,51 @@ class QuotaGate:
         role_engines: list[str],
         now: datetime,
         fallback_reason: str | None,
+        task_uuid: str,
+        check_engine_limits: bool,
     ) -> AdmissionDecision:
+        brake_state = self._load_brake_state()
         resume_candidates: list[datetime] = []
+        saw_pause_block = False
+        saw_limit_block = False
         for role_engine in role_engines:
-            if _engine_effective_available(state, role_engine, now):
-                return AdmissionDecision(True, "ALLOWED", None, None)
-            engine_state = _to_engine_state(state["engines"].get(role_engine))
-            if engine_state is not None and engine_state.resume_at is not None:
-                resume_candidates.append(engine_state.resume_at)
+            if not _engine_effective_available(state, role_engine, now, brake_state):
+                engine_state = _to_engine_state(state["engines"].get(role_engine))
+                if engine_state is not None and _is_paused(engine_state, now):
+                    saw_pause_block = True
+                if engine_state is not None and engine_state.resume_at is not None:
+                    resume_candidates.append(engine_state.resume_at)
+                continue
+            if check_engine_limits and self._limits is not None and role_engine in self._limits:
+                if self._count_running_for_engine(state, role_engine, task_uuid) >= self._limits[
+                    role_engine
+                ]:
+                    saw_limit_block = True
+                    continue
+            return AdmissionDecision(
+                True,
+                "ALLOWED",
+                None,
+                None,
+                admitted_engine=role_engine,
+            )
 
+        if saw_pause_block:
+            deferred_reason = fallback_reason or f"all engines paused for role {role}"
+            earliest_resume = min(resume_candidates) if resume_candidates else None
+            return AdmissionDecision(
+                allowed=False,
+                status="DEFERRED",
+                reason=deferred_reason,
+                resume_at=earliest_resume,
+            )
+        if saw_limit_block:
+            return AdmissionDecision(
+                allowed=False,
+                status="DEFERRED",
+                reason="engine_limit",
+                resume_at=None,
+            )
         deferred_reason = fallback_reason or f"all engines paused for role {role}"
         earliest_resume = min(resume_candidates) if resume_candidates else None
         return AdmissionDecision(
@@ -735,6 +827,19 @@ class QuotaGate:
             reason=deferred_reason,
             resume_at=earliest_resume,
         )
+
+    def _count_running_for_engine(self, state: dict, engine: str, exclude_uuid: str) -> int:
+        count = 0
+        for task_id, payload in state["running_tasks"].items():
+            if task_id == exclude_uuid:
+                continue
+            running_engine = payload.get("engine")
+            if running_engine != engine:
+                continue
+            if running_engine in ("", None):
+                continue
+            count += 1
+        return count
 
     def _write_state_unlocked(self, state: dict) -> None:
         """Private: use read_state() / modify()."""
@@ -1001,7 +1106,8 @@ def _to_drain_state(payload: dict | None) -> DrainState | None:
 def _to_running_state(payload: dict | None) -> RunningTaskState:
     if payload is None:
         raise ValueError("running task payload must not be null")
-    engine = _require_non_empty(str(payload.get("engine", "")), "engine")
+    engine_raw = payload.get("engine")
+    engine = str(engine_raw) if engine_raw is not None else ""
     started_at = _parse_dt(str(payload.get("started_at")), "started_at")
     return RunningTaskState(engine=engine, started_at=started_at)
 

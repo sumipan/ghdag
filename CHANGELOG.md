@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `QuotaGate` engine concurrency limits: optional `limits` mapping (`engine` → max simultaneous `running_tasks` for that engine). `begin_run` denies with `reason="engine_limit"` without writing `deferred_tasks` or audit `task_deferred` (sumipan/nexus#5032).
+- `DagConfig.engine_limits` and `DagConfig.quota_pause_ttl_seconds` wire limits and pause TTL into `DagEngine`'s `QuotaGate` (`quota_pause_ttl_seconds` unset keeps permanent pause; `ghdag quota` CLI uses `3600`) (sumipan/nexus#5032).
+- `QuotaSnapshot.limits` and `ghdag quota status` `engines.<name>.limit` (`int` or `null` when unlimited) (sumipan/nexus#5032).
+
+### Changed
+
+- `QuotaGate(..., pause_ttl_seconds=...)`: when set (e.g. `DagConfig.quota_pause_ttl_seconds`, default `3600` on `DagEngine` / `ghdag quota` CLI), `report(status="paused")` without `resume_at` sets `resume_at` to `observed_at + pause_ttl_seconds`. Bare `QuotaGate()` keeps `pause_ttl_seconds=None` (permanent pause). `role` tasks record the admitted engine (and `role`) in `running_tasks` instead of an empty `engine` (sumipan/nexus#5032).
+
 ## 0.101.3 - 2026-10-10
 
 ### Added

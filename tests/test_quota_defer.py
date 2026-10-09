@@ -136,6 +136,23 @@ def test_brake_paused_one_engine_does_not_block_other(tmp_path: Path) -> None:
     assert "codex-task" in released
 
 
+def test_engine_limit_begin_run_does_not_add_deferred_or_audit(tmp_path: Path) -> None:
+    audit_path = tmp_path / "audit.jsonl"
+    gate = QuotaGate(tmp_path / "quota-gate.json", audit_path=audit_path, limits={"claude": 1})
+    gate.begin_run(task_uuid="t1", engine="claude", now=_dt(12))
+    gate.begin_run(task_uuid="t2", engine="claude", now=_dt(12, 1))
+    assert "t2" not in gate.snapshot().deferred_tasks
+    if audit_path.exists():
+        assert "task_deferred" not in audit_path.read_text(encoding="utf-8")
+
+
+def test_pause_defer_still_writes_deferred_tasks(tmp_path: Path) -> None:
+    gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
+    gate.report(engine="claude", status="paused", observed_at=_dt(12))
+    gate.begin_run(task_uuid="t1", engine="claude", now=_dt(12, 1))
+    assert "t1" in gate.snapshot().deferred_tasks
+
+
 def test_brake_empty_file_treated_as_no_brake(tmp_path: Path) -> None:
     brake_path = tmp_path / "issuesmith-brake.json"
     _write_brake(brake_path, {})

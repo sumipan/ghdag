@@ -99,6 +99,7 @@ def cmd_quota_status(args) -> None:
 
     engine_names = set(snapshot.engines.keys())
     engine_names.update(snapshot.draining_engines.keys())
+    engine_names.update(snapshot.limits.keys())
     engine_names.update(deferred_by_engine.keys())
     engine_names.update(running_by_engine.keys())
     engine_names.update(queued_by_engine.keys())
@@ -137,6 +138,7 @@ def cmd_quota_status(args) -> None:
             "deferred": deferred_by_engine.get(name, 0),
             "running": running_by_engine.get(name, 0),
             "idle": running_by_engine.get(name, 0) == 0,
+            "limit": snapshot.limits.get(name),
         }
     print(json.dumps(payload, ensure_ascii=False))
 
@@ -144,9 +146,17 @@ def cmd_quota_status(args) -> None:
 def _build_gate(state_path: str | None) -> QuotaGate:
     if state_path:
         path = Path(state_path)
-        return QuotaGate(path, audit_path=path.parent / "audit.jsonl")
+        return QuotaGate(
+            path,
+            audit_path=path.parent / "audit.jsonl",
+            pause_ttl_seconds=3600,
+        )
     # Default: quota state follows GHDAG_STATE_DIR, audit stays in jobs/.
-    return QuotaGate(resolve_state_dir("jobs") / "quota-gate.json", audit_path=Path("jobs") / "audit.jsonl")
+    return QuotaGate(
+        resolve_state_dir("jobs") / "quota-gate.json",
+        audit_path=Path("jobs") / "audit.jsonl",
+        pause_ttl_seconds=3600,
+    )
 
 
 def _parse_iso_datetime(raw: str, field_name: str) -> datetime:
