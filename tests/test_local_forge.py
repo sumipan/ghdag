@@ -294,3 +294,13 @@ def test_persist_layout_on_disk(forge: LocalForge, forge_root: Path) -> None:
     assert comments_path.is_file()
     assert "c1" in comments_path.read_text(encoding="utf-8")
     assert (forge_root / ".forge" / "counter").is_file()
+
+
+def test_graphql_not_supported_and_protocol_conformance(tmp_path: Path) -> None:
+    from ghdag.github_client import GitHubClient
+
+    forge = LocalForge(tmp_path / "forge")
+    with pytest.raises(NotImplementedError):
+        forge.graphql("query { x }")
+    assert isinstance(forge, ForgePort)
+    assert isinstance(GitHubClient(token="t", repo="o/r"), ForgePort)

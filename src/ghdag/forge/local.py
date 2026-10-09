@@ -757,3 +757,7 @@ class LocalForge:
 
     def get_rate_limit(self) -> dict | None:
         return None
+
+    def graphql(self, query: str, variables: dict | None = None) -> dict:
+        del query, variables
+        raise NotImplementedError("LocalForge does not support GraphQL")

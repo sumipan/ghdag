@@ -803,3 +803,109 @@ def test_rate_limit_max_wait_default_when_env_unset_or_invalid(
     assert GitHubClient(token="tok", repo="o/r")._rate_limit_max_wait_sec == 900
     monkeypatch.setenv("GHDAG_RATE_LIMIT_MAX_WAIT_SEC", "abc")
     assert GitHubClient(token="tok", repo="o/r")._rate_limit_max_wait_sec == 900
+
+
+class _GraphqlResp:
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+        self.headers: dict[str, str] = {}
+
+    def read(self) -> bytes:
+        return json.dumps(self._payload).encode()
+
+    def __enter__(self) -> _GraphqlResp:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        pass
+
+
+def test_graphql_posts_query_and_returns_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = GitHubClient(token="tok", repo="o/r")
+    captured: list[object] = []
+
+    def fake_urlopen(req: object, timeout: int = 120) -> _GraphqlResp:
+        captured.append(req)
+        return _GraphqlResp({"data": {"viewer": {"login": "x"}}})
+
+    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
+    result = client.graphql("query { viewer { login } }")
+    assert result == {"viewer": {"login": "x"}}
+    assert len(captured) == 1
+    req = captured[0]
+    assert req.full_url == GRAPHQL_URL  # type: ignore[attr-defined]
+    assert req.get_method() == "POST"  # type: ignore[attr-defined]
+    assert req.get_header("Authorization") == "Bearer tok"  # type: ignore[attr-defined]
+    payload = json.loads(req.data.decode())  # type: ignore[attr-defined]
+    assert payload == {"query": "query { viewer { login } }", "variables": {}}
+
+
+def test_graphql_passes_variables(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = GitHubClient(token="tok", repo="o/r")
+    captured: list[object] = []
+
+    def fake_urlopen(req: object, timeout: int = 120) -> _GraphqlResp:
+        captured.append(req)
+        return _GraphqlResp({"data": None})
+
+    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
+    assert client.graphql("query($n: Int!) { x(n: $n) }", {"n": 1}) == {}
+    payload = json.loads(captured[0].data.decode())  # type: ignore[attr-defined]
+    assert payload["variables"] == {"n": 1}
+
+
+def test_graphql_errors_raise_github_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    from ghdag.exceptions import GitHubApiError
+
+    client = GitHubClient(token="tok", repo="o/r")
+    monkeypatch.setattr(
+        "ghdag.github_client.urllib.request.urlopen",
+        lambda req, timeout=120: _GraphqlResp({"errors": [{"message": "boom"}]}),
+    )
+    with pytest.raises(GitHubApiError, match="boom"):
+        client.graphql("query { x }")
+
+
+def _rate_limited_http_error(reset: str | None = None) -> urllib.error.HTTPError:
+    body = json.dumps({"message": "rate limit exceeded"}).encode()
+    values = {"X-RateLimit-Remaining": "0"}
+    if reset is not None:
+        values["X-RateLimit-Reset"] = reset
+    hdrs = mock.MagicMock()
+    hdrs.get = lambda k, d=None: values.get(k, d)
+    return urllib.error.HTTPError(
+        url=GRAPHQL_URL, code=403, msg="Forbidden", hdrs=hdrs, fp=io.BytesIO(body)
+    )
+
+
+def test_graphql_rate_limit_retries_once_within_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = GitHubClient(token="tok", repo="o/r")
+    calls: list[int] = []
+
+    def fake_urlopen(req: object, timeout: int = 120) -> _GraphqlResp:
+        calls.append(1)
+        if len(calls) == 1:
+            raise _rate_limited_http_error()
+        return _GraphqlResp({"data": {"ok": True}})
+
+    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
+    monkeypatch.setattr("ghdag.github_client.time.sleep", lambda s: None)
+    assert client.graphql("query { ok }") == {"ok": True}
+    assert len(calls) == 2
+
+
+def test_graphql_rate_limit_beyond_wait_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    import time as _time
+
+    from ghdag.exceptions import RateLimitError
+
+    client = GitHubClient(token="tok", repo="o/r", rate_limit_max_wait_sec=1)
+    reset = str(int(_time.time()) + 3600)
+
+    def fake_urlopen(req: object, timeout: int = 120) -> None:
+        raise _rate_limited_http_error(reset)
+
+    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
+    with pytest.raises(RateLimitError) as exc_info:
+        client.graphql("query { ok }")
+    assert exc_info.value.reset_at == int(reset)

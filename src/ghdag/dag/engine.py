@@ -217,6 +217,10 @@ class DagEngine:
             AuditContext(source="fanout", correlation_id=parent_uuid),
         )
 
+    def get_task(self, uuid: str) -> Task | None:
+        """Return the loaded task for ``uuid`` (None before load or if unknown)."""
+        return self._tasks.get(uuid)
+
     def mark_done(self, uuid: str, status: str | int) -> None:
         """Delegate to state.mark_done."""
         state_mark_done(self._config.exec_done_dir, uuid, status)

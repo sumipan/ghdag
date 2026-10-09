@@ -867,6 +867,25 @@ class GitHubClient:
         if result.get("errors"):
             raise RuntimeError(f"GraphQL error: {result['errors']}")
 
+    def graphql(self, query: str, variables: dict | None = None) -> dict:
+        """POST a GraphQL query and return its ``data`` dict.
+
+        Shares auth headers, transient retries and rate-limit handling with
+        ``_request``. A non-empty ``errors`` field raises ``GitHubApiError``.
+        """
+        result = self._request(
+            "POST",
+            GRAPHQL_URL,
+            body={"query": query, "variables": variables or {}},
+        )
+        if not isinstance(result, dict):
+            return {}
+        errors = result.get("errors")
+        if errors:
+            raise GitHubApiError(f"GraphQL error: {errors}", status_code=200)
+        data = result.get("data")
+        return data if isinstance(data, dict) else {}
+
     def run_get(self, run_id: int, *, repo: str | None = None) -> dict:
         owner, repo_name = _resolve_repo(repo) if repo else (self._owner, self._repo)
         return cast(

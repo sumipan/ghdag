@@ -81,3 +81,28 @@ def test_check_pipeline_status_no_status_returns_none(tmp_path):
 def test_check_pipeline_status_missing_file_returns_none(tmp_path):
     from ghdag.dag import check_pipeline_status
     assert check_pipeline_status(str(tmp_path / "nonexistent.md")) is None
+
+
+def test_default_check_rejected_importable():
+    from ghdag.dag import default_check_rejected
+    assert callable(default_check_rejected)
+
+
+def test_default_check_rejected_in_dag_all():
+    import ghdag.dag
+    assert "default_check_rejected" in ghdag.dag.__all__
+
+
+def test_default_check_rejected_is_same_object():
+    import ghdag.dag
+    import ghdag.dag._util
+    assert ghdag.dag.default_check_rejected is ghdag.dag._util.default_check_rejected
+
+
+def test_forge_factory_has_no_importlib_fallback():
+    import inspect
+
+    import ghdag.forge
+    src = inspect.getsource(ghdag.forge)
+    assert "importlib" not in src
+    assert "not yet available" not in src
