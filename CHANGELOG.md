@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.101.3 - 2026-10-10
+
 ### Added
 
 - `QuotaGate.read_state()` / `QuotaGate.modify(fn)`: public access to the raw quota state dict. `read_state()` reads under a shared lock (missing file → default state, no file created; invalid JSON / unknown schema → `ValueError`). `modify(fn)` runs `fn(state)` under an exclusive lock and writes the in-place-mutated state (when `fn` returns `None`) or the returned dict, then returns it; if `fn` raises, nothing is written. Unknown top-level keys (e.g. `resources`) are preserved. Replaces direct use of `_lock` / `_load_state_unlocked` / `_write_state_unlocked` (sumipan/nexus#5033).

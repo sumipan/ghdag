@@ -15,12 +15,10 @@ _SRC = _REPO_ROOT / "src" / "ghdag"
 
 _KNOWN_VIOLATIONS: frozenset[str] = frozenset({
     "audit/span.py",
-    "cli/main.py",
     "config/env.py",
     "core/models/workflow.py",
     "dag/task_launcher.py",
     "github_client.py",
-    "llm/compaction.py",
     "pipeline/order.py",
 })
 
