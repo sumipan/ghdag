@@ -189,7 +189,7 @@ handlers:
         with pytest.raises(ValidationError, match="label"):
             load_workflows(tmp_path)
 
-    def test_unknown_keys_rejected(self, tmp_path):
+    def test_unknown_keys_ignored(self, tmp_path):
         yaml_unknown = """\
 name: test
 triggers:
@@ -205,8 +205,9 @@ polling_interval: 30
 """
         (tmp_path / "test.yml").write_text(yaml_unknown, encoding="utf-8")
         _make_templates(tmp_path, "brushup")
-        with pytest.raises(ValidationError, match=r"handlers\.brushup\.steps\[0\]\.unknown_future_key"):
+        with pytest.raises(ValidationError, match=r"handlers\.brushup\.steps\[0\]\.unknown_future_key") as exc_info:
             load_workflows(tmp_path)
+        assert "Allowed:" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------
@@ -1035,8 +1036,8 @@ handlers:
         step = configs[0].handlers["brushup"].steps[0]
         assert step.engine == "cursor"
 
-    def test_agent_only_rejected(self, tmp_path):
-        """TC-engine-2 (updated): agent: gemini only → unknown key rejected"""
+    def test_agent_only_fallback(self, tmp_path):
+        """TC-engine-2 (updated): agent: gemini only → unknown key rejected (was ignored)"""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -1051,11 +1052,12 @@ handlers:
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
         _make_templates(tmp_path, "brushup")
-        with pytest.raises(ValidationError, match=r"handlers\.brushup\.steps\[0\]\.agent"):
+        with pytest.raises(ValidationError, match=r"handlers\.brushup\.steps\[0\]\.agent") as exc_info:
             load_workflows(tmp_path)
+        assert "Allowed:" in str(exc_info.value)
 
-    def test_engine_with_agent_rejected(self, tmp_path):
-        """TC-engine-3 (updated): both engine: cursor and agent: claude → agent rejected"""
+    def test_engine_takes_priority_over_agent(self, tmp_path):
+        """TC-engine-3 (updated): agent key rejected even when engine is set"""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -1071,8 +1073,9 @@ handlers:
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
         _make_templates(tmp_path, "brushup")
-        with pytest.raises(ValidationError, match=r"handlers\.brushup\.steps\[0\]\.agent"):
+        with pytest.raises(ValidationError, match=r"handlers\.brushup\.steps\[0\]\.agent") as exc_info:
             load_workflows(tmp_path)
+        assert "Allowed:" in str(exc_info.value)
 
     def test_neither_engine_nor_agent_defaults_to_claude(self, tmp_path):
         """TC-engine-4: neither set → default 'claude'"""
@@ -1115,8 +1118,8 @@ class TestAC1AgentFieldRemoved:
         with pytest.raises(TypeError):
             StepConfig(template="t", model="m", agent="cursor")  # type: ignore
 
-    def test_yaml_agent_key_rejected(self, tmp_path):
-        """YAML with agent: cursor → unknown key rejected"""
+    def test_yaml_agent_key_ignored_defaults_to_claude(self, tmp_path):
+        """YAML with agent: cursor → unknown key rejected (was ignored, default claude)"""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -1131,8 +1134,9 @@ handlers:
 """
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
         _make_templates(tmp_path, "brushup")
-        with pytest.raises(ValidationError, match=r"handlers\.brushup\.steps\[0\]\.agent"):
+        with pytest.raises(ValidationError, match=r"handlers\.brushup\.steps\[0\]\.agent") as exc_info:
             load_workflows(tmp_path)
+        assert "Allowed:" in str(exc_info.value)
 
 # ---------------------------------------------------------------------------
 # TC-11: static reference validation (Issue #1045)
