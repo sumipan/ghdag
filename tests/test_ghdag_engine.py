@@ -1132,3 +1132,21 @@ class TestFanOutManagerUnit:
         assert parent_uuid in known_done
         assert not fm.is_pending(parent_uuid)
         hooks.on_task_success.assert_called_once()
+
+
+def test_get_task_returns_loaded_task_or_none(tmp_path):
+    config = _make_jsonl_config(tmp_path, [
+        _jsonl_task("uuid-a", "echo hi", str(tmp_path / "result.md"))
+    ])
+    hooks = MagicMock()
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = None
+    engine = DagEngine(config, hooks)
+    assert engine.get_task("uuid-a") is None
+
+    _run_engine_with_timeout(engine, timeout=5.0)
+
+    task = engine.get_task("uuid-a")
+    assert task is not None
+    assert task.uuid == "uuid-a"
+    assert engine.get_task("uuid-unknown") is None

@@ -1,7 +1,7 @@
 """ghdag.dag — Generic DAG execution engine."""
 
 from ._util import _extract_tee_target as extract_tee_target
-from ._util import check_pipeline_status
+from ._util import check_pipeline_status, default_check_rejected
 from .engine import DagEngine
 from .hooks import DagHooks, DefaultHooks
 from .models import DagConfig, RunningTask, Task
@@ -15,6 +15,7 @@ __all__ = [
     "RunningTask",
     "Task",
     "check_pipeline_status",
+    "default_check_rejected",
     "extract_tee_target",
     "parse_jsonl",
 ]

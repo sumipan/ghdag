@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Callable, Literal, cast
 
 from ghdag.io.audit import append_audit_record
 
@@ -537,6 +537,30 @@ class QuotaGate:
             self._audit_task_resumed(task_uuid=task_uuid, engine=engine_name, observed_at=current)
         return [uuid for uuid, _ in released]
 
+    def read_state(self) -> dict:
+        """Return the raw state dict under a shared lock.
+
+        A missing state file yields the default state (no file is created).
+        Invalid JSON or an unknown schema raises ``ValueError``.
+        """
+        with self._lock(exclusive=False):
+            return self._load_state_unlocked()
+
+    def modify(self, fn: Callable[[dict], dict | None]) -> dict:
+        """Read-modify-write the raw state dict under an exclusive lock.
+
+        ``fn`` receives the current state and may mutate it in place (return
+        ``None``) or return a new dict. The resulting dict is written and
+        returned. If ``fn`` raises, nothing is written and the exception
+        propagates.
+        """
+        with self._lock(exclusive=True):
+            state = self._load_state_unlocked()
+            new = fn(state)
+            result = state if new is None else new
+            self._write_state_unlocked(result)
+            return result
+
     def snapshot(self, *, now: datetime | None = None) -> QuotaSnapshot:
         current = _aware_now(now)
         with self._lock(exclusive=False):
@@ -624,6 +648,7 @@ class QuotaGate:
         return loaded if isinstance(loaded, dict) else None
 
     def _load_state_unlocked(self) -> dict:
+        """Private: use read_state() / modify()."""
         if not self._state_path.exists():
             return {
                 "schema_version": 1,
@@ -712,6 +737,7 @@ class QuotaGate:
         )
 
     def _write_state_unlocked(self, state: dict) -> None:
+        """Private: use read_state() / modify()."""
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp_name = tempfile.mkstemp(
             prefix=f".{self._state_path.name}.",
@@ -730,6 +756,7 @@ class QuotaGate:
                 tmp_path.unlink()
 
     def _lock(self, *, exclusive: bool):
+        """Private: use read_state() / modify()."""
         self._lock_path.parent.mkdir(parents=True, exist_ok=True)
         fh = open(self._lock_path, "a+", encoding="utf-8")
         op = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
