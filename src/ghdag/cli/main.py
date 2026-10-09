@@ -68,7 +68,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--hooks",
         default=None,
         metavar="MODULE",
-        help="Python module path for DagHooks implementation (e.g. scripts.diary_hooks)",
+        help="Python module path for DagHooks implementation (e.g. myproject.dag_hooks)",
     )
     run_parser.add_argument(
         "--max-concurrency",
@@ -81,7 +81,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--brake-state",
         default=None,
         metavar="PATH",
-        help="Path to budget-brake state JSON (e.g. jobs/issuesmith-brake.json)",
+        help="Path to budget-brake state JSON (e.g. jobs/brake.json)",
     )
     run_parser.set_defaults(func=cmd_run)
 
@@ -327,7 +327,7 @@ def _build_parser() -> argparse.ArgumentParser:
     status_parser.add_argument(
         "--workflow",
         default=None,
-        help="Workflow name (required with --issue, e.g. issuesmith)",
+        help="Workflow name (required with --issue, e.g. my-workflow)",
     )
     status_parser.add_argument(
         "--running",
