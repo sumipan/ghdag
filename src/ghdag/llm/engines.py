@@ -8,13 +8,20 @@ ghdag manages the allowed models per engine, reducing the burden on scripts.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from ghdag.config.env import (
+    stall_guard_enabled,
+    stall_guard_interval_sec,
+    stall_guard_stall_sec,
+)
 from ghdag.core.command import (
     _CAPABILITY_FLAG_BUILDERS,
     _build_claude_flags,
@@ -24,6 +31,7 @@ from ghdag.core.command import (
 )
 from ghdag.core.models.metrics import FailureClass
 from ghdag.core.ports.output import EngineError
+from ghdag.core.stall_guard import StallEvent, StallTracker
 from ghdag.exceptions import GhdagError
 from ghdag.llm._config import load_engine_models
 from ghdag.llm.adapters import get_output_adapter
@@ -54,6 +62,9 @@ __all__ = [
     "_extract_stream_result",
     "supports_capability",
 ]
+
+
+logger = logging.getLogger(__name__)
 
 
 class EngineModelError(GhdagError):
@@ -389,6 +400,108 @@ def _timeout_result(
     )
 
 
+def read_ps() -> str:
+    """Return ``ps -axo pid=,ppid=,time=,comm=,args=`` output (stall-guard process snapshot)."""
+    result = subprocess.run(
+        ["ps", "-axo", "pid=,ppid=,time=,comm=,args="],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise subprocess.SubprocessError(
+            f"ps exited {result.returncode}: {result.stderr.strip()}"
+        )
+    return result.stdout
+
+
+# Injection points for the cursor stall guard (tests monkeypatch these).
+_stall_ps: Callable[[], str] = read_ps
+_stall_kill: Callable[[int, int], None] = os.kill
+
+
+def _append_stall_lines(stderr: str | None, events: list[StallEvent]) -> str:
+    text = stderr or ""
+    if not events:
+        return text
+    if text and not text.endswith("\n"):
+        text += "\n"
+    for ev in events:
+        text += f"[stall-guard] killed cat pid={ev.pid} after {ev.stalled_sec:.0f}s\n"
+    return text
+
+
+def _run_with_stall_guard(
+    cmd: list[str], run_kwargs: dict
+) -> subprocess.CompletedProcess[str]:
+    """Same contract as ``subprocess.run`` (returns ``CompletedProcess``, raises
+    ``TimeoutExpired`` on expiry and ``FileNotFoundError`` / ``PermissionError``
+    on launch failure) while watching cursor's state-reader ``cat``.
+
+    The cursor-agent shell can hang in ``zsh -> cat <&3`` (sumipan/nexus#4931);
+    every ``interval_sec`` the process tree is scanned and a stuck ``cat`` is
+    SIGTERMed once it has stalled for ``stall_sec``.
+    """
+    input_text = run_kwargs.get("input")
+    timeout = run_kwargs.get("timeout")
+    popen_kwargs: dict = {
+        "stdin": subprocess.PIPE if input_text is not None else None,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.PIPE,
+        "text": True,
+        "cwd": run_kwargs.get("cwd"),
+    }
+    if "env" in run_kwargs:
+        popen_kwargs["env"] = run_kwargs["env"]
+
+    t0 = time.monotonic()
+    proc = subprocess.Popen(cmd, **popen_kwargs)
+    interval_sec = stall_guard_interval_sec()
+    tracker = StallTracker(
+        proc.pid,
+        stall_sec=stall_guard_stall_sec(),
+        interval_sec=interval_sec,
+        kill=_stall_kill,
+        ps=_stall_ps,
+    )
+    deadline = None if timeout is None else t0 + timeout
+    pending_input = input_text
+    while True:
+        # The first scan baselines the stall clock before any wait.
+        for ev in tracker.check(time.monotonic()):
+            logger.warning(
+                "[stall-guard] engine=cursor sent SIGTERM to pid=%d after %.0fs: %s",
+                ev.pid,
+                ev.stalled_sec,
+                ev.parent_args_head,
+            )
+        if deadline is None:
+            slice_sec = interval_sec
+        else:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                proc.kill()
+                out, err = proc.communicate()
+                raise subprocess.TimeoutExpired(
+                    cmd,
+                    timeout,
+                    output=out,
+                    stderr=_append_stall_lines(err, tracker.events),
+                )
+            slice_sec = min(interval_sec, remaining)
+        try:
+            # CPython rejects input once communication has started; the
+            # retry keeps everything read so far.
+            out, err = proc.communicate(input=pending_input, timeout=slice_sec)
+            break
+        except subprocess.TimeoutExpired:
+            pending_input = None
+    return subprocess.CompletedProcess(
+        cmd, proc.returncode, out, _append_stall_lines(err, tracker.events)
+    )
+
+
 def call(
     prompt: str,
     *,
@@ -473,7 +586,10 @@ def call(
                 file=sys.stderr,
             )
     try:
-        result = subprocess.run(cmd, **run_kwargs)
+        if engine == "cursor" and stall_guard_enabled():
+            result = _run_with_stall_guard(cmd, run_kwargs)
+        else:
+            result = subprocess.run(cmd, **run_kwargs)
     except FileNotFoundError as e:
         # A missing cwd raises the same exception with filename=cwd; only the binary counts.
         if e.filename not in (None, cmd[0]):

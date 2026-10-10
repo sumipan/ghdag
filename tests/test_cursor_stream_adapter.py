@@ -10,10 +10,18 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from ghdag.core.capabilities import LLMCapabilities
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
 from ghdag.llm.engines import TextResult, call
+
+
+@pytest.fixture(autouse=True)
+def _stall_guard_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep cursor calls on the plain ``subprocess.run`` path these tests mock."""
+    monkeypatch.setenv("GHDAG_ENGINE_STALL_GUARD", "0")
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _STREAM_SUCCESS = (_FIXTURES / "cursor_stream_success.jsonl").read_bytes()
