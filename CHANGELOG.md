@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.102.1 - 2026-10-10
+
 ### Added
 
 - `QuotaGate` engine concurrency limits: optional `limits` mapping (`engine` → max simultaneous `running_tasks` for that engine). `begin_run` denies with `reason="engine_limit"` without writing `deferred_tasks` or audit `task_deferred` (sumipan/nexus#5032).
