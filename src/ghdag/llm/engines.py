@@ -467,36 +467,43 @@ def _run_with_stall_guard(
     )
     deadline = None if timeout is None else t0 + timeout
     pending_input = input_text
-    while True:
-        # The first scan baselines the stall clock before any wait.
-        for ev in tracker.check(time.monotonic()):
-            logger.warning(
-                "[stall-guard] engine=cursor sent SIGTERM to pid=%d after %.0fs: %s",
-                ev.pid,
-                ev.stalled_sec,
-                ev.parent_args_head,
-            )
-        if deadline is None:
-            slice_sec = interval_sec
-        else:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                proc.kill()
-                out, err = proc.communicate()
-                raise subprocess.TimeoutExpired(
-                    cmd,
-                    timeout,
-                    output=out,
-                    stderr=_append_stall_lines(err, tracker.events),
+    try:
+        while True:
+            # The first scan baselines the stall clock before any wait.
+            for ev in tracker.check(time.monotonic()):
+                logger.warning(
+                    "[stall-guard] engine=cursor sent SIGTERM to pid=%d after %.0fs: %s",
+                    ev.pid,
+                    ev.stalled_sec,
+                    ev.parent_args_head,
                 )
-            slice_sec = min(interval_sec, remaining)
-        try:
-            # CPython rejects input once communication has started; the
-            # retry keeps everything read so far.
-            out, err = proc.communicate(input=pending_input, timeout=slice_sec)
-            break
-        except subprocess.TimeoutExpired:
-            pending_input = None
+            if deadline is None:
+                slice_sec = interval_sec
+            else:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    proc.kill()
+                    out, err = proc.communicate()
+                    raise subprocess.TimeoutExpired(
+                        cmd,
+                        timeout,
+                        output=out,
+                        stderr=_append_stall_lines(err, tracker.events),
+                    )
+                slice_sec = min(interval_sec, remaining)
+            try:
+                # CPython rejects input once communication has started; the
+                # retry keeps everything read so far.
+                out, err = proc.communicate(input=pending_input, timeout=slice_sec)
+                break
+            except subprocess.TimeoutExpired:
+                pending_input = None
+    except BaseException:
+        # Same as subprocess.run: never leave the child running on an error.
+        if proc.returncode is None:
+            proc.kill()
+            proc.wait()
+        raise
     return subprocess.CompletedProcess(
         cmd, proc.returncode, out, _append_stall_lines(err, tracker.events)
     )
