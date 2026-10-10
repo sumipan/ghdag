@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.103.0 - 2026-10-10
+
 ### Added
 
 - `ghdag.core.stall_guard`: the cursor stall-guard logic (`ProcInfo`, `StallEvent`, `StallTracker`, `parse_ps_output`, `scan_process_tree`, `find_stalled_state_readers`) now lives in core. `ghdag.dag.stall_guard` re-exports the same objects. Because core must not run subprocesses, `read_ps` moved to `ghdag.llm.engines` (still re-exported by `ghdag.dag.stall_guard`) and `StallTracker` now takes `ps=` as a required keyword argument (sumipan/nexus#5141).
