@@ -52,6 +52,7 @@ _FORGEPORT_BASELINE: frozenset[str] = frozenset({
     "repo_exists",
     "dispatch_event",
     "get_rate_limit",
+    "graphql",
 })
 
 _GITHUB_ISSUE_PORT_BASELINE: frozenset[str] = frozenset({
