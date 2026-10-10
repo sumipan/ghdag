@@ -87,7 +87,7 @@ class QuotaGate:
         state_path: str | Path,
         audit_path: str | Path | None = None,
         brake_state_path: str | Path | None = None,
-        pause_ttl_seconds: int | None = None,
+        pause_ttl_seconds: int | None = 3600,
         limits: Mapping[str, int] | None = None,
     ):
         if pause_ttl_seconds is not None and pause_ttl_seconds <= 0:
@@ -439,11 +439,13 @@ class QuotaGate:
                 }
                 if role is not None:
                     running_payload["role"] = role
-                if self._limits is not None:
+                limits_changed = False
+                if self._limits is not None and state.get("limits") != self._limits:
                     state["limits"] = dict(self._limits)
+                    limits_changed = True
                 changed = previous_running != running_payload or removed_deferred
                 state["running_tasks"][task_uuid] = running_payload
-                if changed:
+                if changed or limits_changed:
                     self._write_state_unlocked(state)
             elif decision.reason == "engine_limit":
                 pass
@@ -777,15 +779,13 @@ class QuotaGate:
         task_uuid: str,
         check_engine_limits: bool,
     ) -> AdmissionDecision:
-        brake_state = self._load_brake_state()
         resume_candidates: list[datetime] = []
-        saw_pause_block = False
+        saw_unavailable = False
         saw_limit_block = False
         for role_engine in role_engines:
-            if not _engine_effective_available(state, role_engine, now, brake_state):
+            if not _engine_effective_available(state, role_engine, now):
+                saw_unavailable = True
                 engine_state = _to_engine_state(state["engines"].get(role_engine))
-                if engine_state is not None and _is_paused(engine_state, now):
-                    saw_pause_block = True
                 if engine_state is not None and engine_state.resume_at is not None:
                     resume_candidates.append(engine_state.resume_at)
                 continue
@@ -803,16 +803,7 @@ class QuotaGate:
                 admitted_engine=role_engine,
             )
 
-        if saw_pause_block:
-            deferred_reason = fallback_reason or f"all engines paused for role {role}"
-            earliest_resume = min(resume_candidates) if resume_candidates else None
-            return AdmissionDecision(
-                allowed=False,
-                status="DEFERRED",
-                reason=deferred_reason,
-                resume_at=earliest_resume,
-            )
-        if saw_limit_block:
+        if saw_limit_block and not saw_unavailable:
             return AdmissionDecision(
                 allowed=False,
                 status="DEFERRED",

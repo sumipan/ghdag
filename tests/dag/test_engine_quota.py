@@ -526,8 +526,9 @@ def test_dag_config_quota_limits_and_pause_ttl_propagate(tmp_path: Path) -> None
     config_default = DagConfig(exec_jsonl_path=exec_path, exec_done_dir=done_dir)
     engine_default = DagEngine(config_default, hooks)
     assert engine_default._quota_gate._limits is None
-    assert engine_default._quota_gate._pause_ttl_seconds is None
-    assert config_default.quota_pause_ttl_seconds is None
+    assert engine_default._quota_gate._pause_ttl_seconds == 3600
+    assert config_default.quota_pause_ttl_seconds == 3600
+    assert config_default.engine_limits == {}
 
 
 def test_pending_requeue_skips_unlink_when_task_re_deferred_in_gate(tmp_path: Path) -> None:

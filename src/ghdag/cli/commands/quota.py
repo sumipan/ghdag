@@ -146,17 +146,9 @@ def cmd_quota_status(args) -> None:
 def _build_gate(state_path: str | None) -> QuotaGate:
     if state_path:
         path = Path(state_path)
-        return QuotaGate(
-            path,
-            audit_path=path.parent / "audit.jsonl",
-            pause_ttl_seconds=3600,
-        )
+        return QuotaGate(path, audit_path=path.parent / "audit.jsonl")
     # Default: quota state follows GHDAG_STATE_DIR, audit stays in jobs/.
-    return QuotaGate(
-        resolve_state_dir("jobs") / "quota-gate.json",
-        audit_path=Path("jobs") / "audit.jsonl",
-        pause_ttl_seconds=3600,
-    )
+    return QuotaGate(resolve_state_dir("jobs") / "quota-gate.json", audit_path=Path("jobs") / "audit.jsonl")
 
 
 def _parse_iso_datetime(raw: str, field_name: str) -> datetime:

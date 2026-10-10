@@ -183,7 +183,12 @@ class TestRoleDeferredDagPropagation:
             ],
         )
 
-        config = DagConfig(exec_jsonl_path=exec_path, exec_done_dir=done_dir, poll_interval=0.01)
+        config = DagConfig(
+            exec_jsonl_path=exec_path,
+            exec_done_dir=done_dir,
+            poll_interval=0.01,
+            quota_pause_ttl_seconds=None,
+        )
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = None
@@ -206,7 +211,7 @@ class TestRoleDeferredDagPropagation:
 
     def test_enqueue_passes_role_to_admit(self, tmp_path: Path) -> None:
         exec_path = tmp_path / "jobs" / "exec.jsonl"
-        gate = QuotaGate(tmp_path / "quota-gate.json")
+        gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
         gate.report(engine="claude", status="paused", observed_at=_dt(12))
         gate.report(engine="codex", status="paused", observed_at=_dt(12))
 

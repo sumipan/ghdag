@@ -149,7 +149,7 @@ class TestAppend:
 
         jst = timezone(timedelta(hours=9))
         path = tmp_path / "exec.jsonl"
-        gate = QuotaGate(tmp_path / "quota-gate.json")
+        gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
         gate.report(
             engine="claude",
             status="paused",
