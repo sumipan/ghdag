@@ -27,6 +27,12 @@ from ghdag.llm import (
 from ghdag.llm.spec import render_exec_command
 from ghdag.workflow.engine import get_adapter
 
+
+@pytest.fixture(autouse=True)
+def _stall_guard_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep cursor calls on the plain ``subprocess.run`` path these tests mock."""
+    monkeypatch.setenv("GHDAG_ENGINE_STALL_GUARD", "0")
+
 # ---------------------------------------------------------------------------
 # Whitelist / validation
 # ---------------------------------------------------------------------------

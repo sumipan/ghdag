@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.103.0 - 2026-10-10
+
+### Added
+
+- `ghdag.core.stall_guard`: the cursor stall-guard logic (`ProcInfo`, `StallEvent`, `StallTracker`, `parse_ps_output`, `scan_process_tree`, `find_stalled_state_readers`) now lives in core. `ghdag.dag.stall_guard` re-exports the same objects. Because core must not run subprocesses, `read_ps` moved to `ghdag.llm.engines` (still re-exported by `ghdag.dag.stall_guard`) and `StallTracker` now takes `ps=` as a required keyword argument (sumipan/nexus#5141).
+
+### Changed
+
+- `ghdag.llm.call()` with `engine="cursor"` now runs the same stall guard as DAG cursor tasks: the engine is driven by `Popen` + a `communicate` loop, a `cat` stuck reading the shell-state snapshot for `GHDAG_ENGINE_STALL_SEC` (default 180s) gets SIGTERM, and a `[stall-guard] killed cat pid=<pid> after <n>s` line is appended to stderr. `GHDAG_ENGINE_STALL_GUARD=0` keeps the previous single `subprocess.run`; other engines are unchanged (sumipan/nexus#5141).
+
 ## 0.102.1 - 2026-10-10
 
 ### Added

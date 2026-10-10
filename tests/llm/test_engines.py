@@ -11,6 +11,12 @@ from ghdag.llm.engines import LLMResult, build_llm_cmd, call
 from ghdag.llm.spec import ENGINE_SPECS, render_exec_command
 
 
+@pytest.fixture(autouse=True)
+def _stall_guard_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep cursor calls on the plain ``subprocess.run`` path these tests mock."""
+    monkeypatch.setenv("GHDAG_ENGINE_STALL_GUARD", "0")
+
+
 class TestLLMResultLatencyMs:
     def test_llm_result_latency_ms_default(self):
         """Default latency_ms is 0.0 when unspecified."""

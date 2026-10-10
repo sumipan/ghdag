@@ -24,6 +24,7 @@ from ghdag.config.env import (
     stall_guard_interval_sec,
     stall_guard_stall_sec,
 )
+from ghdag.core.stall_guard import StallTracker
 from ghdag.core.vocabulary import (
     DONE_CANCELLED,
     DONE_DEFERRED,
@@ -55,6 +56,7 @@ from ghdag.llm.compaction import (
     compact_resume_session,
     lookup_parent_token_usage,
 )
+from ghdag.llm.engines import read_ps
 from ghdag.llm.session import SessionStore
 from ghdag.metrics.models import FailureClass, TaskMetrics
 from ghdag.metrics.parsers import parse_engine_model
@@ -67,7 +69,6 @@ from .fanout import parse_fanout_spec
 from .fanout_manager import FanOutManager
 from .hooks import DagHooks
 from .models import DagConfig, RunningTask, Task
-from .stall_guard import StallTracker
 from .state import mark_done as state_mark_done
 
 logger = logging.getLogger(__name__)
@@ -357,6 +358,7 @@ class TaskLauncher:
                 proc.pid,
                 stall_sec=stall_guard_stall_sec(),
                 interval_sec=stall_guard_interval_sec(),
+                ps=read_ps,
             )
         self._running[uuid] = RunningTask(
             uuid=uuid,
