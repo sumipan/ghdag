@@ -504,7 +504,7 @@ class TestSubmitOrderBuilderAndWorkflowRoles:
         assert captured[0]["annotations"]["role"] == "design"
 
         jst = timezone(timedelta(hours=9))
-        gate = QuotaGate(tmp_path / "quota-gate.json")
+        gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
         gate.report(
             engine="claude",
             status="paused",

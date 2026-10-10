@@ -68,6 +68,8 @@ class DagEngine:
                 quota_state_path,
                 audit_path=config.quota_audit_path,
                 brake_state_path=getattr(config, "brake_state_path", None),
+                pause_ttl_seconds=config.quota_pause_ttl_seconds,
+                limits=config.engine_limits or None,
             ),
         )
         self._quota_gate = self._launcher.quota_gate

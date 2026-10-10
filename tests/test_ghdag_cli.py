@@ -1034,6 +1034,8 @@ class TestQuotaCli:
             "paused",
             "--observed-at",
             "2026-09-02T12:02:00+09:00",
+            "--resume-at",
+            "2099-01-01T00:00:00+00:00",
             "--state-path",
             str(state_path),
         ])
@@ -1051,15 +1053,86 @@ class TestQuotaCli:
         payload = json.loads(capsys.readouterr().out.strip())
         assert payload["engines"]["claude"]["status"] == "paused"
         assert payload["engines"]["claude"]["observed_at"] == "2026-09-02T03:02:00+00:00"
-        assert payload["engines"]["claude"]["resume_at"] is None
+        assert payload["engines"]["claude"]["resume_at"] == "2099-01-01T00:00:00+00:00"
         assert payload["engines"]["claude"]["reason"] is None
         assert payload["engines"]["claude"]["quota_status"] == "paused"
         assert payload["engines"]["claude"]["queued"] == 2
         assert payload["engines"]["claude"]["deferred"] == 0
         assert payload["engines"]["claude"]["running"] == 0
         assert payload["engines"]["claude"]["idle"] is True
+        assert payload["engines"]["claude"]["limit"] is None
+        assert payload["engines"]["codex"]["limit"] is None
         assert payload["deferred_tasks"] == {}
         assert payload["unresolved"] == 1
+
+    def test_quota_status_includes_engine_limit(self, tmp_path, capsys):
+        from ghdag.cli import main
+
+        state_path = tmp_path / "quota-gate.json"
+        state_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "engines": {},
+                    "deferred_tasks": {},
+                    "draining_engines": {},
+                    "running_tasks": {
+                        "codex-task": {"engine": "codex", "started_at": "2026-10-10T00:00:00+00:00"},
+                    },
+                    "limits": {"claude": 2},
+                }
+            ),
+            encoding="utf-8",
+        )
+        exec_path = tmp_path / "exec.jsonl"
+        exec_path.write_text("", encoding="utf-8")
+        done_dir = tmp_path / "done"
+        done_dir.mkdir()
+        main([
+            "quota",
+            "status",
+            "--state-path",
+            str(state_path),
+            "--exec-path",
+            str(exec_path),
+            "--done-dir",
+            str(done_dir),
+        ])
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["engines"]["claude"]["limit"] == 2
+        assert payload["engines"]["claude"]["running"] == 0
+        assert payload["engines"]["codex"]["limit"] is None
+        assert payload["engines"]["codex"]["running"] == 1
+
+    def test_quota_status_permanent_pause_when_ttl_disabled(self, tmp_path, capsys):
+        from datetime import datetime, timezone
+
+        from ghdag.cli import main
+        from ghdag.quota import QuotaGate
+
+        state_path = tmp_path / "quota-gate.json"
+        QuotaGate(state_path, pause_ttl_seconds=None).report(
+            engine="codex",
+            status="paused",
+            observed_at=datetime(2026, 10, 10, tzinfo=timezone.utc),
+        )
+        exec_path = tmp_path / "exec.jsonl"
+        exec_path.write_text("", encoding="utf-8")
+        done_dir = tmp_path / "done"
+        done_dir.mkdir()
+        main([
+            "quota",
+            "status",
+            "--state-path",
+            str(state_path),
+            "--exec-path",
+            str(exec_path),
+            "--done-dir",
+            str(done_dir),
+        ])
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["engines"]["codex"]["permanent_pause"] is True
+        assert payload["engines"]["codex"]["resume_at"] is None
 
     def test_quota_drain_and_resume(self, tmp_path, capsys):
         from ghdag.cli import main

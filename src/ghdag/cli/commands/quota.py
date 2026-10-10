@@ -99,6 +99,7 @@ def cmd_quota_status(args) -> None:
 
     engine_names = set(snapshot.engines.keys())
     engine_names.update(snapshot.draining_engines.keys())
+    engine_names.update(snapshot.limits.keys())
     engine_names.update(deferred_by_engine.keys())
     engine_names.update(running_by_engine.keys())
     engine_names.update(queued_by_engine.keys())
@@ -137,6 +138,7 @@ def cmd_quota_status(args) -> None:
             "deferred": deferred_by_engine.get(name, 0),
             "running": running_by_engine.get(name, 0),
             "idle": running_by_engine.get(name, 0) == 0,
+            "limit": snapshot.limits.get(name),
         }
     print(json.dumps(payload, ensure_ascii=False))
 

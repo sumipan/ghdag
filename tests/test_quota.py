@@ -99,7 +99,7 @@ def test_release_ready_unblocks_only_target_engine(tmp_path: Path) -> None:
 
 
 def test_paused_without_resume_at_stays_deferred(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
+    gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
     gate.report(engine="claude", status="paused", observed_at=_dt(12))
     gate.admit(task_uuid="task-1", engine="claude", phase="launch", now=_dt(12, 30))
     assert gate.release_ready(now=_dt(20, 0)) == []
@@ -107,6 +107,49 @@ def test_paused_without_resume_at_stays_deferred(tmp_path: Path) -> None:
 
     gate.clear(engine="claude", observed_at=_dt(20, 1))
     assert "task-1" not in gate.snapshot(now=_dt(20, 2)).deferred_tasks
+
+
+def test_default_pause_ttl_applied_on_report(tmp_path: Path) -> None:
+    gate = QuotaGate(tmp_path / "quota-gate.json")
+    observed = _dt(12, 0)
+    result = gate.report(engine="codex", status="paused", observed_at=observed, reason="quota")
+    expected_resume = observed + timedelta(seconds=3600)
+    assert result.resume_at == expected_resume.astimezone(timezone.utc)
+    state = gate.read_state()
+    assert state["engines"]["codex"]["resume_at"] == expected_resume.astimezone(timezone.utc).isoformat()
+    gate.admit(task_uuid="task-1", engine="codex", phase="launch", now=_dt(12, 30))
+    assert gate.release_ready(now=observed + timedelta(seconds=3599)) == []
+    assert "task-1" in gate.snapshot(now=observed + timedelta(seconds=3599)).deferred_tasks
+    assert gate.release_ready(now=observed + timedelta(seconds=3600)) == ["task-1"]
+    assert gate.read_state()["engines"]["codex"]["status"] == "available"
+
+
+def test_explicit_resume_at_overrides_default_ttl(tmp_path: Path) -> None:
+    gate = QuotaGate(tmp_path / "quota-gate.json")
+    result = gate.report(
+        engine="claude",
+        status="paused",
+        observed_at=_dt(12),
+        resume_at=_dt(12, 10),
+    )
+    assert result.resume_at == _dt(12, 10).astimezone(timezone.utc)
+    assert gate.read_state()["engines"]["claude"]["resume_at"] == _dt(12, 10).astimezone(
+        timezone.utc
+    ).isoformat()
+
+
+def test_pause_ttl_none_keeps_permanent_pause(tmp_path: Path) -> None:
+    gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
+    result = gate.report(engine="claude", status="paused", observed_at=_dt(12))
+    assert result.resume_at is None
+    assert gate.read_state()["engines"]["claude"]["resume_at"] is None
+
+
+def test_invalid_pause_ttl_raises(tmp_path: Path) -> None:
+    with pytest.raises(ValueError):
+        QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=0)
+    with pytest.raises(ValueError):
+        QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=-1)
 
 
 def test_validation_rejects_naive_timestamp_and_empty_engine(tmp_path: Path) -> None:
