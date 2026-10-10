@@ -19,58 +19,321 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `QuotaGate(..., pause_ttl_seconds=3600)`: `report(status="paused")` without `resume_at` now sets `resume_at` to `observed_at + pause_ttl_seconds` (default 1 hour, also for bare `QuotaGate(path)` and the `ghdag quota report` CLI), so pauses expire via `release_ready()`. Pass `pause_ttl_seconds=None` for the previous permanent pause; use `ghdag quota drain` for a manual indefinite stop. `role` tasks record the admitted engine (and `role`) in `running_tasks` instead of an empty `engine` (`"unknown"` when no engine can be resolved) (sumipan/nexus#5032).
 
-## 0.101.3 - 2026-10-10
+## 0.102.0 - 2026-10-10
 
 ### Added
 
-- `load_workflow_file(path)` loads and validates a single workflow YAML file (sumipan/nexus#5030).
-- `QuotaGate.read_state()` / `QuotaGate.modify(fn)`: public access to the raw quota state dict. `read_state()` reads under a shared lock (missing file → default state, no file created; invalid JSON / unknown schema → `ValueError`). `modify(fn)` runs `fn(state)` under an exclusive lock and writes the in-place-mutated state (when `fn` returns `None`) or the returned dict, then returns it; if `fn` raises, nothing is written. Unknown top-level keys (e.g. `resources`) are preserved. Replaces direct use of `_lock` / `_load_state_unlocked` / `_write_state_unlocked` (sumipan/nexus#5033).
-- `GitHubClient.graphql(query, variables=None)`: POSTs to `GRAPHQL_URL` via `_request`, so auth headers, transient retries, rate-limit waits / `RateLimitError` and `AuthError` are shared with REST calls. Returns the response `data` (`{}` when absent); a non-empty `errors` raises `GitHubApiError` (sumipan/nexus#5033).
-- `LocalForge.graphql()`: raises `NotImplementedError` (sumipan/nexus#5033).
-- `DagEngine.get_task(uuid)`: the loaded `Task` for `uuid`, or `None` before load / for an unknown uuid (sumipan/nexus#5033).
-- `ghdag.dag.default_check_rejected` is exported (in `ghdag.dag.__all__`) (sumipan/nexus#5033).
-- `ghdag.config.language`: language packs for state labels and Web UI strings (sumipan/nexus#4454). `LanguagePack(state_labels, ui)`, the bundled English pack `EN` (the only pack shipped), `STATE_IDS` (10 keys) / `UI_KEYS` (12 keys), `load_language_pack(path)` and `get_language_pack()` (process-cached). `GHDAG_LANGUAGE_PACK` (`config.env.ghdag_language_pack()`) points at a YAML pack that replaces every field; missing / unknown keys, empty values, invalid YAML or an unreadable file raise `GhdagError`. See README "Language pack".
-- `ghdag.pipeline.state_label(state_id, pack=None)`: display label for a state identifier from `pack` (default: the active language pack); unknown identifiers are returned unchanged (sumipan/nexus#4456).
-- `ghdag.ui.monitor.Row.state_id`: the state identifier of a row; `Row.state` is now `state_label(state_id)`. `/api/rows` returns both, and accepts `?state=<name>` (repeatable or comma-separated identifiers / `STATE_ALIASES` names) to filter rows (sumipan/nexus#4456).
-- `/api/config` gains `i18n` (`ui` 12 keys, `state_labels` 10 keys) from the active language pack. `run_server()` loads the pack once at startup, so an invalid `GHDAG_LANGUAGE_PACK` fails `ghdag ui` with `GhdagError` before the server binds (sumipan/nexus#4456).
-- `ghdag.vcs`: single git sink for upper layers (sumipan/nexus#3831). `GitSink.commit(paths, message, trailers=...)` stages only the given paths (ownership-checked against `allow_prefixes` and the `<owner>(` subject prefix), commits with `Layer:` / `Host:` trailers, then `fetch` → `rebase` → `push` under an `flock` on `<git-common-dir>/ghdag-vcs.lock`. Push policies `immediate` / `debounce:<sec>` / `manual` (+ `flush()`). Rebase conflicts save the local version to `inbox/`, reset to the remote with `--keep`, and raise `ConflictError`. Audit events `vcs_commit` / `vcs_skipped` / `vcs_conflict`. `get_sink(name)` returns a `NullSink` unless `ENABLE_GIT` is on and `GHDAG_VCS_CONFIG` names the sink. `LocalGitSink.create()` builds a throwaway bare remote + clone for tests.
-- `ghdag.config.env`: `enable_git()` (`ENABLE_GIT`), `ghdag_vcs_config()` (`GHDAG_VCS_CONFIG`), `ghdag_state_dir()` / `state_dir(default)` (`GHDAG_STATE_DIR`) (sumipan/nexus#3831).
-- `GitHubClient(rate_limit_max_wait_sec=...)` / `GHDAG_RATE_LIMIT_MAX_WAIT_SEC`: per-caller cap on the synchronous sleep until rate-limit reset (403 + `X-RateLimit-Remaining: 0`). When the reset is further away than the cap, `RateLimitError(reset_at=...)` is raised immediately instead of sleeping. Precedence: constructor argument > env var > default 900 s (unchanged behaviour); a non-integer env value falls back to the default (sumipan/nexus#3752).
-- `GitHubClient(etag_cache_path=...)` / `GHDAG_ETAG_CACHE`: disk-persistent ETag cache so conditional requests (`If-None-Match` → 304, no rate-limit consumption) work across processes (e.g. issuesmith queue ticks, `ghdag watch --once`). Single JSON file keyed by `{sha256(token)[:8]}:{url}`, capped at 2000 entries with LRU eviction by last access, written atomically via `<path>.tmp.<pid>` + `os.replace`. A corrupt cache file is ignored (falls back to normal 200 fetches). When neither the argument nor the env var is set, behaviour is unchanged (in-memory only, no file I/O) (sumipan/nexus#3761).
-- `TaskLauncher.mark_interrupted_all()`: atomically writes `interrupted_at` (ISO8601) to `jobs/running/<uuid>.json` for all currently running tasks. Called by the SIGTERM handler before entering drain mode, so a subsequent SIGKILL cannot lose the interrupt record. Returns a list of successfully recorded uuids; missing or corrupt running files are skipped with a warning (sumipan/nexus#3666).
-- `TaskLauncher.terminate_all()`: sends SIGTERM to all running task process groups and registers them in `_interrupting`. Called when the drain deadline is exceeded so that the engine can exit after kill-grace (sumipan/nexus#3666).
-- `GHDAG_PREVIOUS_ATTEMPT` environment variable: set to `"interrupted"` when a task is relaunched after a SIGTERM-interrupted run, allowing the task command to detect and resume from a prior partial execution (sumipan/nexus#3666).
+- `load_workflow_file(path)` loads and validates a single workflow YAML file (sumipan/nexus#5030). Breaking: workflow loading rejects unknown YAML keys at the workflow, trigger, handler, `on_trigger`, step, and `nonterminal_closed` levels instead of silently ignoring them (sumipan/nexus#5030).
+
+### Fixed
+
+- fix(repair): expect ValidationError for unknown workflow keys in legacy tests (#5030)
+- fix(repair): restore legacy test names and assert count for unknown-key reject (#5030)
+
+## 0.101.4 - 2026-10-10
+
+### Fixed
+
+- fix(tests): add graphql to ForgePort compat baseline
+
+## 0.101.3 - 2026-10-10
+
+### Fixed
+
+- fix(cli): remove downstream vocabulary from help and comments
+
+## 0.101.2 - 2026-10-09
+
+### Added
+
+- `QuotaGate.read_state()` / `QuotaGate.modify(fn)`: public access to the raw quota state dict. `read_state()` reads under a shared lock (missing file → default state, no file created; invalid JSON / unknown schema → `ValueError`). `modify(fn)` runs `fn(state)` under an exclusive lock and writes the in-place-mutated state (when `fn` returns `None`) or the returned dict, then returns it; if `fn` raises, nothing is written. Unknown top-level keys (e.g. `resources`) are preserved. Replaces direct use of `_lock` / `_load_state_unlocked` / `_write_state_unlocked` (sumipan/nexus#5033). `GitHubClient.graphql(query, variables=None)`: POSTs to `GRAPHQL_URL` via `_request`, so auth headers, transient retries, rate-limit waits / `RateLimitError` and `AuthError` are shared with REST calls. Returns the response `data` (`{}` when absent); a non-empty `errors` raises `GitHubApiError` (sumipan/nexus#5033). `LocalForge.graphql()`: raises `NotImplementedError` (sumipan/nexus#5033). `DagEngine.get_task(uuid)`: the loaded `Task` for `uuid`, or `None` before load / for an unknown uuid (sumipan/nexus#5033). `ghdag.dag.default_check_rejected` is exported (in `ghdag.dag.__all__`) (sumipan/nexus#5033). `ForgePort.graphql`: new Protocol method `graphql(query, variables=None) -> dict`. Implementers of `ForgePort` must provide it (`GitHubClient` and `LocalForge` do) (sumipan/nexus#5033). `ghdag.forge.get_forge()`: `LocalForge` is imported directly instead of via `importlib` with a `ModuleNotFoundError` fallback; behaviour is unchanged (sumipan/nexus#5033).
+
+## 0.101.1 - 2026-10-09
 
 ### Changed
 
-- **BREAKING** workflow loading rejects unknown YAML keys at the workflow, trigger, handler, `on_trigger`, step, and `nonterminal_closed` levels instead of silently ignoring them (sumipan/nexus#5030).
-- `ForgePort.graphql`: new Protocol method `graphql(query, variables=None) -> dict`. Implementers of `ForgePort` must provide it (`GitHubClient` and `LocalForge` do) (sumipan/nexus#5033).
-- `ghdag.forge.get_forge()`: `LocalForge` is imported directly instead of via `importlib` with a `ModuleNotFoundError` fallback; behaviour is unchanged (sumipan/nexus#5033).
-- **BREAKING** task state values are language-neutral identifiers (sumipan/nexus#4456): `STATE_PENDING_DEPS` / `STATE_PENDING_RUN` / `STATE_RUNNING` / `STATE_DEFERRED` / `STATE_OK` / `STATE_FAIL` / `STATE_REJECTED` / `STATE_EMPTY` / `STATE_ENGINE_ERROR` / `STATE_UNKNOWN_DONE` are now `pending_deps` / `pending_run` / `running` / `deferred` / `ok` / `fail` / `rejected` / `empty` / `engine_error` / `unknown` (previously Japanese display strings), and `pipeline.task_status()`, `ui.monitor.task_state()` and `label_for_done()` return these identifiers. Use `state_label()` for the display string. `ui.monitor.STATE_ALIASES` maps filter names to identifiers and `filter_rows` matches `Row.state_id`. `/api/rows` keeps `state` as the display label, so a host that sets `GHDAG_LANGUAGE_PACK` to a pack with its previous labels sees the same values as before; without a pack the labels are English.
+- docs(readme): align with v0.101.0 release inventory
+
+## 0.101.0 - 2026-10-08
+
+### Added
+
+- feat(dag): add cursor engine stall guard for stuck cat readers
+
+## 0.100.8 - 2026-10-08
+
+### Changed
+
+- test(cli): add ghdag run --brake-state wiring tests
+
+## 0.100.7 - 2026-10-08
+
+### Added
+
+- feat(cli): pass brake_state_path from run into DagConfig
+
+## 0.100.6 - 2026-10-08
+
+### Changed
+
+- test(dag): cover brake_state_path and pending requeue in engine quota tests (#4928)
+
+## 0.100.5 - 2026-10-08
+
+### Added
+
+- feat(cli): add --brake-state to ghdag run parser (#4923)
+
+## 0.100.4 - 2026-10-08
+
+### Added
+
+- feat(dag): add DagConfig.brake_state_path for budget-brake integration (#4920)
+
+## 0.100.3 - 2026-10-08
+
+### Fixed
+
+- fix(dag): wire brake_state_path and deferred done requeue follow-up
+
+## 0.100.2 - 2026-10-04
+
+### Fixed
+
+- fix(cursor_stream): detect complete assistant text by event structure (#4593)
+
+## 0.100.1 - 2026-10-04
+
+### Changed
+
+- docs(workflow): translate workflow and top-level modules to English and gate CJK in src/tests (#4522, #4468)
+- test(no-cjk): drop #4522 pending exclusions now that it has landed (#4468)
+- docs(readme): rewrite README for v0.100.0
+
+### Fixed
+
+- fix(repair): build CJK ranges via chr() to avoid escape-decoded CJK in test_no_cjk (#4468)
+- fix(repair): revert out-of-scope pyproject.toml version bump (#4468)
+
+## 0.100.0 - 2026-10-03
+
+### Added
+
+- feat(language): add optional question_suffixes pack section for looks_like_question (sumipan/nexus#4522)
+
+### Changed
+
+- test(ui): pin GHDAG_AUDIT_PATH to tmp audit in dashboard endpoint tests (#4547)
+
+## 0.99.0 - 2026-10-03
+
+### Changed
+
+- docs(llm): translate llm/adapters and files/links/obsidian to English
+- chore(llm): restore #4522-owned files to main and drop stale CJK test comments (#4466, #4513)
+
+## 0.98.0 - 2026-10-03
+
+### Added
+
+- feat(ui): localise index.html via /api/config i18n and judge state by state_id (#4457)
+
+## 0.97.0 - 2026-10-03
+
+### Changed
+
+- docs(io): translate audit, audit_query, done, queue and sessions docstrings to English (#4467, #4348)
+
+## 0.96.0 - 2026-10-03
+
+### BREAKING
+
+- `ghdag.config.language`: language packs for state labels and Web UI strings (sumipan/nexus#4454). `LanguagePack(state_labels, ui)`, the bundled English pack `EN` (the only pack shipped), `STATE_IDS` (10 keys) / `UI_KEYS` (12 keys), `load_language_pack(path)` and `get_language_pack()` (process-cached). `GHDAG_LANGUAGE_PACK` (`config.env.ghdag_language_pack()`) points at a YAML pack that replaces every field; missing / unknown keys, empty values, invalid YAML or an unreadable file raise `GhdagError`. See README "Language pack". `ghdag.pipeline.state_label(state_id, pack=None)`: display label for a state identifier from `pack` (default: the active language pack); unknown identifiers are returned unchanged (sumipan/nexus#4456). `ghdag.ui.monitor.Row.state_id`: the state identifier of a row; `Row.state` is now `state_label(state_id)`. `/api/rows` returns both, and accepts `?state=<name>` (repeatable or comma-separated identifiers / `STATE_ALIASES` names) to filter rows (sumipan/nexus#4456). `/api/config` gains `i18n` (`ui` 12 keys, `state_labels` 10 keys) from the active language pack. `run_server()` loads the pack once at startup, so an invalid `GHDAG_LANGUAGE_PACK` fails `ghdag ui` with `GhdagError` before the server binds (sumipan/nexus#4456). Task state values are language-neutral identifiers (sumipan/nexus#4456): `STATE_PENDING_DEPS` / `STATE_PENDING_RUN` / `STATE_RUNNING` / `STATE_DEFERRED` / `STATE_OK` / `STATE_FAIL` / `STATE_REJECTED` / `STATE_EMPTY` / `STATE_ENGINE_ERROR` / `STATE_UNKNOWN_DONE` are now `pending_deps` / `pending_run` / `running` / `deferred` / `ok` / `fail` / `rejected` / `empty` / `engine_error` / `unknown` (previously Japanese display strings), and `pipeline.task_status()`, `ui.monitor.task_state()` and `label_for_done()` return these identifiers. Use `state_label()` for the display string. `ui.monitor.STATE_ALIASES` maps filter names to identifiers and `filter_rows` matches `Row.state_id`. `/api/rows` keeps `state` as the display label, so a host that sets `GHDAG_LANGUAGE_PACK` to a pack with its previous labels sees the same values as before; without a pack the labels are English.
+
+### Changed
+
+- docs(llm): translate llm/ and markdown/body_editor comments and handoff prompt to English
+
+### Fixed
+
+- fix(repair): replace CJK regex escapes with ord-range check in test_compaction (#4465)
+
+## 0.95.0 - 2026-10-03
+
+### Changed
+
+- docs(dag): translate CJK comments and docstrings to English
+
+## 0.94.0 - 2026-10-03
+
+### Changed
+
+- docs(cli): translate ui, watch and main docstrings to English
+
+## 0.93.0 - 2026-10-03
+
+### Changed
+
+- docs(cli): translate cli/commands docstrings to English (sumipan/nexus#4462)
+
+## 0.92.0 - 2026-10-03
+
+### Changed
+
+- docs(cleanup): translate CJK comments, docstrings and CLI message to English (#4461)
+
+## 0.91.0 - 2026-10-03
+
+### Changed
+
+- docs(core): translate core and core/models comments and docstrings to English (#4459, #4348)
+
+## 0.90.0 - 2026-10-03
+
+### Changed
+
+- docs(pipeline): translate comments, docstrings and messages to English (#4458)
+- docs(ports,tool): translate comments and docstrings to English (#4460, #4348)
+
+## 0.89.0 - 2026-10-03
+
+### Added
+
+- feat(config): add language pack loader and GHDAG_LANGUAGE_PACK accessor (#4454)
+
+## 0.88.0 - 2026-10-03
+
+### Changed
+
+- docs(readme): update to v0.87.0 and document LLM timeout API
+
+## 0.87.0 - 2026-10-02
+
+### Fixed
+
 - `engines.call()` no longer raises `subprocess.TimeoutExpired`. When the engine process outlives `timeout` it is killed (as before) and an `LLMResult(returncode=124, failure_class=FailureClass.TIMEOUT)` is returned with the partial stdout / stderr captured before the kill plus a trailing `TIMEOUT: <cli> timed out after <n>s` line on stderr. `LLMResult` gains `failure_class` (`None` unless `call()` itself classified the failure) and `timed_out`; `engines.TIMEOUT_RETURNCODE` (124) is exported. `call_managed` honours `LLMResult.failure_class` before asking the output adapter, so a timeout is reported as `failure_class="TIMEOUT"` instead of `None`, and the new `fallback_on_timeout=False` argument lets a caller opt the one-shot fallback in for timeouts (no quota report is made for a timeout). `ghdag llm` therefore exits 124 with the partial output instead of a traceback. Until now the exception unwound `call_managed` and every caller above it, so e.g. issuesmith's `FailureClass.TIMEOUT` branch was unreachable and a cursor `agent -p` that had already committed but never exited turned a finished implementation into an andon (sumipan/nexus#4304).
+
+## 0.86.0 - 2026-09-27
+
+### Changed
+
+- docs(readme): rewrite README for v0.85.0 (sumipan/nexus#3974)
+
+## 0.85.0 - 2026-09-26
+
+### Added
+
+- feat(core): add sandbox="container" that wraps exec commands in docker run
+
+## 0.84.0 - 2026-09-26
+
+### Changed
+
+- test(llm): build fixture script-range check from code points
+- style(llm): drop downstream name from failure classification comment
+
+### Fixed
+
 - Failure classification (`classify_common_failure`) now recognises a missing / non-executable engine binary by its real CLI name (`ENGINE_SPECS[engine].cli`, e.g. cursor → `agent`) as `ENGINE_ENVIRONMENT_ERROR`: the name must follow line start / whitespace / `:` / a quote and be followed by `: command not found` / `: no such file or directory` / `: permission denied` (bash / sh format), or appear in the Python errno format (`No such file or directory: 'agent'`); `returncode == 127` plus `command not found` also qualifies. A bare word such as "agent" next to "permission denied" no longer counts. New optional `returncode` argument (positional 3-argument calls unchanged; `binary=""` keeps the legacy check); the four adapters pass it. Auth detection now matches whole words (`auth` / `authentication` / `authorization` / `unauthenticated` / `unauthorized` / `forbidden`) plus `oauth session expired` / `invalid api key` / `not logged in`, so e.g. "author" is no longer an auth error. `engines.call()` returns an `LLMResult` instead of raising when the binary cannot be launched: `FileNotFoundError` → `returncode=127`, stderr `<cmd>: command not found`; `PermissionError` → `126`, `<cmd>: permission denied`. `ghdag llm` therefore exits 127 without a traceback and `call_managed` reports `ENGINE_ENVIRONMENT_ERROR` (sumipan/nexus#4053).
-- Runtime state paths honour `GHDAG_STATE_DIR` (sumipan/nexus#3831): `DagConfig.exec_done_dir` default is now `None` (resolved to `state_dir("jobs")/"done"`), `DagConfig.quota_state_path`, `TaskLauncher` `running/` `events/` `.sessions/` `cancel/`, `PipelineState` quota state and `from_repo_root` `.pipeline-state`, and the `watch` / `trigger` / `status` / `dag recover` / `dag cancel` / `quota` CLI defaults. `--state-dir` (status / recover), `--state-path` (quota) and `--queue-dir` (dag cancel) now default to `None` and resolve in the command. With the variable unset every resolved path is unchanged; explicit arguments always win. `TaskLauncher`'s fallback `QuotaGate` now uses `config.quota_state_path` / `quota_audit_path`.
-- **BREAKING** direct LLM call path (`call` / `call_text` / `call_managed` / `ghdag llm`): engines declaring `InputMode.STDIN` (claude / cursor / gemini / codex) now receive the prompt body on stdin instead of argv. `build_llm_cmd` emits only the `-p` token for `PromptFlag.FLAG_ONLY` engines (e.g. `["agent", "--model", M, "-p"]`); codex argv is unchanged, and unknown engines (`spec is None`) keep `-p <prompt>`. This avoids `E2BIG` from Linux's 128 KiB per-argument `MAX_ARG_STRLEN` for large prompts. When `stdin_text` is also given, stdin is the non-empty parts joined by `"\n\n"` (`prompt + "\n\n" + stdin_text`; `prompt=""` → `stdin_text` only). codex no longer drops `prompt` when `stdin_text` is set. The exec.jsonl path (`render_exec_command`) is unchanged (sumipan/nexus#3805).
-- `READONLY_OBSERVE` preset: `disallowed_tools` is now `("Edit", "NotebookEdit")` (`Write` removed). On claude, `sandbox="readonly"` maps to `--permission-mode plan`, whose harness writes the plan to `~/.claude/plans/*.md`; denying `Write` made that fail and wasted a turn every run. Plan mode itself still rejects writes to any other path. cursor / codex argv is unchanged (`disallowed_tools` is a noop there), and `TEXT_ONLY` / `JSON_ONLY` / `WEB_RESEARCH` still deny `Write` (sumipan/nexus#3188).
-- `WorkflowDispatcher` (`ghdag watch`): when `list_all_issues` raises `RateLimitError` with `reset_at`, the reset time is kept and polls are skipped (log line `rate limited: skip poll until <ISO8601>`) until it passes; the first iteration after reset polls normally. Previously the watcher logged a failure every cycle and could miss triggers for minutes after the reset (sumipan/nexus#3752).
-- `DagEngine` SIGTERM handler is now two-stage: first SIGTERM enters drain mode (`_draining = True`, calls `mark_interrupted_all`, sets `_drain_deadline = now + task_timeout`); a second SIGTERM while draining sets `_shutdown = True` for immediate exit. `task_timeout is None` sets the deadline to now (no drain: running tasks are terminated immediately and rerun after restart) (sumipan/nexus#3666).
-- `DagEngine.run()` drain loop: while `_draining`, new task launches and dependency resolution are skipped; only `check_completions` and `_apply_pending_cancels` run. Exits when `running_count == 0` or `_shutdown`. When `_drain_deadline` is exceeded, calls `terminate_all()` to force-stop remaining tasks (sumipan/nexus#3666).
-- `TaskLauncher.adopt_orphans()`: running files with `interrupted_at` are now treated as interrupted restarts instead of plain orphans. Live processes are killed (SIGTERM + kill_grace + SIGKILL); the running file is consumed and the task is queued for same-uuid rerun via `_pending_reruns`, up to `_MAX_INTERRUPTED_RERUNS = 1`. Tasks at the rerun limit fall back to `DONE_ORPHANED_ON_RESTART` with result `ORPHANED_ON_RESTART: interrupted rerun limit reached` (sumipan/nexus#3666).
-- `TaskLauncher.check_completions()`: tasks stopped by `terminate_all()` are excluded from the `--resume` fallback relaunch (sumipan/nexus#3666).
-- `TaskLauncher.check_completions()`: tasks in `_interrupting` (stopped by `terminate_all`) skip done-marker writing and `on_task_failure`; the running file is preserved so the next restart can detect and rerun them (sumipan/nexus#3666).
-- `jobs/running/<uuid>.json` gains two optional fields: `interrupted_at` (ISO8601, written by `mark_interrupted_all`) and `interrupted_reruns` (int, written by `launch` when relaunching an interrupted task) (sumipan/nexus#3666).
+- fix(llm): keep claude authentication_error classified as auth
+
+## 0.83.0 - 2026-09-26
 
 ### Fixed
 
 - `TaskLauncher.check_completions()`: when a `shell` engine task exits non-zero, stdout (including stderr merged via `2>&1`) is now written to `result_path` with a trailing `EXIT_CODE: <n>` line. Previously the result file was not created on failure, so failure output such as `PIPELINE_STATUS: ...` was lost. The done marker, `FailureClass`, and retry decisions are unchanged; successful shell results are unchanged (sumipan/nexus#3957).
-- `GitHubClient.get_issue_comments`, `issue_get(fields=["comments"])`, `milestone_list`, `list_issues`, `pr_checks`, and `run_logs_failed` now fetch all pages via `_paginate` instead of stopping at the first page. Previously `get_issue_comments` was capped at 30 (no `per_page` set), and the others at 100. Resolves sumipan/nexus#3696.
-- `cleanup_queue` Phase 3 (catch-all sweep) no longer archives state files such as `quota-gate-override.json`, `quota-gate.json.lock`, or `issuesmith-brake.json.lock`. Phase 3 now only sweeps files whose name contains a 14-digit timestamp or 8-character hex token (UUID first group, short hex, or YYYYMMDD), which identifies them as one-shot artifacts. Additionally, Phase 3 now uses `st_mtime` instead of `st_birthtime` for age comparison, so files that are created once but updated in-place are not swept while they are still being modified. Sweep log lines now include `(token=…, age=…d)`. Resolves sumipan/nexus#3677.
+
+## 0.82.0 - 2026-09-26
+
+### BREAKING
+
+- Direct LLM call path (`call` / `call_text` / `call_managed` / `ghdag llm`): engines declaring `InputMode.STDIN` (claude / cursor / gemini / codex) now receive the prompt body on stdin instead of argv. `build_llm_cmd` emits only the `-p` token for `PromptFlag.FLAG_ONLY` engines (e.g. `["agent", "--model", M, "-p"]`); codex argv is unchanged, and unknown engines (`spec is None`) keep `-p <prompt>`. This avoids `E2BIG` from Linux's 128 KiB per-argument `MAX_ARG_STRLEN` for large prompts. When `stdin_text` is also given, stdin is the non-empty parts joined by `"\n\n"` (`prompt + "\n\n" + stdin_text`; `prompt=""` → `stdin_text` only). codex no longer drops `prompt` when `stdin_text` is set. The exec.jsonl path (`render_exec_command`) is unchanged (sumipan/nexus#3805).
+
+### Added
+
+- `ghdag.vcs`: single git sink for upper layers (sumipan/nexus#3831). `GitSink.commit(paths, message, trailers=...)` stages only the given paths (ownership-checked against `allow_prefixes` and the `<owner>(` subject prefix), commits with `Layer:` / `Host:` trailers, then `fetch` → `rebase` → `push` under an `flock` on `<git-common-dir>/ghdag-vcs.lock`. Push policies `immediate` / `debounce:<sec>` / `manual` (+ `flush()`). Rebase conflicts save the local version to `inbox/`, reset to the remote with `--keep`, and raise `ConflictError`. Audit events `vcs_commit` / `vcs_skipped` / `vcs_conflict`. `get_sink(name)` returns a `NullSink` unless `ENABLE_GIT` is on and `GHDAG_VCS_CONFIG` names the sink. `LocalGitSink.create()` builds a throwaway bare remote + clone for tests. `ghdag.config.env`: `enable_git()` (`ENABLE_GIT`), `ghdag_vcs_config()` (`GHDAG_VCS_CONFIG`), `ghdag_state_dir()` / `state_dir(default)` (`GHDAG_STATE_DIR`) (sumipan/nexus#3831). Runtime state paths honour `GHDAG_STATE_DIR` (sumipan/nexus#3831): `DagConfig.exec_done_dir` default is now `None` (resolved to `state_dir("jobs")/"done"`), `DagConfig.quota_state_path`, `TaskLauncher` `running/` `events/` `.sessions/` `cancel/`, `PipelineState` quota state and `from_repo_root` `.pipeline-state`, and the `watch` / `trigger` / `status` / `dag recover` / `dag cancel` / `quota` CLI defaults. `--state-dir` (status / recover), `--state-path` (quota) and `--queue-dir` (dag cancel) now default to `None` and resolve in the command. With the variable unset every resolved path is unchanged; explicit arguments always win. `TaskLauncher`'s fallback `QuotaGate` now uses `config.quota_state_path` / `quota_audit_path`.
 
 ### Changed
 
-- `GitHubClient.pr_list` and `ForgePort.pr_list` default `limit` changed from `30` to `None` (fetch all matching PRs). Callers that pass an explicit `limit` value are unaffected. `LocalForge.pr_list` now only truncates when `limit` is explicitly provided.
-- `GitHubClient._paginate` gains two new optional keyword arguments: `items_key` (extracts a nested list from dict-wrapped responses such as check-runs and jobs) and `max_items` (stops pagination early once the cumulative count reaches the limit).
+- style: keep added comments and docs ASCII (no CJK in public repo)
+- style: keep added comments and docs ASCII (no CJK in public repo)
 
+## 0.81.0 - 2026-09-26
+
+### Changed
+
+- docs(readme): rewrite README for v0.80.0 (sumipan/nexus#3138)
+- style: keep added comments and docs ASCII (no CJK in public repo)
+
+## 0.80.0 - 2026-09-25
+
+### Changed
+
+- test(engines): rewrite existing CJK docstrings in test_engines.py to ASCII (sumipan/nexus#3188)
+
+### Fixed
+
+- `READONLY_OBSERVE` preset: `disallowed_tools` is now `("Edit", "NotebookEdit")` (`Write` removed). On claude, `sandbox="readonly"` maps to `--permission-mode plan`, whose harness writes the plan to `~/.claude/plans/*.md`; denying `Write` made that fail and wasted a turn every run. Plan mode itself still rejects writes to any other path. cursor / codex argv is unchanged (`disallowed_tools` is a noop there), and `TEXT_ONLY` / `JSON_ONLY` / `WEB_RESEARCH` still deny `Write` (sumipan/nexus#3188).
+
+## 0.79.0 - 2026-09-25
+
+### Added
+
+- `GitHubClient(rate_limit_max_wait_sec=...)` / `GHDAG_RATE_LIMIT_MAX_WAIT_SEC`: per-caller cap on the synchronous sleep until rate-limit reset (403 + `X-RateLimit-Remaining: 0`). When the reset is further away than the cap, `RateLimitError(reset_at=...)` is raised immediately instead of sleeping. Precedence: constructor argument > env var > default 900 s (unchanged behaviour); a non-integer env value falls back to the default (sumipan/nexus#3752). `WorkflowDispatcher` (`ghdag watch`): when `list_all_issues` raises `RateLimitError` with `reset_at`, the reset time is kept and polls are skipped (log line `rate limited: skip poll until <ISO8601>`) until it passes; the first iteration after reset polls normally. Previously the watcher logged a failure every cycle and could miss triggers for minutes after the reset (sumipan/nexus#3752).
+
+## 0.78.0 - 2026-09-25
+
+### Added
+
+- `GitHubClient(etag_cache_path=...)` / `GHDAG_ETAG_CACHE`: disk-persistent ETag cache so conditional requests (`If-None-Match` → 304, no rate-limit consumption) work across processes (e.g. issuesmith queue ticks, `ghdag watch --once`). Single JSON file keyed by `{sha256(token)[:8]}:{url}`, capped at 2000 entries with LRU eviction by last access, written atomically via `<path>.tmp.<pid>` + `os.replace`. A corrupt cache file is ignored (falls back to normal 200 fetches). When neither the argument nor the env var is set, behaviour is unchanged (in-memory only, no file I/O) (sumipan/nexus#3761).
+
+## 0.77.0 - 2026-09-25
+
+### Changed
+
+- test(conventions): add 7 structural convention tests (issue #3572)
+
+### Fixed
+
+- fix: CP2 review fixes (LocalForge ForgePort coverage, restrict CHANGELOG exemption to Changed/Removed)
+
+## 0.76.0 - 2026-09-25
+
+### Fixed
+
+- fix(dag): replace polling-based adopt test with event-driven sync to eliminate flakiness
+
+## 0.75.0 - 2026-09-25
+
+### Added
+
+- `TaskLauncher.mark_interrupted_all()`: atomically writes `interrupted_at` (ISO8601) to `jobs/running/<uuid>.json` for all currently running tasks. Called by the SIGTERM handler before entering drain mode, so a subsequent SIGKILL cannot lose the interrupt record. Returns a list of successfully recorded uuids; missing or corrupt running files are skipped with a warning (sumipan/nexus#3666). `TaskLauncher.terminate_all()`: sends SIGTERM to all running task process groups and registers them in `_interrupting`. Called when the drain deadline is exceeded so that the engine can exit after kill-grace (sumipan/nexus#3666). `GHDAG_PREVIOUS_ATTEMPT` environment variable: set to `"interrupted"` when a task is relaunched after a SIGTERM-interrupted run, allowing the task command to detect and resume from a prior partial execution (sumipan/nexus#3666). `DagEngine` SIGTERM handler is now two-stage: first SIGTERM enters drain mode (`_draining = True`, calls `mark_interrupted_all`, sets `_drain_deadline = now + task_timeout`); a second SIGTERM while draining sets `_shutdown = True` for immediate exit. `task_timeout is None` sets the deadline to now (no drain: running tasks are terminated immediately and rerun after restart) (sumipan/nexus#3666). `DagEngine.run()` drain loop: while `_draining`, new task launches and dependency resolution are skipped; only `check_completions` and `_apply_pending_cancels` run. Exits when `running_count == 0` or `_shutdown`. When `_drain_deadline` is exceeded, calls `terminate_all()` to force-stop remaining tasks (sumipan/nexus#3666). `TaskLauncher.adopt_orphans()`: running files with `interrupted_at` are now treated as interrupted restarts instead of plain orphans. Live processes are killed (SIGTERM + kill_grace + SIGKILL); the running file is consumed and the task is queued for same-uuid rerun via `_pending_reruns`, up to `_MAX_INTERRUPTED_RERUNS = 1`. Tasks at the rerun limit fall back to `DONE_ORPHANED_ON_RESTART` with result `ORPHANED_ON_RESTART: interrupted rerun limit reached` (sumipan/nexus#3666). `TaskLauncher.check_completions()`: tasks in `_interrupting` (stopped by `terminate_all`) skip done-marker writing and `on_task_failure`; the running file is preserved so the next restart can detect and rerun them (sumipan/nexus#3666). `jobs/running/<uuid>.json` gains two optional fields: `interrupted_at` (ISO8601, written by `mark_interrupted_all`) and `interrupted_reruns` (int, written by `launch` when relaunching an interrupted task) (sumipan/nexus#3666).
+
+### Fixed
+
+- `TaskLauncher.check_completions()`: tasks stopped by `terminate_all()` are excluded from the `--resume` fallback relaunch (sumipan/nexus#3666).
+
+## 0.74.0 - 2026-09-25
+
+### Changed
+
+- test(cleanup): make section comment ASCII-only (external_leak CJK check)
+
+### Fixed
+
+- `cleanup_queue` Phase 3 (catch-all sweep) no longer archives state files such as `quota-gate-override.json`, `quota-gate.json.lock`, or `issuesmith-brake.json.lock`. Phase 3 now only sweeps files whose name contains a 14-digit timestamp or 8-character hex token (UUID first group, short hex, or YYYYMMDD), which identifies them as one-shot artifacts. Additionally, Phase 3 now uses `st_mtime` instead of `st_birthtime` for age comparison, so files that are created once but updated in-place are not swept while they are still being modified. Sweep log lines now include `(token=…, age=…d)`. Resolves sumipan/nexus#3677.
+
+## 0.73.0 - 2026-09-24
+
+### Changed
+
+- test(dag/recover): add regression and CLI output tests for result archiving (#3627)
+
+## 0.72.0 - 2026-09-24
+
+### Added
+
+- `GitHubClient.get_issue_comments`, `issue_get(fields=["comments"])`, `milestone_list`, `list_issues`, `pr_checks`, and `run_logs_failed` now fetch all pages via `_paginate` instead of stopping at the first page. Previously `get_issue_comments` was capped at 30 (no `per_page` set), and the others at 100. Resolves sumipan/nexus#3696. `GitHubClient.pr_list` and `ForgePort.pr_list` default `limit` changed from `30` to `None` (fetch all matching PRs). Callers that pass an explicit `limit` value are unaffected. `LocalForge.pr_list` now only truncates when `limit` is explicitly provided. `GitHubClient._paginate` gains two new optional keyword arguments: `items_key` (extracts a nested list from dict-wrapped responses such as check-runs and jobs) and `max_items` (stops pagination early once the cumulative count reaches the limit).
 
 ## 0.71.0 - 2026-09-24
 
