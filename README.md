@@ -12,13 +12,13 @@ Unlike CI-hosted orchestrators (GitHub Actions, Dagger), nothing runs on a hoste
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.101.0-blue)
+![version](https://img.shields.io/badge/version-v0.103.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.101.0** (`pyproject.toml` `version = "0.101.0"`) |
+| Current release | **v0.103.0** (`pyproject.toml` `version = "0.103.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -35,7 +35,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.101.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.103.0"
 ```
 
 Install from a checkout with the development tools:
@@ -351,6 +351,7 @@ Modules that declare their own `__all__` (private `_` names omitted). Modules ma
 | `ghdag.dag.models` | `Task`, `DagConfig`, `RunningTask` |
 | `ghdag.dag.parser` | `parse_jsonl`, `validate_dependencies` |
 | `ghdag.dag.state` | `is_done`, `mark_done`, `load_done_from_dir`, `load_succeeded_from_dir` |
+| `ghdag.dag.stall_guard` (shim) | `ProcInfo`, `StallEvent`, `StallTracker`, `find_stalled_state_readers`, `parse_ps_output`, `read_ps`, `scan_process_tree` (implementation in `ghdag.core.stall_guard`; `read_ps` in `ghdag.llm.engines`) |
 | `ghdag.files.models` (shim) | `PathTraversalError`, `MdFile`, `AppendStatus`, `AppendResult`, `WriteResult`, `PromoteStatus`, `PromoteResult` |
 | `ghdag.io.audit` | `AuditContext`, `append_audit_record`, `compute_prompt_hash`, `now_ts`, `epoch_ts`, `write_audit_log`, `write_llm_audit_log`, `write_llm_inference_audit`, `write_rate_limit_audit`, `write_compaction_audit`, `write_quarantine_audit`, `write_task_exit_audit`, `write_task_retry_audit` |
 | `ghdag.io.audit_query` | `read_task_exit_events`, `get_latest_status`, `detect_correlation_bursts`, `get_correlation_top_n` |
@@ -490,7 +491,7 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 | First SIGTERM / SIGINT | Writes `interrupted_at` into every `running/<uuid>.json`, stops launching, and drains running tasks until `task_timeout` elapses (no drain when `task_timeout` is `None`); the remaining tasks are then terminated and the runner exits |
 | Second SIGTERM / SIGINT | Exits immediately |
 | Restart | After the first `exec.jsonl` load, `adopt_orphans` inspects `running/*.json`: live tasks are adopted and tracked to completion, dead tasks are closed with `ORPHANED_ON_RESTART`, and interrupted tasks (`interrupted_at` set) are killed if still alive and relaunched once with the same UUID and `GHDAG_PREVIOUS_ATTEMPT=interrupted` |
-| Engine stall guard | When `stall_guard_enabled()` is true (default), `TaskLauncher.check_completions` uses `ghdag.dag.stall_guard` to detect cursor DAG tasks whose shell state-transfer `cat` children are stuck at zero CPU; after `stall_guard_stall_sec()` (default 180s) it sends SIGTERM and writes a `stall_guard` audit event |
+| Engine stall guard | When `stall_guard_enabled()` is true (default), `TaskLauncher.check_completions` uses `ghdag.core.stall_guard.StallTracker` (import via `ghdag.dag.stall_guard`) to detect cursor DAG tasks whose shell state-transfer `cat` children are stuck at zero CPU; after `stall_guard_stall_sec()` (default 180s) it sends SIGTERM and writes a `stall_guard` audit event |
 
 ### Engine output and failure classification
 
@@ -589,6 +590,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `core/engine_spec.py` | `EngineSpec`, `InputMode`, `PromptFlag`, `ENGINE_SPECS` |
 | `core/exceptions.py` | `GhdagError` and the GitHub API exception hierarchy |
 | `core/parsers.py` | Token usage parsing helpers |
+| `core/stall_guard.py` | Pure stall-detection logic for cursor shell state-transfer (`ProcInfo`, `StallTracker`, `find_stalled_state_readers`; `ps` IO injected via `read_ps`) |
 | `core/vocabulary.py` | Done markers, queue file naming, `PIPELINE_STATUS` and fan-out conventions |
 | `core/models/__init__.py` | Shared dataclass package |
 | `core/models/dag.py` | `Task`, `DagConfig` |
@@ -615,7 +617,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `dag/parser.py` | `parse_jsonl` for `exec.jsonl` |
 | `dag/recover.py` | `plan_recover` / `execute_recover` (`RecoverError`) |
 | `dag/state.py` | Done-directory state helpers |
-| `dag/stall_guard.py` | Detect and SIGTERM stalled `cat` children under cursor shell state-transfer (`StallTracker`, `stall_guard_enabled` thresholds from `config.env`) |
+| `dag/stall_guard.py` | Shim re-exporting `ghdag.core.stall_guard` plus `read_ps` from `llm.engines` (backward-compatible import path) |
 | `dag/task_launcher.py` | `TaskLauncher`: subprocess launch, streaming, completion, orphan adoption, stall-guard scans |
 | `files/__init__.py` | Markdown file operations API |
 | `files/_rotate.py` | Shim for `ghdag.io._rotate` |
@@ -1015,7 +1017,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.101.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.103.0"
 ```
 
 and read `CHANGELOG.md` before upgrading.
