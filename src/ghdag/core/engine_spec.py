@@ -32,8 +32,8 @@ class EngineSpec:
     danger_flag: str | None = None
     danger_flag_position: DangerFlagPosition = "trailing"
     extra_args: tuple[str, ...] = ()
-    pre_subcommand_args: tuple[str, ...] = ()  # static args after cli, before subcommand
     subcommand: tuple[str, ...] = ()  # subcommand expanded right after cli (e.g. codex → ("exec", "-"))
+    pre_subcommand_args: tuple[str, ...] = ()  # static args after cli, before subcommand
 
 
 ENGINE_SPECS: dict[str, EngineSpec] = {

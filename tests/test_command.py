@@ -71,6 +71,23 @@ class TestPreSubcommandArgs:
     def test_engine_spec_pre_subcommand_args_default_empty(self) -> None:
         assert ENGINE_SPECS["codex"].pre_subcommand_args == ()
 
+    def test_engine_spec_preserves_positional_subcommand_argument(self) -> None:
+        spec = EngineSpec(
+            "demo",
+            "tool",
+            InputMode.STDIN,
+            PromptFlag.NONE,
+            None,
+            None,
+            None,
+            None,
+            "trailing",
+            (),
+            ("run",),
+        )
+        assert spec.subcommand == ("run",)
+        assert spec.pre_subcommand_args == ()
+
     def test_static_pre_subcommand_args(self) -> None:
         spec = EngineSpec(
             name="demo",
