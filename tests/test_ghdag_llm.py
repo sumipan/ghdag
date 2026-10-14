@@ -181,13 +181,13 @@ class TestCapabilities:
     def test_web_research_preset(self):
         assert WEB_RESEARCH.permission_mode == "default"
         assert WEB_RESEARCH.output_format == "text"
-        assert "WebFetch" in WEB_RESEARCH.allowed_tools
-        assert "WebSearch" in WEB_RESEARCH.allowed_tools
-        assert "Read" in WEB_RESEARCH.allowed_tools
-        assert "Grep" in WEB_RESEARCH.allowed_tools
-        assert "Glob" in WEB_RESEARCH.allowed_tools
+        assert WEB_RESEARCH.web_search is True
+        assert WEB_RESEARCH.allowed_tools == ()
         assert "Bash" in WEB_RESEARCH.disallowed_tools
         assert "Edit" in WEB_RESEARCH.disallowed_tools
+
+    def test_default_capabilities_web_search_false(self):
+        assert LLMCapabilities().web_search is False
 
     def test_dangerous_full_access_preset(self):
         assert DANGEROUS_FULL_ACCESS.permission_mode == "bypassPermissions"
@@ -321,6 +321,15 @@ class TestBuildLLMCmdCapabilities:
             assert tool in allowed_val
         assert "--disallowed-tools" in cmd
 
+    def test_claude_web_search_merges_explicit_allowed_tools(self):
+        caps = LLMCapabilities(
+            web_search=True,
+            allowed_tools=("Read", "WebSearch"),
+        )
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=caps)
+        allowed_idx = cmd.index("--allowed-tools")
+        assert cmd[allowed_idx + 1] == "Read,WebSearch,WebFetch"
+
     def test_dangerous_full_access(self):
         """DANGEROUS_FULL_ACCESS: --permission-mode bypassPermissions, no allowed/disallowed"""
         cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=DANGEROUS_FULL_ACCESS)
@@ -379,9 +388,22 @@ class TestValidateCapabilitiesForEngine:
             call("hello", engine="gemini", capabilities=DANGEROUS_FULL_ACCESS)
 
     @patch("ghdag.llm.engines.subprocess.run")
+    def test_cursor_with_web_research_ok(self, mock_run):
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        result = call("hello", engine="cursor", capabilities=WEB_RESEARCH)
+        assert result.ok
+        cmd = mock_run.call_args[0][0]
+        assert "--search" not in cmd
+        assert "--allowed-tools" not in cmd
+
+    @patch("ghdag.llm.engines.subprocess.run")
     def test_cursor_with_allowed_tools_raises(self, mock_run):
         with pytest.raises(NotImplementedError):
-            call("hello", engine="cursor", capabilities=WEB_RESEARCH)
+            call(
+                "hello",
+                engine="cursor",
+                capabilities=LLMCapabilities(allowed_tools=("Read",)),
+            )
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_cursor_with_text_only_ok(self, mock_run):
@@ -921,6 +943,11 @@ class TestSupportsCapability:
             ("claude", "isolation", True),
             ("codex", "isolation", True),
             ("cursor", "isolation", False),
+            ("claude", "web_search", True),
+            ("cursor", "web_search", True),
+            ("codex", "web_search", True),
+            ("gemini", "web_search", False),
+            ("shell", "web_search", False),
         ],
     )
     def test_three_engines_core_capabilities(

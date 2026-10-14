@@ -157,9 +157,17 @@ def validate_engine_model(engine: str, model: str | None) -> str:
 # (whether global config isolation is possible). Unsupported on cursor because its CLI has no
 # skills/rules isolation flag (nexus #3044; the alternative is physical isolation, nexus #2972).
 _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
-    "gemini": {"disallowed_tools", "allowed_tools", "permission_mode", "stream", "sandbox", "resume"},
+    "gemini": {
+        "disallowed_tools",
+        "allowed_tools",
+        "permission_mode",
+        "stream",
+        "sandbox",
+        "resume",
+        "web_search",
+    },
     "cursor": {"allowed_tools", "permission_mode", "isolation"},
-    "shell": {"stream", "sandbox", "resume"},
+    "shell": {"stream", "sandbox", "resume", "web_search"},
     # codex stream is --json JSONL. output_format remains unsupported (#2967).
     "codex": {"permission_mode", "output_format"},
 }
@@ -187,7 +195,7 @@ def _resolve_isolation(isolation: bool | None) -> bool:
 #   documents what was previously silently ignored.
 _IGNORED_CAPABILITIES: dict[str, set[str]] = {
     "codex": {"allowed_tools", "disallowed_tools"},
-    "cursor": {"disallowed_tools"},
+    "cursor": {"disallowed_tools", "web_search"},
 }
 
 

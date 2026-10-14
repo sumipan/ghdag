@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `LLMCapabilities.web_search` and `EngineSpec.pre_subcommand_args`: engine-neutral Web search requests. `WEB_RESEARCH` now sets `web_search=True` instead of claude-only `allowed_tools`. codex emits top-level `--search` before `exec`; claude keeps the same Web tool allow-list via the flag builder; cursor accepts the preset without extra argv. gemini and shell reject `web_search=True` in `call()`.
+
 ## 0.103.0 - 2026-10-10
 
 ### Added

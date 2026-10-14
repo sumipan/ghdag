@@ -389,7 +389,9 @@ Modules without `__all__` that are meant for direct import:
 
 ### Capability presets
 
-`LLMCapabilities` (frozen dataclass in `ghdag.core.capabilities`) has these fields and defaults: `permission_mode="default"`, `output_format="text"` (or `"json"`), `allowed_tools=()`, `disallowed_tools=()`, `stream=False`, `sandbox="off"` (or `"readonly"` / `"container"`), `resume=False`, `container_image=""`, `container_readonly=False`, `container_mounts=()`, `container_env=()`, `docker_bin="docker"`.
+`LLMCapabilities` (frozen dataclass in `ghdag.core.capabilities`) has these fields and defaults: `permission_mode="default"`, `output_format="text"` (or `"json"`), `allowed_tools=()`, `disallowed_tools=()`, `stream=False`, `sandbox="off"` (or `"readonly"` / `"container"`), `resume=False`, `container_image=""`, `container_readonly=False`, `container_mounts=()`, `container_env=()`, `docker_bin="docker"`, `web_search=False`.
+
+`web_search=True` requests Web search in an engine-neutral way: claude adds the Web tool allow-list (`WebFetch`, `WebSearch`, plus read/search helpers), codex adds the top-level `--search` flag before `exec`, and cursor relies on harness Web tools without extra argv. gemini and shell reject `web_search=True` in `call()`.
 
 Presets live in `PRESETS`. Workflow steps pick one with `StepConfig.permission`, falling back to `GHDAG_SAFE_DEFAULT_PERMISSION`.
 
@@ -397,11 +399,13 @@ Presets live in `PRESETS`. Workflow steps pick one with `StepConfig.permission`,
 |---|---|---|
 | `text_only` | `TEXT_ONLY` | Text output; `disallowed_tools=("Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch")` |
 | `json_only` | `JSON_ONLY` | JSON output; same `disallowed_tools` as `text_only` |
-| `web_research` | `WEB_RESEARCH` | `allowed_tools=("WebFetch", "WebSearch", "Read", "Grep", "Glob")`; `disallowed_tools=("Bash", "Edit", "Write", "NotebookEdit")` |
+| `web_research` | `WEB_RESEARCH` | `web_search=True`; `disallowed_tools=("Bash", "Edit", "Write", "NotebookEdit")` (claude/codex/cursor apply Web search per engine; gemini/shell unsupported) |
 | `dangerous_full_access` | `DANGEROUS_FULL_ACCESS` | `permission_mode="bypassPermissions"` |
 | `readonly_observe` | `READONLY_OBSERVE` | `sandbox="readonly"` (claude: `--permission-mode plan`; cursor: `--sandbox enabled`); `disallowed_tools=("Edit", "NotebookEdit")` |
 
-`readonly_observe` is available to workflow steps and the Python API, not to `ghdag llm --capabilities-preset`. Engine support is reported by `ghdag.llm.engines.supports_capability`: codex and cursor ignore `disallowed_tools`, codex also ignores `allowed_tools`, and gemini supports none of `allowed_tools`, `disallowed_tools`, `permission_mode`, `stream`, `sandbox` and `resume` (`call()` raises `NotImplementedError` for non-default values it cannot honour).
+`readonly_observe` is available to workflow steps and the Python API, not to `ghdag llm --capabilities-preset`. Engine support is reported by `ghdag.llm.engines.supports_capability`: codex and cursor ignore `disallowed_tools`, codex also ignores `allowed_tools`, cursor ignores `web_search` (accepted, no argv change), and gemini supports none of `allowed_tools`, `disallowed_tools`, `permission_mode`, `stream`, `sandbox`, `resume`, and `web_search` (`call()` raises `NotImplementedError` for non-default values it cannot honour). `supports_capability(engine, "web_search")` is `True` for claude, cursor, and codex, and `False` for gemini and shell.
+
+`EngineSpec.pre_subcommand_args` holds static CLI tokens placed after `cli` and before `subcommand` (for example codex `--search` from `web_search=True` is assembled at command-build time, not stored on the frozen spec).
 
 #### Container sandbox
 
