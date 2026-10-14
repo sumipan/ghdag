@@ -632,6 +632,36 @@ class TestSandboxCapability:
         assert "--disallowed-tools" not in cmd
 
 
+class TestWebSearchCapability:
+    def test_claude_web_research_allowed_tools_from_builder(self):
+        from ghdag.llm.capabilities import WEB_RESEARCH
+        from ghdag.llm.engines import _build_claude_flags
+
+        flags = _build_claude_flags(WEB_RESEARCH, False)
+        assert "--allowed-tools" in flags
+        assert flags[flags.index("--allowed-tools") + 1] == (
+            "WebFetch,WebSearch,Read,Grep,Glob"
+        )
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_cursor_web_research_no_extra_argv(self, mock_run: MagicMock):
+        from ghdag.llm.capabilities import WEB_RESEARCH
+
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("hello", engine="cursor", capabilities=WEB_RESEARCH)
+        cmd = mock_run.call_args[0][0]
+        assert "--search" not in cmd
+        assert "--allowed-tools" not in cmd
+
+    def test_gemini_web_search_raises_before_subprocess(self):
+        with pytest.raises(NotImplementedError, match="web_search"):
+            call("hello", engine="gemini", capabilities=LLMCapabilities(web_search=True))
+
+    def test_shell_web_search_raises_before_subprocess(self):
+        with pytest.raises(NotImplementedError, match="web_search"):
+            call("hello", engine="shell", capabilities=LLMCapabilities(web_search=True))
+
+
 class TestCallCwd:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_passes_cwd_to_subprocess(self, mock_run: MagicMock, tmp_path):

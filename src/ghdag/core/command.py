@@ -78,6 +78,48 @@ def _dedupe_extra_args(
     return result
 
 
+_CLAUDE_WEB_SEARCH_DEFAULT_TOOLS: tuple[str, ...] = (
+    "WebFetch",
+    "WebSearch",
+    "Read",
+    "Grep",
+    "Glob",
+)
+
+
+def _claude_allowed_tools(capabilities: LLMCapabilities) -> tuple[str, ...]:
+    """Resolve --allowed-tools for claude from allowed_tools and web_search."""
+    if capabilities.web_search:
+        if not capabilities.allowed_tools:
+            return _CLAUDE_WEB_SEARCH_DEFAULT_TOOLS
+        merged = list(capabilities.allowed_tools)
+        for tool in ("WebFetch", "WebSearch"):
+            if tool not in merged:
+                merged.append(tool)
+        seen: set[str] = set()
+        deduped: list[str] = []
+        for tool in merged:
+            if tool in seen:
+                continue
+            seen.add(tool)
+            deduped.append(tool)
+        return tuple(deduped)
+    return capabilities.allowed_tools
+
+
+def _capability_pre_subcommand_args(
+    engine: str,
+    spec: EngineSpec,
+    capabilities: LLMCapabilities | None,
+) -> tuple[str, ...]:
+    """Static spec.pre_subcommand_args plus capability-derived pre-subcommand args."""
+    parts = list(spec.pre_subcommand_args)
+    if capabilities is not None and engine == "codex" and capabilities.web_search:
+        if "--search" not in parts:
+            parts.append("--search")
+    return tuple(parts)
+
+
 def _build_claude_flags(
     capabilities: LLMCapabilities, dangerously_skip_permissions: bool
 ) -> list[str]:
@@ -98,8 +140,9 @@ def _build_claude_flags(
         flags += ["--output-format", "stream-json", "--verbose"]
     elif capabilities.output_format != "text":
         flags += ["--output-format", capabilities.output_format]
-    if capabilities.allowed_tools:
-        flags += ["--allowed-tools", ",".join(capabilities.allowed_tools)]
+    allowed_tools = _claude_allowed_tools(capabilities)
+    if allowed_tools:
+        flags += ["--allowed-tools", ",".join(allowed_tools)]
     if capabilities.disallowed_tools:
         flags += ["--disallowed-tools", ",".join(capabilities.disallowed_tools)]
     # --disable-slash-commands is added by build_llm_cmd / render_exec_command
@@ -209,7 +252,10 @@ def render_exec_command(
             raise ValueError(
                 f"sandbox='container' is not supported for ARGV engine {spec.name!r}"
             )
-        parts = [spec.cli, *spec.subcommand]
+        pre_args = _capability_pre_subcommand_args(
+            spec.name, spec, capabilities
+        )
+        parts = [spec.cli, *pre_args, *spec.subcommand]
         if spec.extra_args:
             parts.extend(spec.extra_args)
         parts.append(order_path)
@@ -218,7 +264,9 @@ def render_exec_command(
     if spec.input_mode is not InputMode.STDIN:
         raise ValueError(f"Unknown input_mode: {spec.input_mode!r}")
 
+    pre_args = _capability_pre_subcommand_args(spec.name, spec, capabilities)
     parts = [*container_prefix(capabilities), spec.cli] if in_container else [spec.cli]
+    parts.extend(pre_args)
     parts.extend(subcommand)
 
     def _append_prompt_flag() -> None:
@@ -293,9 +341,14 @@ def build_llm_cmd(
         )
     spec = ENGINE_SPECS.get(engine)
     cli = spec.cli if spec else engine
-    cmd = [cli, *spec.subcommand] if spec else [cli]
-    if spec and resume_session_id and spec.name == "codex":
-        cmd = [cli, "exec", "resume", resume_session_id]
+    if spec:
+        pre_args = _capability_pre_subcommand_args(engine, spec, capabilities)
+        subcommand = list(spec.subcommand)
+        if resume_session_id and spec.name == "codex":
+            subcommand = ["exec", "resume", resume_session_id]
+        cmd = [cli, *pre_args, *subcommand]
+    else:
+        cmd = [cli]
 
     if spec is None:
         cmd += ["--model", model, "-p", prompt]

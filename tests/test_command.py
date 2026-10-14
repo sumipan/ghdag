@@ -6,10 +6,10 @@ import dataclasses
 
 import pytest
 
-from ghdag.core.capabilities import LLMCapabilities
+from ghdag.core.capabilities import WEB_RESEARCH, LLMCapabilities
 from ghdag.core.command import build_llm_cmd, render_exec_command
 from ghdag.core.container import container_prefix
-from ghdag.core.engine_spec import ENGINE_SPECS
+from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
 from ghdag.llm.capabilities import TEXT_ONLY
 from ghdag.llm.engines import _validate_capabilities_for_engine
 
@@ -57,6 +57,96 @@ _CLAUDE_TEXT_ONLY_FLAGS = [
     "--disallowed-tools",
     "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch",
 ]
+
+_CONTAINER = LLMCapabilities(
+    sandbox="container",
+    container_image="img:1",
+    container_mounts=("/h/.codex:/root/.codex:ro",),
+    container_env=("CURSOR_API_KEY",),
+    docker_bin="/opt/d/bin/docker",
+)
+
+
+class TestPreSubcommandArgs:
+    def test_engine_spec_pre_subcommand_args_default_empty(self) -> None:
+        assert ENGINE_SPECS["codex"].pre_subcommand_args == ()
+
+    def test_engine_spec_preserves_positional_subcommand_argument(self) -> None:
+        spec = EngineSpec(
+            "demo",
+            "tool",
+            InputMode.STDIN,
+            PromptFlag.NONE,
+            None,
+            None,
+            None,
+            None,
+            "trailing",
+            (),
+            ("run",),
+        )
+        assert spec.subcommand == ("run",)
+        assert spec.pre_subcommand_args == ()
+
+    def test_static_pre_subcommand_args(self) -> None:
+        spec = EngineSpec(
+            name="demo",
+            cli="tool",
+            input_mode=InputMode.STDIN,
+            prompt_flag=PromptFlag.NONE,
+            prompt_flag_token=None,
+            model_flag=None,
+            default_model=None,
+            pre_subcommand_args=("--global",),
+            subcommand=("run",),
+        )
+        cmd = render_exec_command(
+            spec, order_path="jobs/order.md", model=None, capabilities=TEXT_ONLY,
+        )
+        assert cmd.startswith("tool --global run ")
+
+    def test_codex_web_research_precedes_exec(self) -> None:
+        cmd = build_llm_cmd(
+            "codex", "gpt-5.5", "hello", capabilities=WEB_RESEARCH,
+        )
+        assert cmd[:4] == ["codex", "--search", "exec", "-"]
+        assert cmd.count("--search") == 1
+
+    def test_codex_web_research_resume(self) -> None:
+        cmd = build_llm_cmd(
+            "codex",
+            "gpt-5.5",
+            "hello",
+            capabilities=WEB_RESEARCH,
+            resume_session_id="sid",
+        )
+        assert cmd[:5] == ["codex", "--search", "exec", "resume", "sid"]
+
+    def test_render_codex_web_research(self) -> None:
+        cmd = render_exec_command(
+            ENGINE_SPECS["codex"],
+            order_path="jobs/order.md",
+            model="gpt-5.5",
+            capabilities=WEB_RESEARCH,
+        )
+        assert cmd.startswith("codex --search exec - ")
+
+    def test_render_codex_web_research_container_order(self) -> None:
+        caps = dataclasses.replace(
+            _CONTAINER,
+            web_search=True,
+        )
+        cmd = render_exec_command(
+            ENGINE_SPECS["codex"],
+            order_path="jobs/order.md",
+            model="gpt-5.5",
+            capabilities=caps,
+        )
+        prefix = " ".join(container_prefix(caps))
+        inner = (
+            "codex --search exec - --model 'gpt-5.5' --json --skip-git-repo-check"
+        )
+        assert cmd == f"{prefix} {inner} < jobs/order.md"
 
 
 class TestBuildLlmCmdPromptViaStdin:
@@ -157,13 +247,6 @@ class TestRenderExecCommandUnchanged:
         )
 
 
-_CONTAINER = LLMCapabilities(
-    sandbox="container",
-    container_image="img:1",
-    container_mounts=("/h/.codex:/root/.codex:ro",),
-    container_env=("CURSOR_API_KEY",),
-    docker_bin="/opt/d/bin/docker",
-)
 _PREFIX = " ".join(container_prefix(_CONTAINER))
 _OFF = dataclasses.replace(_CONTAINER, sandbox="off")
 

@@ -21,6 +21,7 @@ class LLMCapabilities:
     container_mounts: tuple[str, ...] = ()  # extra "host:container[:ro]" mounts; "~" expanded
     container_env: tuple[str, ...] = ()  # env var names passed through (values stay off argv)
     docker_bin: str = "docker"  # docker executable; a path also prepends its dir to PATH
+    web_search: bool = False  # request Web search (engine-specific argv; see core.command)
 
 
 TEXT_ONLY = LLMCapabilities(
@@ -38,7 +39,7 @@ JSON_ONLY = LLMCapabilities(
 WEB_RESEARCH = LLMCapabilities(
     permission_mode="default",
     output_format="text",
-    allowed_tools=("WebFetch", "WebSearch", "Read", "Grep", "Glob"),
+    web_search=True,
     disallowed_tools=("Bash", "Edit", "Write", "NotebookEdit"),
 )
 
