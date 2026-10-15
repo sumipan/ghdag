@@ -18,6 +18,10 @@ _RETRIABLE_STDERR_RE = re.compile(
     r"^RetriableError: (?:\[(?P<code>[a-z_]+)\] ?)?"
 )
 
+_EMPTY_AVAILABLE_MODELS_STDERR_RE = re.compile(
+    r"^Cannot use this model: .+\. Available models:\s*$"
+)
+
 _STDERR_AUTH_CODES = frozenset({"unauthenticated", "permission_denied"})
 
 
@@ -245,6 +249,12 @@ def _classify_stderr(stderr: bytes) -> EngineError | None:
         stripped = line.strip()
         m = _RETRIABLE_STDERR_RE.match(stripped)
         if m is None:
+            if _EMPTY_AVAILABLE_MODELS_STDERR_RE.match(stripped):
+                return EngineError(
+                    kind=EngineErrorKind.CAPACITY,
+                    message=stripped,
+                    retryable=True,
+                )
             continue
         code = m.group("code") or ""
         if code in _STDERR_AUTH_CODES:
