@@ -146,6 +146,49 @@ class TestCursorStreamExtractError:
         adapter = CursorStreamAdapter()
         assert adapter.extract_error(b"", b"\xff\xfe") is None
 
+    def test_empty_available_models_stderr_no_trailing_newline(self):
+        from ghdag.core.ports.output import EngineErrorKind
+
+        stderr = b"Cannot use this model: auto. Available models:"
+        adapter = CursorStreamAdapter()
+        err = adapter.extract_error(b"", stderr)
+        assert err is not None
+        assert err.kind == EngineErrorKind.CAPACITY
+        assert err.retryable is True
+        assert err.message == "Cannot use this model: auto. Available models:"
+
+    def test_empty_available_models_stderr_with_trailing_newline(self):
+        from ghdag.core.ports.output import EngineErrorKind
+
+        stderr = b"Cannot use this model: auto. Available models:\n"
+        adapter = CursorStreamAdapter()
+        err = adapter.extract_error(b"", stderr)
+        assert err is not None
+        assert err.kind == EngineErrorKind.CAPACITY
+        assert err.retryable is True
+        assert err.message == "Cannot use this model: auto. Available models:"
+
+    def test_empty_available_models_stderr_trailing_whitespace_after_colon(self):
+        from ghdag.core.ports.output import EngineErrorKind
+
+        stderr = b"Cannot use this model: auto. Available models:   \n"
+        adapter = CursorStreamAdapter()
+        err = adapter.extract_error(b"", stderr)
+        assert err is not None
+        assert err.kind == EngineErrorKind.CAPACITY
+        assert err.retryable is True
+        assert err.message == "Cannot use this model: auto. Available models:"
+
+    def test_nonempty_available_models_stderr_returns_none(self):
+        adapter = CursorStreamAdapter()
+        stderr = b"Cannot use this model: foo. Available models: auto, gpt-5.3-codex\n"
+        assert adapter.extract_error(b"", stderr) is None
+
+    def test_success_stdout_ignores_empty_available_models_stderr(self):
+        adapter = CursorStreamAdapter()
+        stderr = b"Cannot use this model: auto. Available models:\n"
+        assert adapter.extract_error(_STREAM_SUCCESS, stderr) is None
+
     def test_ac2_success_stdout_ignores_retriable_stderr(self):
         adapter = CursorStreamAdapter()
         err = adapter.extract_error(_STREAM_SUCCESS, _RETRIABLE_STDERR)
