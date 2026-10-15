@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.103.3 - 2026-10-15
+
 ### Fixed
 
 - `CursorStreamAdapter.extract_error` classifies cursor stderr `Cannot use this model: <model>. Available models:` with an empty model list as `EngineError(kind=CAPACITY, retryable=True)` so transient cursor-agent failures retry via the existing task launcher path (sumipan/nexus#5303).
