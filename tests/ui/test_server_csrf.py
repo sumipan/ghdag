@@ -172,3 +172,24 @@ class TestServerCsrf:
             assert "Access-Control-Allow-Origin" not in resp.headers
         finally:
             server.shutdown()
+
+    def test_post_response_has_no_access_control_allow_origin(self, tmp_path):
+        import urllib.request
+
+        repo = _setup_running_repo(tmp_path, self.UUID)
+        server, port = _start_server(repo)
+        try:
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/stop",
+                data=json.dumps({"uuid": self.UUID}).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Origin": f"http://127.0.0.1:{port}",
+                },
+                method="POST",
+            )
+            resp = urllib.request.urlopen(req, timeout=5)
+            assert resp.status == 200
+            assert "Access-Control-Allow-Origin" not in resp.headers
+        finally:
+            server.shutdown()
