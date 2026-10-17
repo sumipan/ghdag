@@ -12,8 +12,10 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from ghdag.config.env import pending_env_denied_count
 from ghdag.core.models.metrics import FailureClass
 from ghdag.io._rotate import _MAX_AUDIT_BYTES, _do_rotate, _maybe_rotate
+from ghdag.io.redact import redact_json_value
 
 _MAX_FRAMES = 5
 
@@ -47,14 +49,22 @@ def epoch_ts(epoch: float, tz_name: str = "UTC") -> str:
     return datetime.fromtimestamp(epoch, tz=ZoneInfo(tz_name)).isoformat()
 
 
+def _redact_audit_record(record: dict) -> dict:
+    redacted, _ = redact_json_value(record)
+    if isinstance(redacted, dict):
+        return redacted
+    return record
+
+
 def append_audit_record(audit_path: Path, record: dict) -> None:
     """Rotate if needed, then append one JSON line to audit.jsonl.
 
-    Does not mutate ``record`` with extra keys — callers own the schema.
+    String values are redacted in place before persistence.
     """
     _maybe_rotate(audit_path)
+    safe = _redact_audit_record(record)
     with open(audit_path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        f.write(json.dumps(safe, ensure_ascii=False) + "\n")
 
 
 @dataclass
@@ -186,8 +196,12 @@ def write_task_exit_audit(
     request_id: str | None = None,
     parent_correlation_id: str | None = None,
     orchestration_id: str | None = None,
+    env_denied_count: int | None = None,
     tz_name: str = "UTC",
 ) -> None:
+    denied = env_denied_count
+    if denied is None and event_type == "task_started":
+        denied = pending_env_denied_count()
     record = {
         "schema_version": schema_version,
         "event_type": event_type,
@@ -204,6 +218,8 @@ def write_task_exit_audit(
         "parent_correlation_id": parent_correlation_id,
         "orchestration_id": orchestration_id,
     }
+    if denied is not None and denied > 0:
+        record["env_denied_count"] = denied
 
     try:
         append_audit_record(audit_path, record)

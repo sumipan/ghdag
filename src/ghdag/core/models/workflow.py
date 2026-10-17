@@ -33,6 +33,7 @@ STEP_KEYS = frozenset(
         "skill_name",
         "render",
         "role",
+        "env_passthrough",
     }
 )
 NONTERMINAL_CLOSED_KEYS = frozenset({"action", "terminal_labels", "trigger"})
@@ -50,6 +51,7 @@ class StepConfig:
     skill_name: str | None = None  # skill name invoked by this step
     render: str = "frozen"  # "frozen" (expanded at enqueue) | "live" (re-expanded at run time via trampoline)
     role: str | None = None  # QuotaGate role name (per-engine check when omitted)
+    env_passthrough: list[str] = field(default_factory=list)  # env var names exempt from deny
 
 
 @dataclass

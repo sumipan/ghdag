@@ -304,6 +304,7 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
                     skill_name=s.get("skill_name"),
                     render=s.get("render", "frozen"),
                     role=s.get("role"),
+                    env_passthrough=list(s.get("env_passthrough") or []),
                 )
             )
 

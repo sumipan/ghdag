@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import io
 import json
 import logging
@@ -19,7 +20,11 @@ from pathlib import Path
 from typing import TypedDict
 
 from ghdag.config.env import (
+    ghdag_redact_patterns_path,
+    ghdag_task_env_allow,
+    ghdag_task_env_deny,
     session_compaction_enabled,
+    set_pending_env_denied_count,
     stall_guard_enabled,
     stall_guard_interval_sec,
     stall_guard_stall_sec,
@@ -49,6 +54,7 @@ from ghdag.io.audit import (
     write_quarantine_audit,
     write_task_retry_audit,
 )
+from ghdag.io.redact import init_redact_patterns, redact_text
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.failure_classification import last_nonempty_line
 from ghdag.llm.compaction import (
@@ -62,7 +68,7 @@ from ghdag.metrics.models import FailureClass, TaskMetrics
 from ghdag.metrics.parsers import parse_engine_model
 from ghdag.quota import QuotaGate
 
-from ._util import _extract_tee_target, _stderr_reader, _stdout_line_reader, _stdout_reader
+from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .circuit_breaker import CircuitBreakerPolicy
 from .engine_quarantine import EngineQuarantine
 from .fanout import parse_fanout_spec
@@ -73,7 +79,11 @@ from .state import mark_done as state_mark_done
 
 logger = logging.getLogger(__name__)
 
+init_redact_patterns(ghdag_redact_patterns_path())
+
 _MAX_INTERRUPTED_RERUNS = 1
+
+_BASE_TASK_ENV_KEYS = frozenset({"PATH", "HOME", "LANG", "TMPDIR"})
 
 _STDIN_REDIR_RE = re.compile(r"(?<!<)<\s+(\S+)")
 _RESUME_ERROR_RE = re.compile(
@@ -191,6 +201,79 @@ def _signal_process_tree(proc: subprocess.Popen[bytes], sig: signal.Signals) -> 
 
 
 
+def _parse_env_pattern_list(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _env_name_matches(name: str, patterns: list[str]) -> bool:
+    return any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
+
+
+def _task_env_passthrough(task: Task) -> frozenset[str]:
+    raw = task.annotations.get("env_passthrough")
+    if not raw:
+        return frozenset()
+    if isinstance(raw, list):
+        return frozenset(str(item) for item in raw)
+    raw = str(raw)
+    if raw.startswith("["):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return frozenset()
+        if isinstance(parsed, list):
+            return frozenset(str(item) for item in parsed)
+        return frozenset()
+    return frozenset(part.strip() for part in raw.split(",") if part.strip())
+
+
+def _apply_task_env_policy(
+    env: dict[str, str],
+    task: Task,
+) -> tuple[dict[str, str], int]:
+    passthrough = _task_env_passthrough(task)
+    allow_patterns = _parse_env_pattern_list(ghdag_task_env_allow())
+    deny_patterns = _parse_env_pattern_list(ghdag_task_env_deny())
+    denied_count = 0
+
+    if allow_patterns:
+        filtered: dict[str, str] = {}
+        for key, value in env.items():
+            if key in _BASE_TASK_ENV_KEYS or key.startswith("GHDAG_"):
+                filtered[key] = value
+            elif _env_name_matches(key, allow_patterns):
+                filtered[key] = value
+        env = filtered
+    elif deny_patterns:
+        for key in list(env):
+            if key in passthrough:
+                continue
+            if _env_name_matches(key, deny_patterns):
+                del env[key]
+                denied_count += 1
+    return env, denied_count
+
+
+def _build_task_env(
+    uuid: str,
+    task: Task,
+    previous_attempt: str | None = None,
+) -> tuple[dict[str, str], int]:
+    env = os.environ.copy()
+    env["GHDAG_TASK_UUID"] = uuid
+    env["GHDAG_RESULT_PATH"] = task.result_path or ""
+    if previous_attempt is not None:
+        env["GHDAG_PREVIOUS_ATTEMPT"] = previous_attempt
+    env, denied_count = _apply_task_env_policy(env, task)
+    env["GHDAG_TASK_UUID"] = uuid
+    env["GHDAG_RESULT_PATH"] = task.result_path or ""
+    if previous_attempt is not None:
+        env["GHDAG_PREVIOUS_ATTEMPT"] = previous_attempt
+    return env, denied_count
+
+
 def _task_env(uuid: str, task: Task, previous_attempt: str | None = None) -> dict[str, str]:
     """Environment for a launched task: the parent's plus the task identity.
 
@@ -198,12 +281,72 @@ def _task_env(uuid: str, task: Task, previous_attempt: str | None = None) -> dic
     with ``QuotaGate.defer(task_uuid, ...)`` before emitting ``PIPELINE_STATUS: DEFERRED``;
     ``GHDAG_RESULT_PATH`` is the result file ghdag will write for it (sumipan/nexus#3515).
     """
-    env = os.environ.copy()
-    env["GHDAG_TASK_UUID"] = uuid
-    env["GHDAG_RESULT_PATH"] = task.result_path or ""
-    if previous_attempt is not None:
-        env["GHDAG_PREVIOUS_ATTEMPT"] = previous_attempt
+    env, denied_count = _build_task_env(uuid, task, previous_attempt)
+    set_pending_env_denied_count(denied_count)
     return env
+
+
+def _stdout_line_reader_redacting(
+    proc: subprocess.Popen,
+    buf: io.BytesIO,
+    events_path: Path,
+    on_event: Callable[[dict], None] | None = None,
+) -> None:
+    """Like ``_util._stdout_line_reader`` but redacts secrets before writing events."""
+    redacted_total = 0
+    try:
+        stdout = proc.stdout
+        if stdout is None:
+            return
+        events_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(events_path, "ab") as events_f:
+            while True:
+                line = stdout.readline()
+                if not line:
+                    break
+                buf.write(line)
+                try:
+                    text = line.decode("utf-8", errors="replace")
+                except UnicodeDecodeError:
+                    events_f.write(line)
+                    events_f.flush()
+                    continue
+                result = redact_text(text)
+                redacted_total += result.count
+                out_line = result.text
+                if not out_line.endswith("\n") and text.endswith("\n"):
+                    out_line += "\n"
+                events_f.write(out_line.encode("utf-8"))
+                events_f.flush()
+                if on_event is None:
+                    continue
+                try:
+                    stripped = out_line.strip()
+                    if not stripped:
+                        continue
+                    obj = json.loads(stripped)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(obj, dict):
+                    try:
+                        on_event(obj)
+                    except Exception:
+                        pass
+            if redacted_total > 0:
+                summary = json.dumps(
+                    {"redacted_count": redacted_total},
+                    ensure_ascii=False,
+                )
+                events_f.write((summary + "\n").encode("utf-8"))
+                events_f.flush()
+    except (OSError, ValueError):
+        pass
+    finally:
+        try:
+            if proc.stdout is not None:
+                proc.stdout.close()
+        except (OSError, ValueError):
+            pass
 
 
 @dataclass
@@ -324,7 +467,7 @@ class TaskLauncher:
                             cb(_uuid, event)
 
                     t_stdout = threading.Thread(
-                        target=_stdout_line_reader,
+                        target=_stdout_line_reader_redacting,
                         args=(proc, stdout_buf, events_path, _on_event),
                         daemon=True,
                     )
@@ -529,7 +672,7 @@ class TaskLauncher:
                                     cb(_uuid, event)
 
                             t_stdout = threading.Thread(
-                                target=_stdout_line_reader,
+                                target=_stdout_line_reader_redacting,
                                 args=(fallback_proc, stdout_buf, events_path, _on_event),
                                 daemon=True,
                             )
