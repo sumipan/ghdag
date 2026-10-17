@@ -5,14 +5,37 @@ from __future__ import annotations
 import fcntl
 import json
 import logging
+import os
 from collections.abc import Callable
 from pathlib import Path
 
+from ghdag.core.exceptions import GhdagError
 from ghdag.core.models.dag import Task
 from ghdag.io.audit import AuditContext, write_audit_log
+from ghdag.io.done import is_done
 from ghdag.quota import QuotaGate
 
 logger = logging.getLogger(__name__)
+
+
+class DuplicateTaskError(GhdagError, ValueError):
+    """Raised when enqueueing a uuid that is already queued and not yet done."""
+
+
+def _uuids_in_jsonl_text(text: str) -> set[str]:
+    uuids: set[str] = set()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            data = json.loads(stripped)
+        except json.JSONDecodeError:
+            continue
+        uuid = data.get("uuid")
+        if isinstance(uuid, str) and uuid:
+            uuids.add(uuid)
+    return uuids
 
 
 def build_idempotency_key(
@@ -59,6 +82,7 @@ def get_generation(
 
 
 __all__ = [
+    "DuplicateTaskError",
     "build_idempotency_key",
     "handler_generation_key",
     "get_generation",
@@ -223,9 +247,23 @@ def append(
     lines = [json.dumps(r, ensure_ascii=False) for r in records]
     path = Path(exec_jsonl_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
+    exec_done_dir = path.parent / "done"
+    with open(path, "a+", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         try:
+            f.seek(0)
+            existing = f.read()
+            queued = _uuids_in_jsonl_text(existing)
+            for rec in records:
+                uuid = rec.get("uuid")
+                if not isinstance(uuid, str) or not uuid:
+                    continue
+                if uuid in queued and not is_done(exec_done_dir, uuid):
+                    raise DuplicateTaskError(
+                        f"task uuid already queued and not done: {uuid}"
+                    )
+                queued.add(uuid)
+            f.seek(0, os.SEEK_END)
             f.write("\n".join(lines) + "\n")
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
