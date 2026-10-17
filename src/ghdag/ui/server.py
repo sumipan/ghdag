@@ -255,11 +255,40 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/api/retry":
+            if self._reject_unsafe_mutating_post():
+                return
             self._handle_retry()
         elif self.path == "/api/stop":
+            if self._reject_unsafe_mutating_post():
+                return
             self._handle_stop()
         else:
             self.send_error(404)
+
+    def _reject_unsafe_mutating_post(self) -> bool:
+        """Return True when the request was rejected (response already sent)."""
+        content_type = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        if content_type != "application/json":
+            self._send_json_response(
+                415,
+                {"ok": False, "error": "Unsupported Media Type"},
+            )
+            return True
+
+        origin = self.headers.get("Origin")
+        if origin:
+            host = self.headers.get("Host", "")
+            if not host:
+                self._send_json_response(403, {"ok": False, "error": "Forbidden"})
+                return True
+            allowed = {f"http://{host}", f"https://{host}"}
+            if origin not in allowed:
+                self._send_json_response(403, {"ok": False, "error": "Forbidden"})
+                return True
+        elif self.headers.get("Sec-Fetch-Site", "").lower() == "cross-site":
+            self._send_json_response(403, {"ok": False, "error": "Forbidden"})
+            return True
+        return False
 
     def _send_json_response(self, status: int, data: dict) -> None:
         """Send a JSON response, ignoring BrokenPipeError."""
@@ -393,7 +422,6 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(body)
 
@@ -402,7 +430,6 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
         self.send_header("Connection", "keep-alive")
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
 
         max_visible = self._parse_max_visible()
