@@ -105,11 +105,13 @@ def _is_auth_error(message: str) -> bool:
 
 
 def _match_names(binary: str) -> list[str]:
-    """Names to match: the engine name and its real CLI binary (cursor -> agent)."""
+    """Names to match: engine key, primary CLI, and legacy cli_aliases."""
     names = [binary]
     spec = ENGINE_SPECS.get(binary)
-    if spec is not None and spec.cli not in names:
-        names.append(spec.cli)
+    if spec is not None:
+        for name in (spec.cli, *spec.cli_aliases):
+            if name not in names:
+                names.append(name)
     return names
 
 

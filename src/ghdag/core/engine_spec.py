@@ -34,6 +34,7 @@ class EngineSpec:
     extra_args: tuple[str, ...] = ()
     subcommand: tuple[str, ...] = ()  # subcommand expanded right after cli (e.g. codex → ("exec", "-"))
     pre_subcommand_args: tuple[str, ...] = ()  # static args after cli, before subcommand
+    cli_aliases: tuple[str, ...] = ()  # legacy CLI names for matching only (not used to build argv)
 
 
 ENGINE_SPECS: dict[str, EngineSpec] = {
@@ -61,7 +62,7 @@ ENGINE_SPECS: dict[str, EngineSpec] = {
         extra_args=("--approval-mode", "yolo"),
     ),
     "cursor": EngineSpec(
-        name="cursor", cli="agent",
+        name="cursor", cli="cursor-agent",
         input_mode=InputMode.STDIN,
         prompt_flag=PromptFlag.FLAG_ONLY,
         prompt_flag_token="-p",
@@ -71,6 +72,7 @@ ENGINE_SPECS: dict[str, EngineSpec] = {
         danger_flag_position="leading",
         # DAG default is stream-json (#2967). The required --print(-p) is ensured by prompt_flag.
         extra_args=("--output-format", "stream-json", "--stream-partial-output"),
+        cli_aliases=("agent",),
     ),
     "shell": EngineSpec(
         name="shell", cli="bash",

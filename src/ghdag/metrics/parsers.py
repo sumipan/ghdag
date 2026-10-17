@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shlex
 
-from ghdag.core.engine_spec import ENGINE_SPECS
+from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec
 from ghdag.core.parsers import parse_token_count, parse_token_usage_json
 
 __all__ = ["parse_engine_model", "parse_token_usage_json", "parse_token_count"]
@@ -23,7 +23,11 @@ def parse_engine_model(command: str) -> tuple[str | None, str | None]:
     except ValueError:
         return None, None
 
-    cli_to_spec = {spec.cli: spec for spec in ENGINE_SPECS.values()}
+    cli_to_spec: dict[str, EngineSpec] = {}
+    for spec in ENGINE_SPECS.values():
+        cli_to_spec[spec.cli] = spec
+        for alias in spec.cli_aliases:
+            cli_to_spec.setdefault(alias, spec)
     engine_idx = next(
         (i for i, tok in enumerate(tokens) if tok in cli_to_spec),
         None,

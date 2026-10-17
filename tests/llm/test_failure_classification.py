@@ -98,6 +98,25 @@ class TestEnvironmentErrorRules:
             == FailureClass.ENGINE_ENVIRONMENT_ERROR
         )
 
+    def test_cursor_agent_cli_command_not_found_with_127(self):
+        assert (
+            classify_common_failure(
+                "cursor",
+                b"",
+                b"bash: line 1: cursor-agent: command not found",
+                returncode=127,
+            )
+            == FailureClass.ENGINE_ENVIRONMENT_ERROR
+        )
+
+    def test_cursor_agent_cli_command_not_found_without_returncode(self):
+        assert (
+            classify_common_failure(
+                "cursor", b"", b"bash: line 1: cursor-agent: command not found"
+            )
+            == FailureClass.ENGINE_ENVIRONMENT_ERROR
+        )
+
     def test_cli_command_not_found_without_returncode(self):
         assert (
             classify_common_failure("cursor", b"", b"bash: line 1: agent: command not found")

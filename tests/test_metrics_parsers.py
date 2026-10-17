@@ -45,10 +45,15 @@ def test_parse_engine_model_edge_cases(command, expected):
         "cat order.md | gemini -p 'prompt' --model 'gemini-2.5-flash' --approval-mode yolo",
         ("gemini", "gemini-2.5-flash"),
     ),
-    # cursor (agent command) form
+    # cursor (legacy agent command) form
     (
         "agent --model 'auto' -p --force < order.md",
         ("cursor", "auto"),
+    ),
+    # cursor (cursor-agent command) form
+    (
+        "cursor-agent --model 'composer-2.5' -p --force < jobs/o.md",
+        ("cursor", "composer-2.5"),
     ),
     # shell (bash command) form
     (
