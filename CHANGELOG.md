@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.103.5 - 2026-10-17
+
 ### Changed
 
 - Cursor engine CLI: invoke `cursor-agent` instead of `agent` so PATH collisions with xAI Grok's `agent` binary no longer hijack cursor jobs. Legacy `agent` remains a matching alias for metrics and failure classification on old job logs (sumipan/nexus#5339).
