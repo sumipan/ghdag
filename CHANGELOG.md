@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `TaskLauncher.check_completions`: after a task exits 0 and `state_mark_done(..., 0)` succeeds, exceptions in `on_task_success`, `circuit_breaker.reset`, or `promote_fn` no longer overwrite the done marker with `UNKNOWN_FAILURE` or invoke failure hooks; each failed postprocess step is logged to audit as `task_success_postprocess_failed` (sumipan/nexus#5326).
+
 ## 0.103.3 - 2026-10-15
 
 ### Fixed
