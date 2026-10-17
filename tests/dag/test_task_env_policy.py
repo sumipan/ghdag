@@ -69,3 +69,12 @@ def test_unset_policy_preserves_parent_env(monkeypatch):
     expected["GHDAG_RESULT_PATH"] = task.result_path or ""
     env = _task_env("u-env", task)
     assert env == expected
+
+
+def test_passthrough_accepts_list_annotation(monkeypatch):
+    monkeypatch.setenv("GHDAG_TASK_ENV_DENY", "GITHUB_TOKEN")
+    monkeypatch.setenv("GITHUB_TOKEN", "keep-me")
+    monkeypatch.delenv("GHDAG_TASK_ENV_ALLOW", raising=False)
+    task = _base_task(annotations={"env_passthrough": ["GITHUB_TOKEN"]})
+    env = _task_env("u-env", task)
+    assert env.get("GITHUB_TOKEN") == "keep-me"

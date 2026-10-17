@@ -19,8 +19,8 @@ def test_default_patterns_redact_tokens():
     line = f"https://x-access-token:{_GITHUB_PAT}@github.com/org/repo"
     result = redact_text(line)
     assert _GITHUB_PAT not in result.text
-    assert "[REDACTED:" in result.text
-    assert result.count >= 1
+    assert "[REDACTED:github_pat]" in result.text
+    assert result.count == 1
 
 
 def test_synthetic_slack_and_google_keys():
@@ -79,6 +79,6 @@ def test_events_reader_redacts_and_appends_count(tmp_path: Path):
     thread.join(timeout=2.0)
     text = events_path.read_text(encoding="utf-8")
     assert pat not in text
-    assert "[REDACTED:" in text
+    assert "[REDACTED:github_pat]" in text
     summary = json.loads(text.strip().splitlines()[-1])
     assert summary["redacted_count"] >= 1

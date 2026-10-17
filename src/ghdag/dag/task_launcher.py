@@ -215,6 +215,9 @@ def _task_env_passthrough(task: Task) -> frozenset[str]:
     raw = task.annotations.get("env_passthrough")
     if not raw:
         return frozenset()
+    if isinstance(raw, list):
+        return frozenset(str(item) for item in raw)
+    raw = str(raw)
     if raw.startswith("["):
         try:
             parsed = json.loads(raw)

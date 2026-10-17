@@ -77,6 +77,9 @@ def redact_text(text: str) -> RedactResult:
     for name, pattern in _patterns():
         def _repl(match: re.Match[str], _name: str = name) -> str:
             nonlocal total
+            if "[REDACTED:" in match.group(0):
+                # Already masked by an earlier pattern; keep the more specific name.
+                return match.group(0)
             total += 1
             return f"[REDACTED:{_name}]"
 
