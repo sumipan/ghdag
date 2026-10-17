@@ -7,18 +7,18 @@ ghdag is built from two independent processes that share only files:
 - the **intake tower** (`ghdag watch` / `ghdag trigger`) turns labelled Issues into task records in `jobs/exec.jsonl`;
 - the **execution tower** (`ghdag run`) watches `exec.jsonl`, launches tasks whose dependencies succeeded, and writes one `done/<uuid>` marker per task.
 
-Unlike CI-hosted orchestrators (GitHub Actions, Dagger), nothing runs on a hosted runner: engines are the local `claude`, `agent` (cursor), `codex` and `gemini` CLIs, and coordination uses local files and `fcntl` locks.
+Unlike CI-hosted orchestrators (GitHub Actions, Dagger), nothing runs on a hosted runner: engines are the local `claude`, `cursor-agent` (cursor; the legacy binary name `agent` is kept only as a log alias), `codex` and `gemini` CLIs, and coordination uses local files and `fcntl` locks.
 
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.103.0-blue)
+![version](https://img.shields.io/badge/version-v0.104.1-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.103.0** (`pyproject.toml` `version = "0.103.0"`) |
+| Current release | **v0.104.1** (`pyproject.toml` `version = "0.104.1"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -29,13 +29,13 @@ Unlike CI-hosted orchestrators (GitHub Actions, Dagger), nothing runs on a hoste
 Prerequisites:
 
 - Python 3.10 or newer on a POSIX system.
-- For LLM steps, the engine CLI on `PATH`: `claude`, `agent` (cursor), `codex` or `gemini`.
+- For LLM steps, the engine CLI on `PATH`: `claude`, `cursor-agent` (cursor), `codex` or `gemini`.
 - For `ghdag.vcs` git sinks, `git`. For `sandbox="container"`, `docker` (or the binary named by `docker_bin`).
 
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.103.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.104.1"
 ```
 
 Install from a checkout with the development tools:
@@ -343,7 +343,7 @@ Modules that declare their own `__all__` (private `_` names omitted). Modules ma
 | `ghdag.status` | `IssueStatus`, `StepStatus`, `RunningTask`, `issue_status`, `running_tasks` |
 | `ghdag.github_cli` | `GitHubClient`, `DEFAULT_REPO`, `API_BASE`, `GRAPHQL_URL`, `get_forge` |
 | `ghdag.audit.span` | `EVENT_TYPE_E2E_COMPLETED`, `EVENT_TYPE_E2E_FAILED`, `EVENT_TYPE_LATENCY_SPAN`, `LATENCY_SPAN_JSONL`, `emit_span`, `make_span_id` |
-| `ghdag.config.env` | `github_token`, `github_repositories_raw`, `ghdag_audit_path`, `ghdag_token_warn_threshold`, `ghdag_safe_default_permission`, `ghdag_llm_models`, `latency_span_path`, `session_compaction_enabled`, `enable_git`, `ghdag_vcs_config`, `ghdag_state_dir`, `state_dir`, `ghdag_language_pack`, `stall_guard_enabled`, `stall_guard_stall_sec`, `stall_guard_interval_sec` |
+| `ghdag.config.env` | `github_token`, `github_repositories_raw`, `ghdag_audit_path`, `ghdag_token_warn_threshold`, `ghdag_safe_default_permission`, `ghdag_llm_models`, `latency_span_path`, `session_compaction_enabled`, `enable_git`, `ghdag_vcs_config`, `ghdag_state_dir`, `state_dir`, `ghdag_language_pack`, `stall_guard_enabled`, `stall_guard_stall_sec`, `stall_guard_interval_sec`, `ghdag_task_env_deny`, `ghdag_task_env_allow`, `ghdag_redact_patterns_path`, `set_pending_env_denied_count`, `pending_env_denied_count` |
 | `ghdag.config.language` | `STATE_IDS`, `UI_KEYS`, `LanguagePack`, `EN`, `load_language_pack`, `get_language_pack` |
 | `ghdag.core.command` | `AdapterNotFoundError`, `EngineAdapter`, `build_llm_cmd`, `get_adapter`, `register_adapter`, `render_exec_command` |
 | `ghdag.core.container` | `CONTAINER_WORKDIR`, `container_prefix` |
@@ -427,7 +427,7 @@ With `sandbox="container"`, `render_exec_command` (which builds `exec.jsonl` com
 |---|---|---|---|
 | `claude` | `claude` | `claude-sonnet-4-6` | `claude-opus-4-7`, `claude-opus-4-6`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001` |
 | `codex` | `codex exec -` | `gpt-5.6-terra` | `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5`, `gpt-5.4-mini` |
-| `cursor` | `agent` | `auto` | `auto`, `composer-2`, `composer-2-fast`, `gpt-5.2`, `gpt-5.3-codex`, `gpt-5.3-codex-fast`, `gpt-5.3-codex-high`, `gpt-5.3-codex-high-fast`, `gpt-5.4-medium-fast` |
+| `cursor` | `cursor-agent` (`agent` is a legacy alias in logs only, not used to build argv) | `auto` | `auto`, `composer-2`, `composer-2-fast`, `gpt-5.2`, `gpt-5.3-codex`, `gpt-5.3-codex-fast`, `gpt-5.3-codex-high`, `gpt-5.3-codex-high-fast`, `gpt-5.4-medium-fast` |
 | `gemini` | `gemini` | `gemini-2.5-flash` | `gemini-2.5-pro`, `gemini-2.5-flash` |
 | `shell` | `bash -o pipefail` | none | `bash` (runs the order file as a bash script; no LLM call) |
 
@@ -486,7 +486,7 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 
 | Phase | Behavior |
 |---|---|
-| Launch | A task starts when all of its `depends` succeeded and `QuotaGate.admit` admits its engine / role. Each task runs in its own process group with `GHDAG_TASK_UUID` and `GHDAG_RESULT_PATH` in its environment |
+| Launch | A task starts when all of its `depends` succeeded and `QuotaGate.admit` admits its engine / role. Each task runs in its own process group with `GHDAG_TASK_UUID` and `GHDAG_RESULT_PATH` in its environment. Host environment variables are filtered by the [task environment policy](#task-environment-policy) before launch |
 | Dependency failure | Downstream tasks of a failed task get `DEP_FAILED` |
 | Timeout / cancel | SIGTERM to the process group, SIGKILL after `DagConfig.kill_grace`; done marker `TIMEOUT` / `CANCELLED` |
 | Deferral | A task that prints `PIPELINE_STATUS: DEFERRED` gets `DEFERRED`; the marker is removed and the task relaunched when `QuotaGate.release_ready()` releases it |
@@ -495,16 +495,16 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 | First SIGTERM / SIGINT | Writes `interrupted_at` into every `running/<uuid>.json`, stops launching, and drains running tasks until `task_timeout` elapses (no drain when `task_timeout` is `None`); the remaining tasks are then terminated and the runner exits |
 | Second SIGTERM / SIGINT | Exits immediately |
 | Restart | After the first `exec.jsonl` load, `adopt_orphans` inspects `running/*.json`: live tasks are adopted and tracked to completion, dead tasks are closed with `ORPHANED_ON_RESTART`, and interrupted tasks (`interrupted_at` set) are killed if still alive and relaunched once with the same UUID and `GHDAG_PREVIOUS_ATTEMPT=interrupted` |
-| Engine stall guard | When `stall_guard_enabled()` is true (default), `TaskLauncher.check_completions` uses `ghdag.core.stall_guard.StallTracker` (import via `ghdag.dag.stall_guard`) to detect cursor DAG tasks whose shell state-transfer `cat` children are stuck at zero CPU; after `stall_guard_stall_sec()` (default 180s) it sends SIGTERM and writes a `stall_guard` audit event |
+| Engine stall guard | When `stall_guard_enabled()` is true (default), `TaskLauncher.check_completions` uses `ghdag.core.stall_guard.StallTracker` (import via `ghdag.dag.stall_guard`; `read_ps` is injected from `ghdag.llm.engines`) to detect cursor DAG tasks whose shell state-transfer `cat` children are stuck at zero CPU; after `stall_guard_stall_sec()` (default 180s) it sends SIGTERM and writes a `stall_guard` audit event |
 
 ### Engine output and failure classification
 
 | Topic | Behavior |
 |---|---|
-| Progress events | For claude (`--output-format stream-json`), cursor (`--output-format stream-json`) and codex (`--json`) tasks with a `result_path`, stdout is drained line by line into `events/<uuid>.jsonl`. Without stream flags the runner reads stdout in one piece and sets `annotations.stream_fallback=true` |
+| Progress events | For claude (`--output-format stream-json`), cursor (`--output-format stream-json`) and codex (`--json`) tasks with a `result_path`, stdout is drained line by line into `events/<uuid>.jsonl` (secrets redacted; see [Secret redaction](#secret-redaction)). Without stream flags the runner reads stdout in one piece and sets `annotations.stream_fallback=true` |
 | cursor result text | Assistant turns are rebuilt at `tool_call` boundaries and joined with a blank line |
 | Interactive prompts | A failed run whose last non-empty output line ends with `?` (or with one of the language pack's `question_suffixes.extra`) is `FailureClass.INTERACTIVE_PROMPT`: permanent, no retry, done marker `INTERACTIVE_PROMPT`. Checked by `looks_like_question`; if the pack cannot be loaded, only `?` is used |
-| Missing engine binary | The engine's real CLI name (for example `agent` for cursor) followed by `command not found` / `No such file or directory` / `permission denied`, or exit `127` with `command not found`, is `ENGINE_ENVIRONMENT_ERROR` |
+| Missing engine binary | The engine's real CLI name (for example `cursor-agent` for cursor) followed by `command not found` / `No such file or directory` / `permission denied`, or exit `127` with `command not found`, is `ENGINE_ENVIRONMENT_ERROR` |
 | Authentication | The whole words `auth`, `authenticate`, `authentication`, `authorization`, `unauthenticated`, `unauthorized`, `forbidden` (`_` counts as a separator), plus `oauth session expired`, `invalid api key`, `not logged in` and claude `authentication_error`, are auth failures |
 | Quota exhaustion | Classified `QUOTA_EXHAUSTED`; the engine is reported `paused` to `QuotaGate` until the reported reset, or for `GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS` when no reset is given |
 | cursor `RetriableError:` | `[resource_exhausted]` -> `EngineErrorKind.RATE_LIMIT`, other codes -> `EngineErrorKind.CAPACITY`; both are retried and written as `ENGINE_ERROR` while retries remain |
@@ -547,6 +547,8 @@ Any other value raises `ValueError`.
 ### Web UI (`ghdag ui`)
 
 `ghdag.ui.server.run_server` serves `ghdag/ui/static/index.html` plus a JSON / SSE API over `<repo-root>/jobs/`. The page takes its strings and state labels from `/api/config` (`i18n`) and decides row colours and filters by `state_id`, so the UI follows the active language pack.
+
+Mutating endpoints (`POST /api/retry`, `POST /api/stop`) require `Content-Type: application/json` and reject cross-site requests: when an `Origin` header is present it must match `http://<Host>` or `https://<Host>`, and cross-site posts without a same-origin `Origin` are rejected via `Sec-Fetch-Site`. Read-only JSON and SSE endpoints do not emit open CORS headers, so browsers cannot treat the dashboard as a public API from other origins.
 
 ### Module inventory
 
@@ -641,6 +643,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `io/done.py` | Done-marker I/O |
 | `io/exec_jsonl.py` | `exec.jsonl` read / parse / append / validate / repair |
 | `io/queue.py` | `QueueTask`, `QueueTaskStore` queue directory scan |
+| `io/redact.py` | Secret redaction for audit records and streamed task events |
 | `io/sessions.py` | Per-task session ID store |
 | `llm/__init__.py` | One-shot LLM API |
 | `llm/_config.py` | `llm-models.yml` loading (`ConfigLoadError`) |
@@ -735,6 +738,17 @@ Every variable ghdag reads (`os.environ` / `os.getenv` in `src/ghdag/`). Most re
 | `ENABLE_GIT` | off | `config.env.enable_git` (`vcs.get_sink`) | `1` / `true` / `yes` lets `get_sink` return a real `GitSink`; otherwise every sink is a `NullSink` |
 | `GHDAG_VCS_CONFIG` | none | `config.env.ghdag_vcs_config` (`vcs.get_sink`) | Path to the [VCS sink config](#vcs-sink-config-ghdag_vcs_config); required for real sinks when `ENABLE_GIT` is on |
 | `LATENCY_SPAN_PATH` | unset (`LATENCY_SPAN_JSONL` = `jobs/latency_span.jsonl`) | `config.env.latency_span_path` | Overrides the default span JSONL path used by `ghdag.audit.emit_span` when `log_path` is omitted (`ghdag.audit.span.LATENCY_SPAN_JSONL`) |
+| `GHDAG_TASK_ENV_ALLOW` | unset (no allow-list) | `config.env.ghdag_task_env_allow` | Comma-separated `fnmatch` patterns. When set, only variables matching a pattern (plus every `GHDAG_*` name and the base task keys) are copied into the task environment |
+| `GHDAG_TASK_ENV_DENY` | unset (no deny-list) | `config.env.ghdag_task_env_deny` | Comma-separated `fnmatch` patterns. Matching host variables are removed before launch unless the task lists the name in `annotations.env_passthrough` (comma-separated or JSON list) |
+| `GHDAG_REDACT_PATTERNS` | unset (built-in defaults) | `config.env.ghdag_redact_patterns_path` | Path to a file of named regex patterns (tab-separated `name<TAB>pattern`, or one pattern per line) used to redact secrets in `audit.jsonl` and streamed task events |
+
+### Task environment policy
+
+`TaskLauncher` builds each task environment from a copy of the host `os.environ`, then applies `GHDAG_TASK_ENV_ALLOW` or `GHDAG_TASK_ENV_DENY` (allow wins when both are set). Names in `annotations.env_passthrough` bypass deny patterns. Every `GHDAG_*` variable and the injected task keys (`GHDAG_TASK_UUID`, `GHDAG_RESULT_PATH`, optional `GHDAG_PREVIOUS_ATTEMPT`) are always kept. The number of denied variables is attached to the next `task_started` audit record.
+
+### Secret redaction
+
+At import, `TaskLauncher` calls `init_redact_patterns(ghdag_redact_patterns_path())`. `ghdag.io.redact` merges built-in patterns (GitHub tokens, Slack tokens, common API key shapes) with patterns from `GHDAG_REDACT_PATTERNS`. `redact_text` and `redact_json_value` replace matches with `[REDACTED:<name>]`. Audit writers redact records before append; streaming engines run stdout through `redact_text` before writing `events/<uuid>.jsonl`.
 
 Variables ghdag sets for child processes (not configuration):
 
@@ -930,8 +944,8 @@ Paths are relative to `--repo-root`.
 | `GET /api/dashboard/tokens` | Token usage from `audit.jsonl` (`?since=<sec>`, `?threshold=N`; default threshold `GHDAG_TOKEN_WARN_THRESHOLD`) |
 | `GET /api/dashboard/cb-firing` | Circuit breaker firings (`?since=<sec>`; `?window=<minutes>`, default `60`) |
 | `GET /api/correlation-bursts` | `{"bursts": [...]}`: top correlation IDs in `jobs/audit.jsonl` (`?hours=1`, `?top_n=20`) |
-| `POST /api/retry` | Body `{"uuid": "..."}`; deletes `jobs/done/<uuid>` so the runner runs the task again (`404` when there is no marker) |
-| `POST /api/stop` | Body `{"uuid": "..."}`; writes `jobs/cancel/<uuid>` when `jobs/running/<uuid>.json` exists (`404` otherwise) |
+| `POST /api/retry` | Body `{"uuid": "..."}`; `Content-Type: application/json` required; same-origin CSRF checks (see [Web UI](#web-ui-ghdag-ui)); deletes `jobs/done/<uuid>` so the runner runs the task again (`404` when there is no marker) |
+| `POST /api/stop` | Body `{"uuid": "..."}`; same CSRF rules as `/api/retry`; writes `jobs/cancel/<uuid>` when `jobs/running/<uuid>.json` exists (`404` otherwise) |
 
 ## Error Reference
 
@@ -1011,7 +1025,7 @@ Any other content is the task's non-zero exit code.
 ## Not in Scope
 
 - Not a hosted CI service: ghdag runs where you start it and does not use GitHub Actions runners.
-- Not an LLM SDK: engines are invoked through their CLIs (`claude`, `agent`, `codex`, `gemini`); ghdag does not call model HTTP APIs.
+- Not an LLM SDK: engines are invoked through their CLIs (`claude`, `cursor-agent`, `codex`, `gemini`); ghdag does not call model HTTP APIs.
 - Not a distributed scheduler: one runner per queue directory, coordinated through local files and `fcntl` locks.
 - Not a general git client: `ghdag.vcs` commits only owned path prefixes and never resolves conflicts for you.
 - No host-specific agents, personas or chat integrations; hosts compose ghdag's intake and DAG primitives.
@@ -1021,7 +1035,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.103.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.104.1"
 ```
 
 and read `CHANGELOG.md` before upgrading.
