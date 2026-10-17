@@ -262,6 +262,7 @@ def append(
                     raise DuplicateTaskError(
                         f"task uuid already queued and not done: {uuid}"
                     )
+                queued.add(uuid)
             f.seek(0, os.SEEK_END)
             f.write("\n".join(lines) + "\n")
         finally:
