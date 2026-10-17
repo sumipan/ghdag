@@ -6,8 +6,14 @@ Callers receive values via these functions (or inject overrides as arguments).
 
 from __future__ import annotations
 
+import contextvars
 import os
 from pathlib import Path
+
+_pending_env_denied_count: contextvars.ContextVar[int] = contextvars.ContextVar(
+    "ghdag_env_denied_count",
+    default=0,
+)
 
 __all__ = [
     "github_token",
@@ -26,6 +32,11 @@ __all__ = [
     "stall_guard_enabled",
     "stall_guard_stall_sec",
     "stall_guard_interval_sec",
+    "ghdag_task_env_deny",
+    "ghdag_task_env_allow",
+    "ghdag_redact_patterns_path",
+    "set_pending_env_denied_count",
+    "pending_env_denied_count",
 ]
 
 
@@ -133,3 +144,39 @@ def stall_guard_stall_sec() -> float:
 def stall_guard_interval_sec() -> float:
     """Minimum seconds between stall scans (``GHDAG_ENGINE_STALL_INTERVAL_SEC``, default 30)."""
     return _positive_float_env("GHDAG_ENGINE_STALL_INTERVAL_SEC", 30.0)
+
+
+def ghdag_task_env_deny() -> str | None:
+    """Return ``GHDAG_TASK_ENV_DENY`` (comma-separated fnmatch patterns) if set."""
+    raw = os.environ.get("GHDAG_TASK_ENV_DENY")
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    return stripped if stripped else None
+
+
+def ghdag_task_env_allow() -> str | None:
+    """Return ``GHDAG_TASK_ENV_ALLOW`` (comma-separated fnmatch patterns) if set."""
+    raw = os.environ.get("GHDAG_TASK_ENV_ALLOW")
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    return stripped if stripped else None
+
+
+def set_pending_env_denied_count(count: int) -> None:
+    """Stash env deny count for the next task_started audit on this context."""
+    _pending_env_denied_count.set(count)
+
+
+def pending_env_denied_count() -> int:
+    return _pending_env_denied_count.get()
+
+
+def ghdag_redact_patterns_path() -> str | None:
+    """Return ``GHDAG_REDACT_PATTERNS`` file path if set."""
+    raw = os.environ.get("GHDAG_REDACT_PATTERNS")
+    if raw is None:
+        return None
+    stripped = raw.strip()
+    return stripped if stripped else None
