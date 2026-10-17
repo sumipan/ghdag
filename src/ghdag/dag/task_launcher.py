@@ -788,9 +788,24 @@ class TaskLauncher:
                             self._fanout_manager.spawn(uuid, task, fanout_spec, metrics)
                         else:
                             state_mark_done(self._config.exec_done_dir, uuid, 0)
-                            self._hooks.on_task_success(uuid, task, metrics)
-                            self._circuit_breaker.reset()
-                            self._promote_fn(effective_result_path)
+                            self._run_success_postprocess(
+                                uuid,
+                                task,
+                                "on_task_success",
+                                lambda: self._hooks.on_task_success(uuid, task, metrics),
+                            )
+                            self._run_success_postprocess(
+                                uuid,
+                                task,
+                                "circuit_breaker.reset",
+                                self._circuit_breaker.reset,
+                            )
+                            self._run_success_postprocess(
+                                uuid,
+                                task,
+                                "promote",
+                                lambda: self._promote_fn(effective_result_path),
+                            )
 
                 else:
                     classified = adapter.classify_failure(returncode, stdout_data, stderr_bytes)
@@ -963,6 +978,47 @@ class TaskLauncher:
                     cache_creation_tokens=cache_creation_tokens,
                 )
                 self._hooks.on_task_failure(uuid, task, -1, str(exc), metrics)
+
+    def _run_success_postprocess(
+        self,
+        uuid: str,
+        task: Task,
+        component: str,
+        callback: Callable[[], None],
+    ) -> None:
+        """Run one success postprocess step without changing the success done marker."""
+        try:
+            callback()
+        except Exception as exc:
+            logger.exception(
+                "Success postprocess %s failed for task [%s]: %s",
+                component,
+                uuid,
+                exc,
+            )
+            try:
+                append_audit_record(
+                    self._queue_audit_path(),
+                    {
+                        "schema_version": 3,
+                        "event_type": "task_success_postprocess_failed",
+                        "timestamp": now_ts(),
+                        "uuid": uuid,
+                        "status": "success",
+                        "component": component,
+                        "exception_type": type(exc).__name__,
+                        "error_message": str(exc),
+                        "correlation_id": task.idempotency_key,
+                        "request_id": _task_request_id(task),
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to write success postprocess audit for task [%s] "
+                    "component %s",
+                    uuid,
+                    component,
+                )
 
     def _queue_dir(self) -> Path:
         return Path(self._config.exec_done_dir).parent
