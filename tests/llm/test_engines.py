@@ -685,19 +685,36 @@ class TestCallLaunchFailure:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_file_not_found_becomes_127(self, mock_run: MagicMock):
-        mock_run.side_effect = FileNotFoundError(2, "No such file or directory", "agent")
+        mock_run.side_effect = FileNotFoundError(
+            2, "No such file or directory", "cursor-agent",
+        )
         result = call("hello", engine="cursor")
         assert result.returncode == 127
-        assert "agent: command not found" in result.stderr
+        assert "cursor-agent: command not found" in result.stderr
         assert result.stdout == ""
         assert result.session_id is None
 
     @patch("ghdag.llm.engines.subprocess.run")
+    def test_cursor_agent_missing_classifies_environment_error(self, mock_run: MagicMock):
+        """PATH has grok's agent but not cursor-agent → ENGINE_ENVIRONMENT_ERROR."""
+        from ghdag.llm.managed import call_managed
+
+        mock_run.side_effect = FileNotFoundError(
+            2, "No such file or directory", "cursor-agent",
+        )
+        result = call("hello", engine="cursor")
+        assert result.returncode == 127
+        assert "cursor-agent: command not found" in result.stderr
+        managed = call_managed("hello", engine="cursor")
+        assert managed.returncode == 127
+        assert managed.failure_class == "ENGINE_ENVIRONMENT_ERROR"
+
+    @patch("ghdag.llm.engines.subprocess.run")
     def test_permission_error_becomes_126(self, mock_run: MagicMock):
-        mock_run.side_effect = PermissionError(13, "Permission denied", "agent")
+        mock_run.side_effect = PermissionError(13, "Permission denied", "cursor-agent")
         result = call("hello", engine="cursor")
         assert result.returncode == 126
-        assert "agent: permission denied" in result.stderr
+        assert "cursor-agent: permission denied" in result.stderr
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_missing_cwd_still_raises(self, mock_run: MagicMock):
@@ -709,7 +726,9 @@ class TestCallLaunchFailure:
     def test_call_managed_classifies_missing_binary(self, mock_run: MagicMock):
         from ghdag.llm.managed import call_managed
 
-        mock_run.side_effect = FileNotFoundError(2, "No such file or directory", "agent")
+        mock_run.side_effect = FileNotFoundError(
+            2, "No such file or directory", "cursor-agent",
+        )
         managed = call_managed("hello", engine="cursor")
         assert managed.returncode == 127
         assert managed.failure_class == "ENGINE_ENVIRONMENT_ERROR"
@@ -726,7 +745,7 @@ class TestCallTimeout:
         from ghdag.llm.engines import TIMEOUT_RETURNCODE
 
         mock_run.side_effect = subprocess.TimeoutExpired(
-            ["agent", "--model", "composer-2.5", "-p", "--force"], 3599
+            ["cursor-agent", "--model", "composer-2.5", "-p", "--force"], 3599
         )
         result = call("hello", engine="cursor", timeout=3599)
         assert result.returncode == TIMEOUT_RETURNCODE == 124
@@ -734,7 +753,7 @@ class TestCallTimeout:
         assert result.timed_out is True
         assert result.ok is False
         assert result.stdout == ""
-        assert result.stderr == "TIMEOUT: agent timed out after 3599s\n"
+        assert result.stderr == "TIMEOUT: cursor-agent timed out after 3599s\n"
         assert result.session_id is None
         assert result.latency_ms > 0
 
@@ -788,7 +807,7 @@ class TestCallTimeout:
 
         from ghdag.llm.managed import call_managed
 
-        mock_run.side_effect = subprocess.TimeoutExpired(["agent"], 5)
+        mock_run.side_effect = subprocess.TimeoutExpired(["cursor-agent"], 5)
         managed = call_managed("hello", engine="cursor", timeout=5)
         assert managed.returncode == 124
         assert managed.failure_class == "TIMEOUT"

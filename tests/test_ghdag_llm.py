@@ -153,9 +153,9 @@ class TestBuildLLMCmd:
         assert cmd == ["gemini", "--model", "gemini-2.5-flash", "-p"]
 
     def test_basic_cursor(self):
-        """Basic cursor command construction (CLI is agent, no capabilities flags)"""
+        """Basic cursor command construction (CLI is cursor-agent, no capabilities flags)"""
         cmd = build_llm_cmd("cursor", "composer-2", "hello")
-        assert cmd == ["agent", "--model", "composer-2", "-p"]
+        assert cmd == ["cursor-agent", "--model", "composer-2", "-p"]
 
 
 # ---------------------------------------------------------------------------
@@ -649,7 +649,7 @@ class TestEngineSpec:
         assert ENGINE_SPECS["gemini"].cli == "gemini"
 
     def test_cursor_spec_cli(self):
-        assert ENGINE_SPECS["cursor"].cli == "agent"
+        assert ENGINE_SPECS["cursor"].cli == "cursor-agent"
 
     def test_shell_spec_cli(self):
         assert ENGINE_SPECS["shell"].cli == "bash"
@@ -709,7 +709,7 @@ class TestRenderExecCommand:
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model="auto")
         assert cmd == (
-            "agent --model 'auto' -p --force --output-format stream-json "
+            "cursor-agent --model 'auto' -p --force --output-format stream-json "
             "--stream-partial-output < queue/order.md"
         )
 
@@ -717,7 +717,7 @@ class TestRenderExecCommand:
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(spec, order_path="queue/order.md", model=None)
         assert cmd == (
-            "agent -p --force --output-format stream-json "
+            "cursor-agent -p --force --output-format stream-json "
             "--stream-partial-output < queue/order.md"
         )
 

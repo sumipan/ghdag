@@ -26,6 +26,11 @@ from ghdag.ui.monitor import extract_engine_model
             "cursor/auto",
         ),
         (
+            "cursor-agent --model 'composer-2.5' -p --force < jobs/o.md",
+            "cursor-agent --model 'composer-2.5' -p --force < jobs/o.md",
+            "cursor/composer-2.5",
+        ),
+        (
             "cat jobs/o.md | codex exec - --model 'gpt-5.6-terra' --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox",
             "codex exec - --model 'gpt-5.6-terra' --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox < jobs/o.md",
             "codex/gpt-5.6-terra",

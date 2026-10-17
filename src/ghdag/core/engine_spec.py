@@ -61,7 +61,7 @@ ENGINE_SPECS: dict[str, EngineSpec] = {
         extra_args=("--approval-mode", "yolo"),
     ),
     "cursor": EngineSpec(
-        name="cursor", cli="agent",
+        name="cursor", cli="cursor-agent",
         input_mode=InputMode.STDIN,
         prompt_flag=PromptFlag.FLAG_ONLY,
         prompt_flag_token="-p",

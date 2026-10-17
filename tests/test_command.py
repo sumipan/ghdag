@@ -177,7 +177,7 @@ class TestBuildLlmCmdPromptViaStdin:
 
     def test_cursor_argv(self) -> None:
         cmd = build_llm_cmd("cursor", "composer-2", "hello")
-        assert cmd == ["agent", "--model", "composer-2", "-p"]
+        assert cmd == ["cursor-agent", "--model", "composer-2", "-p"]
 
     def test_gemini_argv(self) -> None:
         cmd = build_llm_cmd("gemini", "gemini-2.5-flash", "hello")
@@ -232,7 +232,7 @@ class TestRenderExecCommandUnchanged:
             capabilities=TEXT_ONLY,
         )
         assert cmd == (
-            "agent --model 'composer-2' -p --output-format stream-json "
+            "cursor-agent --model 'composer-2' -p --output-format stream-json "
             "--stream-partial-output < jobs/order.md"
         )
 
@@ -264,7 +264,7 @@ class TestRenderExecCommandContainer:
             ),
             (
                 "cursor", "composer-2",
-                "agent --model 'composer-2' -p --output-format stream-json "
+                "cursor-agent --model 'composer-2' -p --output-format stream-json "
                 "--stream-partial-output",
             ),
             (
@@ -296,7 +296,7 @@ class TestRenderExecCommandContainer:
             ),
             (
                 "cursor", "composer-2",
-                "agent --model 'composer-2' -p --resume 'sess-1' "
+                "cursor-agent --model 'composer-2' -p --resume 'sess-1' "
                 "--output-format stream-json --stream-partial-output",
             ),
             (
