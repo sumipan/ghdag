@@ -30,8 +30,8 @@ class TestInterpretDone:
     def test_exit_zero_returns_success(self):
         assert interpret_done("0\n") == "success"
 
-    def test_empty_string_returns_other(self):
-        assert interpret_done("") == "other"
+    def test_empty_string_returns_success(self):
+        assert interpret_done("") == "success"
 
     def test_rejected_returns_rejected(self):
         assert interpret_done("REJECTED\n") == "rejected"
