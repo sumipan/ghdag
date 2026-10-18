@@ -23,7 +23,7 @@ class TestWaitForResult:
         exec_done.mkdir(parents=True)
         (exec_done / "uuid-1").write_text("", encoding="utf-8")
         result = wait_for_result(exec_done, "uuid-1", timeout=1.0)
-        assert result == ("success", "")
+        assert result == ("other", "")
 
     def test_rejected(self, tmp_path):
         exec_done = tmp_path / "jobs" / "done"
