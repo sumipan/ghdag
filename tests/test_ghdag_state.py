@@ -30,11 +30,11 @@ class TestState:
         assert "uuid-fail" not in succeeded
         assert "uuid-error" not in succeeded
 
-    def test_empty_file_is_success(self, tmp_path):
-        """Backward compat: empty file (status=\"\") is treated as success"""
+    def test_empty_file_is_not_success(self, tmp_path):
+        """Empty done marker is not treated as success (Issue #5372)."""
         (tmp_path / "uuid-empty").write_text("")
         succeeded = load_succeeded_from_dir(tmp_path)
-        assert "uuid-empty" in succeeded
+        assert "uuid-empty" not in succeeded
 
     def test_load_done_nonexistent_dir(self, tmp_path):
         """Missing done directory: returns empty set (no exception)"""
