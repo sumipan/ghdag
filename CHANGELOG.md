@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.104.3 - 2026-10-18
+
 ### Fixed
 
 - `WorkflowDispatcher` now raises `ContextHookError` when a handler `context_hook` exits non-zero, instead of continuing dispatch with missing context. Failed runs are recorded in `audit.jsonl` as `dispatcher_dispatch_failed` and do not enqueue steps or transition ready labels.
