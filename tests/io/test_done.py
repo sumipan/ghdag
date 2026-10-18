@@ -57,7 +57,7 @@ class TestLoadDone:
 
         assert load_done_from_dir(tmp_path) == {"uuid-ok", "uuid-fail", "uuid-rejected"}
 
-    def test_load_succeeded_only_zero_and_empty(self, tmp_path: Path) -> None:
+    def test_load_succeeded_only_zero_not_empty(self, tmp_path: Path) -> None:
         from ghdag.io.done import load_succeeded_from_dir, mark_done
 
         mark_done(tmp_path, "uuid-ok", 0)
@@ -67,7 +67,7 @@ class TestLoadDone:
 
         succeeded = load_succeeded_from_dir(tmp_path)
         assert "uuid-ok" in succeeded
-        assert "uuid-empty" in succeeded
+        assert "uuid-empty" not in succeeded
         assert "uuid-rejected" not in succeeded
         assert "uuid-fail" not in succeeded
 
@@ -98,11 +98,11 @@ class TestDepSucceeded:
         (tmp_path / "dep").write_text("0\n", encoding="utf-8")
         assert dep_succeeded(tmp_path, "dep") is True
 
-    def test_success_empty(self, tmp_path: Path) -> None:
+    def test_empty_done_is_not_success(self, tmp_path: Path) -> None:
         from ghdag.io.done import dep_succeeded
 
         (tmp_path / "dep").write_text("", encoding="utf-8")
-        assert dep_succeeded(tmp_path, "dep") is True
+        assert dep_succeeded(tmp_path, "dep") is False
 
     def test_failure(self, tmp_path: Path) -> None:
         from ghdag.io.done import dep_succeeded

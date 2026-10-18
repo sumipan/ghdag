@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 from pathlib import Path
 from typing import Optional
@@ -23,16 +24,24 @@ def is_done(exec_done_dir: str | Path, uuid: str) -> bool:
     return os.path.exists(os.path.join(str(exec_done_dir), uuid))
 
 
+def _format_done_body(status: str | int) -> str:
+    """Serialize a done-marker body (success → ``0``, other statuses unchanged)."""
+    if status == 0 or str(status) == DONE_SUCCESS:
+        return DONE_SUCCESS
+    return str(status)
+
+
 def mark_done(exec_done_dir: str | Path, uuid: str, status: str | int) -> None:
     """Write a completion marker for the given task."""
     d = str(exec_done_dir)
     os.makedirs(d, exist_ok=True)
+    body = _format_done_body(status)
     with open(os.path.join(d, uuid), "a+") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         try:
             f.seek(0)
             f.truncate()
-            f.write(str(status))
+            f.write(body)
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
 
@@ -46,7 +55,7 @@ def load_done_from_dir(exec_done_dir: str | Path) -> set[str]:
 
 
 def load_succeeded_from_dir(exec_done_dir: str | Path) -> set[str]:
-    """Return UUIDs that succeeded (status '0' or empty string)."""
+    """Return UUIDs whose done marker interprets as success."""
     d = str(exec_done_dir)
     if not os.path.isdir(d):
         return set()
@@ -54,7 +63,7 @@ def load_succeeded_from_dir(exec_done_dir: str | Path) -> set[str]:
     for uuid in os.listdir(d):
         try:
             content = open(os.path.join(d, uuid)).read().strip()
-            if content == DONE_SUCCESS or content == "":
+            if interpret_done(content) == "success":
                 succeeded.add(uuid)
         except OSError:
             pass
@@ -67,8 +76,21 @@ def interpret_done(raw: Optional[str]) -> Optional[str]:
         return None
     first = raw.strip().splitlines()
     c = first[0].strip() if first else ""
-    if c == "" or c == DONE_SUCCESS:
+    if c == "":
+        return "other"
+    if c == DONE_SUCCESS:
         return "success"
+    if c.startswith("{"):
+        try:
+            obj = json.loads(c)
+        except json.JSONDecodeError:
+            pass
+        else:
+            if isinstance(obj, dict) and obj.get("status") == "ok":
+                exit_code = obj.get("exit_code", obj.get("exitCode"))
+                if exit_code in (0, None):
+                    return "success"
+            return "other"
     if c in (DONE_REJECTED, DONE_REJECTED_FINAL):
         return "rejected"
     if c == DONE_EMPTY_RESULT:
