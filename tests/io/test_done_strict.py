@@ -66,15 +66,12 @@ class TestLoadSucceededStrict:
         (tmp_path / "ok").write_text("0", encoding="utf-8")
         assert load_succeeded_from_dir(tmp_path) == {"ok"}
 
-    def test_mark_done_success_writes_json(self, tmp_path: Path) -> None:
+    def test_mark_done_success_writes_zero(self, tmp_path: Path) -> None:
         from ghdag.io.done import interpret_done, mark_done
 
         mark_done(tmp_path, "task-a", 0)
         raw = (tmp_path / "task-a").read_text(encoding="utf-8")
-        data = json.loads(raw)
-        assert data["status"] == "ok"
-        assert data["exit_code"] == 0
-        assert "ts" in data
+        assert raw == "0"
         assert interpret_done(raw) == "success"
 
     def test_mark_done_nonzero_stays_plain(self, tmp_path: Path) -> None:

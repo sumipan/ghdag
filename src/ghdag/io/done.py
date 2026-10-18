@@ -5,7 +5,6 @@ from __future__ import annotations
 import fcntl
 import json
 import os
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -26,14 +25,9 @@ def is_done(exec_done_dir: str | Path, uuid: str) -> bool:
 
 
 def _format_done_body(status: str | int) -> str:
-    """Serialize a done-marker body (success → JSON, other statuses unchanged)."""
+    """Serialize a done-marker body (success → ``0``, other statuses unchanged)."""
     if status == 0 or str(status) == DONE_SUCCESS:
-        payload = {
-            "status": "ok",
-            "exit_code": 0,
-            "ts": datetime.now(timezone.utc).isoformat(),
-        }
-        return json.dumps(payload, ensure_ascii=False)
+        return DONE_SUCCESS
     return str(status)
 
 
@@ -61,7 +55,7 @@ def load_done_from_dir(exec_done_dir: str | Path) -> set[str]:
 
 
 def load_succeeded_from_dir(exec_done_dir: str | Path) -> set[str]:
-    """Return UUIDs that succeeded (status '0' or empty string)."""
+    """Return UUIDs whose done marker interprets as success."""
     d = str(exec_done_dir)
     if not os.path.isdir(d):
         return set()

@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable
 
 from ghdag.core.vocabulary import DONE_FANOUT_CHILD_FAILED, FANOUT_SEPARATOR
+from ghdag.io.exec_jsonl import DuplicateTaskError
 from ghdag.metrics.models import FailureClass, TaskMetrics
 
 from .fanout import FanOutSpec, build_child_jsonl_record
@@ -48,8 +49,16 @@ class FanOutManager:
             child_uuids.add(child_uuid)
             line = build_child_jsonl_record(child_uuid, child.command)
             # Pass parent_uuid; AuditContext construction is delegated to the DagEngine-side wrapper
-            self._append_task_fn(line, parent_uuid)
-            logger.info("FanOut [%s]: spawned child [%s]", parent_uuid, child_uuid)
+            try:
+                self._append_task_fn(line, parent_uuid)
+            except DuplicateTaskError:
+                logger.info(
+                    "FanOut [%s]: child [%s] already queued (not done); treating as spawned",
+                    parent_uuid,
+                    child_uuid,
+                )
+            else:
+                logger.info("FanOut [%s]: spawned child [%s]", parent_uuid, child_uuid)
         self._pending[parent_uuid] = child_uuids
         self._tasks[parent_uuid] = parent_task
         self._metrics[parent_uuid] = metrics
