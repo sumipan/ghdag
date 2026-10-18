@@ -63,6 +63,7 @@ _BURST_WINDOW_SEC = 600
 _BURST_THRESHOLD = 10
 _BURST_COOLDOWN_SEC = 3600
 _PAUSE_REASON_MAX_CHARS = 500
+_CONTEXT_HOOK_STDERR_TAIL = 500
 
 
 def _epoch_to_iso(ts: int) -> str:
@@ -70,7 +71,7 @@ def _epoch_to_iso(ts: int) -> str:
 
 
 class ContextHookError(GhdagError, ValueError):
-    """Raised when context_hook stdout is not valid JSON."""
+    """Raised when a handler context_hook fails (non-zero exit or invalid stdout)."""
 
 
 class WorkflowDispatcher:
@@ -848,7 +849,7 @@ class WorkflowDispatcher:
             dict parsed from the hook's stdout JSON (all values converted to str)
         Raises:
             subprocess.TimeoutExpired: if the hook times out
-            ValueError: if stdout is not valid JSON
+            ContextHookError: if the hook exits non-zero or stdout is not valid JSON
         """
         full_cmd = f"{hook_cmd} {shlex.quote(str(issue_number))}"
         logger.info("Running context_hook: %s", full_cmd)
@@ -860,12 +861,15 @@ class WorkflowDispatcher:
             timeout=timeout,
         )
         if result.returncode != 0:
+            stderr_tail = result.stderr.strip()[-_CONTEXT_HOOK_STDERR_TAIL:]
             logger.warning(
                 "context_hook failed (rc=%d): %s",
                 result.returncode,
-                result.stderr.strip(),
+                stderr_tail,
             )
-            return {}
+            raise ContextHookError(
+                f"context_hook failed (rc={result.returncode}): {stderr_tail}"
+            )
 
         stdout = result.stdout.strip()
         if not stdout:

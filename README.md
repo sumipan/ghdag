@@ -783,7 +783,7 @@ Variables ghdag sets for child processes (not configuration):
 | `HandlerConfig` | `steps` | `list[StepConfig]` | yes | none | Steps to enqueue |
 | | `on_trigger` | `OnTriggerConfig \| None` | no | `None` | Side effects at trigger time |
 | | `type` | `str \| None` | no | `None` | Special handler type (for example `"reset"`) |
-| | `context_hook` | `str \| None` | no | `None` | Command that produces extra context |
+| | `context_hook` | `str \| None` | no | `None` | Shell command run before enqueue; stdout must be a JSON object on success. Non-zero exit raises `ContextHookError` and aborts dispatch (no steps enqueued, ready label unchanged). Empty stdout on exit 0 means no extra context. |
 | `OnTriggerConfig` | `issue_context` | `bool` | no | `False` | Write the Issue body and comments to `design.md` |
 | `StepConfig` | `template` | `str` | yes | none | Template name without `.md`; the file must exist |
 | | `model` | `str` | yes | none | Model ID |
@@ -972,7 +972,7 @@ All exception types defined under `src/ghdag/`.
 | `FanoutError` | `GhdagError`, `ValueError` | `ghdag.dag.fanout` | Invalid fan-out specification |
 | `AdapterNotFoundError` | `GhdagError`, `ValueError` | `ghdag.core.command` | No engine adapter for an engine name |
 | `PathTraversalError` | `GhdagError`, `ValueError` | `ghdag.core.models.files` (also `ghdag.files`) | A Markdown path escapes the repository root |
-| `ContextHookError` | `GhdagError`, `ValueError` | `ghdag.workflow.dispatcher` | A handler `context_hook` failed |
+| `ContextHookError` | `GhdagError`, `ValueError` | `ghdag.workflow.dispatcher` | A handler `context_hook` exited non-zero or returned invalid JSON |
 | `AppendRecoverError` | `GhdagError`, `ValueError` | `ghdag.files.append` | `md_append` cannot recover a partial append |
 | `ValidationError` | `GhdagError`, `ValueError` | `ghdag.workflow.loader` | Invalid workflow YAML |
 
