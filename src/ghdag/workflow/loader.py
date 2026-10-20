@@ -257,8 +257,8 @@ def _validate_references(config: WorkflowConfig, *, workflow_dir: Path | None = 
                         f"handler '{handler_name}' steps[{i}].template '{step.template}' "
                         f"references ${{{ref_id}_result_content}} for a prior step in the "
                         f"same handler; that value is rendered at enqueue time and is always "
-                        f"empty for earlier steps in the same dispatch. Use "
-                        f"${{{ref_id}_result_filename}} in depends and read "
+                        f"empty for earlier steps in the same dispatch. Put '{ref_id}' in "
+                        f"depends, use ${{{ref_id}_result_filename}}, and read "
                         f"jobs/${{{ref_id}_result_filename}} at run time instead."
                     )
                 if ref_id not in (step.depends or []):

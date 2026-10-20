@@ -138,6 +138,7 @@ handlers:
         assert "p2" in msg
         assert "p1_result_content" in msg
         assert "p1_result_filename" in msg
+        assert "Put 'p1' in depends" in msg
         assert "enqueue" in msg.lower()
 
     def test_result_filename_with_depends_passes(self, tmp_path):
@@ -199,6 +200,7 @@ handlers:
         assert "p2" in msg
         assert "p1_result_content" in msg
         assert "p1_result_filename" in msg
+        assert "Put 'p1' in depends" in msg
         assert "enqueue" in msg.lower()
 
     def test_unknown_id_in_result_var_passes(self, tmp_path):
