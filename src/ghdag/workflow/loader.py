@@ -220,7 +220,7 @@ def _validate(data: dict, filename: str) -> None:
             )
 
 
-_RESULT_VAR_RE = re.compile(r"\$\{(\w+)_result_(?:filename|content)\}")
+_RESULT_VAR_RE = re.compile(r"\$\{(\w+)_result_(filename|content)\}")
 
 
 def _validate_references(config: WorkflowConfig, *, workflow_dir: Path | None = None) -> None:
@@ -249,10 +249,22 @@ def _validate_references(config: WorkflowConfig, *, workflow_dir: Path | None = 
             content = template_path.read_text(encoding="utf-8", errors="replace")
             for m in _RESULT_VAR_RE.finditer(content):
                 ref_id = m.group(1)
-                if ref_id in step_ids_so_far and ref_id not in (step.depends or []):
+                ref_kind = m.group(2)
+                if ref_id not in step_ids_so_far:
+                    continue
+                if ref_kind == "content":
                     raise ValidationError(
                         f"handler '{handler_name}' steps[{i}].template '{step.template}' "
-                        f"references ${{{ref_id}_result_...}} but '{ref_id}' is not in "
+                        f"references ${{{ref_id}_result_content}} for a prior step in the "
+                        f"same handler; that value is rendered at enqueue time and is always "
+                        f"empty for earlier steps in the same dispatch. Put '{ref_id}' in "
+                        f"depends, use ${{{ref_id}_result_filename}}, and read "
+                        f"jobs/${{{ref_id}_result_filename}} at run time instead."
+                    )
+                if ref_id not in (step.depends or []):
+                    raise ValidationError(
+                        f"handler '{handler_name}' steps[{i}].template '{step.template}' "
+                        f"references ${{{ref_id}_result_filename}} but '{ref_id}' is not in "
                         f"depends (depends={step.depends})"
                     )
             if step.id:
