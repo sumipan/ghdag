@@ -108,7 +108,7 @@ handlers:
             load_workflows(tmp_path)
 
     def test_result_content_without_depends_raises(self, tmp_path):
-        """AC-3: ${p1_result_content} in template without depends: [p1] → ValidationError."""
+        """Same-handler ${p1_result_content} is rejected even without depends: [p1]."""
         yaml = """\
 name: test
 triggers:
@@ -130,8 +130,15 @@ handlers:
         (tdir / "p1.md").write_text("# step 1")
         (tdir / "p2.md").write_text("Content: ${p1_result_content}")
 
-        with pytest.raises(ValidationError, match="p1"):
+        with pytest.raises(ValidationError) as exc_info:
             load_workflows(tmp_path)
+        msg = str(exc_info.value)
+        assert "impl" in msg
+        assert "steps[1]" in msg
+        assert "p2" in msg
+        assert "p1_result_content" in msg
+        assert "p1_result_filename" in msg
+        assert "enqueue" in msg.lower()
 
     def test_result_filename_with_depends_passes(self, tmp_path):
         """AC-3: ${p1_result_filename} with depends: [p1] → no error."""
@@ -160,8 +167,8 @@ handlers:
         configs = load_workflows(tmp_path)
         assert len(configs) == 1
 
-    def test_result_content_with_depends_passes(self, tmp_path):
-        """AC-3: ${p1_result_content} with depends: [p1] → no error."""
+    def test_result_content_with_depends_raises(self, tmp_path):
+        """Same-handler ${p1_result_content} is rejected even with depends: [p1]."""
         yaml = """\
 name: test
 triggers:
@@ -184,8 +191,15 @@ handlers:
         (tdir / "p1.md").write_text("# step 1")
         (tdir / "p2.md").write_text("Content: ${p1_result_content}")
 
-        configs = load_workflows(tmp_path)
-        assert len(configs) == 1
+        with pytest.raises(ValidationError) as exc_info:
+            load_workflows(tmp_path)
+        msg = str(exc_info.value)
+        assert "impl" in msg
+        assert "steps[1]" in msg
+        assert "p2" in msg
+        assert "p1_result_content" in msg
+        assert "p1_result_filename" in msg
+        assert "enqueue" in msg.lower()
 
     def test_unknown_id_in_result_var_passes(self, tmp_path):
         """AC-3: ${unknown_result_filename} where 'unknown' is not a step id → no error."""
@@ -206,6 +220,28 @@ handlers:
         tdir.mkdir()
         # "unknown" is not a step id, so this should be allowed
         (tdir / "p1.md").write_text("${unknown_result_filename}")
+
+        configs = load_workflows(tmp_path)
+        assert len(configs) == 1
+
+    def test_unknown_id_in_result_content_passes(self, tmp_path):
+        """${unknown_result_content} where 'unknown' is not a prior step id → no error."""
+        yaml = """\
+name: test
+triggers:
+  - label: "test:ready"
+    handler: impl
+handlers:
+  impl:
+    steps:
+      - id: p1
+        template: p1
+        model: claude-sonnet-4-6
+"""
+        _write_workflow(tmp_path, yaml)
+        tdir = tmp_path / "templates"
+        tdir.mkdir()
+        (tdir / "p1.md").write_text("${unknown_result_content}")
 
         configs = load_workflows(tmp_path)
         assert len(configs) == 1
@@ -267,7 +303,7 @@ handlers:
         tdir.mkdir()
         (tdir / "p1.md").write_text("# p1")
         (tdir / "p2.md").write_text("${p1_result_filename}")
-        (tdir / "p3.md").write_text("${p2_result_filename} ${p2_result_content}")
+        (tdir / "p3.md").write_text("${p2_result_filename}")
 
         configs = load_workflows(tmp_path)
         assert len(configs) == 1

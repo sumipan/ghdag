@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Workflow loader: reject `${<id>_result_content}` when `<id>` is a prior step in the same handler (enqueue-time render cannot supply that body); use `${<id>_result_filename}` with `depends` instead.
+
 ## 0.104.3 - 2026-10-18
 
 ### Fixed

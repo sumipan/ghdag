@@ -789,7 +789,7 @@ Variables ghdag sets for child processes (not configuration):
 | | `model` | `str` | yes | none | Model ID |
 | | `id` | `str \| None` | no | `None` | Step ID used by `depends` / `resume_from` |
 | | `engine` | `str` | no | `"claude"` | Engine name |
-| | `depends` | `list[str]` | no | `[]` | Upstream step IDs; a template that references `${<id>_result_filename}` / `${<id>_result_content}` must list `<id>` here |
+| | `depends` | `list[str]` | no | `[]` | Upstream step IDs. `${<id>_result_filename}` requires `<id>` in `depends`. `${<id>_result_content}` is filled at enqueue time, so for a prior step in the same handler dispatch it is always empty—use `${<id>_result_filename}` in `depends` and read `jobs/${<id>_result_filename}` at run time instead. External names (for example from `context_hook`) are not prior step IDs and may still use `_result_content`. |
 | | `resume_from` | `str \| None` | no | `None` | Step ID whose session to resume (same engine required) |
 | | `permission` | `str \| None` | no | `None` | Capability preset name; `None` uses `GHDAG_SAFE_DEFAULT_PERMISSION` or `text_only` |
 | | `skill_name` | `str \| None` | no | `None` | Skill the step invokes (checked by `workflow.typecheck`) |
