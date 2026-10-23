@@ -96,6 +96,28 @@ class TestCallManagedSuccess:
         assert kwargs["stdin_text"] == "in"
         assert kwargs["cwd"] == tmp_path
 
+    def test_isolation_true_forwarded_to_call(self):
+        mock_adapter = _adapter()
+        with (
+            patch("ghdag.llm.managed.call", return_value=_llm()) as mock_call,
+            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
+            patch("ghdag.llm.managed.validate_engine_model", return_value="m"),
+        ):
+            call_managed("p", engine="codex", isolation=True)
+
+        assert mock_call.call_args.kwargs["isolation"] is True
+
+    def test_isolation_omitted_forwarded_as_none(self):
+        mock_adapter = _adapter()
+        with (
+            patch("ghdag.llm.managed.call", return_value=_llm()) as mock_call,
+            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
+            patch("ghdag.llm.managed.validate_engine_model", return_value="m"),
+        ):
+            call_managed("p", engine="claude")
+
+        assert mock_call.call_args.kwargs["isolation"] is None
+
     def test_additional_tags_preserved(self):
         mock_adapter = _adapter()
         with (
@@ -199,6 +221,44 @@ class TestCallManagedFallback:
         assert result.failure_class is None
         assert result.body == "ok"
         assert gate.snapshot().engines["claude"].status == "paused"
+
+    def test_fallback_propagates_isolation_to_both_calls(self, tmp_path: Path):
+        gate = QuotaGate(tmp_path / "quota-gate.json")
+        isolation_values: list[bool | None] = []
+
+        def fake_call(prompt, *, engine, isolation=None, **kwargs):
+            del prompt, kwargs
+            isolation_values.append(isolation)
+            if engine == "claude":
+                return _llm(stdout="session limit", returncode=1)
+            return _llm(returncode=0)
+
+        def fake_adapter(engine: str):
+            adapter = MagicMock()
+            adapter.extract_result_text.return_value = b"x"
+            adapter.extract_token_usage.return_value = None
+            adapter.classify_failure.return_value = (
+                FailureClass.QUOTA_EXHAUSTED if engine == "claude" else None
+            )
+            return adapter
+
+        with (
+            patch("ghdag.llm.managed.call", side_effect=fake_call),
+            patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
+            patch(
+                "ghdag.llm.managed.validate_engine_model",
+                side_effect=lambda e, m: m or "default",
+            ),
+        ):
+            call_managed(
+                "p",
+                engine="claude",
+                isolation=True,
+                fallback_candidates=[("codex", "gpt")],
+                quota_gate=gate,
+            )
+
+        assert isolation_values == [True, True]
 
     def test_auth_also_triggers_fallback(self, tmp_path: Path):
         gate = QuotaGate(tmp_path / "quota-gate.json")

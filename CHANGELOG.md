@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.104.5 - 2026-10-24
+
+### Changed
+
+- Engine isolation: when `isolation=True`, codex `build_llm_cmd` and `render_exec_command` add `-c skills.include_instructions=false` so global skills are not injected into the CLI (#5541).
+- `call_managed(..., isolation=None)` forwards `isolation` to `call()` on the primary attempt and on the single quota/auth fallback.
+
 ## 0.104.4 - 2026-10-20
 
 ### Changed
