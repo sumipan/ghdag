@@ -223,6 +223,7 @@ def render_exec_command(
     When capabilities is given, flags are generated via _CAPABILITY_FLAG_BUILDERS and
     flags emitted by the builder are removed from extra_args (_dedupe_extra_args).
     When isolation=True and the engine is claude, --disable-slash-commands is added (nexus #3174).
+    When isolation=True and the engine is codex, -c skills.include_instructions=false is added (#5541).
     sandbox="container" wraps the engine CLI with container_prefix (engine flags are
     the same as sandbox="off"; stdin is redirected on the host and forwarded via -i).
     """
@@ -237,6 +238,12 @@ def render_exec_command(
     effective_extra_args = _dedupe_extra_args(spec.extra_args, perm_flags)
     if isolation and spec.name == "claude":
         effective_extra_args = [*effective_extra_args, "--disable-slash-commands"]
+    elif isolation and spec.name == "codex":
+        effective_extra_args = [
+            *effective_extra_args,
+            "-c",
+            "skills.include_instructions=false",
+        ]
     resume_flags: list[str] = []
     subcommand = list(spec.subcommand)
     if resume_session_id:
@@ -326,7 +333,8 @@ def build_llm_cmd(
         capabilities: Capability-constraint value object (default: TEXT_ONLY)
         dangerously_skip_permissions: Add --dangerously-skip-permissions for the claude engine
         resume_session_id: Session ID to resume (supported engines only)
-        isolation: When True and the engine is claude, add --disable-slash-commands (nexus #3174)
+        isolation: When True, claude gets --disable-slash-commands (nexus #3174); codex gets
+            -c skills.include_instructions=false (#5541).
     Returns:
         Command list for subprocess
 
@@ -376,6 +384,8 @@ def build_llm_cmd(
 
     if isolation and engine == "claude":
         cmd.append("--disable-slash-commands")
+    elif isolation and engine == "codex":
+        cmd += ["-c", "skills.include_instructions=false"]
 
     return cmd
 

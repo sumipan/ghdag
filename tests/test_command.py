@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import shlex
 
 import pytest
 
@@ -49,6 +50,75 @@ class TestIsolationOptIn:
     def test_isolation_true_does_not_affect_cursor(self) -> None:
         cmd = build_llm_cmd("cursor", "auto", "hello", isolation=True)
         assert "--disable-slash-commands" not in cmd
+
+
+_CODEX_SKILLS_OFF = ["-c", "skills.include_instructions=false"]
+
+
+class TestCodexIsolationOptIn:
+    """Codex isolation adds -c skills.include_instructions=false (#5541)."""
+
+    def test_build_llm_cmd_codex_isolation_false_omits_skills_config(self) -> None:
+        cmd = build_llm_cmd("codex", "gpt-5.6-terra", "hello", isolation=False)
+        assert _CODEX_SKILLS_OFF[0] not in cmd
+
+    def test_build_llm_cmd_codex_isolation_true_includes_skills_config_once(self) -> None:
+        cmd = build_llm_cmd("codex", "gpt-5.6-terra", "hello", isolation=True)
+        idx = cmd.index("-c")
+        assert cmd[idx : idx + 2] == _CODEX_SKILLS_OFF
+        assert cmd.count("-c") == 1
+
+    def test_build_llm_cmd_codex_resume_isolation_preserves_exec_resume(self) -> None:
+        cmd = build_llm_cmd(
+            "codex",
+            "gpt-5.6-terra",
+            "hello",
+            resume_session_id="sid",
+            isolation=True,
+        )
+        assert cmd[:5] == ["codex", "exec", "resume", "sid", "--model"]
+        assert cmd.count("-c") == 1
+        assert cmd[-2:] == _CODEX_SKILLS_OFF
+
+    def test_render_exec_command_codex_isolation_false_omits(self) -> None:
+        cmd = render_exec_command(
+            ENGINE_SPECS["codex"],
+            order_path="jobs/order.md",
+            model="gpt-5.6-terra",
+            capabilities=TEXT_ONLY,
+            isolation=False,
+        )
+        tokens = shlex.split(cmd.split(" < ", 1)[0])
+        assert "-c" not in tokens
+
+    def test_render_exec_command_codex_isolation_true_includes_skills_config_once(
+        self,
+    ) -> None:
+        cmd = render_exec_command(
+            ENGINE_SPECS["codex"],
+            order_path="jobs/order.md",
+            model="gpt-5.6-terra",
+            capabilities=TEXT_ONLY,
+            isolation=True,
+        )
+        tokens = shlex.split(cmd.split(" < ", 1)[0])
+        idx = tokens.index("-c")
+        assert tokens[idx : idx + 2] == _CODEX_SKILLS_OFF
+        assert tokens.count("-c") == 1
+
+    def test_render_exec_command_codex_resume_isolation(self) -> None:
+        cmd = render_exec_command(
+            ENGINE_SPECS["codex"],
+            order_path="jobs/order.md",
+            model="gpt-5.6-terra",
+            capabilities=TEXT_ONLY,
+            resume_session_id="sess-1",
+            isolation=True,
+        )
+        inner = cmd.split(" < ", 1)[0]
+        assert "exec resume 'sess-1'" in inner
+        tokens = shlex.split(inner)
+        assert tokens.count("-c") == 1
 
 
 _CLAUDE_TEXT_ONLY_FLAGS = [

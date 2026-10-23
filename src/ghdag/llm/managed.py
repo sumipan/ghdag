@@ -47,6 +47,7 @@ def call_managed(
     additional_tags: Mapping[str, str] | None = None,
     quota_gate: QuotaGate | None = None,
     fallback_on_timeout: bool = False,
+    isolation: bool | None = None,
 ) -> ManagedResult:
     """Run ``call()`` with failure classification, quota reporting, and one fallback.
 
@@ -65,6 +66,7 @@ def call_managed(
         stdin_text=stdin_text,
         cwd=cwd,
         capabilities=capabilities,
+        isolation=isolation,
     )
     attempts = 1
     quota_reported = False
@@ -109,6 +111,7 @@ def call_managed(
                 stdin_text=stdin_text,
                 cwd=cwd,
                 capabilities=capabilities,
+                isolation=isolation,
             )
             attempts = 2
             engine_used = alt_engine
@@ -138,6 +141,7 @@ def _run_once(
     stdin_text: str | None,
     cwd: Path | str | None,
     capabilities: LLMCapabilities,
+    isolation: bool | None = None,
 ) -> tuple[LLMResult, str, TokenUsage | None, str | None]:
     result = call(
         prompt,
@@ -147,6 +151,7 @@ def _run_once(
         stdin_text=stdin_text,
         cwd=cwd,
         capabilities=capabilities,
+        isolation=isolation,
     )
     adapter = get_output_adapter(engine)
     stdout_bytes = result.stdout.encode("utf-8")
