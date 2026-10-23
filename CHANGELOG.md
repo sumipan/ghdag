@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.104.5 - 2026-10-24
+
 ### Changed
 
 - Engine isolation: when `isolation=True`, codex `build_llm_cmd` and `render_exec_command` add `-c skills.include_instructions=false` so global skills are not injected into the CLI (#5541).
