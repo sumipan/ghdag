@@ -80,6 +80,31 @@ def test_manual_override_then_expiry(tmp_path: Path) -> None:
     assert gate.snapshot(now=_dt(13, 30)).engines["claude"].status == "paused"
 
 
+def test_pause_reported_during_manual_override_takes_effect_after_expiry(
+    tmp_path: Path,
+) -> None:
+    gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
+    gate.report(
+        engine="claude",
+        status="available",
+        observed_at=_dt(12),
+        resume_at=_dt(13),
+        kind="manual",
+    )
+    result = gate.report(
+        engine="claude",
+        status="paused",
+        observed_at=_dt(12, 1),
+        kind="failure",
+        reason="auth",
+    )
+    assert result.applied is False
+    assert gate.snapshot(now=_dt(12, 30)).engines["claude"].status == "available"
+    after_expiry = gate.snapshot(now=_dt(13, 30)).engines["claude"]
+    assert after_expiry.status == "paused"
+    assert {source.kind for source in after_expiry.sources} == {"failure"}
+
+
 def test_clear_kind_budget_leaves_failure(tmp_path: Path) -> None:
     gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
     gate.report(engine="claude", status="paused", observed_at=_dt(12), kind="budget")
@@ -138,6 +163,18 @@ def test_stale_per_kind_not_cross_kind(tmp_path: Path) -> None:
     assert applied.applied is True
 
 
+def test_clear_stale_check_is_scoped_to_requested_kind(tmp_path: Path) -> None:
+    gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
+    gate.report(engine="claude", status="paused", observed_at=_dt(12), kind="budget")
+    gate.report(engine="claude", status="paused", observed_at=_dt(12, 10), kind="failure")
+
+    result = gate.clear(engine="claude", observed_at=_dt(12, 1), kind="budget")
+
+    assert result.applied is True
+    sources = gate.snapshot(now=_dt(12, 11)).engines["claude"].sources
+    assert {source.kind for source in sources} == {"failure"}
+
+
 def test_drain_source_and_resume(tmp_path: Path) -> None:
     gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
     gate.report(engine="claude", status="paused", observed_at=_dt(12), kind="failure")
@@ -148,6 +185,52 @@ def test_drain_source_and_resume(tmp_path: Path) -> None:
     snap2 = gate.snapshot(now=_dt(12, 4))
     assert "claude" not in snap2.draining_engines
     assert snap2.engines["claude"].status == "paused"
+
+
+def test_manual_override_makes_source_backed_drain_temporarily_available(
+    tmp_path: Path,
+) -> None:
+    gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
+    gate.drain(engine="claude", reason="switch", now=_dt(12))
+    gate.report(
+        engine="claude",
+        status="available",
+        observed_at=_dt(12, 1),
+        resume_at=_dt(13),
+        kind="manual",
+    )
+
+    decision = gate.admit(
+        task_uuid="task-1",
+        engine="claude",
+        phase="launch",
+        now=_dt(12, 30),
+    )
+    assert decision.allowed is True
+    assert "claude" in gate.snapshot(now=_dt(12, 30)).draining_engines
+    after_expiry = gate.admit(
+        task_uuid="task-2",
+        engine="claude",
+        phase="launch",
+        now=_dt(13, 30),
+    )
+    assert after_expiry.allowed is False
+
+
+def test_report_and_clear_drain_keep_compatibility_view_in_sync(tmp_path: Path) -> None:
+    gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
+    gate.report(
+        engine="claude",
+        status="paused",
+        observed_at=_dt(12),
+        kind="drain",
+        reason="maintenance",
+    )
+    assert "claude" in gate.read_state()["draining_engines"]
+
+    gate.clear(engine="claude", observed_at=_dt(12, 1), kind="drain")
+
+    assert "claude" not in gate.read_state()["draining_engines"]
 
 
 def test_legacy_paused_payload_migrates_on_write(tmp_path: Path) -> None:

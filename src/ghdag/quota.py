@@ -146,6 +146,11 @@ class QuotaGate:
             existing = state["engines"].get(engine_name)
             sources = _sources_from_engine_payload(existing)
             active = _active_sources(sources, observed)
+            manual_override_kept_available = (
+                status == "paused"
+                and kind != "manual"
+                and _manual_override_active(active, observed) is not None
+            )
 
             same_kind = _source_for_kind(sources, kind)
             if same_kind is not None and observed < same_kind.observed_at:
@@ -161,18 +166,6 @@ class QuotaGate:
                 )
 
             if status == "paused":
-                manual_active = _manual_override_active(active, observed)
-                if manual_active is not None:
-                    derived = _derive_from_sources(active, observed)
-                    return QuotaReportResult(
-                        engine=engine_name,
-                        status=status,
-                        applied=False,
-                        stale_ignored=False,
-                        observed_at=observed,
-                        resume_at=resume_at,
-                        reason=reason,
-                    )
                 new_source = PauseSource(
                     kind=kind,
                     reason=reason or "",
@@ -203,6 +196,14 @@ class QuotaGate:
                 state["engines"][engine_name] = _engine_payload_from_sources([], derived)
             else:
                 state["engines"].pop(engine_name, None)
+            if kind == "drain":
+                if status == "paused":
+                    state["draining_engines"][engine_name] = {
+                        "started_at": _iso(observed),
+                        "reason": reason,
+                    }
+                else:
+                    state["draining_engines"].pop(engine_name, None)
             resumed = self._release_for_engine(state, engine_name, observed)
             self._write_state_unlocked(state)
 
@@ -219,7 +220,9 @@ class QuotaGate:
         return QuotaReportResult(
             engine=engine_name,
             status=status,
-            applied=True,
+            # Preserve the legacy result contract: a pause hidden by an active
+            # override is not effective yet, even though its source is retained.
+            applied=not manual_override_kept_available,
             stale_ignored=False,
             observed_at=observed,
             resume_at=resume_at if status == "paused" or kind == "manual" else derived.resume_at,
@@ -243,8 +246,16 @@ class QuotaGate:
             state = self._load_state_unlocked()
             existing = state["engines"].get(engine_name)
             sources = _sources_from_engine_payload(existing)
-            derived_before = _derive_from_sources(_active_sources(sources, observed), observed)
-            if observed < derived_before.observed_at:
+            stale_reference: datetime | None = None
+            if ttl_seconds is not None:
+                manual_source = _source_for_kind(sources, "manual")
+                stale_reference = manual_source.observed_at if manual_source is not None else None
+            elif kind is not None:
+                same_kind = _source_for_kind(sources, kind)
+                stale_reference = same_kind.observed_at if same_kind is not None else None
+            elif sources:
+                stale_reference = max(source.observed_at for source in sources)
+            if stale_reference is not None and observed < stale_reference:
                 return QuotaReportResult(
                     engine=engine_name,
                     status="available",
@@ -279,6 +290,8 @@ class QuotaGate:
                 state["engines"][engine_name] = _engine_payload_from_sources(sources, derived)
             else:
                 state["engines"].pop(engine_name, None)
+            if ttl_seconds is None and (kind is None or kind == "drain"):
+                state["draining_engines"].pop(engine_name, None)
             resumed = self._release_for_engine(state, engine_name, observed)
             self._write_state_unlocked(state)
 
@@ -621,6 +634,19 @@ class QuotaGate:
                 pruned = _active_sources(sources, current)
                 if len(pruned) != len(sources):
                     state_changed = True
+                had_drain_source = _source_for_kind(sources, "drain") is not None
+                active_drain = _source_for_kind(pruned, "drain")
+                if active_drain is not None:
+                    drain_payload = {
+                        "started_at": _iso(active_drain.observed_at),
+                        "reason": active_drain.reason or None,
+                    }
+                    if state["draining_engines"].get(engine_name) != drain_payload:
+                        state["draining_engines"][engine_name] = drain_payload
+                        state_changed = True
+                elif had_drain_source:
+                    if state["draining_engines"].pop(engine_name, None) is not None:
+                        state_changed = True
                 derived = _derive_from_sources(pruned, current)
                 if pruned:
                     state["engines"][engine_name] = _engine_payload_from_sources(pruned, derived)
@@ -737,6 +763,15 @@ class QuotaGate:
         }
         draining_engines: dict[str, DrainState] = {}
         for engine_name, payload in state["draining_engines"].items():
+            engine_payload = state["engines"].get(engine_name)
+            stored_sources = _sources_from_engine_payload(engine_payload)
+            has_stored_drain = _source_for_kind(stored_sources, "drain") is not None
+            active_engine = engines.get(engine_name)
+            has_active_drain = active_engine is not None and any(
+                source.kind == "drain" for source in active_engine.sources
+            )
+            if has_stored_drain and not has_active_drain:
+                continue
             drain_state = _to_drain_state(payload)
             if drain_state is not None:
                 draining_engines[engine_name] = drain_state
@@ -766,8 +801,6 @@ class QuotaGate:
         )
 
     def _release_for_engine(self, state: dict, engine: str, observed_at: datetime) -> list[str]:
-        if engine in state["draining_engines"]:
-            return []
         brake_state = self._load_brake_state()
         released: list[str] = []
         for task_uuid, deferred in list(state["deferred_tasks"].items()):
@@ -863,7 +896,9 @@ class QuotaGate:
                 resume_at=engine_state.resume_at,
             )
         drain_state = _to_drain_state(state["draining_engines"].get(engine))
-        if drain_state is not None:
+        stored_sources = _sources_from_engine_payload(state["engines"].get(engine))
+        has_source_backed_drain = _source_for_kind(stored_sources, "drain") is not None
+        if drain_state is not None and not has_source_backed_drain:
             deferred_reason = fallback_reason or drain_state.reason or "engine draining"
             return AdmissionDecision(
                 allowed=False,
@@ -1440,8 +1475,6 @@ def _engine_effective_available(
     observed_at: datetime,
     brake_state: dict | None = None,
 ) -> bool:
-    if engine in state["draining_engines"]:
-        return False
     if brake_state is not None:
         brake_engines = brake_state.get("engines", {})
         brake_eng = brake_engines.get(engine, {})
@@ -1449,6 +1482,10 @@ def _engine_effective_available(
             return False
     eng_payload = state["engines"].get(engine)
     engine_state = _to_engine_state(eng_payload, now=observed_at)
+    stored_sources = _sources_from_engine_payload(eng_payload)
+    has_source_backed_drain = _source_for_kind(stored_sources, "drain") is not None
+    if engine in state["draining_engines"] and not has_source_backed_drain:
+        return False
     if eng_payload is None:
         return True
     if engine_state is None:
