@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.105.0 - 2026-10-26
+
+### Added
+
+- `QuotaGate` engine state now stores multiple pause `sources` (`budget`, `failure`, `manual`, `drain`) with derived `status` / `resume_at` / `reason` compatibility fields. `report` / `clear` accept `kind`; `clear(ttl_seconds=…)` maps to a temporary `manual` override. Legacy schema v1 payloads without `sources` are read as a single `failure` source (`set_by=legacy`).
+- `call_managed()` tracks per-engine AUTH strikes in quota state: the first AUTH on a primary engine runs fallback without pausing; a second consecutive AUTH on the same primary engine reports `kind=failure`. Primary success resets strikes; fallback success does not.
+
 ## 0.104.5 - 2026-10-24
 
 ### Changed

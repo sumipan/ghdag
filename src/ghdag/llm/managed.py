@@ -73,7 +73,11 @@ def call_managed(
     engine_used = engine
     model_used = resolved_model
 
+    primary_engine = engine
+
     if result.returncode == 0:
+        if quota_gate is not None:
+            quota_gate.reset_auth_strike(engine=primary_engine)
         return ManagedResult(
             body=body,
             usage=usage,
@@ -92,13 +96,32 @@ def call_managed(
 
     if failure_class in fallback_classes:
         if quota_gate is not None and failure_class in _FALLBACK_CLASSES:
-            quota_gate.report(
-                engine=engine_used,
-                status="paused",
-                observed_at=datetime.now(timezone.utc),
-                reason=f"call_managed classified as {failure_class}",
-            )
-            quota_reported = True
+            now = datetime.now(timezone.utc)
+            if failure_class == FailureClass.AUTH.value:
+                strikes = quota_gate.increment_auth_strike(
+                    engine=primary_engine,
+                    observed_at=now,
+                )
+                if strikes >= 2:
+                    quota_gate.report(
+                        engine=primary_engine,
+                        status="paused",
+                        observed_at=now,
+                        reason="call_managed classified as AUTH",
+                        kind="failure",
+                        set_by="call_managed",
+                    )
+                    quota_reported = True
+            else:
+                quota_gate.report(
+                    engine=primary_engine,
+                    status="paused",
+                    observed_at=now,
+                    reason=f"call_managed classified as {failure_class}",
+                    kind="failure",
+                    set_by="call_managed",
+                )
+                quota_reported = True
 
         alt = _select_fallback(fallback_candidates, quota_gate)
         if alt is not None:
