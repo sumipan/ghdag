@@ -297,7 +297,129 @@ class TestCallManagedFallback:
 
         assert calls == ["claude", "codex"]
         assert result.engine_used == "codex"
-        assert result.quota_reported is True
+        assert result.quota_reported is False
+        assert gate.auth_strike_count(engine="claude") == 1
+        claude_state = gate.snapshot().engines.get("claude")
+        assert claude_state is None or claude_state.status != "paused"
+
+    def test_auth_second_strike_reports_pause(self, tmp_path: Path) -> None:
+        gate = QuotaGate(tmp_path / "quota-gate.json")
+
+        def fake_call(prompt, *, engine, **kwargs):
+            del prompt, kwargs
+            if engine == "claude":
+                return _llm(stdout="OAuth session expired", returncode=1)
+            return _llm(returncode=0)
+
+        def fake_adapter(engine: str):
+            adapter = MagicMock()
+            adapter.extract_result_text.return_value = b"x"
+            adapter.extract_token_usage.return_value = None
+            adapter.classify_failure.return_value = (
+                FailureClass.AUTH if engine == "claude" else None
+            )
+            return adapter
+
+        patches = (
+            patch("ghdag.llm.managed.call", side_effect=fake_call),
+            patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
+            patch(
+                "ghdag.llm.managed.validate_engine_model",
+                side_effect=lambda e, m: m or "default",
+            ),
+        )
+        with patches[0], patches[1], patches[2]:
+            first = call_managed(
+                "p",
+                engine="claude",
+                fallback_candidates=[("codex", "gpt")],
+                quota_gate=gate,
+            )
+        assert first.quota_reported is False
+        assert gate.auth_strike_count(engine="claude") == 1
+
+        with patches[0], patches[1], patches[2]:
+            second = call_managed(
+                "p",
+                engine="claude",
+                fallback_candidates=[("codex", "gpt")],
+                quota_gate=gate,
+            )
+        assert second.quota_reported is True
+        assert gate.snapshot().engines["claude"].status == "paused"
+
+    def test_auth_strike_resets_after_primary_success(self, tmp_path: Path) -> None:
+        gate = QuotaGate(tmp_path / "quota-gate.json")
+
+        def auth_then_ok(prompt, *, engine, **kwargs):
+            del prompt, kwargs
+            if engine != "claude":
+                return _llm(returncode=0)
+            if gate.auth_strike_count(engine="claude") == 0:
+                return _llm(stdout="OAuth session expired", returncode=1)
+            return _llm(stdout="ok", returncode=0)
+
+        def fake_adapter(engine: str):
+            adapter = MagicMock()
+            adapter.extract_result_text.return_value = b"x"
+            adapter.extract_token_usage.return_value = None
+            if engine == "claude" and gate.auth_strike_count(engine="claude") == 0:
+                adapter.classify_failure.return_value = FailureClass.AUTH
+            else:
+                adapter.classify_failure.return_value = None
+            return adapter
+
+        with (
+            patch("ghdag.llm.managed.call", side_effect=auth_then_ok),
+            patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
+            patch(
+                "ghdag.llm.managed.validate_engine_model",
+                side_effect=lambda e, m: m or "default",
+            ),
+        ):
+            call_managed(
+                "p",
+                engine="claude",
+                fallback_candidates=[("codex", "gpt")],
+                quota_gate=gate,
+            )
+            assert gate.auth_strike_count(engine="claude") == 1
+            call_managed("p", engine="claude", quota_gate=gate)
+        assert gate.auth_strike_count(engine="claude") == 0
+
+    def test_fallback_success_does_not_reset_primary_auth_strike(self, tmp_path: Path) -> None:
+        gate = QuotaGate(tmp_path / "quota-gate.json")
+
+        def fake_call(prompt, *, engine, **kwargs):
+            del prompt, kwargs
+            if engine == "claude":
+                return _llm(stdout="OAuth session expired", returncode=1)
+            return _llm(returncode=0)
+
+        def fake_adapter(engine: str):
+            adapter = MagicMock()
+            adapter.extract_result_text.return_value = b"x"
+            adapter.extract_token_usage.return_value = None
+            adapter.classify_failure.return_value = (
+                FailureClass.AUTH if engine == "claude" else None
+            )
+            return adapter
+
+        with (
+            patch("ghdag.llm.managed.call", side_effect=fake_call),
+            patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
+            patch(
+                "ghdag.llm.managed.validate_engine_model",
+                side_effect=lambda e, m: m or "default",
+            ),
+        ):
+            call_managed(
+                "p",
+                engine="claude",
+                fallback_candidates=[("codex", "gpt")],
+                quota_gate=gate,
+            )
+        assert gate.auth_strike_count(engine="claude") == 1
 
     def test_no_double_fallback_on_alternate_failure(self, tmp_path: Path):
         gate = QuotaGate(tmp_path / "quota-gate.json")

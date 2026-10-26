@@ -17,6 +17,20 @@ from ghdag.io.audit import append_audit_record
 
 QuotaStatus = Literal["available", "paused"]
 AdmissionPhase = Literal["enqueue", "launch", "runtime"]
+PauseKind = Literal["budget", "failure", "manual", "drain"]
+
+_PAUSE_KIND_ORDER: tuple[PauseKind, ...] = ("budget", "failure", "manual", "drain")
+_DEFAULT_REPORT_KIND: PauseKind = "failure"
+
+
+@dataclass(frozen=True)
+class PauseSource:
+    kind: PauseKind
+    reason: str
+    until: datetime | None
+    set_by: str
+    observed_at: datetime
+    available: bool = False
 
 
 @dataclass(frozen=True)
@@ -45,6 +59,7 @@ class EngineQuotaState:
     observed_at: datetime
     resume_at: datetime | None
     reason: str | None
+    sources: tuple[PauseSource, ...] = ()
     override_until: datetime | None = None
 
 
@@ -112,11 +127,15 @@ class QuotaGate:
         observed_at: datetime,
         resume_at: datetime | None = None,
         reason: str | None = None,
+        kind: PauseKind = _DEFAULT_REPORT_KIND,
+        set_by: str = "ghdag",
     ) -> QuotaReportResult:
         engine_name = _require_non_empty(engine, "engine")
         observed = _require_aware(observed_at, "observed_at")
         if status not in {"available", "paused"}:
             raise ValueError("status must be 'available' or 'paused'")
+        if kind not in _PAUSE_KIND_ORDER:
+            raise ValueError(f"invalid pause kind: {kind}")
         if resume_at is not None:
             resume_at = _require_aware(resume_at, "resume_at")
         elif status == "paused" and self._pause_ttl_seconds is not None:
@@ -125,53 +144,74 @@ class QuotaGate:
         with self._lock(exclusive=True):
             state = self._load_state_unlocked()
             existing = state["engines"].get(engine_name)
-            if existing is not None:
-                prev_observed = _parse_dt(existing["observed_at"], "observed_at")
-                if observed < prev_observed:
+            sources = _sources_from_engine_payload(existing)
+            active = _active_sources(sources, observed)
+
+            same_kind = _source_for_kind(sources, kind)
+            if same_kind is not None and observed < same_kind.observed_at:
+                derived = _derive_from_sources(active, observed)
+                return QuotaReportResult(
+                    engine=engine_name,
+                    status=status,
+                    applied=False,
+                    stale_ignored=True,
+                    observed_at=observed,
+                    resume_at=resume_at,
+                    reason=reason,
+                )
+
+            if status == "paused":
+                manual_active = _manual_override_active(active, observed)
+                if manual_active is not None:
+                    derived = _derive_from_sources(active, observed)
                     return QuotaReportResult(
                         engine=engine_name,
                         status=status,
                         applied=False,
-                        stale_ignored=True,
+                        stale_ignored=False,
                         observed_at=observed,
                         resume_at=resume_at,
                         reason=reason,
                     )
-                if status == "paused":
-                    override_until = _parse_optional_dt(
-                        existing.get("override_until"), "override_until"
-                    )
-                    if override_until is not None and observed < override_until:
-                        return QuotaReportResult(
-                            engine=engine_name,
-                            status=status,
-                            applied=False,
-                            stale_ignored=False,
-                            observed_at=observed,
-                            resume_at=resume_at,
-                            reason=reason,
-                        )
+                new_source = PauseSource(
+                    kind=kind,
+                    reason=reason or "",
+                    until=resume_at,
+                    set_by=set_by,
+                    observed_at=observed,
+                    available=False,
+                )
+                sources = _upsert_source(sources, new_source)
+            elif kind == "manual":
+                new_source = PauseSource(
+                    kind="manual",
+                    reason=reason or "",
+                    until=resume_at,
+                    set_by=set_by,
+                    observed_at=observed,
+                    available=True,
+                )
+                sources = _upsert_source(sources, new_source)
+            else:
+                sources = _remove_source_kind(sources, kind, available_only=False)
 
-            applied_state = {
-                "status": status,
-                "observed_at": _iso(observed),
-                "resume_at": _iso(resume_at),
-                "reason": reason,
-            }
-            if status == "available":
-                applied_state["override_until"] = None
-            elif existing is not None and existing.get("override_until"):
-                applied_state["override_until"] = existing.get("override_until")
-            state["engines"][engine_name] = applied_state
+            active = _active_sources(sources, observed)
+            derived = _derive_from_sources(active, observed)
+            if sources:
+                state["engines"][engine_name] = _engine_payload_from_sources(sources, derived)
+            elif derived.status == "available":
+                state["engines"][engine_name] = _engine_payload_from_sources([], derived)
+            else:
+                state["engines"].pop(engine_name, None)
             resumed = self._release_for_engine(state, engine_name, observed)
             self._write_state_unlocked(state)
 
         self._audit_state_changed(
             engine=engine_name,
-            status=status,
+            status=derived.status,
             observed_at=observed,
-            resume_at=resume_at,
-            reason=reason,
+            resume_at=derived.resume_at,
+            reason=derived.reason,
             stale_ignored=False,
         )
         for task_uuid in resumed:
@@ -182,7 +222,7 @@ class QuotaGate:
             applied=True,
             stale_ignored=False,
             observed_at=observed,
-            resume_at=resume_at,
+            resume_at=resume_at if status == "paused" or kind == "manual" else derived.resume_at,
             reason=reason,
         )
 
@@ -191,39 +231,54 @@ class QuotaGate:
         *,
         engine: str,
         observed_at: datetime,
+        kind: PauseKind | None = None,
         ttl_seconds: int | None = None,
     ) -> QuotaReportResult:
         engine_name = _require_non_empty(engine, "engine")
         observed = _require_aware(observed_at, "observed_at")
+        if kind is not None and ttl_seconds is not None:
+            raise ValueError("kind and ttl_seconds cannot be specified together")
 
         with self._lock(exclusive=True):
             state = self._load_state_unlocked()
             existing = state["engines"].get(engine_name)
-            if existing is not None:
-                prev_observed = _parse_dt(existing["observed_at"], "observed_at")
-                if observed < prev_observed:
-                    return QuotaReportResult(
-                        engine=engine_name,
-                        status="available",
-                        applied=False,
-                        stale_ignored=True,
-                        observed_at=observed,
-                        resume_at=None,
-                        reason=None,
-                    )
-            if ttl_seconds is None:
-                state["engines"].pop(engine_name, None)
-            else:
+            sources = _sources_from_engine_payload(existing)
+            derived_before = _derive_from_sources(_active_sources(sources, observed), observed)
+            if observed < derived_before.observed_at:
+                return QuotaReportResult(
+                    engine=engine_name,
+                    status="available",
+                    applied=False,
+                    stale_ignored=True,
+                    observed_at=observed,
+                    resume_at=None,
+                    reason=None,
+                )
+
+            if ttl_seconds is not None:
                 if ttl_seconds < 0:
                     raise ValueError("ttl_seconds must be >= 0")
                 override_until = observed + timedelta(seconds=ttl_seconds)
-                state["engines"][engine_name] = {
-                    "status": "available",
-                    "observed_at": _iso(observed),
-                    "resume_at": None,
-                    "reason": None,
-                    "override_until": _iso(override_until),
-                }
+                manual = PauseSource(
+                    kind="manual",
+                    reason="",
+                    until=override_until,
+                    set_by="clear_ttl",
+                    observed_at=observed,
+                    available=True,
+                )
+                sources = _upsert_source(sources, manual)
+            elif kind is None:
+                sources = []
+            else:
+                sources = _remove_source_kind(sources, kind, available_only=(kind == "manual"))
+
+            active = _active_sources(sources, observed)
+            derived = _derive_from_sources(active, observed)
+            if sources:
+                state["engines"][engine_name] = _engine_payload_from_sources(sources, derived)
+            else:
+                state["engines"].pop(engine_name, None)
             resumed = self._release_for_engine(state, engine_name, observed)
             self._write_state_unlocked(state)
 
@@ -260,13 +315,28 @@ class QuotaGate:
 
         with self._lock(exclusive=True):
             state = self._load_state_unlocked()
+            sources = _sources_from_engine_payload(state["engines"].get(engine_name))
+            drain_source = PauseSource(
+                kind="drain",
+                reason=reason or "",
+                until=None,
+                set_by="drain",
+                observed_at=current,
+                available=False,
+            )
+            sources = _upsert_source(sources, drain_source)
+            active = _active_sources(sources, current)
+            derived = _derive_from_sources(active, current)
+            state["engines"][engine_name] = _engine_payload_from_sources(sources, derived)
             if engine_name not in state["draining_engines"]:
                 state["draining_engines"][engine_name] = {
                     "started_at": _iso(current),
                     "reason": reason,
                 }
-                self._write_state_unlocked(state)
                 changed = True
+            else:
+                changed = True
+            self._write_state_unlocked(state)
 
         if changed:
             self._audit_engine_drain_started(engine=engine_name, observed_at=current, reason=reason)
@@ -286,8 +356,19 @@ class QuotaGate:
         with self._lock(exclusive=True):
             state = self._load_state_unlocked()
             drain_removed = state["draining_engines"].pop(engine_name, None) is not None
+            existing = state["engines"].get(engine_name)
+            sources = _sources_from_engine_payload(existing)
+            if _source_for_kind(sources, "drain") is not None:
+                sources = _remove_source_kind(sources, "drain", available_only=False)
+                drain_removed = True
+            if sources:
+                active = _active_sources(sources, current)
+                derived = _derive_from_sources(active, current)
+                state["engines"][engine_name] = _engine_payload_from_sources(sources, derived)
+            elif existing is not None:
+                state["engines"].pop(engine_name, None)
             released = self._release_for_engine(state, engine_name, current)
-            if drain_removed or released:
+            if drain_removed or released or existing is not None:
                 self._write_state_unlocked(state)
                 changed = True
 
@@ -534,21 +615,22 @@ class QuotaGate:
         with self._lock(exclusive=True):
             state = self._load_state_unlocked()
             released: list[tuple[str, str]] = []
+            state_changed = False
             for engine_name, payload in list(state["engines"].items()):
-                engine_state = _to_engine_state(payload)
-                if engine_state is None:
-                    continue
-                if engine_state.status == "available":
-                    for task_uuid in self._release_for_engine(state, engine_name, current):
-                        released.append((task_uuid, engine_name))
-                    continue
-                if engine_state.resume_at is not None and engine_state.resume_at <= current:
-                    state["engines"][engine_name] = {
-                        "status": "available",
-                        "observed_at": _iso(current),
-                        "resume_at": None,
-                        "reason": engine_state.reason,
-                    }
+                sources = _sources_from_engine_payload(payload)
+                pruned = _active_sources(sources, current)
+                if len(pruned) != len(sources):
+                    state_changed = True
+                derived = _derive_from_sources(pruned, current)
+                if pruned:
+                    state["engines"][engine_name] = _engine_payload_from_sources(pruned, derived)
+                elif payload is not None:
+                    state["engines"][engine_name] = _engine_payload_from_sources([], derived)
+                    state_changed = True
+                else:
+                    state["engines"].pop(engine_name, None)
+                    state_changed = True
+                if derived.status == "available":
                     for task_uuid in self._release_for_engine(state, engine_name, current):
                         released.append((task_uuid, engine_name))
 
@@ -569,7 +651,7 @@ class QuotaGate:
                     del state["deferred_tasks"][task_uuid]
                     break
 
-            if released:
+            if released or state_changed:
                 self._write_state_unlocked(state)
 
         for task_uuid, engine_name in released:
@@ -600,24 +682,48 @@ class QuotaGate:
             self._write_state_unlocked(result)
             return result
 
+    def increment_auth_strike(self, *, engine: str, observed_at: datetime) -> int:
+        engine_name = _require_non_empty(engine, "engine")
+        _require_aware(observed_at, "observed_at")
+        with self._lock(exclusive=True):
+            state = self._load_state_unlocked()
+            strikes = state.setdefault("auth_strikes", {})
+            if not isinstance(strikes, dict):
+                strikes = {}
+                state["auth_strikes"] = strikes
+            current = int(strikes.get(engine_name, 0)) + 1
+            strikes[engine_name] = current
+            self._write_state_unlocked(state)
+            return current
+
+    def reset_auth_strike(self, *, engine: str) -> None:
+        engine_name = _require_non_empty(engine, "engine")
+        with self._lock(exclusive=True):
+            state = self._load_state_unlocked()
+            strikes = state.get("auth_strikes")
+            if isinstance(strikes, dict) and engine_name in strikes:
+                del strikes[engine_name]
+                self._write_state_unlocked(state)
+
+    def auth_strike_count(self, *, engine: str) -> int:
+        engine_name = _require_non_empty(engine, "engine")
+        with self._lock(exclusive=False):
+            state = self._load_state_unlocked()
+            strikes = state.get("auth_strikes")
+            if not isinstance(strikes, dict):
+                return 0
+            return int(strikes.get(engine_name, 0))
+
     def snapshot(self, *, now: datetime | None = None) -> QuotaSnapshot:
         current = _aware_now(now)
         with self._lock(exclusive=False):
             state = self._load_state_unlocked()
         engines: dict[str, EngineQuotaState] = {}
         for name, payload in state["engines"].items():
-            eng = _to_engine_state(payload)
+            eng = _to_engine_state(payload, now=current)
             if eng is None:
                 continue
-            if eng.status == "paused" and eng.resume_at is not None and eng.resume_at <= current:
-                engines[name] = EngineQuotaState(
-                    status="available",
-                    observed_at=eng.observed_at,
-                    resume_at=None,
-                    reason=eng.reason,
-                )
-            else:
-                engines[name] = eng
+            engines[name] = eng
         deferred_tasks = {
             task_uuid: DeferredTaskState(
                 engine=str(payload["engine"]),
@@ -634,6 +740,13 @@ class QuotaGate:
             drain_state = _to_drain_state(payload)
             if drain_state is not None:
                 draining_engines[engine_name] = drain_state
+        for name, eng in engines.items():
+            if any(s.kind == "drain" for s in eng.sources) and name not in draining_engines:
+                drain_src = next(s for s in eng.sources if s.kind == "drain")
+                draining_engines[name] = DrainState(
+                    started_at=drain_src.observed_at,
+                    reason=drain_src.reason or None,
+                )
         running_tasks = {
             task_uuid: _to_running_state(payload)
             for task_uuid, payload in state["running_tasks"].items()
@@ -740,7 +853,7 @@ class QuotaGate:
                 check_engine_limits=check_engine_limits,
             )
 
-        engine_state = _to_engine_state(state["engines"].get(engine))
+        engine_state = _to_engine_state(state["engines"].get(engine), now=now)
         if engine_state is not None and _is_paused(engine_state, now):
             deferred_reason = fallback_reason or engine_state.reason or "quota paused"
             return AdmissionDecision(
@@ -785,7 +898,7 @@ class QuotaGate:
         for role_engine in role_engines:
             if not _engine_effective_available(state, role_engine, now):
                 saw_unavailable = True
-                engine_state = _to_engine_state(state["engines"].get(role_engine))
+                engine_state = _to_engine_state(state["engines"].get(role_engine), now=now)
                 if engine_state is not None and engine_state.resume_at is not None:
                     resume_candidates.append(engine_state.resume_at)
                 continue
@@ -1062,26 +1175,230 @@ def _parse_dt(raw: str, field_name: str) -> datetime:
     return _require_aware(parsed, field_name)
 
 
-def _to_engine_state(payload: dict | None) -> EngineQuotaState | None:
+def _to_engine_state(payload: dict | None, *, now: datetime | None = None) -> EngineQuotaState | None:
     if payload is None:
         return None
+    current = _aware_now(now)
+    sources = _sources_from_engine_payload(payload)
+    active = _active_sources(sources, current)
+    return _derive_from_sources(active, current)
+
+
+def _source_for_kind(sources: list[PauseSource], kind: PauseKind) -> PauseSource | None:
+    for src in sources:
+        if src.kind == kind:
+            return src
+    return None
+
+
+def _upsert_source(sources: list[PauseSource], new_source: PauseSource) -> list[PauseSource]:
+    updated: list[PauseSource] = []
+    replaced = False
+    for src in sources:
+        if src.kind == new_source.kind:
+            if not replaced:
+                updated.append(new_source)
+                replaced = True
+        else:
+            updated.append(src)
+    if not replaced:
+        updated.append(new_source)
+    return updated
+
+
+def _remove_source_kind(
+    sources: list[PauseSource],
+    kind: PauseKind,
+    *,
+    available_only: bool,
+) -> list[PauseSource]:
+    return [
+        src
+        for src in sources
+        if src.kind != kind or (available_only and not src.available)
+    ]
+
+
+def _active_sources(sources: list[PauseSource], now: datetime) -> list[PauseSource]:
+    active: list[PauseSource] = []
+    for src in sources:
+        if src.until is not None and src.until <= now:
+            continue
+        active.append(src)
+    return active
+
+
+def _manual_override_active(sources: list[PauseSource], now: datetime) -> PauseSource | None:
+    for src in sources:
+        if src.kind == "manual" and src.available:
+            if src.until is None or src.until > now:
+                return src
+    return None
+
+
+def _sources_from_engine_payload(payload: dict | None) -> list[PauseSource]:
+    if payload is None:
+        return []
+    raw_sources = payload.get("sources")
+    if isinstance(raw_sources, list) and raw_sources:
+        parsed: list[PauseSource] = []
+        for item in raw_sources:
+            if isinstance(item, dict):
+                parsed.append(_parse_pause_source(item))
+        return parsed
+    return _legacy_sources_from_payload(payload)
+
+
+def _legacy_sources_from_payload(payload: dict) -> list[PauseSource]:
     status = payload.get("status")
     if status not in {"available", "paused"}:
         raise ValueError("invalid engine status in quota state")
     observed = _parse_dt(str(payload.get("observed_at")), "observed_at")
     resume_raw = payload.get("resume_at")
-    resume_at = _parse_dt(resume_raw, "resume_at") if isinstance(resume_raw, str) and resume_raw else None
-    override_until = _parse_optional_dt(payload.get("override_until"), "override_until")
-    reason = payload.get("reason")
-    if reason is not None and not isinstance(reason, str):
-        reason = str(reason)
-    return EngineQuotaState(
-        status=status,
-        observed_at=observed,
-        resume_at=resume_at,
-        reason=reason,
-        override_until=override_until,
+    resume_at = (
+        _parse_dt(resume_raw, "resume_at")
+        if isinstance(resume_raw, str) and resume_raw
+        else None
     )
+    reason = payload.get("reason")
+    reason_str = str(reason) if reason is not None else ""
+    override_until = _parse_optional_dt(payload.get("override_until"), "override_until")
+    sources: list[PauseSource] = []
+    if status == "paused":
+        sources.append(
+            PauseSource(
+                kind="failure",
+                reason=reason_str,
+                until=resume_at,
+                set_by="legacy",
+                observed_at=observed,
+                available=False,
+            )
+        )
+    if override_until is not None:
+        sources.append(
+            PauseSource(
+                kind="manual",
+                reason="",
+                until=override_until,
+                set_by="legacy",
+                observed_at=observed,
+                available=True,
+            )
+        )
+    return sources
+
+
+def _parse_pause_source(raw: dict) -> PauseSource:
+    kind = raw.get("kind")
+    if kind not in _PAUSE_KIND_ORDER:
+        raise ValueError("invalid pause source kind in quota state")
+    observed = _parse_dt(str(raw.get("observed_at")), "observed_at")
+    until_raw = raw.get("until")
+    until = (
+        _parse_dt(until_raw, "until")
+        if isinstance(until_raw, str) and until_raw
+        else None
+    )
+    reason = raw.get("reason")
+    reason_str = str(reason) if reason is not None else ""
+    set_by = str(raw.get("set_by", "ghdag"))
+    available = bool(raw.get("available", False))
+    if available and kind != "manual":
+        raise ValueError("available pause source requires kind=manual")
+    return PauseSource(
+        kind=kind,
+        reason=reason_str,
+        until=until,
+        set_by=set_by,
+        observed_at=observed,
+        available=available,
+    )
+
+
+def _derive_from_sources(active: list[PauseSource], now: datetime) -> EngineQuotaState:
+    if not active:
+        return EngineQuotaState(
+            status="available",
+            observed_at=now,
+            resume_at=None,
+            reason=None,
+            sources=(),
+            override_until=None,
+        )
+
+    manual = _manual_override_active(active, now)
+    if manual is not None:
+        override_until = manual.until
+        observed_at = max(s.observed_at for s in active)
+        return EngineQuotaState(
+            status="available",
+            observed_at=observed_at,
+            resume_at=override_until,
+            reason=manual.reason or None,
+            sources=tuple(_ordered_sources(active)),
+            override_until=override_until,
+        )
+
+    unavailable = [s for s in active if not s.available]
+    if unavailable:
+        observed_at = max(s.observed_at for s in unavailable)
+        any_indefinite = any(s.until is None for s in unavailable)
+        if any_indefinite:
+            resume_at = None
+        else:
+            resume_at = max(s.until for s in unavailable if s.until is not None)
+        if len(unavailable) == 1 and not unavailable[0].reason:
+            reason = None
+        else:
+            reason = "; ".join(f"{s.kind}: {s.reason}" for s in _ordered_sources(unavailable))
+        return EngineQuotaState(
+            status="paused",
+            observed_at=observed_at,
+            resume_at=resume_at,
+            reason=reason,
+            sources=tuple(_ordered_sources(active)),
+            override_until=None,
+        )
+
+    return EngineQuotaState(
+        status="available",
+        observed_at=max(s.observed_at for s in active),
+        resume_at=None,
+        reason=None,
+        sources=tuple(_ordered_sources(active)),
+        override_until=None,
+    )
+
+
+def _ordered_sources(sources: list[PauseSource]) -> list[PauseSource]:
+    order = {kind: idx for idx, kind in enumerate(_PAUSE_KIND_ORDER)}
+    return sorted(sources, key=lambda s: order.get(s.kind, len(_PAUSE_KIND_ORDER)))
+
+
+def _engine_payload_from_sources(
+    sources: list[PauseSource],
+    derived: EngineQuotaState,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "status": derived.status,
+        "observed_at": _iso(derived.observed_at),
+        "resume_at": _iso(derived.resume_at),
+        "reason": derived.reason,
+        "override_until": _iso(derived.override_until),
+        "sources": [
+            {
+                "kind": s.kind,
+                "reason": s.reason,
+                "until": _iso(s.until),
+                "set_by": s.set_by,
+                "observed_at": _iso(s.observed_at),
+                "available": s.available,
+            }
+            for s in _ordered_sources(sources)
+        ],
+    }
+    return payload
 
 
 def _to_drain_state(payload: dict | None) -> DrainState | None:
@@ -1131,7 +1448,7 @@ def _engine_effective_available(
         if isinstance(brake_eng, dict) and brake_eng.get("status") == "paused":
             return False
     eng_payload = state["engines"].get(engine)
-    engine_state = _to_engine_state(eng_payload)
+    engine_state = _to_engine_state(eng_payload, now=observed_at)
     if eng_payload is None:
         return True
     if engine_state is None:
