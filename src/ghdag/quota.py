@@ -282,7 +282,7 @@ class QuotaGate:
             elif kind is None:
                 sources = []
             else:
-                sources = _remove_source_kind(sources, kind, available_only=(kind == "manual"))
+                sources = _remove_source_kind(sources, kind, available_only=False)
 
             active = _active_sources(sources, observed)
             derived = _derive_from_sources(active, observed)

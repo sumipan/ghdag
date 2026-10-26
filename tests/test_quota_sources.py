@@ -128,6 +128,21 @@ def test_clear_ttl_maps_to_manual_and_rejects_kind_combo(tmp_path: Path) -> None
         gate.clear(engine="claude", observed_at=_dt(12, 1), kind="budget", ttl_seconds=10)
 
 
+def test_clear_manual_removes_paused_manual_source(tmp_path: Path) -> None:
+    gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
+    gate.report(
+        engine="claude",
+        status="paused",
+        observed_at=_dt(12),
+        kind="manual",
+        reason="manual maintenance",
+    )
+
+    gate.clear(engine="claude", observed_at=_dt(12, 1), kind="manual")
+
+    assert "claude" not in gate.snapshot(now=_dt(12, 2)).engines
+
+
 def test_stale_per_kind_not_cross_kind(tmp_path: Path) -> None:
     gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
     gate.report(
