@@ -252,7 +252,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `LLMPipelineAPI` | `(pipeline_state, order_builder, queue_dir="queue", *, order_builders=None)` |
 | `LLMPipelineAPI.submit` | `(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None, workflow_roles=None) -> list[str]` |
 | `PipelineState` | `(state_dir, exec_jsonl_path)`; also `PipelineState.from_repo_root(repo_root)` |
-| `QuotaGate` | `(state_path, audit_path=None, brake_state_path=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `defer`, `release_ready`, `snapshot`, `wait_idle` |
+| `QuotaGate` | `(state_path, audit_path=None, brake_state_path=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `wait_idle` |
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
 | `issue_status` | `(issue_number, *, handler=None, workflow=None, exec_jsonl_path, state_dir, done_dir, running_uuids=None, audit_path=None, running_dir=None) -> IssueStatus` |
 | `running_tasks` | `(running_dir) -> list[RunningTask]` |
@@ -489,7 +489,7 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 | Launch | A task starts when all of its `depends` succeeded and `QuotaGate.admit` admits its engine / role. Each task runs in its own process group with `GHDAG_TASK_UUID` and `GHDAG_RESULT_PATH` in its environment. Host environment variables are filtered by the [task environment policy](#task-environment-policy) before launch |
 | Dependency failure | Downstream tasks of a failed task get `DEP_FAILED` |
 | Timeout / cancel | SIGTERM to the process group, SIGKILL after `DagConfig.kill_grace`; done marker `TIMEOUT` / `CANCELLED` |
-| Deferral | A task that prints `PIPELINE_STATUS: DEFERRED` gets `DEFERRED`; the marker is removed and the task relaunched when `QuotaGate.release_ready()` releases it |
+| Quota wait | Tasks emit `PIPELINE_STATUS: WAIT_QUOTA` plus a `WAIT_QUOTA:` companion line; the engine records engine-level pause, deletes the attempt result, and leaves the task pending (no `done/` marker, no per-task ledger) |
 | Engine quarantine | `EngineQuarantine` temporarily blocks launches for an engine whose environment is broken |
 | Circuit breaker | The runner stops after `max_consecutive_failures` consecutive failures; the counter resets when the gap since the previous failure exceeds `failure_window_sec` |
 | First SIGTERM / SIGINT | Writes `interrupted_at` into every `running/<uuid>.json`, stops launching, and drains running tasks until `task_timeout` elapses (no drain when `task_timeout` is `None`); the remaining tasks are then terminated and the runner exits |

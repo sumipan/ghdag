@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.106.0 - 2026-10-27
+
+### Changed
+
+- **Breaking:** Quota waiting is engine-owned. Tasks signal `PIPELINE_STATUS: WAIT_QUOTA` with a `WAIT_QUOTA:` companion line; the launcher records engine-level pause, deletes the attempt result, and does not write `done/`. `PIPELINE_STATUS: DEFERRED` is rejected as `PIPELINE_FAILED:LEGACY_DEFERRED_UNSUPPORTED`.
+- **Breaking:** Removed `QuotaGate.defer`, `release_ready`, and persistent `deferred_tasks`. Use `QuotaGate.refresh()` to expire pause sources. Legacy `done/<uuid>` contents `DEFERRED` are migrated on first exec load (`task_deferred_migrated` audit).
+- `ghdag quota status` no longer returns `deferred_tasks` or per-engine `deferred` counts.
+
 ## 0.105.0 - 2026-10-26
 
 ### Added

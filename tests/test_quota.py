@@ -44,9 +44,7 @@ def test_begin_run_is_deferred_while_draining(tmp_path: Path) -> None:
     decision = gate.begin_run(task_uuid="task-1", engine="claude", now=_dt(12, 1))
     assert decision.allowed is False
     assert decision.status == "DEFERRED"
-    snapshot = gate.snapshot(now=_dt(12, 2))
-    assert "task-1" in snapshot.deferred_tasks
-    assert "task-1" not in snapshot.running_tasks
+    assert "task-1" not in gate.snapshot(now=_dt(12, 2)).running_tasks
 
 
 def test_begin_run_registers_running_and_finish_run_clears_it(tmp_path: Path) -> None:
@@ -67,11 +65,11 @@ def test_resume_releases_only_after_all_blockers_removed(tmp_path: Path) -> None
 
     released = gate.resume(engine="claude", now=_dt(12, 3))
     assert released == []
-    assert "task-1" in gate.snapshot().deferred_tasks
 
     clear_result = gate.clear(engine="claude", observed_at=_dt(12, 4))
     assert clear_result.applied is True
-    assert "task-1" not in gate.snapshot().deferred_tasks
+    decision = gate.begin_run(task_uuid="task-1", engine="claude", now=_dt(12, 5))
+    assert decision.allowed is True
 
 
 def test_stale_available_report_is_ignored(tmp_path: Path) -> None:
@@ -82,31 +80,28 @@ def test_stale_available_report_is_ignored(tmp_path: Path) -> None:
     assert stale.stale_ignored is True
 
     snapshot = gate.snapshot(now=_dt(13, 0))
-    assert "task-1" in snapshot.deferred_tasks
     assert snapshot.engines["claude"].status == "paused"
 
 
-def test_release_ready_unblocks_only_target_engine(tmp_path: Path) -> None:
+def test_refresh_expires_pause_per_engine(tmp_path: Path) -> None:
     gate = QuotaGate(tmp_path / "quota-gate.json")
     gate.report(engine="claude", status="paused", observed_at=_dt(12), resume_at=_dt(17))
     gate.report(engine="codex", status="paused", observed_at=_dt(12), resume_at=_dt(18))
-    gate.admit(task_uuid="claude-task", engine="claude", phase="launch", now=_dt(12, 5))
-    gate.admit(task_uuid="codex-task", engine="codex", phase="launch", now=_dt(12, 5))
 
-    released = gate.release_ready(now=_dt(17, 0))
-    assert released == ["claude-task"]
-    assert "codex-task" in gate.snapshot(now=_dt(17, 1)).deferred_tasks
+    gate.refresh(now=_dt(17, 0))
+    assert gate.snapshot(now=_dt(17, 1)).engines["claude"].status == "available"
+    assert gate.snapshot(now=_dt(17, 1)).engines["codex"].status == "paused"
 
 
-def test_paused_without_resume_at_stays_deferred(tmp_path: Path) -> None:
+def test_paused_without_resume_at_stays_paused_until_clear(tmp_path: Path) -> None:
     gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
     gate.report(engine="claude", status="paused", observed_at=_dt(12))
-    gate.admit(task_uuid="task-1", engine="claude", phase="launch", now=_dt(12, 30))
-    assert gate.release_ready(now=_dt(20, 0)) == []
-    assert "task-1" in gate.snapshot(now=_dt(20, 0)).deferred_tasks
+    gate.refresh(now=_dt(20, 0))
+    assert gate.snapshot(now=_dt(20, 0)).engines["claude"].status == "paused"
 
     gate.clear(engine="claude", observed_at=_dt(20, 1))
-    assert "task-1" not in gate.snapshot(now=_dt(20, 2)).deferred_tasks
+    snap = gate.snapshot(now=_dt(20, 2))
+    assert snap.engines.get("claude") is None or snap.engines["claude"].status == "available"
 
 
 def test_default_pause_ttl_applied_on_report(tmp_path: Path) -> None:
@@ -117,10 +112,9 @@ def test_default_pause_ttl_applied_on_report(tmp_path: Path) -> None:
     assert result.resume_at == expected_resume.astimezone(timezone.utc)
     state = gate.read_state()
     assert state["engines"]["codex"]["resume_at"] == expected_resume.astimezone(timezone.utc).isoformat()
-    gate.admit(task_uuid="task-1", engine="codex", phase="launch", now=_dt(12, 30))
-    assert gate.release_ready(now=observed + timedelta(seconds=3599)) == []
-    assert "task-1" in gate.snapshot(now=observed + timedelta(seconds=3599)).deferred_tasks
-    assert gate.release_ready(now=observed + timedelta(seconds=3600)) == ["task-1"]
+    gate.refresh(now=observed + timedelta(seconds=3599))
+    assert gate.snapshot(now=observed + timedelta(seconds=3599)).engines["codex"].status == "paused"
+    gate.refresh(now=observed + timedelta(seconds=3600))
     assert gate.read_state()["engines"]["codex"]["status"] == "available"
 
 
@@ -188,7 +182,7 @@ def test_parallel_report_and_admit_keeps_valid_json(tmp_path: Path) -> None:
     content = state_path.read_text(encoding="utf-8")
     payload = json.loads(content)
     assert payload["schema_version"] == 1
-    assert len(payload["deferred_tasks"]) == 40
+    assert "deferred_tasks" not in payload
 
 
 def test_wait_idle_returns_true_when_no_running(tmp_path: Path) -> None:
@@ -260,10 +254,8 @@ def test_begin_run_and_drain_race_never_creates_dual_registry(tmp_path: Path) ->
         assert done.is_set()
 
         snapshot = gate.snapshot(now=_dt(12, 2))
-        in_running = task_uuid in snapshot.running_tasks
-        in_deferred = task_uuid in snapshot.deferred_tasks
-        assert in_running ^ in_deferred
-        gate.finish_run(task_uuid=task_uuid)
+        if task_uuid in snapshot.running_tasks:
+            gate.finish_run(task_uuid=task_uuid)
 
 
 def test_corrupted_state_is_fail_closed(tmp_path: Path) -> None:
@@ -279,7 +271,6 @@ def test_corrupted_state_is_fail_closed(tmp_path: Path) -> None:
 _DEFAULT_STATE = {
     "schema_version": 1,
     "engines": {},
-    "deferred_tasks": {},
     "draining_engines": {},
     "running_tasks": {},
 }

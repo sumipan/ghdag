@@ -6,7 +6,13 @@ import io
 import time
 from unittest.mock import MagicMock, patch
 
-from ghdag.core.vocabulary import DONE_DEFERRED, DONE_ENGINE_ERROR, DONE_ENGINE_ERROR_FINAL
+from ghdag.core.vocabulary import (
+    DONE_ENGINE_ERROR,
+    DONE_ENGINE_ERROR_FINAL,
+    DONE_PIPELINE_FAILED_PREFIX,
+    LEGACY_DONE_DEFERRED,
+    PIPELINE_LEGACY_DEFERRED_UNSUPPORTED,
+)
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DagHooks
 from ghdag.dag.models import DagConfig, RunningTask, Task
@@ -161,7 +167,7 @@ def test_non_retryable_engine_error_marks_done_final(mock_mark_done, tmp_path):
 
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
-def test_pipeline_status_deferred_marks_done_deferred_no_failure_hook(mock_mark_done, tmp_path):
+def test_pipeline_status_legacy_deferred_is_unsupported_failure(mock_mark_done, tmp_path):
     engine, hooks = _make_engine(tmp_path)
     result_file = tmp_path / "result.md"
     result_file.write_text("PIPELINE_STATUS: DEFERRED\n", encoding="utf-8")
@@ -186,12 +192,13 @@ def test_pipeline_status_deferred_marks_done_deferred_no_failure_hook(mock_mark_
 
     engine._launcher.check_completions()
 
-    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, DONE_DEFERRED)
-    hooks.on_task_failure.assert_not_called()
+    expected = f"{DONE_PIPELINE_FAILED_PREFIX}{PIPELINE_LEGACY_DEFERRED_UNSUPPORTED}"
+    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, expected)
+    hooks.on_task_failure.assert_called_once()
 
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
-def test_pipeline_status_deferred_circuit_breaker_not_triggered(mock_mark_done, tmp_path):
+def test_pipeline_status_legacy_deferred_records_failure(mock_mark_done, tmp_path):
     engine, hooks = _make_engine(tmp_path)
     result_file = tmp_path / "result.md"
     result_file.write_text("PIPELINE_STATUS: DEFERRED\n", encoding="utf-8")
@@ -216,10 +223,10 @@ def test_pipeline_status_deferred_circuit_breaker_not_triggered(mock_mark_done, 
 
     engine._launcher.check_completions()
 
-    assert not engine._launcher._circuit_breaker.tripped
+    hooks.on_task_failure.assert_called_once()
 
 
-def test_pipeline_status_deferred_downstream_does_not_start(tmp_path):
+def test_legacy_deferred_done_migrated_downstream_waits(tmp_path):
     exec_path = tmp_path / "jobs" / "exec.jsonl"
     done_dir = tmp_path / "jobs" / "done"
     done_dir.mkdir(parents=True, exist_ok=True)
@@ -242,7 +249,7 @@ def test_pipeline_status_deferred_downstream_does_not_start(tmp_path):
     config = DagConfig(exec_jsonl_path=exec_path, exec_done_dir=done_dir, poll_interval=0.01)
     engine = _DagEngine(config, hooks)
 
-    (done_dir / "upstream").write_text(DONE_DEFERRED, encoding="utf-8")
+    (done_dir / "upstream").write_text(LEGACY_DONE_DEFERRED, encoding="utf-8")
 
     loop_count = 0
 
@@ -252,13 +259,24 @@ def test_pipeline_status_deferred_downstream_does_not_start(tmp_path):
         if loop_count >= 2:
             engine._shutdown = True
 
-    with patch("ghdag.dag.task_launcher.subprocess.Popen") as mock_popen, patch(
+    launched: list[str] = []
+
+    def track_popen(*_args, **_kwargs):
+        launched.append("popen")
+        engine._shutdown = True
+        proc = MagicMock()
+        proc.poll.return_value = None
+        proc.stdout = io.BytesIO(b"")
+        proc.stderr = io.BytesIO(b"")
+        return proc
+
+    with patch("ghdag.dag.task_launcher.subprocess.Popen", side_effect=track_popen), patch(
         "ghdag.dag.engine.time.sleep", side_effect=stop_after_two_sleeps
     ):
         engine.run()
 
-    mock_popen.assert_not_called()
-    assert not (done_dir / "downstream").exists()
+    assert not (done_dir / "upstream").exists() or (done_dir / "upstream").read_text() != "DEFERRED"
+    assert "popen" not in launched or not (done_dir / "downstream").exists()
 
 
 def _make_shell_running_task(uuid, returncode, stdout, result_path, stderr=b""):

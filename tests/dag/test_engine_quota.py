@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ghdag.core.vocabulary import DONE_DEFERRED
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig, RunningTask, Task
 
@@ -126,7 +125,7 @@ def test_draining_one_engine_still_launches_other_engine(tmp_path: Path) -> None
     ):
         engine.run()
 
-    assert "claude-task" in engine._quota_gate.snapshot().deferred_tasks
+    assert "claude-task" not in engine._launcher._running
     assert "codex-task" in engine._launcher._running
 
 
@@ -268,7 +267,7 @@ def test_resume_fallback_command_forms_unchanged_across_engines(
     assert mock_popen.call_args.kwargs.get("start_new_session") is True
 
 
-def test_enqueue_records_are_kept_and_deferred_registry_updated(tmp_path: Path) -> None:
+def test_enqueue_records_are_kept_without_task_ledger(tmp_path: Path) -> None:
     exec_path = tmp_path / "jobs" / "exec.jsonl"
     done_dir = tmp_path / "jobs" / "done"
     done_dir.mkdir(parents=True, exist_ok=True)
@@ -290,12 +289,11 @@ def test_enqueue_records_are_kept_and_deferred_registry_updated(tmp_path: Path) 
 
     text = exec_path.read_text(encoding="utf-8")
     assert '"uuid": "task-1"' in text
-    snapshot = engine._quota_gate.snapshot()
-    assert "task-1" in snapshot.deferred_tasks
+    assert engine._quota_gate.begin_run(task_uuid="task-1", engine="claude").allowed is False
 
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
-def test_runtime_quota_error_becomes_deferred_without_failure_hook(mock_mark_done, tmp_path: Path) -> None:
+def test_runtime_quota_error_pauses_engine_without_task_ledger(mock_mark_done, tmp_path: Path) -> None:
     config = DagConfig(exec_jsonl_path=tmp_path / "exec.jsonl", exec_done_dir=tmp_path / "done")
     hooks = MagicMock()
     hooks.check_rejected.return_value = False
@@ -331,36 +329,7 @@ def test_runtime_quota_error_becomes_deferred_without_failure_hook(mock_mark_don
     hooks.on_task_failure.assert_not_called()
     assert not result_file.exists()
     mock_mark_done.assert_not_called()
-    assert "runtime-1" in engine._quota_gate.snapshot().deferred_tasks
-
-
-def test_requeue_deferred_removes_done_deferred_file(tmp_path: Path) -> None:
-    exec_path = tmp_path / "jobs" / "exec.jsonl"
-    done_dir = tmp_path / "jobs" / "done"
-    done_dir.mkdir(parents=True, exist_ok=True)
-    _write_exec(exec_path, [{"uuid": "task-1", "command": "claude -p hello", "depends": []}])
-
-    config = DagConfig(exec_jsonl_path=exec_path, exec_done_dir=done_dir, poll_interval=0.01)
-    hooks = MagicMock()
-    hooks.check_rejected.return_value = False
-    hooks.check_pipeline_status.return_value = None
-    engine = DagEngine(config, hooks)
-
-    past = datetime(2026, 9, 22, 11, tzinfo=JST)
-    resume_at = datetime(2026, 9, 22, 12, tzinfo=JST)
-    engine._quota_gate.report(engine="claude", status="paused", observed_at=past, resume_at=resume_at)
-    engine._quota_gate.defer("task-1", engine="claude", after=past)
-    (done_dir / "task-1").write_text(DONE_DEFERRED, encoding="utf-8")
-
-    def stop_after_first_sleep(*_args, **_kwargs):
-        engine._shutdown = True
-
-    with patch("ghdag.dag.task_launcher.subprocess.Popen"), patch(
-        "ghdag.dag.engine.time.sleep", side_effect=stop_after_first_sleep
-    ):
-        engine.run()
-
-    assert not (done_dir / "task-1").exists()
+    assert engine._quota_gate.snapshot().engines["claude"].status == "paused"
 
 
 def test_dag_config_brake_state_path_propagates_to_quota_gate(tmp_path: Path) -> None:
@@ -384,121 +353,6 @@ def test_dag_config_brake_state_path_propagates_to_quota_gate(tmp_path: Path) ->
     config_without = DagConfig(exec_jsonl_path=exec_path, exec_done_dir=done_dir)
     engine_without = DagEngine(config_without, hooks)
     assert engine_without._quota_gate._brake_state_path is None
-
-
-def test_brake_paused_keeps_deferred_task_and_done_after_one_poll(tmp_path: Path) -> None:
-    brake_path = tmp_path / "issuesmith-brake.json"
-    _write_brake(brake_path, {"claude": {"status": "paused"}})
-    engine, done_dir, audit_path = _make_engine(tmp_path, brake_state_path=brake_path)
-
-    past = datetime(2026, 9, 22, 11, tzinfo=JST)
-    engine._quota_gate.report(engine="claude", status="available", observed_at=past)
-    engine._quota_gate.defer(
-        "task-1",
-        engine="claude",
-        after=past,
-        role_engines=["claude"],
-    )
-    (done_dir / "task-1").write_text(DONE_DEFERRED, encoding="utf-8")
-
-    def stop_after_first_sleep(*_args, **_kwargs):
-        engine._shutdown = True
-
-    with patch("ghdag.dag.task_launcher.subprocess.Popen"), patch(
-        "ghdag.dag.engine.time.sleep", side_effect=stop_after_first_sleep
-    ):
-        engine.run()
-
-    assert "task-1" in engine._quota_gate.snapshot().deferred_tasks
-    assert (done_dir / "task-1").exists()
-    assert "task_resumed" not in _audit_event_types(audit_path)
-
-
-def test_brake_available_unlinks_deferred_done_on_next_poll(tmp_path: Path) -> None:
-    brake_path = tmp_path / "issuesmith-brake.json"
-    _write_brake(brake_path, {"claude": {"status": "paused"}})
-    engine, done_dir, _audit_path = _make_engine(tmp_path, brake_state_path=brake_path)
-
-    past = datetime(2026, 9, 22, 11, tzinfo=JST)
-    engine._quota_gate.report(engine="claude", status="available", observed_at=past)
-    engine._quota_gate.defer(
-        "task-1",
-        engine="claude",
-        after=past,
-        role_engines=["claude"],
-    )
-    (done_dir / "task-1").write_text(DONE_DEFERRED, encoding="utf-8")
-
-    def stop_after_first_sleep(*_args, **_kwargs):
-        engine._shutdown = True
-
-    with patch("ghdag.dag.task_launcher.subprocess.Popen"), patch(
-        "ghdag.dag.engine.time.sleep", side_effect=stop_after_first_sleep
-    ):
-        engine.run()
-
-    assert (done_dir / "task-1").exists()
-    _write_brake(brake_path, {"claude": {"status": "available"}})
-    engine._shutdown = False
-
-    with patch("ghdag.dag.task_launcher.subprocess.Popen"), patch(
-        "ghdag.dag.engine.time.sleep", side_effect=stop_after_first_sleep
-    ):
-        engine.run()
-
-    assert not (done_dir / "task-1").exists()
-    assert "task-1" not in engine._quota_gate.snapshot().deferred_tasks
-
-
-def test_without_brake_state_path_releases_deferred_despite_external_brake_file(
-    tmp_path: Path,
-) -> None:
-    brake_path = tmp_path / "issuesmith-brake.json"
-    _write_brake(brake_path, {"claude": {"status": "paused"}})
-    engine, done_dir, _audit_path = _make_engine(tmp_path, brake_state_path=None)
-
-    past = datetime(2026, 9, 22, 11, tzinfo=JST)
-    resume_at = datetime(2026, 9, 22, 12, tzinfo=JST)
-    engine._quota_gate.report(
-        engine="claude",
-        status="paused",
-        observed_at=past,
-        resume_at=resume_at,
-    )
-    engine._quota_gate.defer("task-1", engine="claude", after=past)
-    (done_dir / "task-1").write_text(DONE_DEFERRED, encoding="utf-8")
-
-    def stop_after_first_sleep(*_args, **_kwargs):
-        engine._shutdown = True
-
-    with patch("ghdag.dag.task_launcher.subprocess.Popen"), patch(
-        "ghdag.dag.engine.time.sleep", side_effect=stop_after_first_sleep
-    ):
-        engine.run()
-
-    assert not (done_dir / "task-1").exists()
-
-
-def test_pending_requeue_waits_for_late_deferred_done_file(tmp_path: Path) -> None:
-    engine, done_dir, _audit_path = _make_engine(tmp_path)
-    engine._requeue_deferred(["t1"])
-    assert engine._pending_requeue == {"t1"}
-
-    (done_dir / "t1").write_text(DONE_DEFERRED, encoding="utf-8")
-    engine._requeue_deferred([])
-    assert not (done_dir / "t1").exists()
-    assert engine._pending_requeue == set()
-
-
-def test_pending_requeue_clears_when_late_done_is_success(tmp_path: Path) -> None:
-    engine, done_dir, _audit_path = _make_engine(tmp_path)
-    engine._requeue_deferred(["t1"])
-    assert engine._pending_requeue == {"t1"}
-
-    (done_dir / "t1").write_text("0", encoding="utf-8")
-    engine._requeue_deferred([])
-    assert (done_dir / "t1").exists()
-    assert engine._pending_requeue == set()
 
 
 def test_dag_config_quota_limits_and_pause_ttl_propagate(tmp_path: Path) -> None:
@@ -529,16 +383,3 @@ def test_dag_config_quota_limits_and_pause_ttl_propagate(tmp_path: Path) -> None
     assert engine_default._quota_gate._pause_ttl_seconds == 3600
     assert config_default.quota_pause_ttl_seconds == 3600
     assert config_default.engine_limits == {}
-
-
-def test_pending_requeue_skips_unlink_when_task_re_deferred_in_gate(tmp_path: Path) -> None:
-    engine, done_dir, _audit_path = _make_engine(tmp_path)
-    past = datetime(2026, 9, 22, 11, tzinfo=JST)
-    engine._quota_gate.defer("t1", engine="claude", after=past)
-    engine._requeue_deferred(["t1"])
-    assert engine._pending_requeue == {"t1"}
-
-    (done_dir / "t1").write_text(DONE_DEFERRED, encoding="utf-8")
-    engine._requeue_deferred([])
-    assert (done_dir / "t1").exists()
-    assert engine._pending_requeue == set()

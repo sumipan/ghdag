@@ -32,7 +32,6 @@ from ghdag.config.env import (
 from ghdag.core.stall_guard import StallTracker
 from ghdag.core.vocabulary import (
     DONE_CANCELLED,
-    DONE_DEFERRED,
     DONE_EMPTY_RESULT,
     DONE_ENGINE_ENV_ERROR,
     DONE_ENGINE_ERROR,
@@ -46,7 +45,12 @@ from ghdag.core.vocabulary import (
     DONE_SKIPPED_MISSING_INPUT,
     DONE_TIMEOUT,
     DONE_UNKNOWN_FAILURE,
+    LEGACY_DONE_DEFERRED,
+    PIPELINE_LEGACY_DEFERRED_UNSUPPORTED,
+    PIPELINE_WAIT_QUOTA,
+    PIPELINE_WAIT_QUOTA_INVALID,
 )
+from ghdag.dag._util import WaitQuotaParseError, parse_wait_quota_result_path
 from ghdag.io.audit import (
     append_audit_record,
     now_ts,
@@ -62,7 +66,7 @@ from ghdag.llm.compaction import (
     compact_resume_session,
     lookup_parent_token_usage,
 )
-from ghdag.llm.engines import read_ps
+from ghdag.llm.engines import list_engines, read_ps
 from ghdag.llm.session import SessionStore
 from ghdag.metrics.models import FailureClass, TaskMetrics
 from ghdag.metrics.parsers import parse_engine_model
@@ -767,13 +771,6 @@ class TaskLauncher:
                                 resume_at=engine_error.resume_at,
                                 reason=engine_error.message,
                             )
-                            self._quota_gate.admit(
-                                task_uuid=uuid,
-                                engine=engine,
-                                phase="runtime",
-                                now=observed,
-                                reason=engine_error.message,
-                            )
                         if task.result_path and Path(task.result_path).exists():
                             Path(task.result_path).unlink()
                         continue
@@ -846,109 +843,204 @@ class TaskLauncher:
                         )
                         self._hooks.on_task_rejected(uuid, task, retry_depth, is_final, metrics)
 
-                    elif effective_result_path and (
-                        pipeline_status := self._hooks.check_pipeline_status(effective_result_path)
-                    ) and pipeline_status == DONE_DEFERRED:
-                        state_mark_done(self._config.exec_done_dir, uuid, DONE_DEFERRED)
-
-                    elif effective_result_path and pipeline_status and pipeline_status.endswith("_FAILED"):
-                        pipeline_failed = f"{DONE_PIPELINE_FAILED_PREFIX}{pipeline_status}"
-                        state_mark_done(
-                            self._config.exec_done_dir, uuid,
-                            pipeline_failed,
-                        )
-                        metrics = TaskMetrics(
-                            uuid=uuid, engine=engine, model=model,
-                            wall_time_sec=round(finished_at - rt.started_at, 3),
-                            token_count=token_count, status="failure",
-                            started_at=rt.started_at, finished_at=finished_at,
-                            correlation_id=task.idempotency_key,
-                            failure_class=FailureClass.PIPELINE_FAILED,
-                            request_id=_task_request_id(task),
-                            cost_usd=cost_usd,
-                            cache_read_tokens=cache_read_tokens,
-                            cache_creation_tokens=cache_creation_tokens,
-                        )
-                        self._hooks.on_task_failure(
-                            uuid, task, 0, pipeline_failed, metrics
-                        )
-                        self._circuit_breaker.record_failure()
-
-                    elif (
-                        effective_result_path
-                        and os.path.exists(effective_result_path)
-                        and os.path.getsize(effective_result_path) == 0
-                    ):
-                        state_mark_done(self._config.exec_done_dir, uuid, DONE_EMPTY_RESULT)
-                        metrics = TaskMetrics(
-                            uuid=uuid, engine=engine, model=model,
-                            wall_time_sec=round(finished_at - rt.started_at, 3),
-                            token_count=token_count, status="empty_result",
-                            started_at=rt.started_at, finished_at=finished_at,
-                            correlation_id=task.idempotency_key,
-                            failure_class=FailureClass.EMPTY_RESULT,
-                            request_id=_task_request_id(task),
-                            cost_usd=cost_usd,
-                            cache_read_tokens=cache_read_tokens,
-                            cache_creation_tokens=cache_creation_tokens,
-                        )
-                        self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
-
                     else:
-                        metrics = TaskMetrics(
-                            uuid=uuid, engine=engine, model=model,
-                            wall_time_sec=round(finished_at - rt.started_at, 3),
-                            token_count=token_count, status="success",
-                            started_at=rt.started_at, finished_at=finished_at,
-                            correlation_id=task.idempotency_key,
-                            request_id=_task_request_id(task),
-                            cost_usd=cost_usd,
-                            cache_read_tokens=cache_read_tokens,
-                            cache_creation_tokens=cache_creation_tokens,
+                        pipeline_status = (
+                            self._hooks.check_pipeline_status(effective_result_path)
+                            if effective_result_path
+                            else None
                         )
-                        try:
-                            fanout_spec = parse_fanout_spec(effective_result_path)
-                        except ValueError as exc:
-                            logger.warning("FanOut parse error for [%s]: %s", uuid, exc)
-                            failure_metrics = TaskMetrics(
+                        if pipeline_status == PIPELINE_WAIT_QUOTA:
+                            known = frozenset(list_engines())
+                            parsed = parse_wait_quota_result_path(
+                                effective_result_path,
+                                known_engines=known,
+                            )
+                            if isinstance(parsed, WaitQuotaParseError):
+                                pipeline_failed = (
+                                    f"{DONE_PIPELINE_FAILED_PREFIX}"
+                                    f"{PIPELINE_WAIT_QUOTA_INVALID}"
+                                )
+                                state_mark_done(
+                                    self._config.exec_done_dir, uuid, pipeline_failed
+                                )
+                                metrics = TaskMetrics(
+                                    uuid=uuid, engine=engine, model=model,
+                                    wall_time_sec=round(finished_at - rt.started_at, 3),
+                                    token_count=token_count, status="failure",
+                                    started_at=rt.started_at, finished_at=finished_at,
+                                    correlation_id=task.idempotency_key,
+                                    failure_class=FailureClass.PIPELINE_FAILED,
+                                    request_id=_task_request_id(task),
+                                    cost_usd=cost_usd,
+                                    cache_read_tokens=cache_read_tokens,
+                                    cache_creation_tokens=cache_creation_tokens,
+                                )
+                                self._hooks.on_task_failure(
+                                    uuid, task, 0, parsed.reason, metrics
+                                )
+                                self._circuit_breaker.record_failure()
+                            else:
+                                observed = datetime.now(timezone.utc)
+                                for eng_name in parsed.engines:
+                                    self._quota_gate.report(
+                                        engine=eng_name,
+                                        status="paused",
+                                        observed_at=observed,
+                                        resume_at=parsed.after,
+                                        reason="pipeline WAIT_QUOTA",
+                                        set_by=f"task:{uuid}",
+                                    )
+                                append_audit_record(
+                                    self._queue_audit_path(),
+                                    {
+                                        "schema_version": 1,
+                                        "event_type": "task_waiting",
+                                        "uuid": uuid,
+                                        "engines": list(parsed.engines),
+                                        "after": (
+                                            parsed.after.isoformat()
+                                            if parsed.after is not None
+                                            else None
+                                        ),
+                                        "reason": "pipeline WAIT_QUOTA",
+                                        "observed_at": observed.isoformat(),
+                                        "correlation_id": uuid,
+                                    },
+                                )
+                                try:
+                                    Path(effective_result_path).unlink()
+                                except OSError:
+                                    logger.warning(
+                                        "Failed to remove WAIT_QUOTA result for [%s]",
+                                        uuid,
+                                        exc_info=True,
+                                    )
+                        elif pipeline_status == LEGACY_DONE_DEFERRED:
+                            pipeline_failed = (
+                                f"{DONE_PIPELINE_FAILED_PREFIX}"
+                                f"{PIPELINE_LEGACY_DEFERRED_UNSUPPORTED}"
+                            )
+                            state_mark_done(
+                                self._config.exec_done_dir, uuid, pipeline_failed
+                            )
+                            metrics = TaskMetrics(
                                 uuid=uuid, engine=engine, model=model,
                                 wall_time_sec=round(finished_at - rt.started_at, 3),
                                 token_count=token_count, status="failure",
                                 started_at=rt.started_at, finished_at=finished_at,
                                 correlation_id=task.idempotency_key,
-                                failure_class=FailureClass.FANOUT_PARSE_FAILED,
+                                failure_class=FailureClass.PIPELINE_FAILED,
                                 request_id=_task_request_id(task),
                                 cost_usd=cost_usd,
                                 cache_read_tokens=cache_read_tokens,
                                 cache_creation_tokens=cache_creation_tokens,
                             )
+                            self._hooks.on_task_failure(
+                                uuid,
+                                task,
+                                0,
+                                PIPELINE_LEGACY_DEFERRED_UNSUPPORTED,
+                                metrics,
+                            )
+                            self._circuit_breaker.record_failure()
+                        elif pipeline_status and pipeline_status.endswith("_FAILED"):
+                            pipeline_failed = f"{DONE_PIPELINE_FAILED_PREFIX}{pipeline_status}"
                             state_mark_done(
-                                self._config.exec_done_dir, uuid, DONE_FANOUT_PARSE_FAILED
+                                self._config.exec_done_dir, uuid,
+                                pipeline_failed,
                             )
-                            self._hooks.on_task_failure(uuid, task, 0, str(exc), failure_metrics)
-                            continue
-                        if fanout_spec:
-                            self._fanout_manager.spawn(uuid, task, fanout_spec, metrics)
+                            metrics = TaskMetrics(
+                                uuid=uuid, engine=engine, model=model,
+                                wall_time_sec=round(finished_at - rt.started_at, 3),
+                                token_count=token_count, status="failure",
+                                started_at=rt.started_at, finished_at=finished_at,
+                                correlation_id=task.idempotency_key,
+                                failure_class=FailureClass.PIPELINE_FAILED,
+                                request_id=_task_request_id(task),
+                                cost_usd=cost_usd,
+                                cache_read_tokens=cache_read_tokens,
+                                cache_creation_tokens=cache_creation_tokens,
+                            )
+                            self._hooks.on_task_failure(
+                                uuid, task, 0, pipeline_failed, metrics
+                            )
+                            self._circuit_breaker.record_failure()
+
+                        elif (
+                            effective_result_path
+                            and os.path.exists(effective_result_path)
+                            and os.path.getsize(effective_result_path) == 0
+                        ):
+                            state_mark_done(self._config.exec_done_dir, uuid, DONE_EMPTY_RESULT)
+                            metrics = TaskMetrics(
+                                uuid=uuid, engine=engine, model=model,
+                                wall_time_sec=round(finished_at - rt.started_at, 3),
+                                token_count=token_count, status="empty_result",
+                                started_at=rt.started_at, finished_at=finished_at,
+                                correlation_id=task.idempotency_key,
+                                failure_class=FailureClass.EMPTY_RESULT,
+                                request_id=_task_request_id(task),
+                                cost_usd=cost_usd,
+                                cache_read_tokens=cache_read_tokens,
+                                cache_creation_tokens=cache_creation_tokens,
+                            )
+                            self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
+
                         else:
-                            state_mark_done(self._config.exec_done_dir, uuid, 0)
-                            self._run_success_postprocess(
-                                uuid,
-                                task,
-                                "on_task_success",
-                                lambda: self._hooks.on_task_success(uuid, task, metrics),
+                            metrics = TaskMetrics(
+                                uuid=uuid, engine=engine, model=model,
+                                wall_time_sec=round(finished_at - rt.started_at, 3),
+                                token_count=token_count, status="success",
+                                started_at=rt.started_at, finished_at=finished_at,
+                                correlation_id=task.idempotency_key,
+                                request_id=_task_request_id(task),
+                                cost_usd=cost_usd,
+                                cache_read_tokens=cache_read_tokens,
+                                cache_creation_tokens=cache_creation_tokens,
                             )
-                            self._run_success_postprocess(
-                                uuid,
-                                task,
-                                "circuit_breaker.reset",
-                                self._circuit_breaker.reset,
-                            )
-                            self._run_success_postprocess(
-                                uuid,
-                                task,
-                                "promote",
-                                lambda: self._promote_fn(effective_result_path),
-                            )
+                            try:
+                                fanout_spec = parse_fanout_spec(effective_result_path)
+                            except ValueError as exc:
+                                logger.warning("FanOut parse error for [%s]: %s", uuid, exc)
+                                failure_metrics = TaskMetrics(
+                                    uuid=uuid, engine=engine, model=model,
+                                    wall_time_sec=round(finished_at - rt.started_at, 3),
+                                    token_count=token_count, status="failure",
+                                    started_at=rt.started_at, finished_at=finished_at,
+                                    correlation_id=task.idempotency_key,
+                                    failure_class=FailureClass.FANOUT_PARSE_FAILED,
+                                    request_id=_task_request_id(task),
+                                    cost_usd=cost_usd,
+                                    cache_read_tokens=cache_read_tokens,
+                                    cache_creation_tokens=cache_creation_tokens,
+                                )
+                                state_mark_done(
+                                    self._config.exec_done_dir, uuid, DONE_FANOUT_PARSE_FAILED
+                                )
+                                self._hooks.on_task_failure(uuid, task, 0, str(exc), failure_metrics)
+                                continue
+                            if fanout_spec:
+                                self._fanout_manager.spawn(uuid, task, fanout_spec, metrics)
+                            else:
+                                state_mark_done(self._config.exec_done_dir, uuid, 0)
+                                self._run_success_postprocess(
+                                    uuid,
+                                    task,
+                                    "on_task_success",
+                                    lambda: self._hooks.on_task_success(uuid, task, metrics),
+                                )
+                                self._run_success_postprocess(
+                                    uuid,
+                                    task,
+                                    "circuit_breaker.reset",
+                                    self._circuit_breaker.reset,
+                                )
+                                self._run_success_postprocess(
+                                    uuid,
+                                    task,
+                                    "promote",
+                                    lambda: self._promote_fn(effective_result_path),
+                                )
 
                 else:
                     classified = adapter.classify_failure(returncode, stdout_data, stderr_bytes)
@@ -974,13 +1066,6 @@ class TaskLauncher:
                                 engine=engine,
                                 status="paused",
                                 observed_at=observed,
-                                reason=stderr_text,
-                            )
-                            self._quota_gate.admit(
-                                task_uuid=uuid,
-                                engine=engine,
-                                phase="runtime",
-                                now=observed,
                                 reason=stderr_text,
                             )
                         if task.result_path and Path(task.result_path).exists():

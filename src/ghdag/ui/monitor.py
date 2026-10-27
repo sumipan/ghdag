@@ -417,11 +417,8 @@ def build_rows(
     running_uuids_override: Optional[set[str]] = None,
     detect_running: bool = True,
 ) -> tuple[list[Row], dict[str, MonitorTask], list[str]]:
-    from ghdag.quota import QuotaGate
-
     exec_path = _detect_exec_path(repo_root)
     exec_done_dir = _detect_exec_done_dir(repo_root)
-    quota_state_path = repo_root / "jobs" / "quota-gate.json"
     tasks, file_order = _parse_exec_jsonl(str(exec_path))
     if not tasks:
         return [], tasks, file_order
@@ -436,16 +433,9 @@ def build_rows(
             run_set = running_uuids_from_ps(tasks.keys())
     else:
         run_set = set()
-    try:
-        deferred_set = set(
-            QuotaGate(quota_state_path).snapshot().deferred_tasks.keys()
-        )
-    except ValueError:
-        deferred_set = set()
-
     pending: dict[str, Row] = {}
     for uuid, task in tasks.items():
-        st = task_state(uuid, task.depends, exec_done_dir, run_set, deferred_set)
+        st = task_state(uuid, task.depends, exec_done_dir, run_set)
         pending[uuid] = Row(
             uuid=uuid,
             state=state_label(st),

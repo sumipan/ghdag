@@ -27,13 +27,11 @@ def test_quota_gate_round_trip(tmp_path: Path) -> None:
     assert "claude" in snap.engines
     assert snap.engines["claude"].status == "paused"
 
-    gate.defer("task-1", engine="claude", after=t0)
+    gate.refresh(now=_utc(1800))
+    assert gate.snapshot(now=_utc(1800)).engines["claude"].status == "paused"
 
-    released_before = gate.release_ready(now=_utc(1800))
-    assert released_before == [], f"Expected no releases before resume_at, got {released_before}"
-
-    released_after = gate.release_ready(now=_utc(7200))
-    assert "task-1" in released_after, f"Expected task-1 released, got {released_after}"
+    gate.refresh(now=_utc(7200))
+    assert gate.snapshot(now=_utc(7200)).engines["claude"].status == "available"
 
 
 def test_exec_jsonl_round_trip(tmp_path: Path) -> None:

@@ -26,8 +26,6 @@ def test_engine_limit_denies_without_deferred_tasks_or_audit(tmp_path: Path) -> 
     assert decision.allowed is False
     assert decision.status == "DEFERRED"
     assert decision.reason == "engine_limit"
-    snap = gate.snapshot()
-    assert "t3" not in snap.deferred_tasks
     assert audit_path.exists() is False or "task_deferred" not in audit_path.read_text(encoding="utf-8")
 
 
@@ -135,7 +133,7 @@ def test_role_task_records_first_available_engine(tmp_path: Path) -> None:
     assert running["role"] == "design"
 
 
-def test_role_task_paused_and_limited_keeps_pause_defer(tmp_path: Path) -> None:
+def test_role_task_paused_denies_without_task_ledger(tmp_path: Path) -> None:
     gate = QuotaGate(tmp_path / "quota-gate.json", limits={"codex": 1}, pause_ttl_seconds=None)
     gate.report(engine="claude", status="paused", observed_at=_dt(11))
     gate.begin_run(task_uuid="x1", engine="codex", now=_dt(12))
@@ -148,7 +146,7 @@ def test_role_task_paused_and_limited_keeps_pause_defer(tmp_path: Path) -> None:
     )
     assert decision.allowed is False
     assert decision.reason != "engine_limit"
-    assert "role-task" in gate.snapshot(now=_dt(12, 1)).deferred_tasks
+    assert "role-task" not in gate.snapshot(now=_dt(12, 1)).running_tasks
 
 
 def test_role_engine_limit_deny_leaves_state_unchanged(tmp_path: Path) -> None:
