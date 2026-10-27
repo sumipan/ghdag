@@ -202,7 +202,7 @@ class TestRoleDeferredDagPropagation:
         def stop_after_first_sleep(*_args, **_kwargs):
             engine._shutdown = True
 
-        with patch("ghdag.dag.task_launcher.subprocess.Popen") as mock_popen, patch(
+        with patch("ghdag.dag.task_launcher.subprocess.Popen"), patch(
             "ghdag.dag.engine.time.sleep", side_effect=stop_after_first_sleep
         ):
             engine.run()

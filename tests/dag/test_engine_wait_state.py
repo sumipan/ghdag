@@ -11,8 +11,6 @@ from unittest.mock import MagicMock, patch
 
 from ghdag.core.vocabulary import (
     DONE_PIPELINE_FAILED_PREFIX,
-    PIPELINE_LEGACY_DEFERRED_UNSUPPORTED,
-    PIPELINE_WAIT_QUOTA,
     PIPELINE_WAIT_QUOTA_INVALID,
 )
 from ghdag.dag._util import parse_wait_quota_signal
