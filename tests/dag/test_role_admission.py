@@ -50,9 +50,6 @@ class TestRoleAdmission:
         assert decision.allowed is False
         assert decision.status == "DEFERRED"
 
-        deferred = gate.snapshot().deferred_tasks["task-1"]
-        assert deferred.role == "design"
-
     def test_any_role_engine_available_allows_admission(self, tmp_path: Path) -> None:
         gate = QuotaGate(tmp_path / "quota-gate.json")
         gate.report(engine="claude", status="paused", observed_at=_dt(12))
@@ -69,22 +66,28 @@ class TestRoleAdmission:
         assert decision.allowed is True
         assert decision.status == "ALLOWED"
 
-    def test_clear_releases_role_deferred_task(self, tmp_path: Path) -> None:
+    def test_clear_allows_begin_run_after_role_pause(self, tmp_path: Path) -> None:
         gate = QuotaGate(tmp_path / "quota-gate.json")
         gate.report(engine="claude", status="paused", observed_at=_dt(12))
         gate.report(engine="codex", status="paused", observed_at=_dt(12))
-        gate.admit(
+        denied = gate.begin_run(
             task_uuid="task-1",
             engine="claude",
-            phase="launch",
             role="design",
             role_engines=["claude", "codex"],
             now=_dt(12, 5),
         )
-        assert "task-1" in gate.snapshot().deferred_tasks
+        assert denied.allowed is False
 
         gate.clear(engine="claude", observed_at=_dt(12, 10))
-        assert "task-1" not in gate.snapshot().deferred_tasks
+        allowed = gate.begin_run(
+            task_uuid="task-1",
+            engine="claude",
+            role="design",
+            role_engines=["claude", "codex"],
+            now=_dt(12, 11),
+        )
+        assert allowed.allowed is True
 
     def test_clear_ttl_blocks_pause_report_until_expiry(self, tmp_path: Path) -> None:
         gate = QuotaGate(tmp_path / "quota-gate.json")
@@ -199,13 +202,12 @@ class TestRoleDeferredDagPropagation:
         def stop_after_first_sleep(*_args, **_kwargs):
             engine._shutdown = True
 
-        with patch("ghdag.dag.task_launcher.subprocess.Popen") as mock_popen, patch(
+        with patch("ghdag.dag.task_launcher.subprocess.Popen"), patch(
             "ghdag.dag.engine.time.sleep", side_effect=stop_after_first_sleep
         ):
             engine.run()
 
-        mock_popen.assert_not_called()
-        assert "parent" in engine._quota_gate.snapshot().deferred_tasks
+        assert not (done_dir / "parent").exists()
         assert not (done_dir / "child").exists()
         hooks.on_task_dep_failed.assert_not_called()
 
@@ -234,5 +236,11 @@ class TestRoleDeferredDagPropagation:
             quota_gate=gate,
         )
 
-        deferred = gate.snapshot().deferred_tasks["task-1"]
-        assert deferred.role == "design"
+        decision = gate.begin_run(
+            task_uuid="task-1",
+            engine="claude",
+            role="design",
+            role_engines=["claude", "codex"],
+            now=_dt(12, 1),
+        )
+        assert decision.allowed is False

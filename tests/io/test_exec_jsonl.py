@@ -140,7 +140,7 @@ class TestAppend:
         written = json.loads(path.read_text(encoding="utf-8").strip())
         assert written["annotations"]["_request_id"] == "req-1"
 
-    def test_append_registers_deferred_when_engine_paused(self, tmp_path: Path) -> None:
+    def test_append_does_not_create_task_level_deferred_ledger(self, tmp_path: Path) -> None:
         from datetime import datetime, timedelta, timezone
 
         from ghdag.io.audit import AuditContext
@@ -163,7 +163,9 @@ class TestAppend:
             audit_path=tmp_path / "audit.jsonl",
             quota_gate=gate,
         )
-        assert "u1" in gate.snapshot().deferred_tasks
+        snap = gate.snapshot()
+        assert "u1" not in snap.running_tasks
+        assert snap.engines["claude"].status == "paused"
 
 
 class TestRemove:

@@ -7,15 +7,28 @@ import json
 import re
 import subprocess
 from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
-from ghdag.core.vocabulary import PIPELINE_STATUS_RE
+from ghdag.core.vocabulary import PIPELINE_STATUS_RE, WAIT_QUOTA_COMPANION_RE
 
 # Matches: tee [-a] "quoted path" or tee [-a] unquoted-path (any extension)
 _TEE_RE = re.compile(r'\btee\s+(?:-a\s+)?(?:"([^"]+)"|(\S+))')
 
 
-def check_pipeline_status(result_path: str) -> "str | None":
+@dataclass(frozen=True)
+class WaitQuotaSignal:
+    after: datetime | None
+    engines: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class WaitQuotaParseError:
+    reason: str
+
+
+def check_pipeline_status(result_path: str) -> str | None:
     """Find PIPELINE_STATUS lines in the result file and return the last matched value.
 
     Returns:
@@ -27,6 +40,66 @@ def check_pipeline_status(result_path: str) -> "str | None":
         return None
     matches = PIPELINE_STATUS_RE.findall(content)
     return matches[-1] if matches else None
+
+
+def parse_wait_quota_signal(
+    content: str,
+    *,
+    known_engines: frozenset[str],
+) -> WaitQuotaSignal | WaitQuotaParseError:
+    """Parse WAIT_QUOTA protocol from a result file body."""
+    if not PIPELINE_STATUS_RE.findall(content) or PIPELINE_STATUS_RE.findall(content)[-1] != "WAIT_QUOTA":
+        return WaitQuotaParseError("missing PIPELINE_STATUS: WAIT_QUOTA")
+
+    companion_matches = WAIT_QUOTA_COMPANION_RE.findall(content)
+    if not companion_matches:
+        return WaitQuotaParseError("missing WAIT_QUOTA companion line")
+
+    after_raw, engines_raw = companion_matches[-1]
+    after_raw = after_raw.strip()
+    after: datetime | None
+    if after_raw == "":
+        after = None
+    else:
+        try:
+            parsed = datetime.fromisoformat(after_raw.replace("Z", "+00:00"))
+        except ValueError:
+            return WaitQuotaParseError(f"invalid after datetime: {after_raw}")
+        if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+            return WaitQuotaParseError("after must be timezone-aware")
+        after = parsed
+
+    parts = [part.strip() for part in engines_raw.split(",")]
+    engines: list[str] = []
+    seen: set[str] = set()
+    for part in parts:
+        if not part:
+            continue
+        if part in seen:
+            continue
+        seen.add(part)
+        engines.append(part)
+
+    if not engines:
+        return WaitQuotaParseError("empty engines list")
+
+    unknown = [name for name in engines if name not in known_engines]
+    if unknown:
+        return WaitQuotaParseError(f"unknown engine(s): {', '.join(unknown)}")
+
+    return WaitQuotaSignal(after=after, engines=tuple(engines))
+
+
+def parse_wait_quota_result_path(
+    result_path: str,
+    *,
+    known_engines: frozenset[str],
+) -> WaitQuotaSignal | WaitQuotaParseError:
+    try:
+        content = Path(result_path).read_text(encoding="utf-8", errors="replace")
+    except (OSError, FileNotFoundError) as exc:
+        return WaitQuotaParseError(f"cannot read result: {exc}")
+    return parse_wait_quota_signal(content, known_engines=known_engines)
 
 
 def _stderr_reader(proc: subprocess.Popen, buf: io.BytesIO) -> None:

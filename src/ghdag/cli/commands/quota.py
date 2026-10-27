@@ -78,12 +78,6 @@ def cmd_quota_status(args) -> None:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    deferred_by_engine: dict[str, int] = {}
-    for deferred_state in snapshot.deferred_tasks.values():
-        deferred_by_engine[deferred_state.engine] = (
-            deferred_by_engine.get(deferred_state.engine, 0) + 1
-        )
-
     running_by_engine: dict[str, int] = {}
     for running_state in snapshot.running_tasks.values():
         running_by_engine[running_state.engine] = (
@@ -93,28 +87,17 @@ def cmd_quota_status(args) -> None:
     queued_by_engine, unresolved = _collect_queued_counts(
         exec_path=Path(args.exec_path),
         done_dir=Path(args.done_dir),
-        deferred_task_ids=set(snapshot.deferred_tasks.keys()),
         running_task_ids=set(snapshot.running_tasks.keys()),
     )
 
     engine_names = set(snapshot.engines.keys())
     engine_names.update(snapshot.draining_engines.keys())
     engine_names.update(snapshot.limits.keys())
-    engine_names.update(deferred_by_engine.keys())
     engine_names.update(running_by_engine.keys())
     engine_names.update(queued_by_engine.keys())
 
     payload: dict[str, Any] = {
         "engines": {},
-        "deferred_tasks": {
-            task_uuid: {
-                "engine": state.engine,
-                "phase": state.phase,
-                "deferred_at": state.deferred_at.isoformat(),
-                "reason": state.reason,
-            }
-            for task_uuid, state in snapshot.deferred_tasks.items()
-        },
         "unresolved": unresolved,
     }
     for name in sorted(engine_names):
@@ -135,7 +118,6 @@ def cmd_quota_status(args) -> None:
             "permanent_pause": is_permanent,
             "draining": name in snapshot.draining_engines,
             "queued": queued_by_engine.get(name, 0),
-            "deferred": deferred_by_engine.get(name, 0),
             "running": running_by_engine.get(name, 0),
             "idle": running_by_engine.get(name, 0) == 0,
             "limit": snapshot.limits.get(name),
@@ -179,7 +161,6 @@ def _engine_status_payload(snapshot, engine: str) -> dict:
         "engine": engine,
         "quota_status": quota_state.status if quota_state else "available",
         "draining": engine in snapshot.draining_engines,
-        "deferred": sum(1 for state in snapshot.deferred_tasks.values() if state.engine == engine),
         "running": sum(1 for state in snapshot.running_tasks.values() if state.engine == engine),
         "idle": not any(state.engine == engine for state in snapshot.running_tasks.values()),
     }
@@ -189,7 +170,6 @@ def _collect_queued_counts(
     *,
     exec_path: Path,
     done_dir: Path,
-    deferred_task_ids: set[str],
     running_task_ids: set[str],
 ) -> tuple[dict[str, int], int]:
     if not exec_path.exists():
@@ -205,7 +185,7 @@ def _collect_queued_counts(
     queued_by_engine: dict[str, int] = {}
     unresolved = 0
     for task in tasks:
-        if task.uuid in done_ids or task.uuid in deferred_task_ids or task.uuid in running_task_ids:
+        if task.uuid in done_ids or task.uuid in running_task_ids:
             continue
         engine = task.engine
         if engine is None:

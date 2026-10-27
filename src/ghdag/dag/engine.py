@@ -12,9 +12,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import IO
 
-from ghdag.core.vocabulary import DONE_DEFERRED, DONE_DEP_FAILED
+from ghdag.core.vocabulary import DONE_DEP_FAILED, LEGACY_DONE_DEFERRED
 from ghdag.io import exec_jsonl
-from ghdag.io.audit import AuditContext
+from ghdag.io.audit import AuditContext, append_audit_record
 from ghdag.io.done import read_done_content
 from ghdag.quota import QuotaGate
 
@@ -48,6 +48,7 @@ class DagEngine:
         self._drain_deadline: float | None = None
         self._lock_fh: IO[str] | None = None
         self._adopt_done = False
+        self._legacy_deferred_migrated = False
         self._test_hook_post_adopt: Callable[[], None] | None = None
 
         self._circuit_breaker = CircuitBreakerPolicy(
@@ -57,7 +58,6 @@ class DagEngine:
         self._fanout_manager = FanOutManager(
             config, self._hooks, self._append_fanout_child, self._run_promote
         )
-        self._pending_requeue: set[str] = set()
         quota_state_path = config.quota_state_path
         if quota_state_path is None:
             raise ValueError("DagConfig.quota_state_path must be set")
@@ -112,32 +112,30 @@ class DagEngine:
                     self._launcher.adopt_orphans(self._tasks)
                     if self._test_hook_post_adopt is not None:
                         self._test_hook_post_adopt()
+                if not self._legacy_deferred_migrated:
+                    self._legacy_deferred_migrated = True
+                    self._migrate_legacy_deferred_done(self._tasks)
 
             self._apply_pending_cancels()
             self._launcher.check_completions()
             try:
-                released_uuids = self._quota_gate.release_ready()
+                self._quota_gate.refresh()
             except ValueError:
                 logger.exception("Quota state is unreadable; skipping launches in this poll")
                 time.sleep(self._config.poll_interval)
                 continue
-            self._requeue_deferred(released_uuids)
 
             if self._circuit_breaker.tripped:
                 self._shutdown = True
                 break
 
             known_done = load_done_from_dir(self._config.exec_done_dir)
-            known_deferred = {
-                uuid for uuid in known_done
-                if read_done_content(Path(self._config.exec_done_dir), uuid) == DONE_DEFERRED
-            }
             known_succeeded = load_succeeded_from_dir(self._config.exec_done_dir)
 
             self._fanout_manager.check_completions(known_done, known_succeeded)
 
             invalid_tasks = validate_dependencies(
-                list(self._tasks.values()), known_done - known_deferred
+                list(self._tasks.values()), known_done
             )
             for inv_uuid, reason in invalid_tasks.items():
                 if inv_uuid not in known_done and not self._launcher.is_running(inv_uuid):
@@ -145,7 +143,7 @@ class DagEngine:
                     self._hooks.on_task_dep_failed(inv_uuid, self._tasks[inv_uuid], reason)
                     known_done.add(inv_uuid)
 
-            self._propagate_dep_failed(known_done, known_succeeded, known_deferred)
+            self._propagate_dep_failed(known_done, known_succeeded)
 
             launched = 0
             for uuid, task in self._tasks.items():
@@ -159,7 +157,7 @@ class DagEngine:
                 dep_failed = None
                 all_deps_done = True
                 for dep in deps:
-                    if dep not in known_done or dep in known_deferred:
+                    if dep not in known_done:
                         all_deps_done = False
                         break
                     if dep not in known_succeeded:
@@ -233,6 +231,52 @@ class DagEngine:
 
     # --- Internal ---
 
+    def _migrate_legacy_deferred_done(self, tasks: dict[str, Task]) -> None:
+        done_dir = Path(self._config.exec_done_dir)
+        if not done_dir.is_dir():
+            return
+        audit_path = Path(
+            self._config.quota_audit_path
+            or Path(self._config.exec_jsonl_path).parent / "audit.jsonl"
+        )
+        from datetime import datetime, timezone
+
+        observed_at = datetime.now(timezone.utc).isoformat()
+        for done_file in done_dir.iterdir():
+            if not done_file.is_file():
+                continue
+            uuid = done_file.name
+            content = read_done_content(done_dir, uuid)
+            if content is None or content.strip() != LEGACY_DONE_DEFERRED:
+                continue
+            task_present = uuid in tasks
+            try:
+                done_file.unlink()
+            except OSError:
+                logger.warning("Failed to remove legacy DEFERRED done file [%s]", uuid)
+                continue
+            task = tasks.get(uuid)
+            if task is not None and task.result_path:
+                result_path = Path(task.result_path)
+                if result_path.exists():
+                    try:
+                        result_path.unlink()
+                    except OSError:
+                        logger.warning(
+                            "Failed to remove stale result for migrated task [%s]", uuid
+                        )
+            append_audit_record(
+                audit_path,
+                {
+                    "schema_version": 1,
+                    "event_type": "task_deferred_migrated",
+                    "uuid": uuid,
+                    "task_present": task_present,
+                    "observed_at": observed_at,
+                    "correlation_id": uuid,
+                },
+            )
+
     def _apply_pending_cancels(self) -> None:
         """Detect jobs/cancel/<uuid> for running tasks and ask the launcher to cancel."""
         cancel_dir = Path(self._config.exec_done_dir).parent / "cancel"
@@ -292,48 +336,12 @@ class DagEngine:
                 "Promote failed for %s → %s", result_path, promote_target, exc_info=True
             )
 
-    def _requeue_deferred(self, released_uuids: list[str]) -> None:
-        """Remove DONE_DEFERRED done files so released tasks can be re-launched."""
-        done_dir = Path(self._config.exec_done_dir)
-        candidates = set(released_uuids) | self._pending_requeue
-        if not candidates:
-            return
-
-        deferred_in_gate: set[str] | None = None
-        need_deferred_lookup = bool(self._pending_requeue)
-
-        for uuid in candidates:
-            content = read_done_content(done_dir, uuid)
-            if content is None:
-                self._pending_requeue.add(uuid)
-                continue
-
-            if content.strip() == DONE_DEFERRED:
-                if need_deferred_lookup:
-                    if deferred_in_gate is None:
-                        deferred_in_gate = set(self._quota_gate.snapshot().deferred_tasks)
-                    if uuid in deferred_in_gate:
-                        self._pending_requeue.discard(uuid)
-                        continue
-                done_file = done_dir / uuid
-                try:
-                    done_file.unlink()
-                    logger.info("Task [%s] requeued after deferred release", uuid)
-                except OSError:
-                    logger.warning("Failed to remove done file for requeued task [%s]", uuid)
-                self._pending_requeue.discard(uuid)
-                continue
-
-            self._pending_requeue.discard(uuid)
-
     def _propagate_dep_failed(
         self,
         known_done: set[str],
         known_succeeded: set[str],
-        known_deferred: set[str] | None = None,
     ) -> None:
         """Mark tasks whose dependencies have failed as DEP_FAILED."""
-        _deferred = known_deferred or set()
         changed = True
         while changed:
             changed = False
@@ -341,8 +349,6 @@ class DagEngine:
                 if uuid in known_done or self._launcher.is_running(uuid):
                     continue
                 for dep in task.depends:
-                    if dep in _deferred:
-                        continue
                     if dep in known_done and dep not in known_succeeded:
                         state_mark_done(self._config.exec_done_dir, uuid, DONE_DEP_FAILED)
                         self._hooks.on_task_dep_failed(uuid, task, dep)

@@ -252,7 +252,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `LLMPipelineAPI` | `(pipeline_state, order_builder, queue_dir="queue", *, order_builders=None)` |
 | `LLMPipelineAPI.submit` | `(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None, workflow_roles=None) -> list[str]` |
 | `PipelineState` | `(state_dir, exec_jsonl_path)`; also `PipelineState.from_repo_root(repo_root)` |
-| `QuotaGate` | `(state_path, audit_path=None, brake_state_path=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `defer`, `release_ready`, `snapshot`, `wait_idle` |
+| `QuotaGate` | `(state_path, audit_path=None, brake_state_path=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `wait_idle` |
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
 | `issue_status` | `(issue_number, *, handler=None, workflow=None, exec_jsonl_path, state_dir, done_dir, running_uuids=None, audit_path=None, running_dir=None) -> IssueStatus` |
 | `running_tasks` | `(running_dir) -> list[RunningTask]` |
@@ -476,7 +476,7 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 | `cancel/<uuid>` | `ghdag dag cancel`, Web UI `POST /api/stop` | `DagEngine` | Empty marker requesting cancellation |
 | `events/<uuid>.jsonl` | `TaskLauncher` stream drain | Web UI `progress` | Raw engine stream events (claude / cursor / codex tasks with `result_path`) |
 | `.sessions/` | `TaskLauncher` | `resume_from` steps | Per-task engine session IDs |
-| `quota-gate.json` | `QuotaGate`, `ghdag quota` | Launch admission | `engines`, `deferred_tasks`, `draining_engines`, `running_tasks` |
+| `quota-gate.json` | `QuotaGate`, `ghdag quota` | Launch admission | `engines`, `draining_engines`, `running_tasks` |
 | `jobs/audit.jsonl` | `AuditHooks`, `ghdag.io.audit`, `ghdag.vcs` sinks | `ghdag audit-query`, Web UI dashboard | Audit events (rotated by size) |
 | `jobs/latency_span.jsonl` | `ghdag.audit.emit_span` | External tracing tools | One latency span per line |
 
@@ -489,7 +489,7 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 | Launch | A task starts when all of its `depends` succeeded and `QuotaGate.admit` admits its engine / role. Each task runs in its own process group with `GHDAG_TASK_UUID` and `GHDAG_RESULT_PATH` in its environment. Host environment variables are filtered by the [task environment policy](#task-environment-policy) before launch |
 | Dependency failure | Downstream tasks of a failed task get `DEP_FAILED` |
 | Timeout / cancel | SIGTERM to the process group, SIGKILL after `DagConfig.kill_grace`; done marker `TIMEOUT` / `CANCELLED` |
-| Deferral | A task that prints `PIPELINE_STATUS: DEFERRED` gets `DEFERRED`; the marker is removed and the task relaunched when `QuotaGate.release_ready()` releases it |
+| Quota wait | Tasks emit `PIPELINE_STATUS: WAIT_QUOTA` plus a `WAIT_QUOTA:` companion line; the engine records engine-level pause, deletes the attempt result, and leaves the task pending (no `done/` marker, no per-task ledger) |
 | Engine quarantine | `EngineQuarantine` temporarily blocks launches for an engine whose environment is broken |
 | Circuit breaker | The runner stops after `max_consecutive_failures` consecutive failures; the counter resets when the gap since the previous failure exceeds `failure_window_sec` |
 | First SIGTERM / SIGINT | Writes `interrupted_at` into every `running/<uuid>.json`, stops launching, and drains running tasks until `task_timeout` elapses (no drain when `task_timeout` is `None`); the remaining tasks are then terminated and the runner exits |
@@ -754,7 +754,7 @@ Variables ghdag sets for child processes (not configuration):
 
 | Variable | Set for | Value |
 |---|---|---|
-| `GHDAG_TASK_UUID` | Every DAG task | Task UUID (for example for `QuotaGate.defer`) |
+| `GHDAG_TASK_UUID` | Every DAG task | Task UUID used to correlate task execution and audit records |
 | `GHDAG_RESULT_PATH` | Every DAG task | Task `result_path`, or `""` |
 | `GHDAG_PREVIOUS_ATTEMPT` | DAG tasks relaunched after an interrupted run | `interrupted` |
 | `CODEX_HOME` | codex `call()` with isolation enabled | `/var/tmp/ghdag-dag-codex/` |
@@ -887,7 +887,7 @@ sinks:
 
 ### Quota state (`quota-gate.json`)
 
-Managed by `QuotaGate` and `ghdag quota`. Top-level keys: `engines` (per engine: `status`, `observed_at`, `resume_at`, `reason`, `override_until`), `deferred_tasks`, `draining_engines`, `running_tasks`. An engine is unavailable while it is draining, reported `paused`, or marked `paused` in the optional brake file (`QuotaGate(brake_state_path=...)`, same `engines.<name>.status` shape). `ghdag quota status` adds per-engine `queued` / `deferred` / `running` / `idle` counts.
+Managed by `QuotaGate` and `ghdag quota`. Top-level keys: `engines` (per engine: `status`, `observed_at`, `resume_at`, `reason`, `override_until`), `draining_engines`, `running_tasks`. An engine is unavailable while it is draining, reported `paused`, or marked `paused` in the optional brake file (`QuotaGate(brake_state_path=...)`, same `engines.<name>.status` shape). `ghdag quota status` adds per-engine `queued` / `running` / `idle` counts. Legacy schema-version-1 state may contain `deferred_tasks`; it is ignored on read and removed on the next write.
 
 ### Language pack (`GHDAG_LANGUAGE_PACK`)
 
@@ -1018,7 +1018,7 @@ Contents of `done/<uuid>` (constants in `ghdag.core.vocabulary`):
 | `DONE_UNKNOWN_FAILURE` | `UNKNOWN_FAILURE` | Unclassified failure |
 | `DONE_ORPHAN_ARCHIVED` | `ORPHAN_ARCHIVED` | Archived by `ghdag cleanup` as an orphan |
 | `DONE_ORPHANED_ON_RESTART` | `ORPHANED_ON_RESTART` | Task lost across a runner restart (recoverable with `ghdag dag recover`) |
-| `DONE_DEFERRED` | `DEFERRED` | Deferred by the quota gate; relaunched on release |
+| `LEGACY_DONE_DEFERRED` | `DEFERRED` | Legacy marker removed during the first exec load so the task becomes pending again |
 
 Any other content is the task's non-zero exit code.
 

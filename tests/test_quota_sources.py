@@ -274,7 +274,10 @@ def test_legacy_paused_payload_migrates_on_write(tmp_path: Path) -> None:
     snap = gate.snapshot(now=_dt(12, 1))
     assert len(snap.engines["claude"].sources) == 1
     assert snap.engines["claude"].sources[0].set_by == "legacy"
+    assert "deferred_tasks" not in gate.read_state()
     gate.report(engine="claude", status="available", observed_at=_dt(12, 2), kind="failure")
-    written = gate.read_state()["engines"]["claude"]
+    persisted = json.loads(state_path.read_text(encoding="utf-8"))
+    assert "deferred_tasks" not in persisted
+    written = persisted["engines"]["claude"]
     assert written["status"] == "available"
     assert "sources" in written

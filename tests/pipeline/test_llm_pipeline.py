@@ -531,8 +531,14 @@ class TestSubmitOrderBuilderAndWorkflowRoles:
             audit_path=tmp_path / "audit.jsonl",
             quota_gate=gate,
         )
-        deferred = gate.snapshot().deferred_tasks["task-1"]
-        assert deferred.role == "design"
+        decision = gate.begin_run(
+            task_uuid="task-1",
+            engine="claude",
+            role="design",
+            role_engines=["claude", "codex"],
+            now=datetime(2026, 9, 5, 12, 1, tzinfo=jst),
+        )
+        assert decision.allowed is False
 
 
 # ---------------------------------------------------------------------------

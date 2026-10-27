@@ -1057,12 +1057,11 @@ class TestQuotaCli:
         assert payload["engines"]["claude"]["reason"] is None
         assert payload["engines"]["claude"]["quota_status"] == "paused"
         assert payload["engines"]["claude"]["queued"] == 2
-        assert payload["engines"]["claude"]["deferred"] == 0
         assert payload["engines"]["claude"]["running"] == 0
         assert payload["engines"]["claude"]["idle"] is True
         assert payload["engines"]["claude"]["limit"] is None
         assert payload["engines"]["codex"]["limit"] is None
-        assert payload["deferred_tasks"] == {}
+        assert "deferred_tasks" not in payload
         assert payload["unresolved"] == 1
 
     def test_quota_status_includes_engine_limit(self, tmp_path, capsys):

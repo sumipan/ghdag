@@ -256,8 +256,7 @@ def test_runtime_quota_failure_from_stderr_is_deferred(mock_mark_done, tmp_path)
     mock_mark_done.assert_not_called()
     assert not result_file.exists()
     snapshot = engine._quota_gate.snapshot()
-    assert task.uuid in snapshot.deferred_tasks
-    assert snapshot.deferred_tasks[task.uuid].phase == "runtime"
+    assert snapshot.engines["claude"].status == "paused"
 
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
@@ -284,7 +283,6 @@ def test_runtime_auth_failure_keeps_auth_class_without_retry_gate_actions(mock_m
     metrics = hooks.on_task_failure.call_args[0][4]
     assert metrics.failure_class == FailureClass.AUTH
     snapshot = engine._quota_gate.snapshot()
-    assert task.uuid not in snapshot.deferred_tasks
     assert "cursor" not in snapshot.engines
 
 

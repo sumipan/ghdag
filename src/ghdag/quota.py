@@ -64,19 +64,8 @@ class EngineQuotaState:
 
 
 @dataclass(frozen=True)
-class DeferredTaskState:
-    engine: str
-    phase: AdmissionPhase
-    deferred_at: datetime
-    reason: str | None
-    role: str | None = None
-    role_engines: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
 class QuotaSnapshot:
     engines: dict[str, EngineQuotaState]
-    deferred_tasks: dict[str, DeferredTaskState]
     draining_engines: dict[str, "DrainState"]
     running_tasks: dict[str, "RunningTaskState"]
     limits: dict[str, int]
@@ -204,7 +193,6 @@ class QuotaGate:
                     }
                 else:
                     state["draining_engines"].pop(engine_name, None)
-            resumed = self._release_for_engine(state, engine_name, observed)
             self._write_state_unlocked(state)
 
         self._audit_state_changed(
@@ -215,8 +203,6 @@ class QuotaGate:
             reason=derived.reason,
             stale_ignored=False,
         )
-        for task_uuid in resumed:
-            self._audit_task_resumed(task_uuid=task_uuid, engine=engine_name, observed_at=observed)
         return QuotaReportResult(
             engine=engine_name,
             status=status,
@@ -292,7 +278,6 @@ class QuotaGate:
                 state["engines"].pop(engine_name, None)
             if ttl_seconds is None and (kind is None or kind == "drain"):
                 state["draining_engines"].pop(engine_name, None)
-            resumed = self._release_for_engine(state, engine_name, observed)
             self._write_state_unlocked(state)
 
         self._audit_state_changed(
@@ -303,8 +288,6 @@ class QuotaGate:
             reason=None,
             stale_ignored=False,
         )
-        for task_uuid in resumed:
-            self._audit_task_resumed(task_uuid=task_uuid, engine=engine_name, observed_at=observed)
         return QuotaReportResult(
             engine=engine_name,
             status="available",
@@ -362,9 +345,7 @@ class QuotaGate:
     ) -> list[str]:
         engine_name = _require_non_empty(engine, "engine")
         current = _aware_now(now)
-        changed = False
         drain_removed = False
-        released: list[str] = []
 
         with self._lock(exclusive=True):
             state = self._load_state_unlocked()
@@ -380,17 +361,12 @@ class QuotaGate:
                 state["engines"][engine_name] = _engine_payload_from_sources(sources, derived)
             elif existing is not None:
                 state["engines"].pop(engine_name, None)
-            released = self._release_for_engine(state, engine_name, current)
-            if drain_removed or released or existing is not None:
+            if drain_removed or existing is not None:
                 self._write_state_unlocked(state)
-                changed = True
 
         if drain_removed:
             self._audit_engine_drain_resumed(engine=engine_name, observed_at=current)
-        if changed:
-            for task_uuid in released:
-                self._audit_task_resumed(task_uuid=task_uuid, engine=engine_name, observed_at=current)
-        return released
+        return []
 
     def admit(
         self,
@@ -426,68 +402,7 @@ class QuotaGate:
             if decision.allowed:
                 return AdmissionDecision(True, "ALLOWED", None, None)
 
-            deferred_payload = _deferred_payload(
-                engine=engine_name,
-                phase=phase,
-                current=current,
-                reason=decision.reason,
-                role=role,
-                role_engines=role_engines,
-            )
-            previous_deferred = state["deferred_tasks"].get(task_uuid)
-            removed_running = state["running_tasks"].pop(task_uuid, None) is not None
-            state["deferred_tasks"][task_uuid] = deferred_payload
-            changed = previous_deferred != deferred_payload or removed_running
-            if changed:
-                self._write_state_unlocked(state)
-
-        if changed:
-            self._audit_task_deferred(
-                task_uuid=task_uuid,
-                engine=engine_name or (role_engines[0] if role_engines else "unknown"),
-                phase=phase,
-                observed_at=current,
-                resume_at=decision.resume_at,
-                reason=decision.reason,
-            )
         return decision
-
-    def defer(
-        self,
-        task_uuid: str,
-        *,
-        engine: str,
-        after: datetime | None = None,
-        role_engines: list[str] | None = None,
-        reason: str | None = None,
-    ) -> None:
-        """Explicitly register a task as deferred (called by external dispatch)."""
-        _require_non_empty(task_uuid, "task_uuid")
-        engine_name = _require_non_empty(engine, "engine")
-        current = _aware_now(after)
-
-        deferred_payload: dict = {
-            "engine": engine_name,
-            "phase": "enqueue",
-            "deferred_at": _iso(current),
-            "reason": reason,
-        }
-        if role_engines:
-            deferred_payload["role_engines"] = list(role_engines)
-
-        with self._lock(exclusive=True):
-            state = self._load_state_unlocked()
-            state["deferred_tasks"][task_uuid] = deferred_payload
-            self._write_state_unlocked(state)
-
-        self._audit_task_deferred(
-            task_uuid=task_uuid,
-            engine=engine_name,
-            phase="enqueue",
-            observed_at=current,
-            resume_at=None,
-            reason=reason,
-        )
 
     def begin_run(
         self,
@@ -519,7 +434,6 @@ class QuotaGate:
                 check_engine_limits=True,
             )
             if decision.allowed:
-                removed_deferred = state["deferred_tasks"].pop(task_uuid, None) is not None
                 previous_running = state["running_tasks"].get(task_uuid)
                 if decision.admitted_engine is not None:
                     record_engine = decision.admitted_engine
@@ -537,49 +451,22 @@ class QuotaGate:
                 if self._limits is not None and state.get("limits") != self._limits:
                     state["limits"] = dict(self._limits)
                     limits_changed = True
-                changed = previous_running != running_payload or removed_deferred
+                changed = previous_running != running_payload
                 state["running_tasks"][task_uuid] = running_payload
                 if changed or limits_changed:
                     self._write_state_unlocked(state)
-            elif decision.reason == "engine_limit":
-                pass
-            else:
-                deferred_payload = _deferred_payload(
-                    engine=engine_name,
-                    phase="launch",
-                    current=current,
-                    reason=decision.reason,
-                    role=role,
-                    role_engines=role_engines,
-                )
-                previous_deferred = state["deferred_tasks"].get(task_uuid)
-                removed_running = state["running_tasks"].pop(task_uuid, None) is not None
-                state["deferred_tasks"][task_uuid] = deferred_payload
-                changed = previous_deferred != deferred_payload or removed_running
-                if changed:
-                    self._write_state_unlocked(state)
 
-        if changed:
+        if changed and decision.allowed:
             audit_engine = (
                 decision.admitted_engine
                 if decision.admitted_engine is not None
                 else (engine_name or (role_engines[0] if role_engines else "unknown"))
             )
-            if decision.allowed:
-                self._audit_task_running_started(
-                    task_uuid=task_uuid,
-                    engine=audit_engine,
-                    observed_at=current,
-                )
-            else:
-                self._audit_task_deferred(
-                    task_uuid=task_uuid,
-                    engine=audit_engine,
-                    phase="launch",
-                    observed_at=current,
-                    resume_at=decision.resume_at,
-                    reason=decision.reason,
-                )
+            self._audit_task_running_started(
+                task_uuid=task_uuid,
+                engine=audit_engine,
+                observed_at=current,
+            )
         return decision
 
     def finish_run(self, *, task_uuid: str) -> bool:
@@ -623,11 +510,11 @@ class QuotaGate:
                 return False
             time.sleep(poll_interval)
 
-    def release_ready(self, *, now: datetime | None = None) -> list[str]:
+    def refresh(self, *, now: datetime | None = None) -> None:
+        """Expire engine pause sources and reconcile drain metadata."""
         current = _aware_now(now)
         with self._lock(exclusive=True):
             state = self._load_state_unlocked()
-            released: list[tuple[str, str]] = []
             state_changed = False
             for engine_name, payload in list(state["engines"].items()):
                 sources = _sources_from_engine_payload(payload)
@@ -656,33 +543,9 @@ class QuotaGate:
                 else:
                     state["engines"].pop(engine_name, None)
                     state_changed = True
-                if derived.status == "available":
-                    for task_uuid in self._release_for_engine(state, engine_name, current):
-                        released.append((task_uuid, engine_name))
 
-            engines_checked = set(state["engines"].keys())
-            brake_state = self._load_brake_state()
-            for task_uuid, deferred in list(state["deferred_tasks"].items()):
-                role_engines = deferred.get("role_engines")
-                engines_to_check: list[str] = (
-                    list(role_engines) if isinstance(role_engines, list) and role_engines
-                    else [str(deferred.get("engine", ""))]
-                )
-                for eng in engines_to_check:
-                    if eng in engines_checked:
-                        continue
-                    if not _engine_effective_available(state, eng, current, brake_state):
-                        continue
-                    released.append((task_uuid, eng))
-                    del state["deferred_tasks"][task_uuid]
-                    break
-
-            if released or state_changed:
+            if state_changed:
                 self._write_state_unlocked(state)
-
-        for task_uuid, engine_name in released:
-            self._audit_task_resumed(task_uuid=task_uuid, engine=engine_name, observed_at=current)
-        return [uuid for uuid, _ in released]
 
     def read_state(self) -> dict:
         """Return the raw state dict under a shared lock.
@@ -750,17 +613,6 @@ class QuotaGate:
             if eng is None:
                 continue
             engines[name] = eng
-        deferred_tasks = {
-            task_uuid: DeferredTaskState(
-                engine=str(payload["engine"]),
-                phase=str(payload["phase"]),  # type: ignore[arg-type]
-                deferred_at=_parse_dt(str(payload["deferred_at"]), "deferred_at"),
-                reason=payload.get("reason"),
-                role=payload.get("role"),
-                role_engines=tuple(payload.get("role_engines") or ()),
-            )
-            for task_uuid, payload in state["deferred_tasks"].items()
-        }
         draining_engines: dict[str, DrainState] = {}
         for engine_name, payload in state["draining_engines"].items():
             engine_payload = state["engines"].get(engine_name)
@@ -794,41 +646,10 @@ class QuotaGate:
                     limits[str(name)] = value
         return QuotaSnapshot(
             engines=engines,
-            deferred_tasks=deferred_tasks,
             draining_engines=draining_engines,
             running_tasks=running_tasks,
             limits=limits,
         )
-
-    def _release_for_engine(self, state: dict, engine: str, observed_at: datetime) -> list[str]:
-        brake_state = self._load_brake_state()
-        released: list[str] = []
-        for task_uuid, deferred in list(state["deferred_tasks"].items()):
-            if not self._should_release_deferred(state, deferred, engine, observed_at, brake_state):
-                continue
-            released.append(task_uuid)
-            del state["deferred_tasks"][task_uuid]
-        return released
-
-    def _should_release_deferred(
-        self,
-        state: dict,
-        deferred: dict,
-        engine: str,
-        observed_at: datetime,
-        brake_state: dict | None = None,
-    ) -> bool:
-        role_engines = deferred.get("role_engines")
-        if isinstance(role_engines, list) and role_engines:
-            if engine not in role_engines:
-                return False
-            return any(
-                _engine_effective_available(state, role_engine, observed_at, brake_state)
-                for role_engine in role_engines
-            )
-        if deferred.get("engine") != engine:
-            return False
-        return _engine_effective_available(state, engine, observed_at, brake_state)
 
     def _load_brake_state(self) -> dict | None:
         if self._brake_state_path is None or not self._brake_state_path.exists():
@@ -845,7 +666,6 @@ class QuotaGate:
             return {
                 "schema_version": 1,
                 "engines": {},
-                "deferred_tasks": {},
                 "draining_engines": {},
                 "running_tasks": {},
             }
@@ -858,9 +678,9 @@ class QuotaGate:
             self._audit_state_error("unknown_schema_version")
             raise ValueError("unsupported quota state schema version")
         payload.setdefault("engines", {})
-        payload.setdefault("deferred_tasks", {})
         payload.setdefault("draining_engines", {})
         payload.setdefault("running_tasks", {})
+        payload.pop("deferred_tasks", None)
         return payload
 
     def _evaluate_admission_unlocked(
@@ -983,6 +803,8 @@ class QuotaGate:
     def _write_state_unlocked(self, state: dict) -> None:
         """Private: use read_state() / modify()."""
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        state = dict(state)
+        state.pop("deferred_tasks", None)
         fd, tmp_name = tempfile.mkstemp(
             prefix=f".{self._state_path.name}.",
             suffix=".tmp",
@@ -1038,50 +860,6 @@ class QuotaGate:
                 "reason": reason,
                 "stale_ignored": stale_ignored,
                 "correlation_id": f"quota:{engine}",
-            }
-        )
-
-    def _audit_task_deferred(
-        self,
-        *,
-        task_uuid: str,
-        engine: str,
-        phase: AdmissionPhase,
-        observed_at: datetime,
-        resume_at: datetime | None,
-        reason: str | None,
-    ) -> None:
-        self._append_audit(
-            {
-                "schema_version": 1,
-                "event_type": "task_deferred",
-                "uuid": task_uuid,
-                "engine": engine,
-                "phase": phase,
-                "status": "deferred",
-                "observed_at": _iso(observed_at),
-                "resume_at": _iso(resume_at),
-                "reason": reason,
-                "correlation_id": task_uuid,
-            }
-        )
-
-    def _audit_task_resumed(
-        self,
-        *,
-        task_uuid: str,
-        engine: str,
-        observed_at: datetime,
-    ) -> None:
-        self._append_audit(
-            {
-                "schema_version": 1,
-                "event_type": "task_resumed",
-                "uuid": task_uuid,
-                "engine": engine,
-                "status": "resumed",
-                "observed_at": _iso(observed_at),
-                "correlation_id": task_uuid,
             }
         )
 
@@ -1497,23 +1275,3 @@ def _engine_effective_available(
     return False
 
 
-def _deferred_payload(
-    *,
-    engine: str,
-    phase: AdmissionPhase,
-    current: datetime,
-    reason: str | None,
-    role: str | None,
-    role_engines: list[str] | None,
-) -> dict:
-    payload: dict = {
-        "engine": engine or (role_engines[0] if role_engines else "unknown"),
-        "phase": phase,
-        "deferred_at": _iso(current),
-        "reason": reason,
-    }
-    if role is not None:
-        payload["role"] = role
-    if role_engines:
-        payload["role_engines"] = list(role_engines)
-    return payload
