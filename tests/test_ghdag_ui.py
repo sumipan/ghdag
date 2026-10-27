@@ -134,11 +134,11 @@ class TestMonitor:
             mock_ps.assert_not_called()
         assert rows[0].state_id == STATE_RUNNING
 
-    def test_build_rows_deferred_from_quota_gate(self, tmp_path):
+    def test_build_rows_pending_when_engine_paused(self, tmp_path):
         import json as _json
 
         from ghdag.quota import QuotaGate
-        from ghdag.ui.monitor import STATE_DEFERRED, build_rows
+        from ghdag.ui.monitor import STATE_PENDING_RUN, build_rows
 
         content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "claude -p hello", "depends": []})
         repo = self._make_repo(tmp_path, content + "\n")
@@ -148,15 +148,9 @@ class TestMonitor:
             status="paused",
             observed_at=datetime(2026, 9, 2, 12, 0, tzinfo=timezone.utc),
         )
-        gate.admit(
-            task_uuid="aaaa-bbbb-cccc-dddd",
-            engine="claude",
-            phase="launch",
-            now=datetime(2026, 9, 2, 12, 1, tzinfo=timezone.utc),
-        )
 
         rows, _, _ = build_rows(repo, detect_running=False)
-        assert rows[0].state_id == STATE_DEFERRED
+        assert rows[0].state_id == STATE_PENDING_RUN
 
     def test_row_state_is_pack_label(self, tmp_path):
         import json as _json
