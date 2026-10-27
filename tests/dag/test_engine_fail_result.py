@@ -261,8 +261,8 @@ def test_legacy_deferred_done_migrated_downstream_waits(tmp_path):
 
     launched: list[str] = []
 
-    def track_popen(*_args, **_kwargs):
-        launched.append("popen")
+    def track_popen(args, **_kwargs):
+        launched.append(args[-1])
         engine._shutdown = True
         proc = MagicMock()
         proc.poll.return_value = None
@@ -275,8 +275,9 @@ def test_legacy_deferred_done_migrated_downstream_waits(tmp_path):
     ):
         engine.run()
 
-    assert not (done_dir / "upstream").exists() or (done_dir / "upstream").read_text() != "DEFERRED"
-    assert "popen" not in launched or not (done_dir / "downstream").exists()
+    assert not (done_dir / "upstream").exists()
+    assert launched == ["echo up"]
+    assert not (done_dir / "downstream").exists()
 
 
 def _make_shell_running_task(uuid, returncode, stdout, result_path, stderr=b""):

@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from ghdag.core.vocabulary import (
     DONE_PIPELINE_FAILED_PREFIX,
     PIPELINE_WAIT_QUOTA_INVALID,
@@ -85,11 +87,23 @@ def test_wait_quota_deletes_result_and_records_engine_pause(mock_mark_done, tmp_
     assert "task_waiting" in audit_text
 
 
+@pytest.mark.parametrize(
+    "result_body",
+    [
+        "PIPELINE_STATUS: WAIT_QUOTA\n",
+        "PIPELINE_STATUS: WAIT_QUOTA\nWAIT_QUOTA: after= engines=\n",
+        "PIPELINE_STATUS: WAIT_QUOTA\nWAIT_QUOTA: after=not-a-date engines=claude\n",
+        "PIPELINE_STATUS: WAIT_QUOTA\nWAIT_QUOTA: after= engines=unknown\n",
+    ],
+    ids=["missing-companion", "empty-engines", "invalid-after", "unknown-engine"],
+)
 @patch("ghdag.dag.task_launcher.state_mark_done")
-def test_invalid_wait_quota_marks_pipeline_failed(mock_mark_done, tmp_path: Path) -> None:
+def test_invalid_wait_quota_marks_pipeline_failed(
+    mock_mark_done, tmp_path: Path, result_body: str
+) -> None:
     engine, _, _ = _make_engine(tmp_path)
     result_file = tmp_path / "bad.md"
-    result_file.write_text("PIPELINE_STATUS: WAIT_QUOTA\n", encoding="utf-8")
+    result_file.write_text(result_body, encoding="utf-8")
     task = Task(uuid="task-1", command="claude -p hi", engine="claude", result_path=str(result_file))
     proc = MagicMock()
     proc.poll.return_value = 0
@@ -108,6 +122,7 @@ def test_invalid_wait_quota_marks_pipeline_failed(mock_mark_done, tmp_path: Path
 
     expected = f"{DONE_PIPELINE_FAILED_PREFIX}{PIPELINE_WAIT_QUOTA_INVALID}"
     mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, expected)
+    engine._hooks.on_task_failure.assert_called_once()
 
 
 def test_engine_restarts_waiting_task_when_engine_available(tmp_path: Path) -> None:
@@ -125,6 +140,8 @@ def test_engine_restarts_waiting_task_when_engine_available(tmp_path: Path) -> N
 
     proc = MagicMock()
     proc.poll.return_value = None
+    proc.stdout = io.BytesIO(b"")
+    proc.stderr = io.BytesIO(b"")
     with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=proc) as mock_popen, patch(
         "ghdag.dag.engine.time.sleep", side_effect=stop_after_launch
     ):
@@ -142,8 +159,8 @@ def test_legacy_deferred_done_marker_migrated_on_load(tmp_path: Path) -> None:
     def stop(*_a, **_k):
         engine._shutdown = True
 
-    with patch("ghdag.dag.engine.time.sleep", side_effect=stop), patch(
-        "ghdag.dag.task_launcher.subprocess.Popen"
+    with patch("ghdag.dag.engine.time.sleep", side_effect=stop), patch.object(
+        engine._launcher, "launch", side_effect=stop
     ):
         engine.run()
 

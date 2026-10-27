@@ -281,9 +281,9 @@ def _build_task_env(
 def _task_env(uuid: str, task: Task, previous_attempt: str | None = None) -> dict[str, str]:
     """Environment for a launched task: the parent's plus the task identity.
 
-    ``GHDAG_TASK_UUID`` lets a task (for example ``issuesmith dispatch``) register itself
-    with ``QuotaGate.defer(task_uuid, ...)`` before emitting ``PIPELINE_STATUS: DEFERRED``;
-    ``GHDAG_RESULT_PATH`` is the result file ghdag will write for it (sumipan/nexus#3515).
+    ``GHDAG_TASK_UUID`` identifies the attempt in task and audit records so downstream
+    dispatchers such as issuesmith can correlate it; ``GHDAG_RESULT_PATH`` is the result
+    file ghdag will write for the attempt.
     """
     env, denied_count = _build_task_env(uuid, task, previous_attempt)
     set_pending_env_denied_count(denied_count)
