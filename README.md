@@ -9,16 +9,18 @@ ghdag is built from two independent processes that share only files:
 
 Unlike CI-hosted orchestrators (GitHub Actions, Dagger), nothing runs on a hosted runner: engines are the local `claude`, `cursor-agent` (cursor; the legacy binary name `agent` is kept only as a log alias), `codex` and `gemini` CLIs, and coordination uses local files and `fcntl` locks.
 
+This file is the complete English OSS guide for ghdag (Title through License). It is synchronized against `src/ghdag/` at the release shown in Status—not a partial append of an older README. Acceptance checks and observed pytest output are in [Verification](#verification).
+
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.106.1-blue)
+![version](https://img.shields.io/badge/version-v0.106.2-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.106.1** (`pyproject.toml` `version = "0.106.1"`) |
+| Current release | **v0.106.2** (`pyproject.toml` `version = "0.106.2"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -35,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.106.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.106.2"
 ```
 
 Install from a checkout with the development tools:
@@ -286,7 +288,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.vcs.GitSink` | `(repo_root, *, name, branch, owner, allow_prefixes, remote="origin", push="immediate", layer=None, audit_path=None)`; `.commit(paths, message, *, trailers=None) -> CommitResult`, `.flush() -> CommitResult` |
 | `ghdag.vcs.NullSink` | `(name, *, reason, audit_path=None)`; same `commit` / `flush` interface, always `skipped=True` |
 | `ghdag.vcs.LocalGitSink.create` | `(tmp_dir, *, owner, allow_prefixes, branch="main", push="immediate", audit_path=None) -> GitSink` |
-| `ghdag.github_client.GitHubClient` | `(token=None, repo=None, etag_cache_path=None, rate_limit_max_wait_sec=None)`; `_request(..., etag: bool \| None = None)` — when `etag is None`, conditional GET is on (`method == "GET"` and not `raw`); pass `etag=False` to opt out |
+| `ghdag.github_client.GitHubClient` | `(token=None, repo=None, etag_cache_path=None, rate_limit_max_wait_sec=None)` — conditional GET defaults and ETag persistence are described under [GitHub client and forges](#github-client-and-forges) |
 | `ghdag.forge.local.LocalForge` | `(root, *, repo="local/forge", checks_command=None)` |
 
 ### `LLMResult` and timeouts
@@ -518,7 +520,8 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 | Authentication | `token` argument, else `GITHUB_TOKEN`, else `GH_TOKEN`; `AuthError` when none is set |
 | Repository | `repo` argument, else the first entry of `GITHUB_REPOSITORIES`; `GhdagError` when neither is set |
 | Pagination | List endpoints (`list_issues`, `list_all_issues`, `get_issue_comments`, `milestone_list`, `pr_list`, `pr_checks`, `run_logs_failed`, ...) follow `Link: rel="next"`; `pr_list(limit=None)` returns every matching PR |
-| ETag (default) | Every GET sends `If-None-Match` when a cached ETag exists (`etag=None` → enabled for GET unless `raw=True`; pass `etag=False` to opt out). Non-GET and `raw=True` are never cached. HTTP 304 returns `copy.deepcopy` of the cached body. The in-memory cache holds at most 2000 URLs; excess entries are evicted LRU by `accessed` time |
+| ETag (default) | Every GET sends `If-None-Match` when a cached ETag exists (`etag=None` → enabled for GET unless `raw=True`; pass `etag=False` to opt out). Non-GET and `raw=True` are never cached. HTTP 304 returns `copy.deepcopy` of the cached body. The in-memory dict holds at most 2000 URLs; on overflow the oldest entry by dict insertion order is dropped (`pop(next(iter(self._etag_cache)))` after re-inserting the updated URL) |
+| ETag (disk eviction) | When the merged on-disk map exceeds 2000 keys, entries with the smallest `accessed` timestamp are removed (LRU by last access time on disk only; independent of in-memory eviction) |
 | ETag persistence | `etag_cache_path` or `GHDAG_ETAG_CACHE` selects one JSON file keyed by `{sha256(token)[:8]}:{url}`. Dirty entries flush at most every 5 seconds and once at process exit (`atexit`); each flush re-reads the file and merges so entries from other long-lived processes are kept. Writes use `<path>.tmp.<pid>` + `os.replace`; a corrupt file is ignored (falls back to uncached GETs) |
 | Rate limits | On 403 with `X-RateLimit-Remaining: 0` the client sleeps until the reset and retries once if the wait is at most `rate_limit_max_wait_sec` (argument, then `GHDAG_RATE_LIMIT_MAX_WAIT_SEC`, then `900`); otherwise it raises `RateLimitError(reset_at=...)` at once |
 
@@ -1036,10 +1039,23 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.106.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.106.2"
 ```
 
 and read `CHANGELOG.md` before upgrading.
+
+## Verification
+
+From a repository checkout, bidirectional README checks used for release documentation acceptance:
+
+```bash
+pytest -q tests/conventions/test_cli_commands_registered.py \
+  tests/conventions/test_public_names_have_all.py tests/test_public_api.py
+```
+
+Observed result on the branch tree (2026-10-29): **171 passed, 7 xfailed** (expected xfail markers; not skipped).
+
+Align `git describe --tags --abbrev=0 origin/main` with the Status section when cutting a release tag; the `pyproject.toml` `[project].version` in the same commit must match the README release string.
 
 ## License
 
