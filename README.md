@@ -9,18 +9,18 @@ ghdag is built from two independent processes that share only files:
 
 Unlike CI-hosted orchestrators (GitHub Actions, Dagger), nothing runs on a hosted runner: engines are the local `claude`, `cursor-agent` (cursor; the legacy binary name `agent` is kept only as a log alias), `codex` and `gemini` CLIs, and coordination uses local files and `fcntl` locks.
 
-This file is the complete English OSS guide for ghdag (Title through License). It is synchronized against `src/ghdag/` at the release shown in Status—not a partial append of an older README. Acceptance checks and observed pytest output are in [Verification](#verification).
+This PR updates the existing OSS README incrementally (Status, GitHub ETag behaviour, missing public symbols). Issue acceptance criteria beyond the pytest subset in [Verification](#verification) still require manual review against `src/ghdag/`.
 
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.106.2-blue)
+![version](https://img.shields.io/badge/version-v0.106.1-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.106.2** (`pyproject.toml` `version = "0.106.2"`) |
+| Current release | **v0.106.1** (`pyproject.toml` `version = "0.106.1"` on tag `v0.106.1`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.106.2"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.106.1"
 ```
 
 Install from a checkout with the development tools:
@@ -269,6 +269,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.pipeline.submit_order` | `(state, *, engine, content, audit_source, model=None, queue_dir="jobs", depends=None, annotations=None, idempotency_key=None, correlation_id=None) -> dict` |
 | `ghdag.pipeline.wait_for_result` | `(exec_done_dir, uuid, *, timeout, poll_interval=0.5) -> tuple[str, str]` |
 | `ghdag.pipeline.state_label` | `(state_id, pack=None) -> str`; label from `pack` (default: the active language pack); unknown identifiers are returned unchanged |
+| `ghdag.dag.default_check_rejected` | `(result_path: str) -> bool` — reads the result file; returns `True` when a line starts with `REJECTED:` before `ACCEPTED`, else `False` (including on `OSError`) |
 | `ghdag.dag.recover.plan_recover` | `(*, state_dir, exec_jsonl_path, workflow_name, handler_name, issue_number, queue_dir, done_dir, from_step=None, running_uuids=None) -> RecoverPlan` |
 | `ghdag.dag.recover.execute_recover` | `(plan, *, queue_dir, done_dir, dry_run=False, running_uuids=None, keep_results=False, now=None) -> RecoverResult` |
 | `ghdag.cleanup.cleanup_queue` | `(queue_dir, archive_dir, done_dir, exec_md, cutoff_days=1, orphan_days=7, dry_run=False, auto_repair=False) -> CleanupResult` |
@@ -320,7 +321,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.config` | `env` (accessors listed under [Environment variables](#environment-variables)) |
 | `ghdag.core` | `command` |
 | `ghdag.core.ports` | `ForgePort` |
-| `ghdag.dag` | `DagConfig`, `DagEngine`, `DagHooks`, `DefaultHooks`, `RunningTask`, `Task`, `check_pipeline_status`, `extract_tee_target`, `parse_jsonl` |
+| `ghdag.dag` | `DagConfig`, `DagEngine`, `DagHooks`, `DefaultHooks`, `RunningTask`, `Task`, `check_pipeline_status`, `default_check_rejected`, `extract_tee_target`, `parse_jsonl` |
 | `ghdag.files` | `AppendResult`, `AppendStatus`, `MdFile`, `PathTraversalError`, `PromoteResult`, `PromoteStatus`, `WriteResult`, `md_append`, `md_promote`, `md_read`, `md_write` |
 | `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
 | `ghdag.io` | Submodules `audit`, `audit_query`, `done`, `exec_jsonl`, `queue`, `sessions` |
@@ -357,7 +358,7 @@ Modules that declare their own `__all__` (private `_` names omitted). Modules ma
 | `ghdag.files.models` (shim) | `PathTraversalError`, `MdFile`, `AppendStatus`, `AppendResult`, `WriteResult`, `PromoteStatus`, `PromoteResult` |
 | `ghdag.io.audit` | `AuditContext`, `append_audit_record`, `compute_prompt_hash`, `now_ts`, `epoch_ts`, `write_audit_log`, `write_llm_audit_log`, `write_llm_inference_audit`, `write_rate_limit_audit`, `write_compaction_audit`, `write_quarantine_audit`, `write_task_exit_audit`, `write_task_retry_audit` |
 | `ghdag.io.audit_query` | `read_task_exit_events`, `get_latest_status`, `detect_correlation_bursts`, `get_correlation_top_n` |
-| `ghdag.io.exec_jsonl` | `build_idempotency_key`, `handler_generation_key`, `get_generation`, `read`, `parse`, `parse_as_dict`, `check_idempotency`, `find_records_by_idempotency_key`, `append`, `remove_by_predicate`, `remove_by_uuids`, `prune`, `load_uuids`, `validate`, `repair`, `extract_uuid` |
+| `ghdag.io.exec_jsonl` | `DuplicateTaskError`, `build_idempotency_key`, `handler_generation_key`, `get_generation`, `read`, `parse`, `parse_as_dict`, `check_idempotency`, `find_records_by_idempotency_key`, `append`, `remove_by_predicate`, `remove_by_uuids`, `prune`, `load_uuids`, `validate`, `repair`, `extract_uuid` |
 | `ghdag.llm.capabilities` | `LLMParseError`, `LLMCapabilities`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `READONLY_OBSERVE`, `PRESETS` |
 | `ghdag.llm.engines` | `EngineModelError`, `LLMResult`, `TextResult`, `build_llm_cmd`, `call`, `call_text`, `extract_stream_result`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model`, `ENGINE_CLI`, `ENGINE_DEFAULTS`, `TIMEOUT_RETURNCODE`, `supports_capability` |
 | `ghdag.llm.managed` | `ManagedResult`, `call_managed` |
@@ -972,6 +973,7 @@ All exception types defined under `src/ghdag/`.
 | `LLMParseError` | `GhdagError` | `ghdag.llm.capabilities` | Output does not match `output_format`; has `raw`, `reason` |
 | `ToolRegistryError` | `GhdagError` | `ghdag.tool.exceptions` | Tool definition naming violation or duplicate |
 | `DependencyError` | `GhdagError`, `ValueError` | `ghdag.pipeline.llm_pipeline` | Invalid step dependencies |
+| `DuplicateTaskError` | `GhdagError`, `ValueError` | `ghdag.io.exec_jsonl` | `append` (or related enqueue) targets a `uuid` that is already in the queue and not done |
 | `ConfigLoadError` | `GhdagError`, `ValueError` | `ghdag.llm._config` | Invalid `llm-models.yml` |
 | `FanoutError` | `GhdagError`, `ValueError` | `ghdag.dag.fanout` | Invalid fan-out specification |
 | `AdapterNotFoundError` | `GhdagError`, `ValueError` | `ghdag.core.command` | No engine adapter for an engine name |
@@ -1039,23 +1041,29 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.106.2"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.106.1"
 ```
 
 and read `CHANGELOG.md` before upgrading.
 
 ## Verification
 
-From a repository checkout, bidirectional README checks used for release documentation acceptance:
+From a repository checkout, these tests guard parts of the README contract (they do **not** bidirectionally sync every `__all__` symbol, env var, or exception with the document):
 
 ```bash
 pytest -q tests/conventions/test_cli_commands_registered.py \
   tests/conventions/test_public_names_have_all.py tests/test_public_api.py
 ```
 
+| Test module | What it checks against README |
+|---|---|
+| `test_cli_commands_registered` | Each `` `ghdag <cmd>`` / `$ ghdag` reference in README is a registered CLI command |
+| `test_public_names_have_all` | Top-level `ghdag.__all__` imports and a fixed snapshot; private cross-package import rules in `src/ghdag/` |
+| `test_public_api` | Selected public symbols (including `ghdag.dag.default_check_rejected`) import and match `__all__` |
+
 Observed result on the branch tree (2026-10-29): **171 passed, 7 xfailed** (expected xfail markers; not skipped).
 
-Align `git describe --tags --abbrev=0 origin/main` with the Status section when cutting a release tag; the `pyproject.toml` `[project].version` in the same commit must match the README release string.
+Align `git describe --tags --abbrev=0 origin/main` with the Status section when cutting a release tag; the `pyproject.toml` `[project].version` in that tag commit must match the README release string.
 
 ## License
 
