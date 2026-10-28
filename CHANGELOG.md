@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.106.1 - 2026-10-28
+
+### Changed
+
+- `GitHubClient` sends conditional requests (`If-None-Match`) on every GET by default, not only `list_all_issues`. A 304 does not count against the PAT rate limit, so repeated reads of unchanged issues, comments, PRs and sub-issues (issuesmith tick, watchdog) stop draining the 5000/hour budget. Pass `etag=False` to opt out; non-GET and `raw=True` requests are never cached.
+- The `GHDAG_ETAG_CACHE` file is written at most every 5 seconds plus once at process exit, and each write merges into the current file contents so long-lived processes no longer drop entries other processes added.
+- Cached bodies are returned as copies, and the in-memory ETag cache is capped at 2000 entries.
+
 ## 0.106.0 - 2026-10-27
 
 ### Changed
