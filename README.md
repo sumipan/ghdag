@@ -12,13 +12,13 @@ Unlike CI-hosted orchestrators (GitHub Actions, Dagger), nothing runs on a hoste
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.104.2-blue)
+![version](https://img.shields.io/badge/version-v0.106.1-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.104.2** (`pyproject.toml` `version = "0.104.2"`) |
+| Current release | **v0.106.1** (`pyproject.toml` `version = "0.106.1"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -35,7 +35,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.104.2"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.106.1"
 ```
 
 Install from a checkout with the development tools:
@@ -286,7 +286,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.vcs.GitSink` | `(repo_root, *, name, branch, owner, allow_prefixes, remote="origin", push="immediate", layer=None, audit_path=None)`; `.commit(paths, message, *, trailers=None) -> CommitResult`, `.flush() -> CommitResult` |
 | `ghdag.vcs.NullSink` | `(name, *, reason, audit_path=None)`; same `commit` / `flush` interface, always `skipped=True` |
 | `ghdag.vcs.LocalGitSink.create` | `(tmp_dir, *, owner, allow_prefixes, branch="main", push="immediate", audit_path=None) -> GitSink` |
-| `ghdag.github_client.GitHubClient` | `(token=None, repo=None, etag_cache_path=None, rate_limit_max_wait_sec=None)` |
+| `ghdag.github_client.GitHubClient` | `(token=None, repo=None, etag_cache_path=None, rate_limit_max_wait_sec=None)`; `_request(..., etag: bool \| None = None)` — when `etag is None`, conditional GET is on (`method == "GET"` and not `raw`); pass `etag=False` to opt out |
 | `ghdag.forge.local.LocalForge` | `(root, *, repo="local/forge", checks_command=None)` |
 
 ### `LLMResult` and timeouts
@@ -518,7 +518,8 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 | Authentication | `token` argument, else `GITHUB_TOKEN`, else `GH_TOKEN`; `AuthError` when none is set |
 | Repository | `repo` argument, else the first entry of `GITHUB_REPOSITORIES`; `GhdagError` when neither is set |
 | Pagination | List endpoints (`list_issues`, `list_all_issues`, `get_issue_comments`, `milestone_list`, `pr_list`, `pr_checks`, `run_logs_failed`, ...) follow `Link: rel="next"`; `pr_list(limit=None)` returns every matching PR |
-| ETag cache | Conditional requests (`If-None-Match` -> 304) are cached in memory; with `etag_cache_path` or `GHDAG_ETAG_CACHE` the cache is persisted to one JSON file (at most 2000 entries, LRU, atomic writes) shared across processes |
+| ETag (default) | Every GET sends `If-None-Match` when a cached ETag exists (`etag=None` → enabled for GET unless `raw=True`; pass `etag=False` to opt out). Non-GET and `raw=True` are never cached. HTTP 304 returns `copy.deepcopy` of the cached body. The in-memory cache holds at most 2000 URLs; excess entries are evicted LRU by `accessed` time |
+| ETag persistence | `etag_cache_path` or `GHDAG_ETAG_CACHE` selects one JSON file keyed by `{sha256(token)[:8]}:{url}`. Dirty entries flush at most every 5 seconds and once at process exit (`atexit`); each flush re-reads the file and merges so entries from other long-lived processes are kept. Writes use `<path>.tmp.<pid>` + `os.replace`; a corrupt file is ignored (falls back to uncached GETs) |
 | Rate limits | On 403 with `X-RateLimit-Remaining: 0` the client sleeps until the reset and retries once if the wait is at most `rate_limit_max_wait_sec` (argument, then `GHDAG_RATE_LIMIT_MAX_WAIT_SEC`, then `900`); otherwise it raises `RateLimitError(reset_at=...)` at once |
 
 `get_forge()` picks the backend from `GHDAG_FORGE`:
@@ -733,7 +734,7 @@ Every variable ghdag reads (`os.environ` / `os.getenv` in `src/ghdag/`). Most re
 | `GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS` | `18000` | `llm.adapters.failure_classification` | Pause (seconds) when an engine reports quota exhaustion without a reset time; read once at import |
 | `GHDAG_FORGE` | `github` | `forge.get_forge`, `github_cli.get_forge` | Forge backend: `github` or `local` |
 | `GHDAG_FORGE_ROOT` | none | `forge.get_forge` | Data root of `LocalForge`; required when `GHDAG_FORGE=local` |
-| `GHDAG_ETAG_CACHE` | unset (in-memory only) | `github_client.GitHubClient` | Path of the persistent ETag cache file |
+| `GHDAG_ETAG_CACHE` | unset (in-memory ETag only; no disk I/O) | `github_client.GitHubClient` | Path of the persistent ETag JSON file (GET caching is always on in memory; this env var only enables cross-process persistence with 5s batched merge writes) |
 | `GHDAG_RATE_LIMIT_MAX_WAIT_SEC` | `900` | `github_client.GitHubClient` | Longest rate-limit sleep before `RateLimitError` is raised; non-integer values fall back to `900` |
 | `ENABLE_GIT` | off | `config.env.enable_git` (`vcs.get_sink`) | `1` / `true` / `yes` lets `get_sink` return a real `GitSink`; otherwise every sink is a `NullSink` |
 | `GHDAG_VCS_CONFIG` | none | `config.env.ghdag_vcs_config` (`vcs.get_sink`) | Path to the [VCS sink config](#vcs-sink-config-ghdag_vcs_config); required for real sinks when `ENABLE_GIT` is on |
@@ -1035,7 +1036,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.104.2"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.106.1"
 ```
 
 and read `CHANGELOG.md` before upgrading.
