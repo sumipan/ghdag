@@ -6,6 +6,8 @@ without the gh CLI. Uses stdlib urllib only (no requests).
 
 from __future__ import annotations
 
+import atexit
+import copy
 import hashlib
 import http.client
 import io
@@ -59,6 +61,10 @@ _BACKOFF_CAP_SEC = 8.0
 _RATE_LIMIT_MAX_WAIT_SEC = 900
 # Disk ETag cache (GHDAG_ETAG_CACHE): entries beyond this are evicted LRU-first
 _ETAG_CACHE_MAX_ENTRIES = 2000
+# Minimum seconds between disk cache writes. Every GET is ETag-cached, so writing the
+# whole file per request would rewrite it hundreds of times per tick; pending entries
+# are flushed on the next write past this interval and at process exit.
+_ETAG_FLUSH_INTERVAL_SEC = 5.0
 
 
 def _backoff_sleep(attempt: int, retry_after: str | None = None) -> None:
@@ -210,40 +216,62 @@ class GitHubClient:
         )
         # Full on-disk contents (all tokens), keyed by "{token_hash8}:{url}".
         self._etag_disk: dict[str, dict[str, Any]] = {}
+        # Keys of _etag_disk written or touched by this instance since the last flush.
+        self._etag_dirty: set[str] = set()
+        self._etag_last_flush = 0.0
         if self._etag_cache_path is not None:
-            self._load_etag_disk()
+            self._etag_disk = self._read_etag_disk()
+            for key, entry in self._etag_disk.items():
+                if key.startswith(self._etag_key_prefix):
+                    url = key[len(self._etag_key_prefix):]
+                    self._etag_cache[url] = (entry["etag"], entry["body"])
+            atexit.register(self._flush_etag_disk)
 
-    def _load_etag_disk(self) -> None:
+    def _read_etag_disk(self) -> dict[str, dict[str, Any]]:
         assert self._etag_cache_path is not None
         try:
             data = json.loads(self._etag_cache_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return
+            return {}
         if not isinstance(data, dict):
-            return
-        for key, entry in data.items():
-            if not (
-                isinstance(entry, dict)
-                and isinstance(entry.get("etag"), str)
-                and "body" in entry
-                and isinstance(entry.get("accessed"), (int, float))
-            ):
-                continue
-            self._etag_disk[key] = entry
-            if key.startswith(self._etag_key_prefix):
-                url = key[len(self._etag_key_prefix):]
-                self._etag_cache[url] = (entry["etag"], entry["body"])
+            return {}
+        return {
+            key: entry
+            for key, entry in data.items()
+            if isinstance(entry, dict)
+            and isinstance(entry.get("etag"), str)
+            and "body" in entry
+            and isinstance(entry.get("accessed"), (int, float))
+        }
 
     def _persist_etag(self, url: str) -> None:
-        """Record *url*'s ETag entry (fresh access time) and write the cache file."""
+        """Record *url*'s ETag entry (fresh access time); write the file when due."""
         if self._etag_cache_path is None or url not in self._etag_cache:
             return
         etag_value, body = self._etag_cache[url]
-        self._etag_disk[self._etag_key_prefix + url] = {
-            "etag": etag_value,
-            "body": body,
-            "accessed": time.time(),
-        }
+        key = self._etag_key_prefix + url
+        now = time.time()
+        self._etag_disk[key] = {"etag": etag_value, "body": body, "accessed": now}
+        self._etag_dirty.add(key)
+        if now - self._etag_last_flush >= _ETAG_FLUSH_INTERVAL_SEC:
+            self._flush_etag_disk()
+
+    def _flush_etag_disk(self) -> None:
+        """Merge this instance's pending entries into the cache file and write it.
+
+        The file is shared by several long-lived processes (watcher, runner, scheduler
+        jobs), so the current on-disk contents are re-read first; writing only the
+        snapshot taken at construction would drop entries other processes added since.
+        """
+        if self._etag_cache_path is None or not self._etag_dirty:
+            return
+        merged = self._read_etag_disk()
+        for key in self._etag_dirty:
+            if key in self._etag_disk:
+                merged[key] = self._etag_disk[key]
+        self._etag_disk = merged
+        self._etag_dirty.clear()
+        self._etag_last_flush = time.time()
         excess = len(self._etag_disk) - _ETAG_CACHE_MAX_ENTRIES
         if excess > 0:
             oldest = sorted(
@@ -313,8 +341,11 @@ class GitHubClient:
         accept: str = "application/vnd.github+json",
         raw: bool = False,
         return_link_header: bool = False,
-        etag: bool = False,
+        etag: bool | None = None,
     ) -> Any:
+        if etag is None:
+            # Conditional GETs answered with 304 do not count against the rate limit.
+            etag = method.upper() == "GET" and not raw
         if repo:
             owner, repo_name = _resolve_repo(repo)
         else:
@@ -366,6 +397,8 @@ class GitHubClient:
                     if exc.code == 304 and etag and url in self._etag_cache:
                         _, cached_body = self._etag_cache[url]
                         self._persist_etag(url)
+                        # Callers may mutate the result; never hand out the cached object.
+                        cached_body = copy.deepcopy(cached_body)
                         if return_link_header:
                             link = exc.headers.get("Link") if exc.headers else None
                             return cached_body, link
@@ -428,8 +461,12 @@ class GitHubClient:
 
         if etag and response_headers is not None:
             etag_value = response_headers.get("ETag")
-            if etag_value:
-                self._etag_cache[url] = (etag_value, result)
+            if isinstance(etag_value, str) and etag_value:
+                self._etag_cache.pop(url, None)
+                self._etag_cache[url] = (etag_value, copy.deepcopy(result))
+                if len(self._etag_cache) > _ETAG_CACHE_MAX_ENTRIES:
+                    # Long-lived processes cache every GET; drop the least recently stored.
+                    self._etag_cache.pop(next(iter(self._etag_cache)))
                 self._persist_etag(url)
 
         if return_link_header:
@@ -441,7 +478,7 @@ class GitHubClient:
         path: str,
         *,
         repo: str | None = None,
-        etag: bool = False,
+        etag: bool | None = None,
         items_key: str | None = None,
         max_items: int | None = None,
     ) -> list[Any]:
