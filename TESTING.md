@@ -33,8 +33,8 @@ For each candidate file flagged by policy review:
 
 1. State in one line **which contract** the test protects. If you cannot, delete it.
 2. Check whether another behavior test already protects that contract. If yes, delete the duplicate.
-3. If the contract still matters, rewrite to a single behavior test that does not violate T1–T6 and is not longer than the old test. If rewrite would grow the file, delete instead.
-4. If the contract no longer matters (removal check, migration check, wording check), delete the test.
+3. If the contract no longer matters (removal check, migration check, wording check), delete the test.
+4. If the contract still matters, rewrite to a single behavior test that does not violate T1–T6 and is not longer than the old test. If rewrite would grow the file, delete instead.
 
 From a nexus checkout, inventory candidates with:
 
