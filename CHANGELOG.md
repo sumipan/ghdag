@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- TESTING.md: testing policy (what tests protect, rules T1-T12, how to remove tests).
+
 ## 0.106.1 - 2026-10-28
 
 ### Changed

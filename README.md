@@ -53,6 +53,8 @@ pip install -e ".[dev]"
 | `dev` extra | `pytest>=7.0.0`, `pytest-cov>=4.0.0`, `mypy>=1.10.0`, `ruff>=0.4.0`, `import-linter>=2.0`, `types-PyYAML>=6.0` |
 | Package data | `ghdag/py.typed`, `ghdag/ui/static/*` |
 
+See [TESTING.md](./TESTING.md) for what tests should and should not pin.
+
 GitHub access uses the standard library (`urllib`). ghdag needs neither `requests` nor the `gh` CLI.
 
 Check the installation:
