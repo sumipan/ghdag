@@ -29,7 +29,7 @@ def pipeline_jsonl(tmp_path):
 
 
 class TestWriteOrderFileFooter:
-    def test_ac7_order_footer_fn_appends_dag_section(self, tmp_path) -> None:
+    def test_write_order_file_with_footer_appends_dag_section(self, tmp_path) -> None:
         queue_dir = tmp_path / "jobs"
         queue_dir.mkdir()
         state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=tmp_path / "exec.jsonl")
@@ -49,7 +49,7 @@ class TestWriteOrderFileFooter:
         assert "## DAG (Obsidian)" in content
         assert "[[jobs/done/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee]]" in content
 
-    def test_ac8_default_no_dag_section(self, tmp_path) -> None:
+    def test_write_order_file_without_footer_omits_dag_section(self, tmp_path) -> None:
         queue_dir = tmp_path / "jobs"
         queue_dir.mkdir()
         state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=tmp_path / "exec.jsonl")
@@ -67,7 +67,7 @@ class TestWriteOrderFileFooter:
 
 
 class TestSubmitWithoutAuditContext:
-    def test_ac7_submit_without_audit_context_raises_type_error(self):
+    def test_submit_without_audit_context_raises_type_error(self):
         """AC7: required — omitting audit_context on LLMPipelineAPI.submit() raises TypeError."""
         from unittest.mock import MagicMock
 

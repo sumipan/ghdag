@@ -35,7 +35,7 @@ class TestParseFanoutSpec:
     def test_nonexistent_file_returns_none(self):
         assert parse_fanout_spec("/tmp/__nonexistent_ghdag_test__.md") is None
 
-    def test_ac1_three_children(self, tmp_path):
+    def test_parse_fanout_spec_returns_three_children(self, tmp_path):
         f = tmp_path / "result.md"
         f.write_text(VALID_FANOUT_YAML)
         spec = parse_fanout_spec(str(f))
@@ -56,7 +56,7 @@ class TestParseFanoutSpec:
         f.write_text("content\n---\nsome_other_key: value\n")
         assert parse_fanout_spec(str(f)) is None
 
-    def test_ac5_invalid_yaml_returns_none_and_warns(self, tmp_path, caplog):
+    def test_invalid_yaml_returns_none_and_warns(self, tmp_path, caplog):
         f = tmp_path / "result.md"
         f.write_text("content\n---\nghdag_fanout: [invalid: yaml: {\n")
         with caplog.at_level(logging.WARNING, logger="ghdag.dag.fanout"):
@@ -64,12 +64,12 @@ class TestParseFanoutSpec:
         assert result is None
         assert any("invalid" in r.message.lower() or "yaml" in r.message.lower() for r in caplog.records)
 
-    def test_ac6_empty_children_returns_none(self, tmp_path):
+    def test_empty_children_list_returns_none(self, tmp_path):
         f = tmp_path / "result.md"
         f.write_text("content\n---\nghdag_fanout:\n  children: []\n")
         assert parse_fanout_spec(str(f)) is None
 
-    def test_ac7_duplicate_ids_raises(self, tmp_path):
+    def test_duplicate_child_ids_raises_fanout_error(self, tmp_path):
         f = tmp_path / "result.md"
         f.write_text(
             "---\nghdag_fanout:\n  children:\n"
@@ -140,13 +140,13 @@ class TestParseFanoutSpec:
         with pytest.raises(FanoutError, match="--fo--"):
             parse_fanout_spec(str(f))
 
-    def test_ac3_markdown_hr_without_fanout_returns_none(self, tmp_path):
+    def test_markdown_hr_without_fanout_key_returns_none(self, tmp_path):
         """AC3: --- in Claude output without ghdag_fanout: → None (no warning)."""
         f = tmp_path / "result.md"
         f.write_text("Implementation complete.\n\n---\n\n**Changes:**\nPR created")
         assert parse_fanout_spec(str(f)) is None
 
-    def test_ac4_multiple_separators_fanout_after_second(self, tmp_path):
+    def test_fanout_after_second_separator_is_parsed(self, tmp_path):
         """AC4: --- + markdown + --- + ghdag_fanout: → correct extraction."""
         f = tmp_path / "result.md"
         f.write_text(
@@ -158,7 +158,7 @@ class TestParseFanoutSpec:
         assert len(spec.children) == 1
         assert spec.children[0].id == "x"
 
-    def test_ac5_fanout_without_separator_returns_none(self, tmp_path):
+    def test_fanout_yaml_without_separator_returns_none(self, tmp_path):
         """AC5: ghdag_fanout: without preceding --- → None (separator required)."""
         f = tmp_path / "result.md"
         f.write_text(
@@ -168,7 +168,7 @@ class TestParseFanoutSpec:
         )
         assert parse_fanout_spec(str(f)) is None
 
-    def test_ac6_other_yaml_keys_before_fanout(self, tmp_path):
+    def test_other_yaml_keys_before_fanout_still_parses(self, tmp_path):
         """AC6: Other root-level YAML keys between --- and ghdag_fanout: → correct parse."""
         f = tmp_path / "result.md"
         f.write_text(

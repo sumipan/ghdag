@@ -89,11 +89,11 @@ def _deltas(*pieces: str) -> list[dict]:
 
 
 class TestReconstructAssistantTurns:
-    def test_ac1_joins_turns_with_blank_line(self):
+    def test_reconstruct_joins_turns_with_blank_line(self):
         stdout = _FINAL_MESSAGE.encode("utf-8")
         assert reconstruct_assistant_turns(stdout) == _JOINED
 
-    def test_ac2_complete_without_model_call_id_matching_partials(self):
+    def test_reconstruct_merges_partials_without_model_call_id(self):
         events = [
             *_partials("hello world", 4),
             _assistant("hello world"),  # no model_call_id
@@ -101,7 +101,7 @@ class TestReconstructAssistantTurns:
         ]
         assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "hello world"
 
-    def test_ac2_model_call_id_complete_dedupes_partials(self):
+    def test_reconstruct_dedupes_partials_when_complete_has_model_call_id(self):
         events = [
             *_partials("hello", 2),
             _assistant("hello", model_call_id="c1"),
@@ -148,7 +148,7 @@ class TestReconstructAssistantTurns:
             "non_dict_json",
         ],
     )
-    def test_ac3_boundaries(self, stdout: bytes, expected: str | None):
+    def test_reconstruct_parametrized_edge_cases(self, stdout: bytes, expected: str | None):
         assert reconstruct_assistant_turns(stdout) == expected
 
     def test_repro_fixture_repeated_leading_delta(self):
@@ -191,7 +191,7 @@ class TestReconstructAssistantTurns:
         ]
         assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "oops\n\nxxy\n\nzz"
 
-    def test_ac4_consecutive_tool_calls_do_not_create_empty_turns(self):
+    def test_reconstruct_tool_calls_do_not_add_empty_turns(self):
         events = [
             *_partials("ABCD", 2),
             _tool_call("started"),
@@ -202,7 +202,7 @@ class TestReconstructAssistantTurns:
         ]
         assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "ABCD\n\nWXYZ"
 
-    def test_ac4_ignores_non_text_content_and_empty_text(self):
+    def test_reconstruct_skips_non_text_and_empty_assistant_chunks(self):
         events = [
             {
                 "type": "assistant",
@@ -221,14 +221,14 @@ class TestReconstructAssistantTurns:
         ]
         assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "ok"
 
-    def test_ac9_scrubbed_fixture_keeps_both_turns(self):
+    def test_scrubbed_fixture_preserves_both_turns(self):
         text = reconstruct_assistant_turns(_FINAL_MESSAGE.encode())
         assert text is not None
         assert "morning assistant flow" in text
         assert "Evening update" in text
         assert "\n\n" in text
 
-    def test_ac9_fixture_has_no_host_persona_literals(self):
+    def test_scrubbed_fixture_has_no_host_persona_literals(self):
         for token in _HOST_PERSONA_LEAKS:
             assert token not in _FINAL_MESSAGE
             assert token not in _A
@@ -237,7 +237,7 @@ class TestReconstructAssistantTurns:
 
 
 class TestCursorStreamAdapterFinalMessage:
-    def test_ac5_adapter_prefers_reconstructed_turns(self):
+    def test_adapter_extract_uses_reconstructed_turns(self):
         adapter = CursorStreamAdapter()
         assert adapter.extract_result_text(_FINAL_MESSAGE.encode(), b"") == _JOINED.encode()
 
@@ -255,23 +255,23 @@ class TestCursorStreamAdapterFinalMessage:
         ).encode()
         assert adapter.extract_result_text(raw, b"") == b"ababcd"
 
-    def test_ac5_fallback_typed_result(self):
+    def test_adapter_extract_falls_back_to_result_event(self):
         adapter = CursorStreamAdapter()
         raw = _jsonl(_result("x")).encode()
         assert adapter.extract_result_text(raw, b"") == b"x"
 
-    def test_ac5_fallback_single_json(self):
+    def test_adapter_extract_falls_back_to_single_json_object(self):
         adapter = CursorStreamAdapter()
         raw = json.dumps({"result": "x"}).encode()
         assert adapter.extract_result_text(raw, b"") == b"x"
 
-    def test_ac5_fallback_non_json(self):
+    def test_adapter_extract_falls_back_to_raw_bytes(self):
         adapter = CursorStreamAdapter()
         assert adapter.extract_result_text(b"plain text", b"") == b"plain text"
 
 
 class TestLLMResultValidateCursor:
-    def test_ac6_cursor_stream_replaces_stdout_with_joined_turns(self):
+    def test_validate_cursor_stream_stdout_becomes_joined_turns(self):
         caps = LLMCapabilities(stream=True)
         result = LLMResult(stdout=_FINAL_MESSAGE, stderr="", returncode=0)
         validated = result.validate(caps, engine="cursor")
@@ -280,7 +280,7 @@ class TestLLMResultValidateCursor:
         body = adapter.extract_result_text(validated.stdout.encode(), b"").decode()
         assert body == _JOINED
 
-    def test_ac7_claude_keeps_last_result(self):
+    def test_validate_claude_stream_keeps_result_field(self):
         caps = LLMCapabilities(stream=True)
         stream = _jsonl(
             {"type": "assistant", "message": {"content": [{"type": "text", "text": "mid"}]}},
@@ -289,7 +289,7 @@ class TestLLMResultValidateCursor:
         result = LLMResult(stdout=stream, stderr="", returncode=0)
         assert result.validate(caps, engine="claude").stdout == "final-claude"
 
-    def test_ac7_codex_keeps_raw_jsonl(self):
+    def test_validate_codex_stream_preserves_raw_stdout(self):
         caps = LLMCapabilities(stream=True)
         raw = '{"type":"item.completed"}\n{"type":"result","result":"x"}\n'
         result = LLMResult(stdout=raw, stderr="", returncode=0)
@@ -317,7 +317,7 @@ def _make_config(tmp_path: Path, records: list[dict]) -> DagConfig:
 
 
 class TestDagResultUsesReconstructedTurns:
-    def test_ac8_result_is_joined_events_preserve_jsonl(self, tmp_path: Path):
+    def test_dag_events_file_stores_reconstructed_turns(self, tmp_path: Path):
         result_file = tmp_path / "result.md"
         fixture = tmp_path / "fixture.jsonl"
         fixture.write_text(_FINAL_MESSAGE, encoding="utf-8")

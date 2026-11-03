@@ -81,7 +81,7 @@ class TestRepairExecJsonl:
         assert removed == 0
         assert f.read_text(encoding="utf-8") == original
 
-    def test_empty_and_whitespace_lines_removed(self, tmp_path):
+    def test_empty_and_whitespace_lines_stripped_from_exec_jsonl(self, tmp_path):
         f = tmp_path / "exec.jsonl"
         f.write_text('{"uuid":"a"}\n\n   \n{"uuid":"b"}\n', encoding="utf-8")
         removed = repair_exec_jsonl(f)

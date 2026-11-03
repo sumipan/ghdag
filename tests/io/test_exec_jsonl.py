@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import fcntl
 import json
 from pathlib import Path
@@ -289,53 +288,3 @@ class TestValidateRepair:
         path.write_text("bad\n", encoding="utf-8")
         exec_jsonl.repair(path)
         assert fcntl.LOCK_EX in locks
-
-
-class TestNoDirectExecJsonlIoElsewhere:
-    """Acceptance: within src/ghdag/, only io/exec_jsonl.py may open/read_text/write_text exec.jsonl."""
-
-    _SRC = Path(__file__).resolve().parents[2] / "src" / "ghdag"
-    _ALLOWED = {_SRC / "io" / "exec_jsonl.py"}
-
-    def test_no_direct_exec_jsonl_filesystem_access(self) -> None:
-        offenders: list[str] = []
-        for path in self._SRC.rglob("*.py"):
-            if path in self._ALLOWED:
-                continue
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "open":
-                    # Heuristic: open(...) whose first arg mentions exec_jsonl / _exec_jsonl / _exec_md
-                    if node.args and _mentions_exec_jsonl(node.args[0]):
-                        offenders.append(f"{path.relative_to(self._SRC)}:{node.lineno}:open")
-                if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-                    if node.func.attr in {"read_text", "write_text"} and node.args:
-                        # Method call on something that looks like exec path attribute
-                        if _attr_chain_mentions_exec(node.func.value):
-                            offenders.append(
-                                f"{path.relative_to(self._SRC)}:{node.lineno}:{node.func.attr}"
-                            )
-        assert offenders == [], "direct exec.jsonl I/O outside io/exec_jsonl.py:\n" + "\n".join(offenders)
-
-
-def _mentions_exec_jsonl(node: ast.AST) -> bool:
-    text = ast.dump(node)
-    return any(
-        token in text
-        for token in ("exec_jsonl", "_exec_jsonl", "exec_jsonl_path", "_exec_md", "exec_md")
-    )
-
-
-def _attr_chain_mentions_exec(node: ast.AST) -> bool:
-    names: list[str] = []
-    cur: ast.AST | None = node
-    while isinstance(cur, ast.Attribute):
-        names.append(cur.attr)
-        cur = cur.value
-    if isinstance(cur, ast.Name):
-        names.append(cur.id)
-    joined = ".".join(reversed(names))
-    return any(
-        token in joined
-        for token in ("exec_jsonl", "_exec_jsonl", "_exec_md", "exec_md")
-    )

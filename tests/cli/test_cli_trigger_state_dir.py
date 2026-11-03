@@ -72,7 +72,7 @@ def _make_pipeline_state_mock(captured: dict):
 class TestTriggerStateDirDerivation:
     """AC-1 to AC-3: ghdag trigger uses correct state_dir."""
 
-    def test_ac1_absolute_exec_md_derives_state_dir(self, tmp_path, monkeypatch):
+    def test_trigger_absolute_exec_jsonl_derives_state_dir_from_repo_root(self, tmp_path, monkeypatch):
         """State dir is exec_jsonl.parent.parent/.pipeline-state, not cwd."""
         from ghdag.cli.commands.trigger import cmd_trigger
 
@@ -104,7 +104,7 @@ class TestTriggerStateDirDerivation:
             "State dir must be derived from exec_jsonl's parent's parent, not cwd."
         )
 
-    def test_ac2_explicit_state_dir_overrides_derived(self, tmp_path, monkeypatch):
+    def test_trigger_explicit_state_dir_overrides_derived_path(self, tmp_path, monkeypatch):
         """Explicit --state-dir takes priority over derivation from --exec-md."""
         from ghdag.cli.commands.trigger import cmd_trigger
 
@@ -132,7 +132,7 @@ class TestTriggerStateDirDerivation:
             f"Expected state_dir={custom_state_dir!r}, got {captured.get('state_dir')!r}."
         )
 
-    def test_ac3_relative_exec_md_from_repo_root_matches_legacy(self, tmp_path, monkeypatch):
+    def test_trigger_relative_exec_jsonl_uses_cwd_pipeline_state(self, tmp_path, monkeypatch):
         """cwd=repo-root, relative --exec-md jobs/exec.jsonl → cwd/.pipeline-state."""
         from ghdag.cli.commands.trigger import cmd_trigger
 
@@ -165,7 +165,7 @@ class TestTriggerStateDirDerivation:
 class TestWatchStateDirDerivation:
     """AC-4: ghdag watch has the same --state-dir behavior as trigger."""
 
-    def test_ac4_absolute_exec_md_derives_state_dir(self, tmp_path, monkeypatch):
+    def test_watch_absolute_exec_jsonl_derives_state_dir_from_repo_root(self, tmp_path, monkeypatch):
         """watch: state_dir = exec_jsonl.parent.parent/.pipeline-state when not given."""
         from ghdag.cli.commands.watch import cmd_watch
 
@@ -195,7 +195,7 @@ class TestWatchStateDirDerivation:
             f"watch: Expected state_dir={expected!r}, got {captured.get('state_dir')!r}."
         )
 
-    def test_ac4_explicit_state_dir_overrides_derived_watch(self, tmp_path, monkeypatch):
+    def test_watch_explicit_state_dir_overrides_derived_path(self, tmp_path, monkeypatch):
         """watch: explicit --state-dir overrides derivation."""
         from ghdag.cli.commands.watch import cmd_watch
 
@@ -222,7 +222,7 @@ class TestWatchStateDirDerivation:
             f"watch: Expected state_dir={custom_state_dir!r}, got {captured.get('state_dir')!r}."
         )
 
-    def test_ac4_relative_exec_md_from_repo_root_matches_legacy_watch(self, tmp_path, monkeypatch):
+    def test_watch_relative_exec_jsonl_uses_cwd_pipeline_state(self, tmp_path, monkeypatch):
         """watch: relative --exec-md from repo root yields cwd/.pipeline-state."""
         from ghdag.cli.commands.watch import cmd_watch
 

@@ -87,7 +87,7 @@ class TestCursorStreamAdapterExtraction:
 
 
 class TestCursorStreamExtractError:
-    def test_ac1_retriable_error_single_line(self):
+    def test_extract_error_classifies_resource_exhausted_retriable(self):
         from ghdag.core.ports.output import EngineErrorKind
 
         adapter = CursorStreamAdapter()
@@ -97,7 +97,7 @@ class TestCursorStreamExtractError:
         assert err.retryable is True
         assert err.message == "RetriableError: [resource_exhausted] Error"
 
-    def test_ac1_retriable_error_reconnect_fixture(self):
+    def test_extract_error_classifies_reconnect_fixture(self):
         from ghdag.core.ports.output import EngineErrorKind
 
         adapter = CursorStreamAdapter()
@@ -107,7 +107,7 @@ class TestCursorStreamExtractError:
         assert err.retryable is True
         assert err.message == "RetriableError: [resource_exhausted] Error"
 
-    def test_ac1b_unavailable_is_capacity(self):
+    def test_extract_error_unavailable_is_capacity(self):
         from ghdag.core.ports.output import EngineErrorKind
 
         adapter = CursorStreamAdapter()
@@ -116,7 +116,7 @@ class TestCursorStreamExtractError:
         assert err.kind == EngineErrorKind.CAPACITY
         assert err.retryable is True
 
-    def test_ac1b_connection_stalled_is_capacity(self):
+    def test_extract_error_connection_stalled_is_capacity(self):
         from ghdag.core.ports.output import EngineErrorKind
 
         adapter = CursorStreamAdapter()
@@ -125,11 +125,11 @@ class TestCursorStreamExtractError:
         assert err.kind == EngineErrorKind.CAPACITY
         assert err.retryable is True
 
-    def test_ac1c_unauthenticated_returns_none(self):
+    def test_extract_error_unauthenticated_returns_none(self):
         adapter = CursorStreamAdapter()
         assert adapter.extract_error(b"", b"RetriableError: [unauthenticated] Error\n") is None
 
-    def test_ac1c_non_retriable_error_returns_none(self):
+    def test_extract_error_non_retriable_returns_none(self):
         adapter = CursorStreamAdapter()
         assert (
             adapter.extract_error(
@@ -138,11 +138,11 @@ class TestCursorStreamExtractError:
             is None
         )
 
-    def test_ac1c_empty_stderr_returns_none(self):
+    def test_extract_error_empty_stderr_returns_none(self):
         adapter = CursorStreamAdapter()
         assert adapter.extract_error(b"", b"") is None
 
-    def test_ac1c_invalid_utf8_stderr_returns_none(self):
+    def test_extract_error_invalid_utf8_returns_none(self):
         adapter = CursorStreamAdapter()
         assert adapter.extract_error(b"", b"\xff\xfe") is None
 
@@ -189,12 +189,12 @@ class TestCursorStreamExtractError:
         stderr = b"Cannot use this model: auto. Available models:\n"
         assert adapter.extract_error(_STREAM_SUCCESS, stderr) is None
 
-    def test_ac2_success_stdout_ignores_retriable_stderr(self):
+    def test_extract_error_success_stdout_ignores_retriable_stderr(self):
         adapter = CursorStreamAdapter()
         err = adapter.extract_error(_STREAM_SUCCESS, _RETRIABLE_STDERR)
         assert err is None
 
-    def test_ac2_assistant_only_stdout_uses_stderr_path(self):
+    def test_extract_error_assistant_only_stdout_reads_stderr(self):
         from ghdag.core.ports.output import EngineErrorKind
 
         assistant_only = (
@@ -205,7 +205,7 @@ class TestCursorStreamExtractError:
         assert err is not None
         assert err.kind == EngineErrorKind.RATE_LIMIT
 
-    def test_ac3_result_payload_rate_limit(self):
+    def test_extract_error_result_payload_rate_limit(self):
         from ghdag.core.ports.output import EngineErrorKind
 
         payload = b'{"type": "result", "subtype": "error", "is_error": true, "result": "Rate limit exceeded"}\n'
@@ -215,7 +215,7 @@ class TestCursorStreamExtractError:
         assert err.kind == EngineErrorKind.RATE_LIMIT
         assert err.retryable is True
 
-    def test_ac3_result_payload_capacity(self):
+    def test_extract_error_result_payload_capacity(self):
         from ghdag.core.ports.output import EngineErrorKind
 
         payload = b'{"type": "result", "subtype": "error", "is_error": true, "result": "Model is at capacity"}\n'
@@ -225,7 +225,7 @@ class TestCursorStreamExtractError:
         assert err.kind == EngineErrorKind.CAPACITY
         assert err.retryable is True
 
-    def test_ac3_result_payload_unknown(self):
+    def test_extract_error_result_payload_unknown(self):
         from ghdag.core.ports.output import EngineErrorKind
 
         payload = b'{"type": "result", "subtype": "error", "is_error": true, "result": "something broke"}\n'
@@ -235,7 +235,7 @@ class TestCursorStreamExtractError:
         assert err.kind == EngineErrorKind.UNKNOWN
         assert err.retryable is False
 
-    def test_ac5_classify_common_failure_not_quota_exhausted(self):
+    def test_classify_common_failure_ignores_resource_exhausted(self):
         from ghdag.llm.adapters.failure_classification import classify_common_failure
 
         result = classify_common_failure(

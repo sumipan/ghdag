@@ -82,7 +82,7 @@ def client() -> GitHubClient:
     return GitHubClient(token="tok", repo="sumipan/nexus")
 
 
-def test_add_sub_issue_201_returns_parent_with_summary(
+def test_add_sub_issue_created_returns_parent_with_summary(
     client: GitHubClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """POST 201 → parent JSON; sub_issues_summary.total reflects the link."""
@@ -105,7 +105,7 @@ def test_add_sub_issue_201_returns_parent_with_summary(
     assert calls and calls[0][2] == {"sub_issue_id": _CHILD_ID}
 
 
-def test_add_sub_issue_422_duplicate_is_idempotent(
+def test_add_sub_issue_duplicate_response_is_idempotent(
     client: GitHubClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Second link of the same child → 422, no exception (idempotent success)."""
@@ -118,7 +118,7 @@ def test_add_sub_issue_422_duplicate_is_idempotent(
     assert result is None
 
 
-def test_add_sub_issue_403_wrong_id_raises_explicit_error(
+def test_add_sub_issue_forbidden_when_child_is_issue_number(
     client: GitHubClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Passing issue ``number`` as child_id → 403 with an explicit error message."""

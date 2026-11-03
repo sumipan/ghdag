@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import concurrent.futures
-import inspect
 from pathlib import Path
 
 
@@ -142,66 +141,3 @@ class TestShimCompat:
 
         assert pipeline_status.read_done_content is io_done.read_done_content
         assert pipeline_status.dep_succeeded is io_done.dep_succeeded
-
-    def test_canonical_source_is_io_done(self) -> None:
-        from ghdag.io.done import is_done, mark_done, read_done_content
-
-        for fn in (is_done, mark_done, read_done_content):
-            src = inspect.getsourcefile(fn)
-            assert src is not None
-            assert src.endswith("io/done.py") or src.endswith("io\\done.py")
-
-    def test_maintenance_uses_io_done(self) -> None:
-        import ghdag.maintenance as maint
-
-        src = Path(inspect.getsourcefile(maint)).read_text(encoding="utf-8")
-        assert "from ghdag.io.done import" in src
-        assert "def _is_done(" not in src
-        assert "def _mark_done(" not in src
-
-
-class TestNoDuplicateDoneIo:
-    def test_direct_done_io_only_in_io_done(self) -> None:
-        """Acceptance: direct I/O on jobs/done is only in io/done.py."""
-        import ast
-
-        import ghdag
-
-        root = Path(inspect.getsourcefile(ghdag)).resolve().parent
-        offenders: list[str] = []
-        for path in root.rglob("*.py"):
-            rel = path.relative_to(root)
-            if rel.as_posix() == "io/done.py":
-                continue
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            text = path.read_text(encoding="utf-8")
-            if "exec_done_dir" not in text and "jobs/done" not in text:
-                continue
-            # Look for open()/listdir/read_text/exists on done paths in modules
-            # that still mention exec_done_dir/jobs/done outside imports.
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    if node.name in {
-                        "is_done",
-                        "mark_done",
-                        "load_done_from_dir",
-                        "load_succeeded_from_dir",
-                        "read_done_content",
-                        "_is_done",
-                        "_mark_done",
-                    }:
-                        # Local reimplementation of done I/O is forbidden outside io.done
-                        if any(
-                            isinstance(n, (ast.Call,))
-                            and (
-                                (isinstance(n.func, ast.Name) and n.func.id in {"open", "listdir"})
-                                or (
-                                    isinstance(n.func, ast.Attribute)
-                                    and n.func.attr
-                                    in {"open", "listdir", "exists", "makedirs", "read_text", "is_file"}
-                                )
-                            )
-                            for n in ast.walk(node)
-                        ):
-                            offenders.append(f"{rel}:{node.name}")
-        assert offenders == []

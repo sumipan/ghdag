@@ -54,7 +54,7 @@ def _read_audit_records(audit_path: Path) -> list[dict]:
 
 
 class TestCleanupLinkRewriteArchived:
-    def test_ac10_archived_file_links_and_frontmatter(self, tmp_path: Path) -> None:
+    def test_cleanup_rewrites_archived_order_wikilinks(self, tmp_path: Path) -> None:
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order_b_name = f"{TS}-claude-order-{UUID_B}.md"
         order_a = queue_dir / f"{TS}-claude-order-{UUID_A}.md"
@@ -93,7 +93,7 @@ class TestCleanupLinkRewriteArchived:
 
 
 class TestCleanupLinkRewriteRemaining:
-    def test_ac11_remaining_file_links_updated(self, tmp_path: Path) -> None:
+    def test_cleanup_rewrites_remaining_queue_wikilinks(self, tmp_path: Path) -> None:
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order_d_name = f"{TS}-claude-order-{UUID_D}.md"
         order_c = queue_dir / f"{TS}-claude-order-{UUID_C}.md"
@@ -120,7 +120,7 @@ class TestCleanupLinkRewriteRemaining:
 
 
 class TestCleanupLinkRewriteDryRun:
-    def test_ac12_dry_run_does_not_rewrite_links(self, tmp_path: Path) -> None:
+    def test_cleanup_dry_run_skips_link_rewrite(self, tmp_path: Path) -> None:
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order_b_name = f"{TS}-claude-order-{UUID_B}.md"
         order_a = queue_dir / f"{TS}-claude-order-{UUID_A}.md"
@@ -149,7 +149,7 @@ class TestCleanupLinkRewriteDryRun:
 
 
 class TestCleanupLinkRewriteSkipUnchanged:
-    def test_ac13_no_md_write_when_no_wikilinks(self, tmp_path: Path) -> None:
+    def test_cleanup_skips_md_write_for_files_without_wikilinks(self, tmp_path: Path) -> None:
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order_b_name = f"{TS}-claude-order-{UUID_B}.md"
         order_a = queue_dir / f"{TS}-claude-order-{UUID_A}.md"

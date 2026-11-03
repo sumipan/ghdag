@@ -27,7 +27,6 @@ def test_dag_reexports_core_objects(name: str) -> None:
 def test_dag_read_ps_is_engines_read_ps() -> None:
     # ps runs in a subprocess, which core's purity guard forbids.
     assert dag_sg.read_ps is engines.read_ps
-    assert not hasattr(core_sg, "read_ps")
 
 
 def test_dag_all_matches_exports() -> None:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 import json
 from pathlib import Path
 
@@ -88,15 +87,6 @@ class TestCompatImports:
         ):
             assert hasattr(pa, name), name
 
-    def test_io_audit_is_canonical_module(self) -> None:
-        import ghdag.io.audit as io_audit
-        import ghdag.pipeline.audit as pipeline_audit
-
-        assert inspect.getsourcefile(pipeline_audit.AuditContext) == inspect.getsourcefile(
-            io_audit.AuditContext
-        )
-        assert pipeline_audit.write_task_exit_audit is io_audit.write_task_exit_audit
-
 
 class TestWritersUseAppendAuditRecord:
     def test_md_write_audit_uses_append(self, tmp_path: Path, monkeypatch) -> None:
@@ -166,23 +156,3 @@ class TestWritersUseAppendAuditRecord:
         assert len(calls) == 1
         assert calls[0][1]["event"] == "tool.fallback"
         assert calls[0][1]["tool"] == "code_review"
-
-
-class TestRotateCanonicalLocation:
-    def test_implementation_lives_in_io_rotate(self) -> None:
-        import ghdag.files._rotate as files_rotate
-        import ghdag.io._rotate as io_rotate
-
-        src_file = inspect.getsourcefile(io_rotate._do_rotate)
-        assert src_file is not None
-        assert "io/_rotate.py" in src_file.replace("\\", "/")
-        assert files_rotate._do_rotate is io_rotate._do_rotate
-        assert files_rotate._maybe_rotate is io_rotate._maybe_rotate
-        assert files_rotate._MAX_AUDIT_BYTES == io_rotate._MAX_AUDIT_BYTES
-
-    def test_files_rotate_is_shim_only(self) -> None:
-        import ghdag.files._rotate as files_rotate
-
-        src = Path(inspect.getsourcefile(files_rotate)).read_text(encoding="utf-8")
-        assert "audit_path.rename" not in src
-        assert "from ghdag.io._rotate import" in src

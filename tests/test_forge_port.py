@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from typing import get_type_hints
 from unittest.mock import MagicMock
 
@@ -76,10 +75,6 @@ def test_state_machine_transition_uses_get_forge(
 
     monkeypatch.setattr(state_machine, "get_forge", _fake_get_forge)
 
-    src = inspect.getsource(transition)
-    assert "get_forge()" in src
-    assert "GitHubClient()" not in src
-
     transition(
         42,
         "phase:b",
@@ -87,7 +82,11 @@ def test_state_machine_transition_uses_get_forge(
     )
     assert calls == [None]
     assert fake.issue_get.call_count == 2
-    fake.issue_update.assert_called_once()
+    fake.issue_update.assert_called_once_with(
+        42,
+        labels_remove=["phase:a"],
+        labels_add=["phase:b"],
+    )
 
 
 def test_label_names_accepts_forge_port_type_hint() -> None:

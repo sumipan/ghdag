@@ -10,8 +10,55 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from ghdag.dag.engine import DagEngine
+from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import DagConfig
 from ghdag.dag.state import is_done, load_done_from_dir, load_succeeded_from_dir
+from ghdag.metrics.models import TaskMetrics
+
+
+class MemoryHooks(DefaultHooks):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rejected = False
+        self.pipeline_status = None
+        self.starts: list[tuple] = []
+        self.successes: list[tuple] = []
+        self.failures: list[tuple] = []
+        self.rejected_events: list[tuple] = []
+        self.empty_results: list[tuple] = []
+        self.dep_failed: list[tuple] = []
+        self.shutdown_signum = None
+        self._on_task_start_extra = None
+
+    def on_task_start(self, uuid, task):
+        self.starts.append((uuid, task))
+        if self._on_task_start_extra:
+            self._on_task_start_extra(uuid, task)
+
+    def on_task_success(self, uuid, task, metrics: TaskMetrics):
+        self.successes.append((uuid, task, metrics))
+
+    def on_task_failure(self, uuid, task, returncode, stderr_text, metrics):
+        self.failures.append((uuid, task, returncode, stderr_text, metrics))
+
+    def on_task_rejected(self, uuid, task, retry_depth, is_final, metrics):
+        self.rejected_events.append((uuid, task, retry_depth, is_final, metrics))
+
+    def on_task_empty_result(self, uuid, task, stderr_text, metrics):
+        self.empty_results.append((uuid, task, stderr_text, metrics))
+
+    def on_task_dep_failed(self, uuid, task, failed_dep):
+        self.dep_failed.append((uuid, task, failed_dep))
+
+    def on_shutdown(self, signum):
+        self.shutdown_signum = signum
+
+    def check_rejected(self, result_path: str) -> bool:
+        return self.rejected
+
+    def check_pipeline_status(self, result_path: str):
+        return self.pipeline_status
+
 
 _MD_LINE_RE = _re.compile(r"^([a-zA-Z0-9\-]+)((?:\[[^\]]+\])*)\s*:\s*(.+)$")
 _MD_DEPENDS_RE = _re.compile(r"\[depends:([^\]]+)\]")
@@ -70,8 +117,7 @@ class TestSingleTaskExecution:
     def test_single_task_success(self, tmp_path):
         """One line in exec.md, no deps → write status to jobs/done with exit 0"""
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=3.0)
@@ -79,7 +125,7 @@ class TestSingleTaskExecution:
         assert is_done(config.exec_done_dir, "uuid-a")
         succeeded = load_succeeded_from_dir(config.exec_done_dir)
         assert "uuid-a" in succeeded
-        hooks.on_task_success.assert_called_once()
+        assert len(hooks.successes) == 1
 
 
 class TestDependencyResolution:
@@ -139,8 +185,7 @@ class TestDepFailed:
             "uuid-a: exit 1\n"
             "uuid-b[depends:uuid-a]: echo should-not-run\n",
         )
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=5.0)
@@ -153,7 +198,7 @@ class TestDepFailed:
         assert "uuid-a" not in succeeded
         assert "uuid-b" not in succeeded
 
-        hooks.on_task_dep_failed.assert_called()
+        assert hooks.dep_failed
 
 
 class TestAppendTask:
@@ -202,16 +247,14 @@ class TestHooksCalled:
     def test_on_task_start_called(self, tmp_path):
         """on_task_start is called once with the correct uuid and task on start"""
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=3.0)
 
-        hooks.on_task_start.assert_called_once()
-        call_args = hooks.on_task_start.call_args
-        assert call_args[0][0] == "uuid-a"  # uuid
-        assert call_args[0][1].uuid == "uuid-a"  # task
+        assert len(hooks.starts) == 1
+        assert hooks.starts[0][0] == "uuid-a"
+        assert hooks.starts[0][1].uuid == "uuid-a"
 
     def test_on_task_start_not_called_for_skipped_missing_input(self, tmp_path):
         """on_task_start is not called when the stdin file is missing"""
@@ -219,40 +262,36 @@ class TestHooksCalled:
             tmp_path,
             "uuid-a: agent -p --force < /tmp/nonexistent_ghdag_xxxxxx.md | tee -a result.md\n",
         )
-        hooks = MagicMock()
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=3.0)
 
-        hooks.on_task_start.assert_not_called()
+        assert not hooks.starts
 
     def test_on_task_success_called(self, tmp_path):
         """on_task_success is called on task success"""
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=3.0)
 
-        hooks.on_task_success.assert_called_once()
-        call_args = hooks.on_task_success.call_args
-        assert call_args[0][0] == "uuid-a"
+        assert len(hooks.successes) == 1
+        assert hooks.successes[0][0] == "uuid-a"
 
     def test_on_task_failure_called(self, tmp_path):
         """on_task_failure is called with returncode and stderr_text on failure"""
         config = _make_config(tmp_path, "uuid-a: echo err >&2 && exit 42\n")
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=3.0)
 
-        hooks.on_task_failure.assert_called_once()
-        call_args = hooks.on_task_failure.call_args
-        assert call_args[0][0] == "uuid-a"  # uuid
-        assert call_args[0][2] == 42  # returncode
-        assert "err" in call_args[0][3]  # stderr_text
+        assert len(hooks.failures) == 1
+        assert hooks.failures[0][0] == "uuid-a"
+        assert hooks.failures[0][2] == 42
+        assert "err" in hooks.failures[0][3]
 
 
 class TestSignalShutdown:
@@ -261,8 +300,7 @@ class TestSignalShutdown:
     def test_shutdown_flag_stops_loop(self, tmp_path):
         """shutdown flag calls on_shutdown and ends the loop"""
         config = _make_config(tmp_path, "uuid-a: sleep 30\n")
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         t = threading.Thread(target=engine.run, daemon=True)
@@ -275,7 +313,7 @@ class TestSignalShutdown:
         t.join(timeout=5.0)
 
         assert not t.is_alive()
-        hooks.on_shutdown.assert_called_once_with(signal.SIGINT)
+        assert hooks.shutdown_signum == signal.SIGINT
 
     def test_signal_handler_installed_in_main_thread(self, tmp_path):
         """Signal handlers are installed when run on the main thread"""
@@ -377,15 +415,13 @@ class TestTaskTimeout:
             task_timeout=2.0,
             kill_grace=2.0,
         )
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=8.0)
 
-        hooks.on_task_failure.assert_called_once()
-        call_args = hooks.on_task_failure.call_args
-        stderr_arg = call_args[0][3]  # 4th positional arg
+        assert len(hooks.failures) == 1
+        stderr_arg = hooks.failures[0][3]
         assert "TIMEOUT" in stderr_arg or "timeout" in stderr_arg.lower()
 
 
@@ -442,9 +478,7 @@ class TestStdoutDirectWrite:
         config = _make_jsonl_config(tmp_path, [
             _jsonl_task("uuid-a", "echo 'hello world'", result_path)
         ])
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
-        hooks.check_pipeline_status.return_value = None
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=5.0)
@@ -452,7 +486,7 @@ class TestStdoutDirectWrite:
         assert Path(result_path).exists()
         content = Path(result_path).read_text()
         assert "hello world" in content
-        hooks.on_task_success.assert_called_once()
+        assert len(hooks.successes) == 1
 
     def test_pipeline_status_merge_done_calls_success_ac5(self, tmp_path):
         """stdout PIPELINE_STATUS: MERGE_DONE → on_task_success is called (AC5)"""
@@ -460,15 +494,14 @@ class TestStdoutDirectWrite:
         config = _make_jsonl_config(tmp_path, [
             _jsonl_task("uuid-a", "echo 'PIPELINE_STATUS: MERGE_DONE'", result_path)
         ])
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
-        hooks.check_pipeline_status.return_value = "MERGE_DONE"
+        hooks = MemoryHooks()
+        hooks.pipeline_status = "MERGE_DONE"
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=5.0)
 
-        hooks.on_task_success.assert_called_once()
-        hooks.on_task_failure.assert_not_called()
+        assert len(hooks.successes) == 1
+        assert not hooks.failures
 
     def test_pipeline_status_impl_failed_calls_failure_ac6(self, tmp_path):
         """stdout PIPELINE_STATUS: IMPL_FAILED → on_task_failure is called (AC6)"""
@@ -476,16 +509,14 @@ class TestStdoutDirectWrite:
         config = _make_jsonl_config(tmp_path, [
             _jsonl_task("uuid-a", "echo 'PIPELINE_STATUS: IMPL_FAILED'", result_path)
         ])
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
-        hooks.check_pipeline_status.return_value = "IMPL_FAILED"
+        hooks = MemoryHooks()
+        hooks.pipeline_status = "IMPL_FAILED"
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=5.0)
 
-        hooks.on_task_failure.assert_called_once()
-        call_args = hooks.on_task_failure.call_args
-        assert "PIPELINE_FAILED:IMPL_FAILED" in call_args[0][3]
+        assert len(hooks.failures) == 1
+        assert "PIPELINE_FAILED:IMPL_FAILED" in hooks.failures[0][3]
 
     def test_rejected_calls_on_task_rejected_ac7(self, tmp_path):
         """stdout starting with REJECTED: → on_task_rejected is called (AC7)"""
@@ -493,15 +524,14 @@ class TestStdoutDirectWrite:
         config = _make_jsonl_config(tmp_path, [
             _jsonl_task("uuid-a", "echo 'REJECTED: reason'", result_path)
         ])
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = True
-        hooks.check_pipeline_status.return_value = None
+        hooks = MemoryHooks()
+        hooks.rejected = True
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=5.0)
 
-        hooks.on_task_rejected.assert_called_once()
-        hooks.on_task_success.assert_not_called()
+        assert len(hooks.rejected_events) == 1
+        assert not hooks.successes
 
     def test_empty_stdout_calls_on_task_empty_result_ac8(self, tmp_path):
         """Empty stdout → on_task_empty_result is called (AC8)"""
@@ -509,16 +539,14 @@ class TestStdoutDirectWrite:
         config = _make_jsonl_config(tmp_path, [
             _jsonl_task("uuid-a", "true", result_path)
         ])
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
-        hooks.check_pipeline_status.return_value = None
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=5.0)
 
         assert Path(result_path).exists()
         assert Path(result_path).stat().st_size == 0
-        hooks.on_task_empty_result.assert_called_once()
+        assert len(hooks.empty_results) == 1
 
 
 class TestStdinMissingInputSkip:
@@ -530,7 +558,7 @@ class TestStdinMissingInputSkip:
             tmp_path,
             "uuid-a: agent -p --force < /tmp/nonexistent_ghdag_xxxxxx.md | tee -a result.md\n",
         )
-        hooks = MagicMock()
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         with caplog.at_level(logging.WARNING, logger="ghdag.dag.engine"):
@@ -542,7 +570,7 @@ class TestStdinMissingInputSkip:
             for r in caplog.records
             if r.levelno == logging.WARNING
         )
-        hooks.on_task_failure.assert_not_called()
+        assert not hooks.failures
 
     def test_existing_stdin_file_launches_normally(self, tmp_path):
         """AC-2: when stdin file exists, starts and completes as before"""
@@ -636,19 +664,17 @@ class TestEngineModelFromStructuredFields:
             "model": None,
         })
         config = self._make_jsonl_config(tmp_path, jsonl + "\n")
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=3.0)
 
-        hooks.on_task_success.assert_called_once()
-        call_args = hooks.on_task_success.call_args
-        metrics = call_args[0][2]  # TaskMetrics (uuid, task, metrics)
+        assert len(hooks.successes) == 1
+        metrics = hooks.successes[0][2]
         assert metrics.engine == "cursor"
         assert metrics.model is None
 
-    def test_fallback_when_engine_field_absent(self, tmp_path):
+    def test_fallback_when_engine_field_unset(self, tmp_path):
         """AC3: when task.engine=None (legacy record), parse_engine_model fallback runs"""
         # Test with echo (no claude): engine=null → parse_engine_model("echo hello") → engine=None
         jsonl = json.dumps({
@@ -657,15 +683,13 @@ class TestEngineModelFromStructuredFields:
             "depends": [],
         })
         config = self._make_jsonl_config(tmp_path, jsonl + "\n")
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=3.0)
 
-        hooks.on_task_success.assert_called_once()
-        call_args = hooks.on_task_success.call_args
-        metrics = call_args[0][2]  # TaskMetrics
+        assert len(hooks.successes) == 1
+        metrics = hooks.successes[0][2]
         # parse_engine_model("echo hello") → engine=None (no known engine in command)
         assert metrics.engine is None
 
@@ -679,15 +703,13 @@ class TestEngineModelFromStructuredFields:
             "model": "claude-opus-4-6",
         })
         config = self._make_jsonl_config(tmp_path, jsonl + "\n")
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=3.0)
 
-        hooks.on_task_success.assert_called_once()
-        call_args = hooks.on_task_success.call_args
-        metrics = call_args[0][2]
+        assert len(hooks.successes) == 1
+        metrics = hooks.successes[0][2]
         assert metrics.engine == "claude"
         assert metrics.model == "claude-opus-4-6"
 
@@ -700,15 +722,13 @@ class TestEngineModelFromStructuredFields:
             "annotations": {"_request_id": "req-from-annotations"},
         })
         config = self._make_jsonl_config(tmp_path, jsonl + "\n")
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=3.0)
 
-        hooks.on_task_success.assert_called_once()
-        metrics = hooks.on_task_success.call_args[0][2]
-        assert metrics.request_id == "req-from-annotations"
+        assert len(hooks.successes) == 1
+        assert hooks.successes[0][2].request_id == "req-from-annotations"
 
 
 class TestReaderThreadJoin:
@@ -718,15 +738,14 @@ class TestReaderThreadJoin:
         """After task completion, stderr_thread is not alive"""
         captured_rt = []
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         def capture(uuid, task):
             if uuid in engine._launcher._running:
                 captured_rt.append(engine._launcher._running[uuid])
 
-        hooks.on_task_start.side_effect = capture
+        hooks._on_task_start_extra = capture
         _run_engine_with_timeout(engine, timeout=3.0)
 
         assert len(captured_rt) > 0
@@ -738,15 +757,14 @@ class TestReaderThreadJoin:
         """Without result_path, stdout_thread is None"""
         captured_rt = []
         config = _make_config(tmp_path, "uuid-a: echo hello\n")
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         def capture(uuid, task):
             if uuid in engine._launcher._running:
                 captured_rt.append(engine._launcher._running[uuid])
 
-        hooks.on_task_start.side_effect = capture
+        hooks._on_task_start_extra = capture
         _run_engine_with_timeout(engine, timeout=3.0)
 
         assert len(captured_rt) > 0
@@ -759,16 +777,14 @@ class TestReaderThreadJoin:
         config = _make_jsonl_config(tmp_path, [
             _jsonl_task("uuid-a", "echo hello", result_path)
         ])
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
-        hooks.check_pipeline_status.return_value = None
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         def capture(uuid, task):
             if uuid in engine._launcher._running:
                 captured_rt.append(engine._launcher._running[uuid])
 
-        hooks.on_task_start.side_effect = capture
+        hooks._on_task_start_extra = capture
         _run_engine_with_timeout(engine, timeout=5.0)
 
         assert len(captured_rt) > 0
@@ -1004,14 +1020,11 @@ class TestTaskLauncherUnit:
         from unittest.mock import MagicMock
 
         from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
-        from ghdag.dag.hooks import DagHooks
         from ghdag.dag.models import RunningTask, Task
         from ghdag.dag.task_launcher import TaskLauncher
 
         config = _make_config(tmp_path, "")
-        hooks = MagicMock(spec=DagHooks)
-        hooks.check_rejected.return_value = False
-        hooks.check_pipeline_status.return_value = None
+        hooks = MemoryHooks()
         cb = CircuitBreakerPolicy(float("inf"), 2**31)
         fm = MagicMock()
         fm.spawn = MagicMock()
@@ -1030,7 +1043,7 @@ class TestTaskLauncherUnit:
 
         launcher.check_completions()
 
-        hooks.on_task_success.assert_called_once()
+        assert len(hooks.successes) == 1
         assert not launcher.is_running("done-test")
 
 
@@ -1097,10 +1110,8 @@ class TestFanOutManagerUnit:
 
     def test_check_completions_marks_parent_done_when_all_children_complete(self, tmp_path):
         import time
-        from unittest.mock import MagicMock
 
         from ghdag.dag.fanout_manager import FanOutManager
-        from ghdag.dag.hooks import DagHooks
         from ghdag.dag.models import Task
         from ghdag.metrics.models import TaskMetrics
 
@@ -1109,7 +1120,7 @@ class TestFanOutManagerUnit:
         import os
         os.makedirs(str(tmp_path / "jobs" / "done"), exist_ok=True)
 
-        hooks = MagicMock(spec=DagHooks)
+        hooks = MemoryHooks()
         fm = FanOutManager(config, hooks, lambda _line, _parent: None, lambda _: None)
 
         parent_uuid = "parent-fm"
@@ -1131,7 +1142,7 @@ class TestFanOutManagerUnit:
 
         assert parent_uuid in known_done
         assert not fm.is_pending(parent_uuid)
-        hooks.on_task_success.assert_called_once()
+        assert len(hooks.successes) == 1
 
 
 def test_get_task_returns_loaded_task_or_none(tmp_path):

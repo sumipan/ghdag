@@ -254,13 +254,13 @@ class TestParseFrontmatter:
 
 
 class TestFromRepoRoot:
-    def test_ac4_from_repo_root_paths(self, tmp_path):
+    def test_from_repo_root_sets_standard_state_paths(self, tmp_path):
         """AC-4: from_repo_root → state_dir and exec_jsonl_path use standard paths"""
         state = PipelineState.from_repo_root(tmp_path)
         assert state._state_dir == tmp_path / ".pipeline-state"
         assert state._exec_jsonl_path == tmp_path / "jobs" / "exec.jsonl"
 
-    def test_ac4_from_repo_root_str(self, tmp_path):
+    def test_from_repo_root_accepts_str_path(self, tmp_path):
         """AC-4: from_repo_root accepts str and yields Path"""
         state = PipelineState.from_repo_root(str(tmp_path))
         assert state._state_dir == tmp_path / ".pipeline-state"
@@ -279,7 +279,7 @@ class TestParseExecTasksJsonl:
             exec_jsonl_path=tmp_path / "queue" / "exec.jsonl",
         )
 
-    def test_ac1_1_normal(self, tmp_path):
+    def test_parse_exec_tasks_reads_valid_jsonl(self, tmp_path):
         """AC1-1: valid 2-line JSONL → {uuid: command} dict"""
         jsonl = tmp_path / "queue" / "exec.jsonl"
         jsonl.parent.mkdir(parents=True)
@@ -291,7 +291,7 @@ class TestParseExecTasksJsonl:
         state = self.make_state(tmp_path)
         assert state.parse_exec_tasks() == {"abc-123": "echo hello", "def-456": "echo world"}
 
-    def test_ac1_2_empty_file(self, tmp_path):
+    def test_parse_exec_tasks_empty_file_returns_empty(self, tmp_path):
         """AC1-2: empty file → {}"""
         jsonl = tmp_path / "queue" / "exec.jsonl"
         jsonl.parent.mkdir(parents=True)
@@ -299,12 +299,12 @@ class TestParseExecTasksJsonl:
         state = self.make_state(tmp_path)
         assert state.parse_exec_tasks() == {}
 
-    def test_ac1_3_file_not_found(self, tmp_path):
+    def test_parse_exec_tasks_missing_file_returns_empty(self, tmp_path):
         """AC1-3: missing file → {}"""
         state = self.make_state(tmp_path)
         assert state.parse_exec_tasks() == {}
 
-    def test_ac1_4_idempotency_key_skipped(self, tmp_path):
+    def test_parse_exec_tasks_skips_idempotency_key_lines(self, tmp_path):
         """AC1-4: skip idempotency_key-only lines; return uuid lines"""
         jsonl = tmp_path / "queue" / "exec.jsonl"
         jsonl.parent.mkdir(parents=True)
@@ -316,7 +316,7 @@ class TestParseExecTasksJsonl:
         state = self.make_state(tmp_path)
         assert state.parse_exec_tasks() == {"abc-123": "echo hi"}
 
-    def test_ac1_5_broken_line_skipped(self, tmp_path):
+    def test_parse_exec_tasks_skips_invalid_json_lines(self, tmp_path):
         """AC1-5: skip broken JSON lines; return valid lines"""
         jsonl = tmp_path / "queue" / "exec.jsonl"
         jsonl.parent.mkdir(parents=True)
@@ -343,7 +343,7 @@ class TestRemoveExecEntriesJsonl:
             encoding="utf-8",
         )
 
-    def test_ac2_1_remove_two_of_three(self, tmp_path):
+    def test_remove_exec_entries_drops_matching_uuids(self, tmp_path):
         """AC2-1: delete 2 of 3 lines → 1 remains, return 2"""
         jsonl = tmp_path / "queue" / "exec.jsonl"
         self._write_jsonl(jsonl, [
@@ -359,7 +359,7 @@ class TestRemoveExecEntriesJsonl:
         assert "cmd-a" not in content
         assert "cmd-c" not in content
 
-    def test_ac2_2_idempotency_line_preserved(self, tmp_path):
+    def test_remove_exec_entries_keeps_idempotency_lines(self, tmp_path):
         """AC2-2: keep idempotency lines; delete only uuid lines"""
         jsonl = tmp_path / "queue" / "exec.jsonl"
         self._write_jsonl(jsonl, [
@@ -373,7 +373,7 @@ class TestRemoveExecEntriesJsonl:
         assert "idempotency_key" in content
         assert "cmd-a" not in content
 
-    def test_ac2_3_no_match(self, tmp_path):
+    def test_remove_exec_entries_returns_zero_for_unknown_uuids(self, tmp_path):
         """AC2-3: no matching UUID → unchanged, return 0"""
         jsonl = tmp_path / "queue" / "exec.jsonl"
         self._write_jsonl(jsonl, [
@@ -386,7 +386,7 @@ class TestRemoveExecEntriesJsonl:
         assert removed == 0
         assert jsonl.read_text(encoding="utf-8") == original
 
-    def test_ac2_4_file_not_found(self, tmp_path):
+    def test_remove_exec_entries_missing_file_returns_zero(self, tmp_path):
         """AC2-4: missing file → return 0 with no error"""
         state = self.make_state(tmp_path)
         assert state.remove_exec_entries({"a"}) == 0

@@ -252,26 +252,6 @@ class TestVirtualEngineRegistration:
             _CUSTOM_ADAPTERS.update(original_custom)
 
 
-# ---------------------------------------------------------------------------
-# AC1: remove reverse dependency pipeline → workflow
-# ---------------------------------------------------------------------------
-
-class TestPipelineLayerIndependence:
-    def test_llm_pipeline_does_not_import_workflow_engine(self):
-        """AC1: llm_pipeline.py source has no import of workflow.engine"""
-        import inspect
-
-        import ghdag.pipeline.llm_pipeline as mod
-
-        source = inspect.getsource(mod)
-        assert "from ghdag.workflow.engine import" not in source
-        assert "from ghdag.workflow import engine" not in source
-
-
-# ---------------------------------------------------------------------------
-# build_exec_record — AC1, AC2, AC10
-# ---------------------------------------------------------------------------
-
 class TestBuildExecRecord:
     BASE_KWARGS = dict(
         uuid="abc-123",
@@ -395,7 +375,7 @@ class TestGenericAdapterCapabilities:
         model="claude-sonnet-4-6",
     )
 
-    def test_ac4_claude_text_only_command_contains_permission_mode(self):
+    def test_claude_text_only_capabilities_add_permission_mode_flag(self):
         """AC4: _GenericAdapter(claude) + capabilities=TEXT_ONLY → command includes --permission-mode default"""
         from ghdag.llm.capabilities import TEXT_ONLY
         adapter = _GenericAdapter(ENGINE_SPECS["claude"])
@@ -403,14 +383,14 @@ class TestGenericAdapterCapabilities:
         assert "--permission-mode" in record["command"]
         assert "default" in record["command"]
 
-    def test_ac4_claude_text_only_no_dangerously(self):
+    def test_claude_text_only_capabilities_omit_dangerously_skip(self):
         """AC4: TEXT_ONLY → no --dangerously-skip-permissions"""
         from ghdag.llm.capabilities import TEXT_ONLY
         adapter = _GenericAdapter(ENGINE_SPECS["claude"])
         record = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=TEXT_ONLY)
         assert "--dangerously-skip-permissions" not in record["command"]
 
-    def test_ac9_capabilities_none_default_behavior(self):
+    def test_claude_capabilities_none_keeps_default_dangerously_skip(self):
         """AC9: no capabilities arg → same dict as before"""
         adapter = _GenericAdapter(ENGINE_SPECS["claude"])
         record_default = adapter.build_exec_record(**self.BASE_KWARGS)

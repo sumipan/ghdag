@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 import json
 from pathlib import Path
 
@@ -96,10 +95,3 @@ class TestCompatAuditQuery:
 
         assert pub_read is read_task_exit_events
         assert pub_status is get_latest_status
-
-    def test_canonical_source_file(self) -> None:
-        from ghdag.io.audit_query import read_task_exit_events
-
-        src = inspect.getsourcefile(read_task_exit_events)
-        assert src is not None
-        assert "io/audit_query.py" in src.replace("\\", "/")

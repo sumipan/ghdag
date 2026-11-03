@@ -12,7 +12,7 @@ UUID = "test-uuid-0000-0000-0000-000000000001"
 
 
 class TestTaskMetrics:
-    def test_ac4_backward_compatible_construction(self):
+    def test_task_metrics_legacy_ctor_leaves_correlation_id_none(self):
         """AC-4: construction with legacy args succeeds and correlation_id is None."""
         now = time.time()
         m = TaskMetrics(
@@ -27,7 +27,7 @@ class TestTaskMetrics:
         )
         assert m.correlation_id is None
 
-    def test_ac4_with_correlation_id(self):
+    def test_task_metrics_stores_correlation_id(self):
         """AC-4: passing correlation_id stores it on the field."""
         now = time.time()
         m = TaskMetrics(
@@ -43,7 +43,7 @@ class TestTaskMetrics:
         )
         assert m.correlation_id == "issuesmith:brushup:958"
 
-    def test_ac4_frozen(self):
+    def test_task_metrics_rejects_mutation(self):
         """frozen=True: mutation is rejected."""
         now = time.time()
         m = TaskMetrics(

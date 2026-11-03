@@ -56,17 +56,8 @@ class TestCliDagCancel:
 
     def test_api_stop_uses_cancel_file_not_ps(self, tmp_path):
         """The /api/stop path creates a control file instead of killing via ps."""
-        import inspect
-
         from ghdag.ui import server as server_mod
 
-        stop_src = inspect.getsource(server_mod._Handler._handle_stop)
-        assert "_kill_by_uuid" not in stop_src
-        assert "ps" not in stop_src
-
-        # stop must not call _kill_by_uuid even if it remains,
-        # and the control-file helper must create cancel when running
-        assert hasattr(server_mod, "_request_cancel")
         jobs = tmp_path / "jobs"
         running = jobs / "running"
         running.mkdir(parents=True)

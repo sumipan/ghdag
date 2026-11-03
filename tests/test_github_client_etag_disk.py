@@ -88,7 +88,7 @@ def _no_env_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GHDAG_ETAG_CACHE", raising=False)
 
 
-def test_ac1_second_instance_sends_if_none_match_and_returns_cached_body(
+def test_disk_cache_second_client_sends_if_none_match(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     cache = tmp_path / "etag.json"
@@ -109,7 +109,7 @@ def test_ac1_second_instance_sends_if_none_match_and_returns_cached_body(
     assert inm == _ETAG
 
 
-def test_ac1_env_var_enables_disk_cache(
+def test_etag_cache_env_var_enables_disk_persistence(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     cache = tmp_path / "etag.json"
@@ -126,7 +126,7 @@ def test_ac1_env_var_enables_disk_cache(
     assert _has_inm(captured[1])
 
 
-def test_ac2_304_does_not_change_rate_limit(
+def test_304_response_preserves_rate_limit_remaining(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     cache = tmp_path / "etag.json"
@@ -147,7 +147,7 @@ def test_ac2_304_does_not_change_rate_limit(
     assert after is not None and after["remaining"] == 4000
 
 
-def test_ac2_304_updates_accessed_on_disk(
+def test_304_response_updates_cache_accessed_timestamp(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     cache = tmp_path / "etag.json"
@@ -168,7 +168,7 @@ def test_ac2_304_updates_accessed_on_disk(
 
 
 @pytest.mark.parametrize("content", ["{not json", "[1, 2]", '{"k": "v"}', ""])
-def test_ac3_corrupt_cache_falls_back_to_200(
+def test_corrupt_cache_file_triggers_fresh_fetch(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, content: str
 ) -> None:
     cache = tmp_path / "etag.json"
@@ -185,7 +185,7 @@ def test_ac3_corrupt_cache_falls_back_to_200(
     assert len(json.loads(cache.read_text())) == 1
 
 
-def test_ac4_no_path_no_env_means_no_file_io(
+def test_without_cache_path_skips_disk_io(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.chdir(tmp_path)
@@ -214,7 +214,7 @@ def test_ac4_no_path_no_env_means_no_file_io(
     assert list(tmp_path.iterdir()) == []
 
 
-def test_ac5_lru_eviction_caps_entries_at_2000(
+def test_lru_eviction_keeps_cache_at_max_entries(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     cache = tmp_path / "etag.json"
@@ -243,7 +243,7 @@ def test_ac5_lru_eviction_caps_entries_at_2000(
     assert not list(tmp_path.glob("*.tmp.*"))
 
 
-def test_ac6_different_token_misses_cache(
+def test_different_token_does_not_reuse_cache_entry(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     cache = tmp_path / "etag.json"

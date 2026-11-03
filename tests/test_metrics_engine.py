@@ -4,22 +4,54 @@ from __future__ import annotations
 
 import io
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from ghdag.dag.engine import DagEngine
-from ghdag.dag.hooks import DagHooks
+from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import DagConfig, RunningTask, Task
 from ghdag.metrics.models import FailureClass, TaskMetrics
 
 
 def make_config(tmp_path):
+    (tmp_path / "done").mkdir(parents=True, exist_ok=True)
     return DagConfig(
         exec_jsonl_path=str(tmp_path / "exec.jsonl"),
         exec_done_dir=str(tmp_path / "done"),
     )
 
 
+class MemoryHooks(DefaultHooks):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rejected = False
+        self.pipeline_status = None
+        self.successes: list[tuple] = []
+        self.failures: list[tuple] = []
+        self.rejected_events: list[tuple] = []
+        self.empty_results: list[tuple] = []
+
+    def check_rejected(self, result_path: str) -> bool:
+        return self.rejected
+
+    def check_pipeline_status(self, result_path: str):
+        return self.pipeline_status
+
+    def on_task_success(self, uuid, task, metrics):
+        self.successes.append((uuid, task, metrics))
+
+    def on_task_failure(self, uuid, task, returncode, stderr_text, metrics):
+        self.failures.append((uuid, task, returncode, stderr_text, metrics))
+
+    def on_task_rejected(self, uuid, task, retry_depth, is_final, metrics):
+        self.rejected_events.append((uuid, task, retry_depth, is_final, metrics))
+
+    def on_task_empty_result(self, uuid, task, stderr_text, metrics):
+        self.empty_results.append((uuid, task, stderr_text, metrics))
+
+
 def make_running_task(uuid="test-uuid", command="echo hello", returncode=0, stderr=b"", retry=0):
+    from unittest.mock import MagicMock
+
     proc = MagicMock()
     proc.poll.return_value = returncode
     proc.returncode = returncode
@@ -36,24 +68,21 @@ def make_running_task(uuid="test-uuid", command="echo hello", returncode=0, stde
 
 
 def make_engine(tmp_path):
-    hooks = MagicMock(spec=DagHooks)
-    hooks.check_rejected.return_value = False
-    hooks.check_pipeline_status.return_value = None
+    hooks = MemoryHooks()
     engine = DagEngine(make_config(tmp_path), hooks)
     return engine, hooks
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-def test_success_path(mock_tee, mock_mark_done, tmp_path):
+def test_success_path(mock_tee, tmp_path):
     engine, hooks = make_engine(tmp_path)
     rt = make_running_task()
     engine._launcher._running[rt.uuid] = rt
 
     engine._launcher.check_completions()
 
-    hooks.on_task_success.assert_called_once()
-    uuid_arg, task_arg, metrics = hooks.on_task_success.call_args[0]
+    assert len(hooks.successes) == 1
+    uuid_arg, task_arg, metrics = hooks.successes[0]
     assert isinstance(metrics, TaskMetrics)
     assert metrics.status == "success"
     assert isinstance(metrics.wall_time_sec, float)
@@ -62,41 +91,38 @@ def test_success_path(mock_tee, mock_mark_done, tmp_path):
     assert metrics.failure_class is None
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-def test_failure_path(mock_tee, mock_mark_done, tmp_path):
+def test_failure_path(mock_tee, tmp_path):
     engine, hooks = make_engine(tmp_path)
     rt = make_running_task(returncode=1)
     engine._launcher._running[rt.uuid] = rt
 
     engine._launcher.check_completions()
 
-    hooks.on_task_failure.assert_called_once()
-    uuid_arg, task_arg, returncode_arg, stderr_arg, metrics = hooks.on_task_failure.call_args[0]
+    assert len(hooks.failures) == 1
+    _, _, _, _, metrics = hooks.failures[0]
     assert isinstance(metrics, TaskMetrics)
     assert metrics.status == "failure"
     assert metrics.failure_class == FailureClass.PROCESS_ERROR
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value="result.md")
-def test_rejected_path(mock_tee, mock_mark_done, tmp_path):
+def test_rejected_path(mock_tee, tmp_path):
     engine, hooks = make_engine(tmp_path)
-    hooks.check_rejected.return_value = True
+    hooks.rejected = True
     rt = make_running_task()
     engine._launcher._running[rt.uuid] = rt
 
     engine._launcher.check_completions()
 
-    hooks.on_task_rejected.assert_called_once()
-    uuid_arg, task_arg, retry_depth_arg, is_final_arg, metrics = hooks.on_task_rejected.call_args[0]
+    assert len(hooks.rejected_events) == 1
+    _, _, _, _, metrics = hooks.rejected_events[0]
     assert isinstance(metrics, TaskMetrics)
     assert metrics.status == "rejected"
     assert metrics.failure_class == FailureClass.REJECTED
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
-def test_empty_result_path(mock_mark_done, tmp_path):
+def test_empty_result_path(tmp_path):
     engine, hooks = make_engine(tmp_path)
     result_file = tmp_path / "result.md"
     result_file.write_text("")
@@ -107,33 +133,29 @@ def test_empty_result_path(mock_mark_done, tmp_path):
     with patch("ghdag.dag.task_launcher._extract_tee_target", return_value=str(result_file)):
         engine._launcher.check_completions()
 
-    hooks.on_task_empty_result.assert_called_once()
-    uuid_arg, task_arg, stderr_arg, metrics = hooks.on_task_empty_result.call_args[0]
+    assert len(hooks.empty_results) == 1
+    _, _, _, metrics = hooks.empty_results[0]
     assert isinstance(metrics, TaskMetrics)
     assert metrics.status == "empty_result"
     assert metrics.failure_class == FailureClass.EMPTY_RESULT
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-def test_engine_model_in_metrics(mock_tee, mock_mark_done, tmp_path):
+def test_engine_model_in_metrics(mock_tee, tmp_path):
     engine, hooks = make_engine(tmp_path)
     rt = make_running_task(command='claude -p "hello" --model claude-opus-4-6')
     engine._launcher._running[rt.uuid] = rt
 
     engine._launcher.check_completions()
 
-    hooks.on_task_success.assert_called_once()
-    uuid_arg, task_arg, metrics = hooks.on_task_success.call_args[0]
+    assert len(hooks.successes) == 1
+    metrics = hooks.successes[0][2]
     assert metrics.engine == "claude"
     assert metrics.model == "claude-opus-4-6"
 
 
-# --- Issue #962 tests ---
-
-@patch("ghdag.dag.task_launcher.state_mark_done")
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-def test_timeout_failure_class(mock_tee, mock_mark_done, tmp_path):
+def test_timeout_failure_class(mock_tee, tmp_path):
     """Timeout path → metrics.failure_class == \"TIMEOUT\"."""
     engine, hooks = make_engine(tmp_path)
     rt = make_running_task()
@@ -142,23 +164,19 @@ def test_timeout_failure_class(mock_tee, mock_mark_done, tmp_path):
 
     engine._launcher.check_completions()
 
-    hooks.on_task_failure.assert_called_once()
-    _, _, _, _, metrics = hooks.on_task_failure.call_args[0]
-    assert metrics.failure_class == FailureClass.TIMEOUT
+    assert len(hooks.failures) == 1
+    assert hooks.failures[0][4].failure_class == FailureClass.TIMEOUT
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value="result.md")
-def test_pipeline_failed_failure_class(mock_tee, mock_mark_done, tmp_path):
+def test_pipeline_failed_failure_class(mock_tee, tmp_path):
     """PIPELINE_STATUS: *_FAILED path → metrics.failure_class == \"PIPELINE_FAILED\"."""
     engine, hooks = make_engine(tmp_path)
-    hooks.check_rejected.return_value = False
-    hooks.check_pipeline_status.return_value = "IMPL_FAILED"
+    hooks.pipeline_status = "IMPL_FAILED"
     rt = make_running_task()
     engine._launcher._running[rt.uuid] = rt
 
     engine._launcher.check_completions()
 
-    hooks.on_task_failure.assert_called_once()
-    _, _, _, _, metrics = hooks.on_task_failure.call_args[0]
-    assert metrics.failure_class == FailureClass.PIPELINE_FAILED
+    assert len(hooks.failures) == 1
+    assert hooks.failures[0][4].failure_class == FailureClass.PIPELINE_FAILED

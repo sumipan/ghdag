@@ -214,7 +214,7 @@ class TestPublicAPI:
 # ---------------------------------------------------------------------------
 
 class TestMultiFileRead:
-    def test_ac8_rotated_plus_current_returns_all(self, tmp_path):
+    def test_read_events_merges_rotated_and_current_files(self, tmp_path):
         """AC-8: 3 records in rotated + 2 in current → 5 total."""
         audit_path = tmp_path / "audit.jsonl"
         rotated = tmp_path / "audit.2026-05-22T00-00-00.jsonl"
@@ -233,7 +233,7 @@ class TestMultiFileRead:
         result = read_task_exit_events(audit_path)
         assert len(result) == 5
 
-    def test_ac9_rotated_only_no_current(self, tmp_path):
+    def test_read_events_from_rotated_file_only(self, tmp_path):
         """AC-9: only rotated file exists → records returned."""
         audit_path = tmp_path / "audit.jsonl"
         rotated = tmp_path / "audit.2026-05-22T00-00-00.jsonl"
@@ -247,7 +247,7 @@ class TestMultiFileRead:
         assert len(result) == 1
         assert result[0]["uuid"] == "u1"
 
-    def test_ac10_since_filter_across_files(self, tmp_path):
+    def test_since_filter_applies_across_rotated_and_current(self, tmp_path):
         """AC-10: since filter applies across rotated + current."""
         import datetime
         audit_path = tmp_path / "audit.jsonl"
@@ -271,7 +271,7 @@ class TestMultiFileRead:
         assert len(result) == 1
         assert result[0]["uuid"] == "new"
 
-    def test_ac11_get_latest_status_from_rotated(self, tmp_path):
+    def test_get_latest_status_reads_rotated_file(self, tmp_path):
         """AC-11: get_latest_status finds record in rotated file."""
         audit_path = tmp_path / "audit.jsonl"
         rotated = tmp_path / "audit.2026-05-22T00-00-00.jsonl"
@@ -284,7 +284,7 @@ class TestMultiFileRead:
         result = get_latest_status(audit_path, "cid:123")
         assert result == "success"
 
-    def test_ac12_no_files_returns_empty(self, tmp_path):
+    def test_read_events_missing_files_returns_empty(self, tmp_path):
         """AC-12: no files at all → empty list."""
         result = read_task_exit_events(tmp_path / "audit.jsonl")
         assert result == []
