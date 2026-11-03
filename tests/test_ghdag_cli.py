@@ -17,6 +17,31 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ghdag.dag.models import DagConfig as RealDagConfig
+
+
+def _capture_config(**kwargs):
+    """Build a real DagConfig while recording kwargs for CLI wiring tests."""
+    _capture_config.last_kwargs = kwargs  # type: ignore[attr-defined]
+    return RealDagConfig(**kwargs)
+
+
+_capture_config.last_kwargs = {}
+
+
+class _RecordingEngine:
+    """Minimal stand-in that records hooks and whether run() was invoked."""
+
+    last_hooks = None
+    ran = False
+
+    def __init__(self, config, hooks):
+        _RecordingEngine.last_hooks = hooks
+        self.config = config
+
+    def run(self):
+        _RecordingEngine.ran = True
+
 # ---------------------------------------------------------------------------
 # AC1: help display
 # ---------------------------------------------------------------------------
@@ -78,40 +103,33 @@ class TestRunNormal:
         exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
-        mock_engine_cls = MagicMock()
-        mock_config_cls = MagicMock()
-
-        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
-             patch("ghdag.dag.models.DagConfig", mock_config_cls):
+        _RecordingEngine.ran = False
+        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
+             patch("ghdag.dag.models.DagConfig", _capture_config):
             from ghdag.cli import main
             main(["run", str(exec_md)])
 
-        call_kwargs = mock_config_cls.call_args[1]
-        assert call_kwargs["exec_jsonl_path"] == str(exec_md)
-        assert call_kwargs["poll_interval"] == 1.0
-        assert "cwd" in call_kwargs
+        kwargs = _capture_config.last_kwargs
+        assert kwargs["exec_jsonl_path"] == str(exec_md)
+        assert kwargs["poll_interval"] == 1.0
+        assert "cwd" in kwargs
         from ghdag.pipeline.hooks import AuditHooks
-        call_args = mock_engine_cls.call_args
-        assert call_args[0][0] is mock_config_cls.return_value
-        assert isinstance(call_args[0][1], AuditHooks)
-        mock_engine_cls.return_value.run.assert_called_once()
+        assert isinstance(_RecordingEngine.last_hooks, AuditHooks)
+        assert _RecordingEngine.ran is True
 
     def test_run_with_custom_interval(self, tmp_path):
         exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
-        mock_engine_cls = MagicMock()
-        mock_config_cls = MagicMock()
-
-        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
-             patch("ghdag.dag.models.DagConfig", mock_config_cls):
+        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
+             patch("ghdag.dag.models.DagConfig", _capture_config):
             from ghdag.cli import main
             main(["run", str(exec_md), "--interval", "10"])
 
-        call_kwargs = mock_config_cls.call_args[1]
-        assert call_kwargs["exec_jsonl_path"] == str(exec_md)
-        assert call_kwargs["poll_interval"] == 10.0
-        assert "cwd" in call_kwargs
+        kwargs = _capture_config.last_kwargs
+        assert kwargs["exec_jsonl_path"] == str(exec_md)
+        assert kwargs["poll_interval"] == 10.0
+        assert "cwd" in kwargs
 
 
 # ---------------------------------------------------------------------------
@@ -144,38 +162,27 @@ class TestRunHooks:
         exec_md.write_text("")
         mock_module, MyHooks = self._make_hooks_module_with_class()
 
-        mock_engine_cls = MagicMock()
-        mock_config_cls = MagicMock()
-
-        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
-             patch("ghdag.dag.models.DagConfig", mock_config_cls), \
+        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
+             patch("ghdag.dag.models.DagConfig", _capture_config), \
              patch("importlib.import_module", return_value=mock_module):
             from ghdag.cli import main
             main(["run", str(exec_md), "--hooks", "my_hooks"])
 
-        # DagEngine is called with a hooks instance
-        call_args = mock_engine_cls.call_args
-        assert call_args is not None
-        _, hooks_arg = call_args[0]
-        assert isinstance(hooks_arg, MyHooks)
+        assert isinstance(_RecordingEngine.last_hooks, MyHooks)
 
     def test_hooks_set_engine_called(self, tmp_path):
         exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
         mock_module, MyHooks = self._make_hooks_module_with_class()
 
-        mock_engine_instance = MagicMock()
-        mock_engine_cls = MagicMock(return_value=mock_engine_instance)
-        mock_config_cls = MagicMock()
-
-        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
-             patch("ghdag.dag.models.DagConfig", mock_config_cls), \
+        _RecordingEngine.ran = False
+        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
+             patch("ghdag.dag.models.DagConfig", _capture_config), \
              patch("importlib.import_module", return_value=mock_module):
             from ghdag.cli import main
             main(["run", str(exec_md), "--hooks", "my_hooks"])
 
-        # engine.run() is called
-        mock_engine_instance.run.assert_called_once()
+        assert _RecordingEngine.ran is True
 
     def test_hooks_invalid_module_exits_1(self, tmp_path, capsys):
         exec_md = tmp_path / "exec.jsonl"
@@ -191,18 +198,13 @@ class TestRunHooks:
         exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
-        mock_engine_cls = MagicMock()
-        mock_config_cls = MagicMock()
-
-        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
-             patch("ghdag.dag.models.DagConfig", mock_config_cls):
+        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
+             patch("ghdag.dag.models.DagConfig", _capture_config):
             from ghdag.cli import main
             main(["run", str(exec_md)])
 
         from ghdag.pipeline.hooks import AuditHooks
-        call_args = mock_engine_cls.call_args
-        assert call_args[0][0] is mock_config_cls.return_value
-        assert isinstance(call_args[0][1], AuditHooks)
+        assert isinstance(_RecordingEngine.last_hooks, AuditHooks)
 
 
 # ---------------------------------------------------------------------------
@@ -237,23 +239,29 @@ class TestWatchNormal:
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
 
-        mock_load = MagicMock(return_value=[])
-        mock_dispatcher_cls = MagicMock()
-        mock_create_github_clients = MagicMock(return_value=[])
-        mock_state_cls = MagicMock()
-        mock_builder_cls = MagicMock()
+        watch_state = {"workflows_loaded": False, "dispatcher_ran": False, "dispatcher_kwargs": {}}
 
-        with patch("ghdag.workflow.loader.load_workflows", mock_load), \
-             patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.github_client.create_github_clients", mock_create_github_clients), \
-             patch("ghdag.pipeline.state.PipelineState", mock_state_cls), \
-             patch("ghdag.pipeline.order.TemplateOrderBuilder", mock_builder_cls):
+        def fake_load(_dir):
+            watch_state["workflows_loaded"] = True
+            return []
+
+        class FakeDispatcher:
+            def __init__(self, **kwargs):
+                watch_state["dispatcher_kwargs"] = kwargs
+
+            def run(self, *args, **kwargs):
+                watch_state["dispatcher_ran"] = True
+
+        with patch("ghdag.workflow.loader.load_workflows", side_effect=fake_load), \
+             patch("ghdag.workflow.dispatcher.WorkflowDispatcher", FakeDispatcher), \
+             patch("ghdag.github_client.create_github_clients", return_value=[]), \
+             patch("ghdag.pipeline.state.PipelineState"), \
+             patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
             main(["watch", str(workflows_dir)])
 
-        mock_load.assert_called_once()
-        mock_create_github_clients.assert_called_once_with()
-        mock_dispatcher_cls.return_value.run.assert_called_once()
+        assert watch_state["workflows_loaded"] is True
+        assert watch_state["dispatcher_ran"] is True
 
     def test_watch_with_options(self, tmp_path):
         workflows_dir = tmp_path / "workflows"
@@ -261,17 +269,25 @@ class TestWatchNormal:
         exec_jsonl_path = str(tmp_path / "out.md")
         pause_file_path = str(tmp_path / "pause.txt")
 
-        mock_load = MagicMock(return_value=[])
-        mock_dispatcher_cls = MagicMock()
-        mock_create_github_clients = MagicMock(return_value=[])
-        mock_state_cls = MagicMock()
-        mock_builder_cls = MagicMock()
+        pipeline_state_kwargs = {}
+        watch_state = {"dispatcher_ran": False, "dispatcher_kwargs": {}}
 
-        with patch("ghdag.workflow.loader.load_workflows", mock_load), \
-             patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.github_client.create_github_clients", mock_create_github_clients), \
-             patch("ghdag.pipeline.state.PipelineState", mock_state_cls), \
-             patch("ghdag.pipeline.order.TemplateOrderBuilder", mock_builder_cls):
+        class FakePipelineState:
+            def __init__(self, **kwargs):
+                pipeline_state_kwargs.update(kwargs)
+
+        class FakeDispatcher:
+            def __init__(self, **kwargs):
+                watch_state["dispatcher_kwargs"] = kwargs
+
+            def run(self, *args, **kwargs):
+                watch_state["dispatcher_ran"] = True
+
+        with patch("ghdag.workflow.loader.load_workflows", return_value=[]), \
+             patch("ghdag.workflow.dispatcher.WorkflowDispatcher", FakeDispatcher), \
+             patch("ghdag.github_client.create_github_clients", return_value=[]), \
+             patch("ghdag.pipeline.state.PipelineState", FakePipelineState), \
+             patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
             main([
                 "watch", str(workflows_dir),
@@ -280,14 +296,12 @@ class TestWatchNormal:
                 "--pause-file", pause_file_path,
             ])
 
-        mock_state_cls.assert_called_once_with(
-            state_dir=".pipeline-state",
-            exec_jsonl_path=exec_jsonl_path,
-        )
-        mock_create_github_clients.assert_called_once_with()
-        dispatcher_kwargs = mock_dispatcher_cls.call_args[1]
-        assert dispatcher_kwargs["pause_file"] == pause_file_path
-        mock_dispatcher_cls.return_value.run.assert_called_once()
+        assert pipeline_state_kwargs == {
+            "state_dir": ".pipeline-state",
+            "exec_jsonl_path": exec_jsonl_path,
+        }
+        assert watch_state["dispatcher_kwargs"]["pause_file"] == pause_file_path
+        assert watch_state["dispatcher_ran"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -402,8 +416,6 @@ handlers:
         mock_dispatch_result.status = "dispatched"
         mock_dispatch_result.reason = ""
         mock_dispatch_result.exec_lines = ["# idempotency: ...", "uuid: cat ..."]
-        mock_dispatcher_cls = MagicMock()
-        mock_dispatcher_cls.return_value.dispatch.return_value = mock_dispatch_result
         mock_github_client = MagicMock()
         mock_github_client.get_issue.return_value = {
             "number": 42,
@@ -412,10 +424,18 @@ handlers:
             "labels": [],
             "url": "https://example.com",
         }
-        mock_create_github_client = MagicMock(return_value=mock_github_client)
+        trigger_state = {"dispatch_issue": None}
 
-        with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.github_client.create_github_client", mock_create_github_client), \
+        class FakeDispatcher:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def dispatch(self, issue, *args, **kwargs):
+                trigger_state["dispatch_issue"] = issue
+                return mock_dispatch_result
+
+        with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", FakeDispatcher), \
+             patch("ghdag.github_client.create_github_client", return_value=mock_github_client), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -426,10 +446,7 @@ handlers:
                 "--exec-md", str(exec_md),
             ])
 
-        mock_create_github_client.assert_called_once_with()
-        mock_dispatcher_cls.return_value.dispatch.assert_called_once()
-        call_args = mock_dispatcher_cls.return_value.dispatch.call_args
-        assert call_args[0][0]["number"] == 42
+        assert trigger_state["dispatch_issue"]["number"] == 42
 
     def test_trigger_with_workflow_option(self, tmp_path):
         workflows_dir = tmp_path / "workflows"
@@ -442,16 +459,22 @@ handlers:
         mock_dispatch_result.status = "dispatched"
         mock_dispatch_result.reason = ""
         mock_dispatch_result.exec_lines = ["# idempotency: ..."]
-        mock_dispatcher_cls = MagicMock()
-        mock_dispatcher_cls.return_value.dispatch.return_value = mock_dispatch_result
         mock_github_client = MagicMock()
         mock_github_client.get_issue.return_value = {
             "number": 10, "title": "T", "body": "", "labels": [], "url": "",
         }
-        mock_create_github_client = MagicMock(return_value=mock_github_client)
+        trigger_state = {"dispatched": False}
 
-        with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.github_client.create_github_client", mock_create_github_client), \
+        class FakeDispatcher:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def dispatch(self, *args, **kwargs):
+                trigger_state["dispatched"] = True
+                return mock_dispatch_result
+
+        with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", FakeDispatcher), \
+             patch("ghdag.github_client.create_github_client", return_value=mock_github_client), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -463,8 +486,7 @@ handlers:
                 "--exec-md", str(exec_md),
             ])
 
-        mock_create_github_client.assert_called_once_with()
-        mock_dispatcher_cls.return_value.dispatch.assert_called_once()
+        assert trigger_state["dispatched"] is True
 
 
 # ---------------------------------------------------------------------------
@@ -597,57 +619,60 @@ class TestCleanupNormal:
         return mock_result
 
     def test_cleanup_calls_cleanup_queue(self, tmp_path):
-        from unittest.mock import patch
+        captured: dict = {}
 
-        mock_result = self._make_mock_result(archived_done=1, pruned_exec=1)
+        def fake_cleanup(**kwargs):
+            captured.update(kwargs)
+            return self._make_mock_result(archived_done=1, pruned_exec=1)
 
-        with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
+        with patch("ghdag.cleanup.cleanup_queue", side_effect=fake_cleanup):
             from ghdag.cli import main
             main(["cleanup", str(tmp_path)])
 
-        mock_fn.assert_called_once()
-        call_kwargs = mock_fn.call_args[1]
-        assert call_kwargs["cutoff_days"] == 1
-        assert call_kwargs["orphan_days"] == 7
-        assert call_kwargs["dry_run"] is False
-        assert call_kwargs["auto_repair"] is False
+        assert captured["cutoff_days"] == 1
+        assert captured["orphan_days"] == 7
+        assert captured["dry_run"] is False
+        assert captured["auto_repair"] is False
 
     def test_cleanup_auto_repair_flag(self, tmp_path):
-        from unittest.mock import patch
+        captured: dict = {}
 
-        mock_result = self._make_mock_result(archived_orphan=1, pruned_exec=1)
+        def fake_cleanup(**kwargs):
+            captured.update(kwargs)
+            return self._make_mock_result(archived_orphan=1, pruned_exec=1)
 
-        with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
+        with patch("ghdag.cleanup.cleanup_queue", side_effect=fake_cleanup):
             from ghdag.cli import main
             main(["cleanup", str(tmp_path), "--auto-repair"])
 
-        call_kwargs = mock_fn.call_args[1]
-        assert call_kwargs["auto_repair"] is True
+        assert captured["auto_repair"] is True
 
     def test_cleanup_dry_run_flag(self, tmp_path):
-        from unittest.mock import patch
+        captured: dict = {}
 
-        mock_result = self._make_mock_result()
+        def fake_cleanup(**kwargs):
+            captured.update(kwargs)
+            return self._make_mock_result()
 
-        with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
+        with patch("ghdag.cleanup.cleanup_queue", side_effect=fake_cleanup):
             from ghdag.cli import main
             main(["cleanup", str(tmp_path), "--dry-run"])
 
-        call_kwargs = mock_fn.call_args[1]
-        assert call_kwargs["dry_run"] is True
+        assert captured["dry_run"] is True
 
     def test_cleanup_custom_days(self, tmp_path):
-        from unittest.mock import patch
+        captured: dict = {}
 
-        mock_result = self._make_mock_result()
+        def fake_cleanup(**kwargs):
+            captured.update(kwargs)
+            return self._make_mock_result()
 
-        with patch("ghdag.cleanup.cleanup_queue", return_value=mock_result) as mock_fn:
+        with patch("ghdag.cleanup.cleanup_queue", side_effect=fake_cleanup):
             from ghdag.cli import main
             main(["cleanup", str(tmp_path), "--cutoff-days", "3", "--orphan-days", "14"])
 
-        call_kwargs = mock_fn.call_args[1]
-        assert call_kwargs["cutoff_days"] == 3
-        assert call_kwargs["orphan_days"] == 14
+        assert captured["cutoff_days"] == 3
+        assert captured["orphan_days"] == 14
 
     def test_cleanup_help_exits_0(self, capsys):
         import pytest
@@ -687,7 +712,7 @@ class TestLlmAuditPath:
         from ghdag.llm.engines import LLMResult
         return LLMResult(stdout="ok\n", stderr="", returncode=returncode)
 
-    def test_ac1_audit_path_and_correlation_id(self, tmp_path):
+    def test_llm_audit_path_and_correlation_id(self, tmp_path):
         """AC1: --audit-path + --correlation-id + success → append record."""
         audit_path = tmp_path / "audit.jsonl"
         mock_result = self._make_result(returncode=0)
@@ -714,7 +739,7 @@ class TestLlmAuditPath:
         assert r["correlation_id"] == "slack:1234"
         assert "+00:00" in r["timestamp"]
 
-    def test_ac2_correlation_id_unspecified_is_null(self, tmp_path):
+    def test_llm_correlation_id_unspecified_is_null(self, tmp_path):
         """AC2: correlation_id omitted → null."""
         audit_path = tmp_path / "audit.jsonl"
         mock_result = self._make_result(returncode=0)
@@ -728,7 +753,7 @@ class TestLlmAuditPath:
         r = json.loads(audit_path.read_text().strip())
         assert r["correlation_id"] is None
 
-    def test_ac3_env_var_audit_path(self, tmp_path, monkeypatch):
+    def test_llm_audit_path_from_env_var(self, tmp_path, monkeypatch):
         """AC3: path via env GHDAG_AUDIT_PATH."""
         audit_path = tmp_path / "audit.jsonl"
         monkeypatch.setenv("GHDAG_AUDIT_PATH", str(audit_path))
@@ -744,7 +769,7 @@ class TestLlmAuditPath:
         r = json.loads(audit_path.read_text().strip())
         assert r["event"] == "llm_call"
 
-    def test_ac4_flag_takes_precedence_over_env(self, tmp_path, monkeypatch):
+    def test_llm_audit_path_flag_overrides_env(self, tmp_path, monkeypatch):
         """AC4: --audit-path takes precedence over env GHDAG_AUDIT_PATH."""
         env_path = tmp_path / "env.jsonl"
         flag_path = tmp_path / "flag.jsonl"
@@ -760,7 +785,7 @@ class TestLlmAuditPath:
         assert flag_path.exists()
         assert not env_path.exists()
 
-    def test_ac_a6_request_id_flag(self, tmp_path):
+    def test_llm_request_id_flag(self, tmp_path):
         """AC-A6: with --request-id, audit record request_id matches that value."""
         audit_path = tmp_path / "audit.jsonl"
         mock_result = self._make_result(returncode=0)
@@ -779,7 +804,7 @@ class TestLlmAuditPath:
         assert r["request_id"] == "ext-123"
         assert r["schema_version"] == 3
 
-    def test_ac5_timeout_recorded(self, tmp_path):
+    def test_llm_timeout_recorded(self, tmp_path):
         """AC5: with --timeout, timeout_sec is recorded."""
         audit_path = tmp_path / "audit.jsonl"
         mock_result = self._make_result(returncode=0)
@@ -793,7 +818,7 @@ class TestLlmAuditPath:
         r = json.loads(audit_path.read_text().strip())
         assert r["timeout_sec"] == 120
 
-    def test_ac6_timeout_unspecified_is_null(self, tmp_path):
+    def test_llm_timeout_unspecified_is_null(self, tmp_path):
         """AC6: without --timeout, timeout_sec = null."""
         audit_path = tmp_path / "audit.jsonl"
         mock_result = self._make_result(returncode=0)
@@ -807,7 +832,7 @@ class TestLlmAuditPath:
         r = json.loads(audit_path.read_text().strip())
         assert r["timeout_sec"] is None
 
-    def test_ac7_no_audit_on_llm_failure(self, tmp_path):
+    def test_llm_no_audit_on_failure(self, tmp_path):
         """AC7: LLM failure → no audit log recorded."""
         audit_path = tmp_path / "audit.jsonl"
         mock_result = self._make_result(returncode=1)
@@ -821,7 +846,7 @@ class TestLlmAuditPath:
         assert exc.value.code == 1
         assert not audit_path.exists()
 
-    def test_ac9_no_audit_path_no_env_no_log(self, tmp_path, monkeypatch):
+    def test_llm_no_audit_when_path_unset(self, tmp_path, monkeypatch):
         """AC9: no audit-path and no env → no audit log (backward compatible)."""
         monkeypatch.delenv("GHDAG_AUDIT_PATH", raising=False)
         mock_result = self._make_result(returncode=0)
@@ -843,35 +868,27 @@ class TestLlmAuditPath:
 class TestRunMaxConcurrency:
     def test_max_concurrency_arg(self, tmp_path):
         """--max-concurrency is passed correctly to DagConfig"""
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
-        mock_engine_cls = MagicMock()
-        mock_config_cls = MagicMock()
-
-        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
-             patch("ghdag.dag.models.DagConfig", mock_config_cls):
+        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
+             patch("ghdag.dag.models.DagConfig", _capture_config):
             from ghdag.cli import main
             main(["run", str(exec_md), "--max-concurrency", "4"])
 
-        call_kwargs = mock_config_cls.call_args[1]
-        assert call_kwargs["max_concurrency"] == 4
+        assert _capture_config.last_kwargs["max_concurrency"] == 4
 
     def test_max_concurrency_default_none(self, tmp_path):
         """--max-concurrency omitted → None"""
-        exec_md = tmp_path / "exec.md"
+        exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 
-        mock_engine_cls = MagicMock()
-        mock_config_cls = MagicMock()
-
-        with patch("ghdag.dag.engine.DagEngine", mock_engine_cls), \
-             patch("ghdag.dag.models.DagConfig", mock_config_cls):
+        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
+             patch("ghdag.dag.models.DagConfig", _capture_config):
             from ghdag.cli import main
             main(["run", str(exec_md)])
 
-        call_kwargs = mock_config_cls.call_args[1]
-        assert call_kwargs["max_concurrency"] is None
+        assert _capture_config.last_kwargs["max_concurrency"] is None
 
     def test_max_concurrency_invalid_type_exits_2(self, tmp_path, capsys):
         """--max-concurrency abc exits via argparse error"""
@@ -895,43 +912,54 @@ class TestLLMCapabilitiesArgs:
         from ghdag.llm.engines import LLMResult
         return LLMResult(stdout="ok", stderr="", returncode=returncode)
 
-    def test_ac6_capabilities_preset_text_only_passed_to_call(self):
-        """AC6: --capabilities-preset text_only → TEXT_ONLY capabilities passed to call()"""
+    def test_llm_capabilities_preset_text_only(self):
+        """--capabilities-preset text_only → TEXT_ONLY capabilities passed to call()"""
         from ghdag.llm.capabilities import TEXT_ONLY
         mock_result = self._make_result()
-        with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
+        captured: dict = {}
+
+        def capture_call(*_args, **kwargs):
+            captured.update(kwargs)
+            return mock_result
+
+        with patch("ghdag.llm.engines.call", side_effect=capture_call):
             from ghdag.cli import main
             with pytest.raises(SystemExit):
                 main(["llm", "hello", "--capabilities-preset", "text_only"])
-        mock_call.assert_called_once()
-        call_kwargs = mock_call.call_args[1]
-        assert call_kwargs["capabilities"] == TEXT_ONLY
+        assert captured["capabilities"] == TEXT_ONLY
 
-    def test_ac7_permission_mode_plan_passed_to_call(self):
-        """AC7: --permission-mode plan → LLMCapabilities(permission_mode='plan') passed to call()"""
+    def test_llm_permission_mode_plan(self):
+        """--permission-mode plan → LLMCapabilities(permission_mode='plan') passed to call()"""
         mock_result = self._make_result()
-        with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
+        captured: dict = {}
+
+        def capture_call(*_args, **kwargs):
+            captured.update(kwargs)
+            return mock_result
+
+        with patch("ghdag.llm.engines.call", side_effect=capture_call):
             from ghdag.cli import main
             with pytest.raises(SystemExit):
                 main(["llm", "hello", "--permission-mode", "plan"])
-        mock_call.assert_called_once()
-        call_kwargs = mock_call.call_args[1]
-        caps = call_kwargs["capabilities"]
-        assert caps.permission_mode == "plan"
+        assert captured["capabilities"].permission_mode == "plan"
 
-    def test_ac11_dangerously_skip_still_works(self):
-        """AC11: --dangerously-skip-permissions → dangerously_skip_permissions=True as before"""
+    def test_llm_dangerously_skip_permissions_flag(self):
+        """--dangerously-skip-permissions → dangerously_skip_permissions=True as before"""
         mock_result = self._make_result()
-        with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
+        captured: dict = {}
+
+        def capture_call(*_args, **kwargs):
+            captured.update(kwargs)
+            return mock_result
+
+        with patch("ghdag.llm.engines.call", side_effect=capture_call):
             from ghdag.cli import main
             with pytest.raises(SystemExit):
                 main(["llm", "hello", "--dangerously-skip-permissions"])
-        mock_call.assert_called_once()
-        call_kwargs = mock_call.call_args[1]
-        assert call_kwargs["dangerously_skip_permissions"] is True
+        assert captured["dangerously_skip_permissions"] is True
 
-    def test_ac13_invalid_capabilities_preset_exits_2(self, capsys):
-        """AC13: --capabilities-preset invalid → exit via argparse error"""
+    def test_llm_invalid_capabilities_preset_exits_2(self, capsys):
+        """--capabilities-preset invalid → exit via argparse error"""
         from ghdag.cli import main
         with pytest.raises(SystemExit) as exc:
             main(["llm", "hello", "--capabilities-preset", "invalid_preset"])
@@ -944,17 +972,21 @@ class TestLLMCapabilitiesArgs:
             main(["llm", "hello", "--permission-mode", "invalid_mode"])
         assert exc.value.code == 2
 
-    def test_both_preset_and_permission_mode_override(self):
+    def test_llm_preset_and_permission_mode_override(self):
         """--capabilities-preset text_only + --permission-mode plan → override permission_mode on preset"""
         from ghdag.llm.capabilities import TEXT_ONLY
         mock_result = self._make_result()
-        with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
+        captured: dict = {}
+
+        def capture_call(*_args, **kwargs):
+            captured.update(kwargs)
+            return mock_result
+
+        with patch("ghdag.llm.engines.call", side_effect=capture_call):
             from ghdag.cli import main
             with pytest.raises(SystemExit):
                 main(["llm", "hello", "--capabilities-preset", "text_only", "--permission-mode", "plan"])
-        mock_call.assert_called_once()
-        call_kwargs = mock_call.call_args[1]
-        caps = call_kwargs["capabilities"]
+        caps = captured["capabilities"]
         assert caps.permission_mode == "plan"
         assert caps.disallowed_tools == TEXT_ONLY.disallowed_tools
 

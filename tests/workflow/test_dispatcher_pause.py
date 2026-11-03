@@ -66,7 +66,7 @@ def test_pause_file_skips_poll_once(tmp_path):
     dispatcher.dispatch.assert_not_called()
 
 
-def test_dispatch_resumes_after_pause_file_removed(tmp_path):
+def test_dispatch_resumes_after_pause_file_cleared(tmp_path):
     """After deleting the pause file, poll_once / dispatch resume on the next loop."""
     pause_file = tmp_path / "pause.txt"
     pause_file.write_text("quota exhausted", encoding="utf-8")

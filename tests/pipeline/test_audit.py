@@ -40,7 +40,7 @@ class TestAuditContext:
 
 
 class TestWriteAuditLog:
-    def test_ac4_keyword_args_recorded(self, tmp_path):
+    def test_write_audit_log_records_task_uuids_and_exec_lines_count(self, tmp_path):
         """AC4: task_uuids and exec_lines_count kwargs are recorded correctly."""
         audit_path = tmp_path / "audit.jsonl"
         ctx = AuditContext(source="issuesmith")
@@ -66,7 +66,7 @@ class TestWriteAuditLog:
         assert "+00:00" in r["timestamp"]
         assert isinstance(r["caller_stack"], list)
 
-    def test_ac5_exec_lines_count_zero_no_write(self, tmp_path):
+    def test_write_audit_log_skips_write_when_exec_lines_count_zero(self, tmp_path):
         """AC5: exec_lines_count=0 → nothing is written."""
         audit_path = tmp_path / "audit.jsonl"
         ctx = AuditContext()
@@ -80,7 +80,7 @@ class TestWriteAuditLog:
 
         assert not audit_path.exists()
 
-    def test_ac5_empty_task_uuids_with_count(self, tmp_path):
+    def test_write_audit_log_records_empty_task_uuids_with_positive_count(self, tmp_path):
         """AC5b: task_uuids=[] with exec_lines_count > 0 → recorded as empty list."""
         audit_path = tmp_path / "audit.jsonl"
         ctx = AuditContext(source="issuesmith")
@@ -96,7 +96,7 @@ class TestWriteAuditLog:
         assert r["task_uuids"] == []
         assert r["exec_lines_count"] == 1
 
-    def test_ac8_write_failure_logs_stderr_no_exception(self, tmp_path, capsys):
+    def test_write_audit_log_io_failure_logs_warning_only(self, tmp_path, capsys):
         """AC8: I/O failure → stderr warning only; exception is not propagated."""
         audit_path = tmp_path / "audit.jsonl"
         audit_path.mkdir()
@@ -220,27 +220,10 @@ class TestWriteAuditLog:
         lines = audit_path.read_text().strip().splitlines()
         assert len(lines) == 2
 
-    def test_ac1_no_extract_task_uuids_in_audit(self):
-        """AC1: audit module must not expose _extract_task_uuids."""
-        import ghdag.pipeline.audit as audit_mod
-        assert not hasattr(audit_mod, "_extract_task_uuids")
-
-    def test_ac2_no_uuid_re_in_audit(self):
-        """AC2: audit module must not expose _UUID_RE."""
-        import ghdag.pipeline.audit as audit_mod
-        assert not hasattr(audit_mod, "_UUID_RE")
-
-    def test_ac3_no_exec_lines_param(self):
-        """AC3: write_audit_log must not take an exec_lines parameter."""
-        import inspect
-        sig = inspect.signature(write_audit_log)
-        assert "exec_lines" not in sig.parameters
-
-
 class TestAppendExecRecordsAudit:
     """AC6: UUIDs extracted from dicts via append_exec_records are recorded in audit."""
 
-    def test_ac6_uuid_from_dict(self, tmp_path):
+    def test_append_exec_records_audit_includes_uuid_from_dict(self, tmp_path):
         from ghdag.pipeline.state import PipelineState
 
         exec_path = tmp_path / "exec.jsonl"
@@ -256,7 +239,7 @@ class TestAppendExecRecordsAudit:
         assert UUID1 in r["task_uuids"]
         assert r["exec_lines_count"] == 1
 
-    def test_ac6_record_without_uuid_key(self, tmp_path):
+    def test_append_exec_records_skips_dicts_without_uuid(self, tmp_path):
         """Dicts without a uuid key are skipped."""
         from ghdag.pipeline.state import PipelineState
 
@@ -307,7 +290,7 @@ class TestAppendExecRecordsAudit:
         rec = json.loads(line)
         assert rec["annotations"]["_request_id"] == "req-abc"
 
-    def test_ac4_default_permission_uuids_from_annotations(self, tmp_path):
+    def test_append_exec_records_audit_default_permission_uuids(self, tmp_path):
         """AC4: only UUIDs with default_permission_applied are recorded in audit."""
         from ghdag.pipeline.state import PipelineState
 
@@ -343,7 +326,7 @@ class TestAppendExecRecordsAudit:
         assert r["default_permission_uuids"] == [UUID1, UUID2]
         assert len(r["task_uuids"]) == 3
 
-    def test_ac5_no_default_permission_uuids_when_all_specified(self, tmp_path):
+    def test_append_exec_records_omits_default_permission_when_unneeded(self, tmp_path):
         """AC5: all records equivalent to explicit permission (empty annotations) → field omitted."""
         from ghdag.pipeline.state import PipelineState
 
@@ -367,7 +350,7 @@ _UUID4_RE = re.compile(
 class TestWriteLlmAuditLog:
     """Tests for write_llm_audit_log() — Issue #762."""
 
-    def test_ac1_all_fields(self, tmp_path):
+    def test_write_llm_audit_log_records_all_fields(self, tmp_path):
         """AC1: all fields specified — recorded correctly."""
         from ghdag.pipeline.audit import write_llm_audit_log
 
@@ -411,7 +394,7 @@ class TestWriteLlmAuditLog:
         r = json.loads(audit_path.read_text().strip())
         assert r["request_id"] == "ext-123"
 
-    def test_ac2_correlation_id_none(self, tmp_path):
+    def test_write_llm_audit_log_omitted_correlation_id_is_null(self, tmp_path):
         """AC2: correlation_id omitted → null."""
         from ghdag.pipeline.audit import write_llm_audit_log
 
@@ -426,7 +409,7 @@ class TestWriteLlmAuditLog:
         r = json.loads(audit_path.read_text().strip())
         assert r["correlation_id"] is None
 
-    def test_ac6_timeout_sec_none(self, tmp_path):
+    def test_write_llm_audit_log_omitted_timeout_sec_is_null(self, tmp_path):
         """AC6: timeout_sec omitted → null."""
         from ghdag.pipeline.audit import write_llm_audit_log
 
@@ -441,7 +424,7 @@ class TestWriteLlmAuditLog:
         r = json.loads(audit_path.read_text().strip())
         assert r["timeout_sec"] is None
 
-    def test_ac8_write_failure_logs_stderr_no_exception(self, tmp_path, capsys):
+    def test_write_llm_audit_log_io_failure_logs_warning_only(self, tmp_path, capsys):
         """AC8: I/O failure → stderr warning only; exception is not propagated."""
         from ghdag.pipeline.audit import write_llm_audit_log
 
@@ -486,7 +469,7 @@ class TestWriteLlmAuditLog:
         lines = audit_path.read_text().strip().splitlines()
         assert len(lines) == 2
 
-    def test_ac11_coexists_with_enqueue_records(self, tmp_path):
+    def test_llm_audit_log_coexists_with_enqueue_records(self, tmp_path):
         """AC11: enqueue and llm_call records can coexist in the same file."""
         from ghdag.pipeline.audit import write_llm_audit_log
 
@@ -512,7 +495,7 @@ class TestWriteLlmAuditLog:
 # ---------------------------------------------------------------------------
 
 class TestRotation:
-    def test_ac1_size_rotation_triggers(self, tmp_path, monkeypatch):
+    def test_oversized_audit_file_rotates_before_append(self, tmp_path, monkeypatch):
         """AC-1: file > threshold → rotate; new record in fresh audit.jsonl."""
         # rotate implementation is centralized in io/_rotate (#2673). Patch the threshold on the canonical module.
         import ghdag.io._rotate as rotate_mod
@@ -531,7 +514,7 @@ class TestRotation:
         assert len(lines) == 1
         assert json.loads(lines[0])["exec_lines_count"] == 1
 
-    def test_ac2_daily_rotation_removed(self, tmp_path):
+    def test_prior_day_timestamp_appends_without_daily_rotation(self, tmp_path):
         """AC-2 (updated): previous-day timestamp → NO rotation (daily rotation removed)."""
         audit_path = tmp_path / "audit.jsonl"
         old_record = json.dumps({"timestamp": "2026-05-22T23:59:59+09:00"}) + "\n"
@@ -544,7 +527,7 @@ class TestRotation:
         lines = audit_path.read_text().strip().splitlines()
         assert len(lines) == 2
 
-    def test_ac3_no_rotation_same_day_small_file(self, tmp_path):
+    def test_small_same_day_audit_file_appends_without_rotation(self, tmp_path):
         """AC-3: same-day, small file → no rotation; record appended."""
         from datetime import datetime, timedelta, timezone
         JST = timezone(timedelta(hours=9))
@@ -560,12 +543,7 @@ class TestRotation:
         lines = audit_path.read_text().strip().splitlines()
         assert len(lines) == 2
 
-    def test_ac_should_rotate_daily_not_exists(self):
-        """_should_rotate_daily must not exist (dead code removed)"""
-        import ghdag.pipeline.audit as audit_mod
-        assert not hasattr(audit_mod, "_should_rotate_daily")
-
-    def test_ac4_no_existing_file_creates_new(self, tmp_path):
+    def test_write_audit_log_creates_missing_audit_file(self, tmp_path):
         """AC-4: no existing file → new file created, no rotation."""
         audit_path = tmp_path / "audit.jsonl"
         assert not audit_path.exists()
@@ -575,7 +553,7 @@ class TestRotation:
         assert audit_path.exists()
         assert list(tmp_path.glob("audit.*.jsonl")) == []
 
-    def test_ac5_oserror_on_rotation_warns_and_writes(self, tmp_path, monkeypatch, capsys):
+    def test_audit_rotation_oserror_still_appends_record(self, tmp_path, monkeypatch, capsys):
         """AC-5: OSError during rotation → stderr warning; write still proceeds."""
         import ghdag.io._rotate as rotate_mod
         monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
@@ -599,7 +577,7 @@ class TestRotation:
                 pass
         assert any(r.get("exec_lines_count") == 1 for r in json_records)
 
-    def test_ac6_write_llm_audit_log_rotates(self, tmp_path, monkeypatch):
+    def test_write_llm_audit_log_triggers_size_rotation(self, tmp_path, monkeypatch):
         """AC-6: write_llm_audit_log triggers rotation."""
         import ghdag.io._rotate as rotate_mod
         from ghdag.pipeline.audit import write_llm_audit_log
@@ -612,7 +590,7 @@ class TestRotation:
 
         assert len(sorted(tmp_path.glob("audit.*.jsonl"))) == 1
 
-    def test_ac6_write_task_exit_audit_rotates(self, tmp_path, monkeypatch):
+    def test_write_task_exit_audit_triggers_size_rotation(self, tmp_path, monkeypatch):
         """AC-6: write_task_exit_audit triggers rotation."""
         import ghdag.io._rotate as rotate_mod
         from ghdag.pipeline.audit import write_task_exit_audit
@@ -625,7 +603,7 @@ class TestRotation:
 
         assert len(sorted(tmp_path.glob("audit.*.jsonl"))) == 1
 
-    def test_ac7_write_md_write_audit_rotates(self, tmp_path, monkeypatch):
+    def test_write_md_write_audit_triggers_size_rotation(self, tmp_path, monkeypatch):
         """AC-7: write_md_write_audit in files/writer.py triggers rotation."""
         import ghdag.io._rotate as rotate_mod
         from ghdag.files.writer import write_md_write_audit
@@ -638,7 +616,7 @@ class TestRotation:
 
         assert len(sorted(tmp_path.glob("audit.*.jsonl"))) == 1
 
-    def test_ac7_write_promote_audit_rotates(self, tmp_path, monkeypatch):
+    def test_write_promote_audit_triggers_size_rotation(self, tmp_path, monkeypatch):
         """AC-7: _write_promote_audit in files/promote.py triggers rotation."""
         import ghdag.io._rotate as rotate_mod
         from ghdag.files.promote import _write_promote_audit

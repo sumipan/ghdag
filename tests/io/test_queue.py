@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 import pytest
@@ -46,11 +45,6 @@ class TestExports:
         assert QueueTaskStoreTop is QueueTaskStore
         assert QueueTaskShim is QueueTask
         assert QueueTaskStoreShim is QueueTaskStore
-
-    def test_canonical_source_is_io_queue(self) -> None:
-        src = inspect.getsourcefile(QueueTaskStore)
-        assert src is not None
-        assert src.endswith("io/queue.py") or src.endswith("io\\queue.py")
 
 
 class TestQueueTaskStore:

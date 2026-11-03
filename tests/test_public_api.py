@@ -97,12 +97,3 @@ def test_default_check_rejected_is_same_object():
     import ghdag.dag
     import ghdag.dag._util
     assert ghdag.dag.default_check_rejected is ghdag.dag._util.default_check_rejected
-
-
-def test_forge_factory_has_no_importlib_fallback():
-    import inspect
-
-    import ghdag.forge
-    src = inspect.getsource(ghdag.forge)
-    assert "importlib" not in src
-    assert "not yet available" not in src

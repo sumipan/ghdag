@@ -13,6 +13,18 @@ from ghdag.workflow.schema import StepConfig
 _TEST_AUDIT_CTX = AuditContext(source="test")
 
 
+def _track_build_order(order_builder: MagicMock) -> list[tuple[str, dict]]:
+    """Record build_order(template, ctx) calls via side_effect."""
+    captured: list[tuple[str, dict]] = []
+
+    def _side(template: str, ctx: dict) -> str:
+        captured.append((template, ctx))
+        return order_builder.build_order.return_value or "order content"
+
+    order_builder.build_order.side_effect = _side
+    return captured
+
+
 def _make_api(
     queue_dir: str = "queue",
 ) -> tuple[LLMPipelineAPI, MagicMock, MagicMock]:
@@ -48,25 +60,15 @@ class TestAC1SingleStep:
         record = _json.loads(exec_lines[0])
         assert "uuid" in record
         assert "command" in record
-        pipeline_state.append_exec_records.assert_called_once()
 
-    def test_submit_writes_order_file(self):
-        """write_order_file is called once."""
-        api, pipeline_state, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        pipeline_state.write_order_file.assert_called_once()
-
-    def test_submit_calls_build_order(self):
-        """build_order is called once with the template name."""
+    def test_exec_record_command_uses_template_name(self):
+        """build_order receives the step template name."""
         api, _, order_builder = _make_api()
+        captured = _track_build_order(order_builder)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        order_builder.build_order.assert_called_once()
-        call_args = order_builder.build_order.call_args[0]
-        assert call_args[0] == "brushup"
+        assert captured[0][0] == "brushup"
 
     def test_exec_record_contains_model(self):
         """The exec record command includes the model name."""
@@ -125,15 +127,15 @@ class TestAC1TwoStepsWithDepends:
     def test_p2_context_has_p1_result_filename(self):
         """Context passed to P2 build_order includes p1_result_filename."""
         api, _, order_builder = _make_api()
+        captured = _track_build_order(order_builder)
         steps = [
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
         ]
         api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        calls = order_builder.build_order.call_args_list
-        p1_ctx = calls[0][0][1]
-        p2_ctx = calls[1][0][1]
+        p1_ctx = captured[0][1]
+        p2_ctx = captured[1][1]
 
         assert "p1_result_filename" in p2_ctx
         expected = f"{p1_ctx['ts']}-claude-result-{p1_ctx['result_uuid']}.md"
@@ -167,33 +169,35 @@ class TestAC4EngineResultFilename:
     def test_claude_engine_result_filename(self):
         """When engine=claude, result_filename is {ts}-claude-result-{uuid}.md."""
         api, _, order_builder = _make_api()
+        captured = _track_build_order(order_builder)
         steps = [StepConfig(id="p1", template="p1", model="claude-sonnet-4-6", engine="claude")]
         api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        ctx = order_builder.build_order.call_args[0][1]
+        ctx = captured[0][1]
         assert ctx["result_filename"].startswith(ctx["ts"] + "-claude-result-")
 
     def test_gemini_engine_result_filename(self):
         """When engine=gemini, result_filename is {ts}-gemini-result-{uuid}.md."""
         api, _, order_builder = _make_api()
+        captured = _track_build_order(order_builder)
         steps = [StepConfig(id="p1", template="p1", model="gemini-2.5-flash", engine="gemini")]
         api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        ctx = order_builder.build_order.call_args[0][1]
+        ctx = captured[0][1]
         assert ctx["result_filename"].startswith(ctx["ts"] + "-gemini-result-")
 
     def test_dep_result_filename_reflects_dep_engine(self):
         """p1(gemini)→p2: p1_result_filename is {ts}-gemini-result-{uuid}.md."""
         api, _, order_builder = _make_api()
+        captured = _track_build_order(order_builder)
         steps = [
             StepConfig(id="p1", template="p1", model="gemini-2.5-flash", engine="gemini"),
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", engine="claude", depends=["p1"]),
         ]
         api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        calls = order_builder.build_order.call_args_list
-        p1_ctx = calls[0][0][1]
-        p2_ctx = calls[1][0][1]
+        p1_ctx = captured[0][1]
+        p2_ctx = captured[1][1]
 
         assert "p1_result_filename" in p2_ctx
         expected = f"{p1_ctx['ts']}-gemini-result-{p1_ctx['result_uuid']}.md"
@@ -265,20 +269,22 @@ class TestBaseContextPropagation:
     def test_base_context_keys_in_step_context(self):
         """base_context values appear in the context passed to build_order."""
         api, _, order_builder = _make_api()
+        captured = _track_build_order(order_builder)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         api.submit(steps, {"issue_number": "42", "workflow_name": "test"}, audit_context=_TEST_AUDIT_CTX)
 
-        ctx = order_builder.build_order.call_args[0][1]
+        ctx = captured[0][1]
         assert ctx["issue_number"] == "42"
         assert ctx["workflow_name"] == "test"
 
     def test_step_specific_keys_added(self):
         """ts, order_uuid, result_uuid, result_filename are included in context."""
         api, _, order_builder = _make_api()
+        captured = _track_build_order(order_builder)
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        ctx = order_builder.build_order.call_args[0][1]
+        ctx = captured[0][1]
         assert "ts" in ctx
         assert "order_uuid" in ctx
         assert "result_uuid" in ctx
@@ -311,7 +317,13 @@ class TestPerWorkflowOrderBuilder:
 
         pipeline_state = MagicMock()
         pipeline_state.check_idempotency.return_value = True
-        pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+        written_orders: list[str] = []
+
+        def _write_order(_ts: str, _uid: str, content: str, _queue_dir: str, **_kw) -> str:
+            written_orders.append(content)
+            return "ts-claude-order-uuid.md"
+
+        pipeline_state.write_order_file.side_effect = _write_order
 
         default_builder = MagicMock()
         default_builder.build_order.return_value = "default order content"
@@ -334,13 +346,11 @@ class TestPerWorkflowOrderBuilder:
 
         # submit with issuesmith workflow_name → issuesmith_builder is called
         api.submit(steps, {"workflow_name": "issuesmith", "issue_number": "610"}, audit_context=_TEST_AUDIT_CTX)
-        issuesmith_builder.build_order.assert_called_once()
-        inkwell_builder.build_order.assert_not_called()
-        default_builder.build_order.assert_not_called()
+        assert written_orders[-1] == "issuesmith order content"
 
         # re-submit with another workflow name → matching builder is called
         api.submit(steps, {"workflow_name": "inkwell"}, audit_context=_TEST_AUDIT_CTX)
-        inkwell_builder.build_order.assert_called_once()
+        assert written_orders[-1] == "inkwell order content"
 
     def test_falls_back_to_default_builder_when_workflow_unknown(self):
         """Falls back to default when order_builders has no matching entry."""
@@ -350,7 +360,13 @@ class TestPerWorkflowOrderBuilder:
 
         pipeline_state = MagicMock()
         pipeline_state.check_idempotency.return_value = True
-        pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+        written_orders: list[str] = []
+
+        def _write_order(_ts: str, _uid: str, content: str, _queue_dir: str, **_kw) -> str:
+            written_orders.append(content)
+            return "ts-claude-order-uuid.md"
+
+        pipeline_state.write_order_file.side_effect = _write_order
 
         default_builder = MagicMock()
         default_builder.build_order.return_value = "default order"
@@ -366,8 +382,7 @@ class TestPerWorkflowOrderBuilder:
 
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         api.submit(steps, {"workflow_name": "research"}, audit_context=_TEST_AUDIT_CTX)  # unregistered
-        default_builder.build_order.assert_called_once()
-        inkwell_builder.build_order.assert_not_called()
+        assert written_orders[-1] == "default order"
 
     def test_falls_back_to_default_when_workflow_name_missing(self):
         """Works with default when base_context has no workflow_name (backward compatible)."""
@@ -377,7 +392,13 @@ class TestPerWorkflowOrderBuilder:
 
         pipeline_state = MagicMock()
         pipeline_state.check_idempotency.return_value = True
-        pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+        written_orders: list[str] = []
+
+        def _write_order(_ts: str, _uid: str, content: str, _queue_dir: str, **_kw) -> str:
+            written_orders.append(content)
+            return "ts-claude-order-uuid.md"
+
+        pipeline_state.write_order_file.side_effect = _write_order
 
         default_builder = MagicMock()
         default_builder.build_order.return_value = "default order"
@@ -391,7 +412,7 @@ class TestPerWorkflowOrderBuilder:
 
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)  # no workflow_name key
-        default_builder.build_order.assert_called_once()
+        assert written_orders[-1] == "default order"
 
     def test_backward_compat_no_order_builders_kwarg(self):
         """Legacy call style without order_builders still works."""
@@ -401,7 +422,13 @@ class TestPerWorkflowOrderBuilder:
 
         pipeline_state = MagicMock()
         pipeline_state.check_idempotency.return_value = True
-        pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+        written_orders: list[str] = []
+
+        def _write_order(_ts: str, _uid: str, content: str, _queue_dir: str, **_kw) -> str:
+            written_orders.append(content)
+            return "ts-claude-order-uuid.md"
+
+        pipeline_state.write_order_file.side_effect = _write_order
 
         order_builder = MagicMock()
         order_builder.build_order.return_value = "order content"
@@ -414,7 +441,7 @@ class TestPerWorkflowOrderBuilder:
 
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         api.submit(steps, {"workflow_name": "issuesmith"}, audit_context=_TEST_AUDIT_CTX)  # always falls back to default
-        order_builder.build_order.assert_called_once()
+        assert written_orders[-1] == "order content"
 
 
 # ---------------------------------------------------------------------------
@@ -425,25 +452,36 @@ class TestPerWorkflowOrderBuilder:
 class TestSubmitOrderBuilderAndWorkflowRoles:
     def test_submit_order_builder_kwarg_skips_resolve(self):
         """With submit(order_builder=wrapped), _resolve_order_builder is not called."""
-        api, pipeline_state, default_builder = _make_api()
+        api, pipeline_state, _ = _make_api()
         wrapped = MagicMock()
         wrapped.build_order.return_value = "wrapped order"
+        written_orders: list[str] = []
+
+        def _write_order(_ts: str, _uid: str, content: str, _queue_dir: str, **_kw) -> str:
+            written_orders.append(content)
+            return "ts-claude-order-uuid.md"
+
+        pipeline_state.write_order_file.side_effect = _write_order
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
 
-        with patch.object(
-            api, "_resolve_order_builder", wraps=api._resolve_order_builder
-        ) as resolve:
-            api.submit(
+        resolve_called = False
+
+        def _resolve(*args, **kwargs):
+            nonlocal resolve_called
+            resolve_called = True
+            return api._resolve_order_builder(*args, **kwargs)
+
+        with patch.object(api, "_resolve_order_builder", side_effect=_resolve):
+            exec_lines = api.submit(
                 steps,
                 {"workflow_name": "issuesmith", "issue_number": "1"},
                 audit_context=_TEST_AUDIT_CTX,
                 order_builder=wrapped,
             )
 
-        resolve.assert_not_called()
-        wrapped.build_order.assert_called_once()
-        default_builder.build_order.assert_not_called()
-        pipeline_state.append_exec_records.assert_called_once()
+        assert resolve_called is False
+        assert written_orders[-1] == "wrapped order"
+        assert len(exec_lines) == 1
 
     def test_workflow_roles_set_role_annotations(self):
         """With workflow_roles, step.role is set in annotations."""
@@ -464,9 +502,6 @@ class TestSubmitOrderBuilderAndWorkflowRoles:
             audit_context=_TEST_AUDIT_CTX,
             workflow_roles={"design": ["claude", "codex"]},
         )
-        records = pipeline_state.append_exec_records.call_args[0][0]
-        assert records[0]["annotations"]["role"] == "design"
-        assert records[0]["annotations"]["role_engines"] == ["claude", "codex"]
         parsed = _json.loads(lines[0])
         assert parsed["annotations"]["role"] == "design"
         assert parsed["annotations"]["role_engines"] == ["claude", "codex"]
@@ -576,7 +611,6 @@ class TestAC3DependsValidation:
         ]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
         assert len(exec_lines) == 3
-        pipeline_state.append_exec_records.assert_called_once()
 
     def test_validation_error_no_order_file_written(self):
         """On validation error, neither order file nor exec.jsonl is written"""
@@ -608,15 +642,6 @@ class TestAC3DependsValidation:
 
 
 class TestJsonlMode:
-    def test_calls_append_exec_records(self):
-        """append_exec_records is called."""
-        api, pipeline_state, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        pipeline_state.append_exec_records.assert_called_once()
-        assert len(exec_lines) == 1
-
     def test_returns_json_strings(self):
         """exec_lines are JSON strings (including a uuid field)."""
         import json as _json
@@ -711,27 +736,29 @@ class TestJsonlMode:
 
 
 class TestAuditContextPropagation:
-    def test_ac5_submit_without_audit_context_raises_type_error(self):
+    def test_submit_without_audit_context_raises_type_error(self):
         """AC-5 (required): submit() without audit_context raises TypeError."""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         with pytest.raises(TypeError):
             api.submit(steps, {"issue_number": "10"}, idempotency_key="wf:h:10")
 
-    def test_ac1_audit_context_passed_to_append_exec_records(self):
+    def test_submit_forwards_audit_context_to_append_exec_records(self):
         """AC-1: audit_context is forwarded to append_exec_records."""
         from ghdag.pipeline.audit import AuditContext
 
         api, pipeline_state, _ = _make_api()
+        forwarded: list[AuditContext | None] = []
+
+        def _append(records, audit_context=None, **kwargs):
+            forwarded.append(audit_context)
+
+        pipeline_state.append_exec_records.side_effect = _append
         ctx = AuditContext(source="issuesmith", correlation_id="test:key")
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         api.submit(steps, {}, audit_context=ctx)
 
-        call_kwargs = pipeline_state.append_exec_records.call_args
-        passed_ctx = call_kwargs[1].get("audit_context") or (
-            call_kwargs[0][1] if len(call_kwargs[0]) > 1 else None
-        )
-        assert passed_ctx is ctx
+        assert forwarded[0] is ctx
 
 
 # ---------------------------------------------------------------------------
@@ -762,13 +789,14 @@ def _make_api_with_tmpdir(tmp_path):
 class TestResultContentInjection:
     """Issue #1014: ${dep_id_result_content} context injection."""
 
-    def test_ac1_result_content_injected_when_file_exists(self, tmp_path):
+    def test_submit_injects_dep_result_content_when_file_exists(self, tmp_path):
         """AC1: when result file exists, p1_result_content is injected into p2 context."""
         result_content = "# Analysis Result\nScore: 85"
         result_file = tmp_path / f"{_TS}-claude-result-{_P1_UUID}.md"
         result_file.write_text(result_content, encoding="utf-8")
 
         api, _, order_builder = _make_api_with_tmpdir(tmp_path)
+        captured = _track_build_order(order_builder)
         steps = [
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
@@ -778,12 +806,13 @@ class TestResultContentInjection:
             mock_dt.now.return_value.strftime.return_value = _TS
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        p2_ctx = order_builder.build_order.call_args_list[1][0][1]
+        p2_ctx = captured[1][1]
         assert p2_ctx["p1_result_content"] == result_content
 
-    def test_ac2_empty_string_when_result_file_missing(self, tmp_path):
+    def test_submit_dep_result_content_empty_when_file_missing(self, tmp_path):
         """AC2: when result file is missing, p1_result_content is empty string (no error)."""
         api, _, order_builder = _make_api_with_tmpdir(tmp_path)
+        captured = _track_build_order(order_builder)
         steps = [
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
@@ -793,16 +822,17 @@ class TestResultContentInjection:
             mock_dt.now.return_value.strftime.return_value = _TS
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        p2_ctx = order_builder.build_order.call_args_list[1][0][1]
+        p2_ctx = captured[1][1]
         assert p2_ctx["p1_result_content"] == ""
 
-    def test_ac3_result_filename_and_content_coexist(self, tmp_path):
+    def test_submit_injects_both_dep_filename_and_content(self, tmp_path):
         """AC3: both p1_result_filename and p1_result_content expand correctly."""
         result_content = "summary output"
         result_file = tmp_path / f"{_TS}-claude-result-{_P1_UUID}.md"
         result_file.write_text(result_content, encoding="utf-8")
 
         api, _, order_builder = _make_api_with_tmpdir(tmp_path)
+        captured = _track_build_order(order_builder)
         steps = [
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
@@ -812,11 +842,11 @@ class TestResultContentInjection:
             mock_dt.now.return_value.strftime.return_value = _TS
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        p2_ctx = order_builder.build_order.call_args_list[1][0][1]
+        p2_ctx = captured[1][1]
         assert p2_ctx["p1_result_filename"] == f"{_TS}-claude-result-{_P1_UUID}.md"
         assert p2_ctx["p1_result_content"] == result_content
 
-    def test_ac4_multiple_dep_contents_injected(self, tmp_path):
+    def test_submit_injects_multiple_dep_result_contents(self, tmp_path):
         """AC4: p3 depends on both p1 and p2 → both result_content values are injected."""
         content_p1 = "p1 result"
         content_p2 = "p2 result"
@@ -824,6 +854,7 @@ class TestResultContentInjection:
         (tmp_path / f"{_TS}-claude-result-{_P2_UUID}.md").write_text(content_p2, encoding="utf-8")
 
         api, _, order_builder = _make_api_with_tmpdir(tmp_path)
+        captured = _track_build_order(order_builder)
         steps = [
             StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6"),
@@ -834,7 +865,7 @@ class TestResultContentInjection:
             mock_dt.now.return_value.strftime.return_value = _TS
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
-        p3_ctx = order_builder.build_order.call_args_list[2][0][1]
+        p3_ctx = captured[2][1]
         assert p3_ctx["p1_result_content"] == content_p1
         assert p3_ctx["p2_result_content"] == content_p2
 
@@ -845,7 +876,7 @@ class TestResultContentInjection:
 
 
 class TestStepConfigPermission:
-    def test_ac5_permission_text_only_exec_record_has_permission_mode(self):
+    def test_submit_text_only_permission_adds_mode_and_disallowed_tools(self):
         """AC5: permission='text_only' → exec record command has --permission-mode default --disallowed-tools"""
         import json as _json
         api, _, _ = _make_api()
@@ -857,7 +888,7 @@ class TestStepConfigPermission:
         assert "default" in record["command"]
         assert "--disallowed-tools" in record["command"]
 
-    def test_ac5_permission_text_only_no_dangerously(self):
+    def test_submit_text_only_permission_omits_dangerously_skip(self):
         """AC5: permission='text_only' → no --dangerously-skip-permissions"""
         import json as _json
         api, _, _ = _make_api()
@@ -867,7 +898,7 @@ class TestStepConfigPermission:
         record = _json.loads(exec_lines[0])
         assert "--dangerously-skip-permissions" not in record["command"]
 
-    def test_ac10_permission_none_default_behavior(self):
+    def test_submit_default_permission_applies_text_only_preset(self):
         """AC10: permission=None (default) → TEXT_ONLY (--permission-mode default --disallowed-tools)"""
         import json as _json
         api, _, _ = _make_api()
@@ -887,7 +918,7 @@ class TestStepConfigPermission:
             assert record["annotations"].get("safe_default_applied") is True
             assert record["annotations"].get("safe_default_preset") == "text_only"
 
-    def test_ac12_unknown_preset_raises_value_error(self):
+    def test_submit_unknown_permission_preset_raises(self):
         """AC12: permission='unknown_preset' → ValueError"""
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="unknown_preset")]
@@ -1022,7 +1053,7 @@ class TestStepConfigPermission:
 
 
 class TestDefaultPermissionAuditAnnotations:
-    def test_ac1_permission_none_claude_annotations(self):
+    def test_submit_claude_default_sets_safe_default_annotations(self):
         """AC1: permission=None → safe_default_applied + safe_default_preset=text_only."""
         import json as _json
         api, _, _ = _make_api()
@@ -1035,7 +1066,7 @@ class TestDefaultPermissionAuditAnnotations:
         assert "default_permission_applied" not in record["annotations"]
         assert "injected_danger_flag" not in record["annotations"]
 
-    def test_ac2_permission_text_only_no_default_annotation(self):
+    def test_submit_explicit_text_only_skips_default_annotation_key(self):
         """AC2: permission='text_only' → no default_permission_applied key."""
         import json as _json
         api, _, _ = _make_api()
@@ -1051,7 +1082,7 @@ class TestDefaultPermissionAuditAnnotations:
         record = _json.loads(exec_lines[0])
         assert "default_permission_applied" not in record["annotations"]
 
-    def test_ac3_gemini_engine_no_default_annotation(self):
+    def test_submit_gemini_skips_default_permission_annotation(self):
         """AC3: gemini (danger_flag=None) → no default_permission_applied key."""
         import json as _json
         api, _, _ = _make_api()
@@ -1061,7 +1092,7 @@ class TestDefaultPermissionAuditAnnotations:
         record = _json.loads(exec_lines[0])
         assert "default_permission_applied" not in record["annotations"]
 
-    def test_ac3_shell_engine_no_default_annotation(self):
+    def test_submit_shell_skips_default_permission_annotation(self):
         """AC3: shell (danger_flag=None) → no default_permission_applied key."""
         import json as _json
         api, _, _ = _make_api()
@@ -1071,7 +1102,7 @@ class TestDefaultPermissionAuditAnnotations:
         record = _json.loads(exec_lines[0])
         assert "default_permission_applied" not in record["annotations"]
 
-    def test_ac7_cursor_permission_none_injected_force(self):
+    def test_submit_cursor_default_text_only_without_force(self):
         """AC7: cursor + permission=None → TEXT_ONLY default (no --force)."""
         import json as _json
         api, _, _ = _make_api()

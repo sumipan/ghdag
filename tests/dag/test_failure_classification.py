@@ -20,7 +20,7 @@ from ghdag.core.vocabulary import (
 )
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.engine_quarantine import EngineQuarantine
-from ghdag.dag.hooks import DagHooks
+from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import DagConfig, RunningTask, Task
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
@@ -66,16 +66,40 @@ def extra_suffix_pack(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 
 def _make_config(tmp_path):
+    (tmp_path / "done").mkdir(parents=True, exist_ok=True)
     return DagConfig(
         exec_jsonl_path=str(tmp_path / "exec.jsonl"),
         exec_done_dir=str(tmp_path / "done"),
     )
 
 
+def _done_value(tmp_path, uuid: str) -> str:
+    return (tmp_path / "done" / uuid).read_text(encoding="utf-8").strip()
+
+
+class MemoryHooks(DefaultHooks):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rejected = False
+        self.pipeline_status = None
+        self.failures: list[tuple] = []
+        self.successes: list[tuple] = []
+
+    def check_rejected(self, result_path: str) -> bool:
+        return self.rejected
+
+    def check_pipeline_status(self, result_path: str):
+        return self.pipeline_status
+
+    def on_task_failure(self, uuid, task, returncode, stderr_text, metrics):
+        self.failures.append((uuid, task, returncode, stderr_text, metrics))
+
+    def on_task_success(self, uuid, task, metrics):
+        self.successes.append((uuid, task, metrics))
+
+
 def _make_engine(tmp_path):
-    hooks = MagicMock(spec=DagHooks)
-    hooks.check_rejected.return_value = False
-    hooks.check_pipeline_status.return_value = None
+    hooks = MemoryHooks()
     return DagEngine(_make_config(tmp_path), hooks), hooks
 
 
@@ -183,8 +207,7 @@ def test_all_adapters_handle_invalid_utf8_without_exception(all_adapters) -> Non
         assert adapter.classify_failure(1, noisy_bytes, b"") is None
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
-def test_engine_error_from_stderr_sets_retryable_marker(mock_mark_done, tmp_path) -> None:
+def test_engine_error_from_stderr_sets_retryable_marker(tmp_path) -> None:
     engine, hooks = _make_engine(tmp_path)
     task = Task(uuid="retryable", command="codex exec -p hi", engine="codex", retry=0)
     rt = _make_running_task(
@@ -198,14 +221,12 @@ def test_engine_error_from_stderr_sets_retryable_marker(mock_mark_done, tmp_path
 
     engine._launcher.check_completions()
 
-    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, DONE_ENGINE_ERROR)
-    hooks.on_task_failure.assert_called_once()
-    metrics = hooks.on_task_failure.call_args[0][4]
-    assert metrics.failure_class == FailureClass.ENGINE_ERROR
+    assert _done_value(tmp_path, task.uuid) == DONE_ENGINE_ERROR
+    assert len(hooks.failures) == 1
+    assert hooks.failures[0][4].failure_class == FailureClass.ENGINE_ERROR
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
-def test_engine_error_from_stderr_honors_max_retry(mock_mark_done, tmp_path) -> None:
+def test_engine_error_from_stderr_honors_max_retry(tmp_path) -> None:
     engine, hooks = _make_engine(tmp_path)
     task = Task(
         uuid="retry-final",
@@ -224,14 +245,12 @@ def test_engine_error_from_stderr_honors_max_retry(mock_mark_done, tmp_path) -> 
 
     engine._launcher.check_completions()
 
-    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, DONE_ENGINE_ERROR_FINAL)
-    hooks.on_task_failure.assert_called_once()
-    metrics = hooks.on_task_failure.call_args[0][4]
-    assert metrics.failure_class == FailureClass.ENGINE_ERROR
+    assert _done_value(tmp_path, task.uuid) == DONE_ENGINE_ERROR_FINAL
+    assert len(hooks.failures) == 1
+    assert hooks.failures[0][4].failure_class == FailureClass.ENGINE_ERROR
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
-def test_runtime_quota_failure_from_stderr_is_deferred(mock_mark_done, tmp_path) -> None:
+def test_runtime_quota_failure_from_stderr_is_deferred(tmp_path) -> None:
     engine, hooks = _make_engine(tmp_path)
     result_file = tmp_path / "result.md"
     result_file.write_text("placeholder", encoding="utf-8")
@@ -252,15 +271,14 @@ def test_runtime_quota_failure_from_stderr_is_deferred(mock_mark_done, tmp_path)
 
     engine._launcher.check_completions()
 
-    hooks.on_task_failure.assert_not_called()
-    mock_mark_done.assert_not_called()
+    assert not hooks.failures
+    assert not (tmp_path / "done" / task.uuid).exists()
     assert not result_file.exists()
     snapshot = engine._quota_gate.snapshot()
     assert snapshot.engines["claude"].status == "paused"
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
-def test_runtime_auth_failure_keeps_auth_class_without_retry_gate_actions(mock_mark_done, tmp_path) -> None:
+def test_runtime_auth_failure_keeps_auth_class_without_retry_gate_actions(tmp_path) -> None:
     engine, hooks = _make_engine(tmp_path)
     task = Task(
         uuid="runtime-auth",
@@ -278,17 +296,15 @@ def test_runtime_auth_failure_keeps_auth_class_without_retry_gate_actions(mock_m
 
     engine._launcher.check_completions()
 
-    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, 1)
-    hooks.on_task_failure.assert_called_once()
-    metrics = hooks.on_task_failure.call_args[0][4]
-    assert metrics.failure_class == FailureClass.AUTH
+    assert _done_value(tmp_path, task.uuid) == "1"
+    assert len(hooks.failures) == 1
+    assert hooks.failures[0][4].failure_class == FailureClass.AUTH
     snapshot = engine._quota_gate.snapshot()
     assert "cursor" not in snapshot.engines
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
 @patch("ghdag.dag.task_launcher.subprocess.Popen")
-def test_environment_error_enters_quarantine_and_blocks_same_engine(mock_popen, mock_mark_done, tmp_path) -> None:
+def test_environment_error_enters_quarantine_and_blocks_same_engine(mock_popen, tmp_path) -> None:
     engine, hooks = _make_engine(tmp_path)
     task = Task(uuid="env-fail", command="claude -p hi", engine="claude")
     rt = _make_running_task(
@@ -302,10 +318,9 @@ def test_environment_error_enters_quarantine_and_blocks_same_engine(mock_popen, 
 
     engine._launcher.check_completions()
 
-    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, DONE_ENGINE_ENV_ERROR)
-    hooks.on_task_failure.assert_called_once()
-    metrics = hooks.on_task_failure.call_args[0][4]
-    assert metrics.failure_class == FailureClass.ENGINE_ENVIRONMENT_ERROR
+    assert _done_value(tmp_path, task.uuid) == DONE_ENGINE_ENV_ERROR
+    assert len(hooks.failures) == 1
+    assert hooks.failures[0][4].failure_class == FailureClass.ENGINE_ENVIRONMENT_ERROR
 
     blocked_task = Task(uuid="blocked", command="claude -p blocked", engine="claude")
     assert engine._launcher.launch(blocked_task.uuid, blocked_task) is False
@@ -326,8 +341,7 @@ def test_engine_quarantine_expires_after_cooldown() -> None:
         assert q.is_quarantined("claude") is False
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
-def test_retry_and_quarantine_audit_events_are_written(mock_mark_done, tmp_path) -> None:
+def test_retry_and_quarantine_audit_events_are_written(tmp_path) -> None:
     engine, _hooks = _make_engine(tmp_path)
     queue_dir = tmp_path
     audit_path = queue_dir / "audit.jsonl"
@@ -493,8 +507,7 @@ def test_adapters_do_not_classify_normal_or_empty_as_interactive(
     assert adapter.classify_failure(1, stdout, b"") is None
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
-def test_interactive_prompt_exit1_marks_done_without_retry(mock_mark_done, tmp_path) -> None:
+def test_interactive_prompt_exit1_marks_done_without_retry(tmp_path) -> None:
     engine, hooks = _make_engine(tmp_path)
     task = Task(uuid="interactive-exit1", command="codex exec -p hi", engine="codex", retry=0)
     stdout = _load_fixture("codex_jsonl_interactive_prompt.jsonl")
@@ -504,21 +517,17 @@ def test_interactive_prompt_exit1_marks_done_without_retry(mock_mark_done, tmp_p
 
     engine._launcher.check_completions()
 
-    mock_mark_done.assert_called_once_with(
-        engine._config.exec_done_dir, task.uuid, DONE_INTERACTIVE_PROMPT
-    )
-    hooks.on_task_failure.assert_called_once()
-    args = hooks.on_task_failure.call_args[0]
-    metrics = args[4]
-    question_excerpt = args[3]
+    assert _done_value(tmp_path, task.uuid) == DONE_INTERACTIVE_PROMPT
+    assert len(hooks.failures) == 1
+    metrics = hooks.failures[0][4]
+    question_excerpt = hooks.failures[0][3]
     assert metrics.failure_class == FailureClass.INTERACTIVE_PROMPT
     assert metrics.failure_class_reason == "Please choose one?"
     assert len(question_excerpt) <= 200
     assert "Please choose one?" in question_excerpt or "bugbot" in question_excerpt
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
-def test_interactive_prompt_exit0_succeeds_as_normal(mock_mark_done, tmp_path) -> None:
+def test_interactive_prompt_exit0_succeeds_as_normal(tmp_path) -> None:
     """AC-7: exit 0 with a question ending is success (no INTERACTIVE_PROMPT branch)."""
     engine, hooks = _make_engine(tmp_path)
     result_file = tmp_path / "result.md"
@@ -535,14 +544,13 @@ def test_interactive_prompt_exit0_succeeds_as_normal(mock_mark_done, tmp_path) -
 
     engine._launcher.check_completions()
 
-    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, 0)
-    hooks.on_task_success.assert_called_once()
-    hooks.on_task_failure.assert_not_called()
+    assert _done_value(tmp_path, task.uuid) == "0"
+    assert len(hooks.successes) == 1
+    assert not hooks.failures
     assert "Please choose one?" in result_file.read_text(encoding="utf-8")
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
-def test_cursor_retriable_error_sets_engine_error_marker(mock_mark_done, tmp_path) -> None:
+def test_cursor_retriable_error_sets_engine_error_marker(tmp_path) -> None:
     engine, hooks = _make_engine(tmp_path)
     stderr = _load_fixture("cursor_stream_retriable_error_reconnect.stderr")
     task = Task(uuid="cursor-retryable", command="cursor agent -p hi", engine="cursor", retry=0)
@@ -552,16 +560,14 @@ def test_cursor_retriable_error_sets_engine_error_marker(mock_mark_done, tmp_pat
 
     engine._launcher.check_completions()
 
-    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, DONE_ENGINE_ERROR)
-    hooks.on_task_failure.assert_called_once()
-    metrics = hooks.on_task_failure.call_args[0][4]
-    assert metrics.failure_class == FailureClass.ENGINE_ERROR
-    error_summary = hooks.on_task_failure.call_args[0][3]
+    assert _done_value(tmp_path, task.uuid) == DONE_ENGINE_ERROR
+    assert len(hooks.failures) == 1
+    assert hooks.failures[0][4].failure_class == FailureClass.ENGINE_ERROR
+    error_summary = hooks.failures[0][3]
     assert "ENGINE_ERROR (RATE_LIMIT): RetriableError: [resource_exhausted] Error" in error_summary
 
 
-@patch("ghdag.dag.task_launcher.state_mark_done")
-def test_cursor_retriable_error_at_max_retry_is_final(mock_mark_done, tmp_path) -> None:
+def test_cursor_retriable_error_at_max_retry_is_final(tmp_path) -> None:
     engine, hooks = _make_engine(tmp_path)
     stderr = _load_fixture("cursor_stream_retriable_error_reconnect.stderr")
     task = Task(
@@ -576,7 +582,6 @@ def test_cursor_retriable_error_at_max_retry_is_final(mock_mark_done, tmp_path) 
 
     engine._launcher.check_completions()
 
-    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, DONE_ENGINE_ERROR_FINAL)
-    hooks.on_task_failure.assert_called_once()
-    metrics = hooks.on_task_failure.call_args[0][4]
-    assert metrics.failure_class == FailureClass.ENGINE_ERROR
+    assert _done_value(tmp_path, task.uuid) == DONE_ENGINE_ERROR_FINAL
+    assert len(hooks.failures) == 1
+    assert hooks.failures[0][4].failure_class == FailureClass.ENGINE_ERROR

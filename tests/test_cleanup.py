@@ -747,7 +747,7 @@ class TestOrphanDoneMark:
 
 
 class TestDoneDeleteOrder:
-    def test_exec_pruned_before_done_marker_deleted(self, tmp_path):
+    def test_done_marker_unlinked_after_exec_prune_writes(self, tmp_path):
         """Delete the done marker only after exec prune completes"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_A)
@@ -805,7 +805,7 @@ UUID_D = "dddddddd-dddd-dddd-dddd-dddddddddddd"
 
 
 class TestSweepExtras:
-    def test_ac11_slack_pending_json_is_swept(self, tmp_path):
+    def test_sweep_archives_old_slack_pending_json(self, tmp_path):
         """AC11: slack-pending-*.json files are swept"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
@@ -827,7 +827,7 @@ class TestSweepExtras:
         assert len(extras_dirs) == 1
         assert (extras_dirs[0] / slack_file.name).exists()
 
-    def test_ac12_nonstandard_md_is_swept(self, tmp_path):
+    def test_sweep_archives_old_nonstandard_md(self, tmp_path):
         """AC12: non-standard-named .md files are swept"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         nonstandard = queue_dir / "20260324105832-gemini-deep-kakiuchi-result.md"
@@ -847,7 +847,7 @@ class TestSweepExtras:
         extras_dirs = list(archive_dir.glob("*/extras"))
         assert len(extras_dirs) == 1
 
-    def test_ac13_whitelist_files_are_not_swept(self, tmp_path):
+    def test_sweep_skips_whitelist_files(self, tmp_path):
         """AC13: *.jsonl, .gitkeep, .ghdag.lock are whitelisted and not swept"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         exec_md.write_text("")  # actually create exec.jsonl
@@ -875,7 +875,7 @@ class TestSweepExtras:
         assert lock.exists()
         assert audit.exists()
 
-    def test_ac14_young_file_is_not_swept(self, tmp_path):
+    def test_sweep_skips_young_nonstandard_md(self, tmp_path):
         """AC14: files younger than orphan_days are not swept"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
@@ -893,7 +893,7 @@ class TestSweepExtras:
         assert res.swept_extras == 0
         assert slack_file.exists()
 
-    def test_ac15_dry_run_sweep(self, tmp_path, capsys):
+    def test_dry_run_sweep_leaves_files_in_place(self, tmp_path, capsys):
         """AC15: dry_run only lists sweep targets; files remain"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
@@ -914,7 +914,7 @@ class TestSweepExtras:
         out = capsys.readouterr().out
         assert "[dry] sweep extras:" in out
 
-    def test_ac16_directories_are_not_swept(self, tmp_path):
+    def test_sweep_skips_directories(self, tmp_path):
         """AC16: done/, archive/, thread-index/ directories are not swept"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         thread_index = queue_dir / "thread-index"
@@ -933,7 +933,7 @@ class TestSweepExtras:
         assert archive_dir.exists()
         assert thread_index.exists()
 
-    def test_ac17_phase1_archived_files_not_double_processed(self, tmp_path):
+    def test_sweep_skips_jobs_already_archived_by_primary_cleanup(self, tmp_path):
         """AC17: files archived in Phase 1 are not double-processed in Phase 2"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, result = _make_queue_files(queue_dir, UUID_A)
@@ -1264,7 +1264,7 @@ class TestIsSweepableExtra:
 class TestPhase3MtimeSweep:
     """AC-1: quota-gate-override.json created 8 days ago, updated 1 hour ago is NOT swept."""
 
-    def test_ac1_state_file_updated_recently_is_not_swept(self, tmp_path):
+    def test_sweep_skips_recently_updated_state_file(self, tmp_path):
         import os
 
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
@@ -1288,7 +1288,7 @@ class TestPhase3MtimeSweep:
         assert res.swept_extras == 0
         assert override.exists()
 
-    def test_ac2_timestamped_artifact_is_swept(self, tmp_path):
+    def test_sweep_archives_old_timestamped_artifact(self, tmp_path):
         """AC-2: 14-digit-prefix file old enough by mtime is swept to extras."""
         import os
 
@@ -1312,7 +1312,7 @@ class TestPhase3MtimeSweep:
         extras_dirs = list(archive_dir.glob("*/extras"))
         assert len(extras_dirs) == 1
 
-    def test_ac3_lock_files_not_swept(self, tmp_path):
+    def test_sweep_skips_lock_files(self, tmp_path):
         """AC-3: .lock files are not swept even when old."""
         import os
 
@@ -1338,7 +1338,7 @@ class TestPhase3MtimeSweep:
         assert lock1.exists()
         assert lock2.exists()
 
-    def test_ac5_mtime_recent_not_swept(self, tmp_path):
+    def test_sweep_skips_slack_pending_with_recent_mtime(self, tmp_path):
         """AC-5a: slack-pending-<uuid> created 8d ago but updated 1h ago is NOT swept."""
         import os
 
@@ -1362,7 +1362,7 @@ class TestPhase3MtimeSweep:
         assert res.swept_extras == 0
         assert slack_file.exists()
 
-    def test_ac5_mtime_old_is_swept(self, tmp_path):
+    def test_sweep_archives_slack_pending_with_stale_mtime(self, tmp_path):
         """AC-5b: slack-pending-<uuid> created and not updated 8 days ago IS swept."""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         _make_exec_jsonl(exec_md, [])
@@ -1381,7 +1381,7 @@ class TestPhase3MtimeSweep:
         assert res.swept_extras == 1
         assert not slack_file.exists()
 
-    def test_ac7_dry_run_output_format(self, tmp_path, capsys):
+    def test_dry_run_sweep_prints_dest_and_age(self, tmp_path, capsys):
         """AC-7: dry_run outputs [dry] sweep extras: <name> -> <dest> (token=..., age=...d)."""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         _make_exec_jsonl(exec_md, [])

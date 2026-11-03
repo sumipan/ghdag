@@ -94,7 +94,7 @@ class TestMdWriteBasic:
 
 
 class TestMdWriteProvenance:
-    def test_ac14_source_and_correlation_id_recorded(self, repo_root: Path) -> None:
+    def test_md_write_records_source_and_correlation_in_audit(self, repo_root: Path) -> None:
         """AC14: source / correlation_id are recorded in audit"""
         f = repo_root / "result" / "bar.md"
         write_file(f, "old")
@@ -112,7 +112,7 @@ class TestMdWriteProvenance:
         assert record["source"] == "cleanup_link_rewrite"
         assert record["correlation_id"] == "xyz"
 
-    def test_ac14_default_audit_unchanged(self, repo_root: Path) -> None:
+    def test_md_write_default_audit_source_is_md_write(self, repo_root: Path) -> None:
         """AC14: default None keeps legacy source=md_write"""
         f = repo_root / "result" / "bar.md"
         write_file(f, "old")

@@ -10,7 +10,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ghdag.github_client import GitHubClient as TokenGitHubClient
-from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import ContextHookError, WorkflowDispatcher
 from ghdag.workflow.loader import ValidationError, load_workflows
@@ -257,16 +256,81 @@ def _make_issue(number: int, labels: list[str] | None = None) -> dict:
     }
 
 
-def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tuple[WorkflowDispatcher, MagicMock, MagicMock, MagicMock]:
-    github_client = MagicMock(spec=GitHubIssuePort)
-    github_client.list_all_issues.return_value = []
-    github_client.get_last_rate_limit.return_value = None
-    github_client.get_issue_comments.return_value = []
-    pipeline_state = MagicMock()
-    pipeline_state.check_idempotency.return_value = True
-    pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
-    order_builder = MagicMock()
-    order_builder.build_order.return_value = "order content"
+class _RecordingPipelineState:
+    def __init__(self) -> None:
+        self.idempotency_ok = True
+        self.appended: list[list] = []
+        self.remove_idempotency_calls: list[tuple[str, int]] = []
+        self.remove_idempotency_return = 3
+
+    def check_idempotency(self, *args, **kwargs) -> bool:
+        return self.idempotency_ok
+
+    def write_order_file(self, *args, **kwargs) -> str:
+        return "ts-claude-order-uuid.md"
+
+    def append_exec_records(self, records, audit_context=None) -> None:
+        self.appended.append(records)
+
+    def remove_idempotency_matching(self, workflow: str, issue: int) -> int:
+        self.remove_idempotency_calls.append((workflow, issue))
+        return self.remove_idempotency_return
+
+    def get_generation(self, workflow_name: str, handler_name: str, issue_number: int) -> int:
+        return 0
+
+    def increment_generation(self, workflow_name: str, handler_name: str, issue_number: int) -> int:
+        return 1
+
+    def find_records_by_idempotency_key(self, key: str) -> list:
+        return []
+
+    def remove_idempotency_for_handler(
+        self, workflow_name: str, handler_name: str, issue_number: int
+    ) -> int:
+        return 0
+
+
+class _RecordingOrderBuilder:
+    def __init__(self) -> None:
+        self.contexts: list[dict] = []
+        self.build_calls = 0
+
+    def build_order(self, template, ctx) -> str:
+        self.build_calls += 1
+        self.contexts.append(ctx)
+        return "order content"
+
+
+class _RecordingGitHubClient:
+    def __init__(self) -> None:
+        self.list_all_issues_return: list = []
+        self.comments: list = []
+        self.removed_labels: list[tuple[int, str]] = []
+        self.comments_fetched = False
+        self.updated_labels: list[tuple] = []
+
+    def list_all_issues(self, *args, **kwargs):
+        return self.list_all_issues_return
+
+    def get_last_rate_limit(self):
+        return None
+
+    def get_issue_comments(self, *args, **kwargs):
+        self.comments_fetched = True
+        return self.comments
+
+    def remove_label(self, issue: int, label: str) -> None:
+        self.removed_labels.append((issue, label))
+
+    def update_label(self, *args, **kwargs) -> None:
+        self.updated_labels.append((args, kwargs))
+
+
+def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tuple[WorkflowDispatcher, _RecordingGitHubClient, _RecordingPipelineState, _RecordingOrderBuilder]:
+    github_client = _RecordingGitHubClient()
+    pipeline_state = _RecordingPipelineState()
+    order_builder = _RecordingOrderBuilder()
     pipeline = LLMPipelineAPI(
         pipeline_state=pipeline_state,
         order_builder=order_builder,
@@ -278,9 +342,13 @@ def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tupl
         pipeline=pipeline,
         queue_dir=queue_dir,
     )
-    # Patch _write_design_md to avoid filesystem writes in unit tests
     dispatcher._write_design_md = MagicMock()
     return dispatcher, github_client, pipeline_state, order_builder
+
+
+def _last_records(pipeline_state: _RecordingPipelineState) -> list:
+    assert pipeline_state.appended, "expected append_exec_records to run"
+    return pipeline_state.appended[-1]
 
 
 # ---------------------------------------------------------------------------
@@ -298,8 +366,7 @@ class TestTC2MultiStepDag:
         result = dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
 
         assert result.status == "dispatched"
-        pipeline_state.append_exec_records.assert_called_once()
-        records = pipeline_state.append_exec_records.call_args[0][0]
+        records = _last_records(pipeline_state)
         # 3 step records (no idempotency line in JSONL - it's a field)
         assert len(records) == 3
 
@@ -311,7 +378,7 @@ class TestTC2MultiStepDag:
         trigger = workflow.triggers[1]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
 
-        records = pipeline_state.append_exec_records.call_args[0][0]
+        records = _last_records(pipeline_state)
         # records[0] = p1, records[1] = p2, records[2] = p3
         p1_rec = records[0]
         p2_rec = records[1]
@@ -329,7 +396,7 @@ class TestTC2MultiStepDag:
         result = dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
 
         assert result.status == "dispatched"
-        records = pipeline_state.append_exec_records.call_args[0][0]
+        records = _last_records(pipeline_state)
         assert len(records) == 1
         assert records[0]["depends"] == []
 
@@ -349,7 +416,7 @@ class TestTC2bContextExpansion:
         trigger = workflow.triggers[0]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
 
-        ctx = order_builder.build_order.call_args[0][1]
+        ctx = order_builder.contexts[-1]
         assert "ts" in ctx
         assert "order_uuid" in ctx
         assert "result_uuid" in ctx
@@ -365,13 +432,12 @@ class TestTC2bContextExpansion:
         trigger = workflow.triggers[1]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
 
-        # build_order is called 3 times (p1, p2, p3)
-        calls = order_builder.build_order.call_args_list
-        assert len(calls) == 3
+        contexts = order_builder.contexts
+        assert len(contexts) == 3
 
-        p1_ctx = calls[0][0][1]
-        p2_ctx = calls[1][0][1]
-        p3_ctx = calls[2][0][1]
+        p1_ctx = contexts[0]
+        p2_ctx = contexts[1]
+        p3_ctx = contexts[2]
 
         # p1 has no upstream dep, so no dep_result_filename
         assert not any(k.endswith("_result_filename") and k != "result_filename" for k in p1_ctx)
@@ -395,7 +461,7 @@ class TestTC2bContextExpansion:
         trigger = workflow.triggers[0]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
 
-        ctx = order_builder.build_order.call_args[0][1]
+        ctx = order_builder.contexts[-1]
         assert ctx["issue_number"] == "10"
         assert ctx["workflow_name"] == "stash-pipeline"
         assert ctx["handler_name"] == "brushup"
@@ -415,7 +481,7 @@ class TestTC3ModelFlag:
         trigger = workflow.triggers[1]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
 
-        records = pipeline_state.append_exec_records.call_args[0][0]
+        records = _last_records(pipeline_state)
         p1_rec = records[0]
         assert "--model" in p1_rec["command"] and "claude-sonnet-4-6" in p1_rec["command"]
 
@@ -427,7 +493,7 @@ class TestTC3ModelFlag:
         trigger = workflow.triggers[0]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
 
-        records = pipeline_state.append_exec_records.call_args[0][0]
+        records = _last_records(pipeline_state)
         assert "--model" in records[0]["command"] and "claude-opus-4-6" in records[0]["command"]
 
 
@@ -442,7 +508,7 @@ class TestTC4IssueContext:
         dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow, queue_dir=str(tmp_path))
         # Restore real _write_design_md for this test
         dispatcher._write_design_md = WorkflowDispatcher._write_design_md.__get__(dispatcher, WorkflowDispatcher)
-        github_client.get_issue_comments.return_value = [
+        github_client.comments = [
             {"author": "user1", "created_at": "2026-01-01T00:00:00Z", "body": "comment 1"},
             {"author": "user2", "created_at": "2026-01-02T00:00:00Z", "body": "comment 2"},
             {"author": "user3", "created_at": "2026-01-03T00:00:00Z", "body": "comment 3"},
@@ -470,7 +536,7 @@ class TestTC4IssueContext:
 
         design_md = tmp_path / "issue-42-design.md"
         assert not design_md.exists()
-        github_client.get_issue_comments.assert_not_called()
+        assert not github_client.comments_fetched
 
 
 # ---------------------------------------------------------------------------
@@ -491,7 +557,7 @@ class TestTC5BackwardGuard:
 
         assert result.status == "skipped"
         assert "backward" in result.reason
-        pipeline_state.append_exec_records.assert_not_called()
+        assert not pipeline_state.appended
 
     def test_forward_transition_allowed(self):
         """develop-ready while draft-running → dispatched"""
@@ -504,7 +570,7 @@ class TestTC5BackwardGuard:
         result = dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
 
         assert result.status == "dispatched"
-        pipeline_state.append_exec_records.assert_called_once()
+        assert len(pipeline_state.appended) == 1
 
     def test_no_running_labels_allows_dispatch(self):
         """no running label → dispatched"""
@@ -527,7 +593,6 @@ class TestTC6ResetHandler:
     def test_reset_returns_reset_status(self):
         workflow = _make_extended_workflow()
         dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow)
-        pipeline_state.remove_idempotency_matching.return_value = 3
         issue = _make_issue(42, ["pipeline:develop-running"])
         handler = workflow.handlers["reset"]
         trigger = workflow.triggers[3]  # pipeline:reset (rank 3)
@@ -538,36 +603,34 @@ class TestTC6ResetHandler:
     def test_reset_calls_remove_idempotency(self):
         workflow = _make_extended_workflow()
         dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow)
-        pipeline_state.remove_idempotency_matching.return_value = 3
         issue = _make_issue(42, ["pipeline:develop-running"])
         handler = workflow.handlers["reset"]
         trigger = workflow.triggers[3]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=3)
 
-        pipeline_state.remove_idempotency_matching.assert_called_once_with("stash-pipeline", 42)
+        assert pipeline_state.remove_idempotency_calls == [("stash-pipeline", 42)]
 
     def test_reset_removes_pipeline_labels(self):
         workflow = _make_extended_workflow()
         dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow)
-        pipeline_state.remove_idempotency_matching.return_value = 3
         issue = _make_issue(42, ["pipeline:develop-running", "enhancement"])
         handler = workflow.handlers["reset"]
         trigger = workflow.triggers[3]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=3)
 
         # Only pipeline:* labels should be removed
-        github_client.remove_label.assert_called_once_with(42, "pipeline:develop-running")
+        assert github_client.removed_labels == [(42, "pipeline:develop-running")]
 
     def test_reset_no_exec_lines_appended(self):
         workflow = _make_extended_workflow()
         dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow)
-        pipeline_state.remove_idempotency_matching.return_value = 0
+        pipeline_state.remove_idempotency_return = 0
         issue = _make_issue(42, [])
         handler = workflow.handlers["reset"]
         trigger = workflow.triggers[3]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=3)
 
-        pipeline_state.append_exec_records.assert_not_called()
+        assert not pipeline_state.appended
 
     def test_reset_removes_labels_with_custom_prefix(self):
         """Issue #12: reset should use trigger label prefix, not hardcoded 'pipeline:'."""
@@ -585,13 +648,13 @@ class TestTC6ResetHandler:
             },
         )
         dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow)
-        pipeline_state.remove_idempotency_matching.return_value = 1
+        pipeline_state.remove_idempotency_return = 1
         issue = _make_issue(99, ["issuesmith:draft-running", "enhancement"])
         handler = workflow.handlers["reset"]
         trigger = workflow.triggers[1]  # issuesmith:reset
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=1)
 
-        github_client.remove_label.assert_called_once_with(99, "issuesmith:draft-running")
+        assert github_client.removed_labels == [(99, "issuesmith:draft-running")]
 
     def test_reset_uses_label_namespace_when_set(self):
         """When label_namespace is set, use it as prefix instead of trigger.label."""
@@ -606,7 +669,7 @@ class TestTC6ResetHandler:
             },
         )
         dispatcher, github_client, pipeline_state, _ = _make_dispatcher(workflow)
-        pipeline_state.remove_idempotency_matching.return_value = 1
+        pipeline_state.remove_idempotency_return = 1
         issue = _make_issue(
             10,
             ["custom:draft-running", "custom:impl-running", "other:reset"],
@@ -615,7 +678,7 @@ class TestTC6ResetHandler:
         trigger = workflow.triggers[0]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
 
-        removed = {c.args[1] for c in github_client.remove_label.call_args_list}
+        removed = {label for _issue, label in github_client.removed_labels}
         assert removed == {"custom:draft-running", "custom:impl-running"}
         assert "other:reset" not in removed
 
@@ -646,7 +709,7 @@ class TestTC7Compatibility:
         workflow = _make_extended_workflow()
         dispatcher, github_client, _, _ = _make_dispatcher(workflow)
         issue = _make_issue(1, ["pipeline:draft-ready"])
-        github_client.list_all_issues.return_value = [issue]
+        github_client.list_all_issues_return = [issue]
         matches = dispatcher.poll_once()
         assert len(matches) >= 1
         assert matches[0]["issue"] == 1
@@ -773,18 +836,23 @@ handlers:
             },
         )
         dispatcher, _, pipeline_state, order_builder = _make_dispatcher(workflow)
-        # Mock _run_context_hook to return extra context
-        dispatcher._run_context_hook = MagicMock(return_value={
-            "pipeline_id": "test-123",
-            "worktree_path": "/tmp/wt",
-        })
+        hook_calls: list[tuple[str, int]] = []
+
+        def fake_hook(cmd, issue_number):
+            hook_calls.append((cmd, issue_number))
+            return {
+                "pipeline_id": "test-123",
+                "worktree_path": "/tmp/wt",
+            }
+
+        dispatcher._run_context_hook = fake_hook
         issue = _make_issue(10, ["pipeline:draft-ready"])
         handler = workflow.handlers["brushup"]
         trigger = workflow.triggers[0]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
 
-        dispatcher._run_context_hook.assert_called_once_with("echo hook", 10)
-        ctx = order_builder.build_order.call_args[0][1]
+        assert hook_calls == [("echo hook", 10)]
+        ctx = order_builder.contexts[-1]
         assert ctx["pipeline_id"] == "test-123"
         assert ctx["worktree_path"] == "/tmp/wt"
         # base context is still present
@@ -794,13 +862,20 @@ handlers:
         """_run_context_hook is not called when context_hook is None"""
         workflow = _make_extended_workflow()
         dispatcher, _, _, _ = _make_dispatcher(workflow)
-        dispatcher._run_context_hook = MagicMock()
+        hook_ran = False
+
+        def noop_hook(*_args, **_kwargs):
+            nonlocal hook_ran
+            hook_ran = True
+            return {}
+
+        dispatcher._run_context_hook = noop_hook
         issue = _make_issue(10, ["pipeline:draft-ready"])
         handler = workflow.handlers["brushup"]
         trigger = workflow.triggers[0]
         dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
 
-        dispatcher._run_context_hook.assert_not_called()
+        assert not hook_ran
 
     def test_run_context_hook_parses_json(self):
         """_run_context_hook parses stdout JSON and returns a dict"""
@@ -917,7 +992,8 @@ handlers:
             },
         )
         dispatcher, github_client, _, order_builder = _make_dispatcher(workflow)
-        dispatcher._submit_steps = MagicMock()
+        submit_calls: list = []
+        dispatcher._submit_steps = lambda *args, **kwargs: submit_calls.append((args, kwargs))
 
         mock_result = MagicMock()
         mock_result.returncode = 7
@@ -931,9 +1007,9 @@ handlers:
                     issue, workflow, handler, trigger=trigger, trigger_rank=0,
                 )
 
-        dispatcher._submit_steps.assert_not_called()
-        github_client.update_label.assert_not_called()
-        order_builder.build_order.assert_not_called()
+        assert not submit_calls
+        assert not github_client.updated_labels
+        assert order_builder.build_calls == 0
 
     def test_polling_writes_audit_on_context_hook_failure(self, tmp_path):
         """run() records dispatcher_dispatch_failed when context_hook raises"""
@@ -951,7 +1027,7 @@ handlers:
         queue_dir = str(tmp_path)
         dispatcher, github_client, _, _ = _make_dispatcher(workflow, queue_dir=queue_dir)
         issue = _make_issue(42, ["pipeline:draft-ready"])
-        github_client.list_all_issues.return_value = [issue]
+        github_client.list_all_issues_return = [issue]
 
         mock_result = MagicMock()
         mock_result.returncode = 7

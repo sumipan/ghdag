@@ -33,6 +33,17 @@ def _stall_guard_off(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep cursor calls on the plain ``subprocess.run`` path these tests mock."""
     monkeypatch.setenv("GHDAG_ENGINE_STALL_GUARD", "0")
 
+
+def _last_subprocess_cmd(mock_run: MagicMock) -> list:
+    assert mock_run.mock_calls, "subprocess.run was not invoked"
+    return list(mock_run.mock_calls[-1].args[0])
+
+
+def _last_subprocess_kwargs(mock_run: MagicMock) -> dict:
+    assert mock_run.mock_calls, "subprocess.run was not invoked"
+    return dict(mock_run.mock_calls[-1].kwargs)
+
+
 # ---------------------------------------------------------------------------
 # Whitelist / validation
 # ---------------------------------------------------------------------------
@@ -392,7 +403,7 @@ class TestValidateCapabilitiesForEngine:
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         result = call("hello", engine="cursor", capabilities=WEB_RESEARCH)
         assert result.ok
-        cmd = mock_run.call_args[0][0]
+        cmd = _last_subprocess_cmd(mock_run)
         assert "--search" not in cmd
         assert "--allowed-tools" not in cmd
 
@@ -437,7 +448,7 @@ class TestValidateCapabilitiesForEngine:
         result = call("hello", engine="cursor", capabilities=LLMCapabilities(stream=True))
         assert result.ok
         assert result.stdout == "pong"
-        cmd = mock_run.call_args[0][0]
+        cmd = _last_subprocess_cmd(mock_run)
         assert cmd[cmd.index("--output-format") + 1] == "stream-json"
         assert "--stream-partial-output" in cmd
 
@@ -456,7 +467,7 @@ class TestCall:
         result = call("hello", engine="claude")
         assert result.ok
         assert result.stdout == "response"
-        cmd = mock_run.call_args[0][0]
+        cmd = _last_subprocess_cmd(mock_run)
         assert "--model" in cmd
         assert ENGINE_DEFAULTS["claude"] in cmd
 
@@ -468,7 +479,7 @@ class TestCall:
         )
         result = call("hello", engine="claude", model="claude-opus-4-6")
         assert result.ok
-        cmd = mock_run.call_args[0][0]
+        cmd = _last_subprocess_cmd(mock_run)
         assert "claude-opus-4-6" in cmd
 
     def test_call_invalid_model(self):
@@ -483,7 +494,7 @@ class TestCall:
             stdout="ok", stderr="", returncode=0,
         )
         call("hello", engine="claude", stdin_text="input data")
-        _, kwargs = mock_run.call_args
+        kwargs = _last_subprocess_kwargs(mock_run)
         assert kwargs["input"] == "hello\n\ninput data"
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -493,7 +504,7 @@ class TestCall:
             stdout="ok", stderr="", returncode=0,
         )
         call("hello", engine="claude", timeout=30)
-        _, kwargs = mock_run.call_args
+        kwargs = _last_subprocess_kwargs(mock_run)
         assert kwargs["timeout"] == 30
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -501,7 +512,7 @@ class TestCall:
         """Default capabilities do not attach --dangerously-skip-permissions"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("test prompt", engine="claude")
-        cmd = mock_run.call_args[0][0]
+        cmd = _last_subprocess_cmd(mock_run)
         assert "--dangerously-skip-permissions" not in cmd
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -509,7 +520,7 @@ class TestCall:
         """DANGEROUS_FULL_ACCESS attaches --permission-mode bypassPermissions"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("test prompt", engine="claude", capabilities=DANGEROUS_FULL_ACCESS)
-        cmd = mock_run.call_args[0][0]
+        cmd = _last_subprocess_cmd(mock_run)
         assert "--permission-mode" in cmd
         perm_idx = cmd.index("--permission-mode")
         assert cmd[perm_idx + 1] == "bypassPermissions"
@@ -521,7 +532,7 @@ class TestCallCapabilities:
         """call() defaults to TEXT_ONLY"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello")
-        cmd = mock_run.call_args[0][0]
+        cmd = _last_subprocess_cmd(mock_run)
         assert "--permission-mode" in cmd
         assert "--disallowed-tools" in cmd
 
@@ -530,7 +541,7 @@ class TestCallCapabilities:
         """dangerously_skip_permissions=True + engine=claude → flag on command"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="claude", dangerously_skip_permissions=True)
-        cmd = mock_run.call_args[0][0]
+        cmd = _last_subprocess_cmd(mock_run)
         assert "--dangerously-skip-permissions" in cmd
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -538,7 +549,7 @@ class TestCallCapabilities:
         """dangerously_skip_permissions=False (default) → no flag"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="claude", dangerously_skip_permissions=False)
-        cmd = mock_run.call_args[0][0]
+        cmd = _last_subprocess_cmd(mock_run)
         assert "--dangerously-skip-permissions" not in cmd
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -546,7 +557,7 @@ class TestCallCapabilities:
         """dangerously_skip_permissions=True + engine=gemini → Claude-specific flag ignored"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="gemini", capabilities=LLMCapabilities(), dangerously_skip_permissions=True)
-        cmd = mock_run.call_args[0][0]
+        cmd = _last_subprocess_cmd(mock_run)
         assert "--dangerously-skip-permissions" not in cmd
 
     def test_call_action_raises_type_error(self):
@@ -559,7 +570,7 @@ class TestCallCapabilities:
         """cursor with dangerously_skip_permissions=True attaches --force"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("test prompt", engine="cursor", dangerously_skip_permissions=True)
-        cmd = mock_run.call_args[0][0]
+        cmd = _last_subprocess_cmd(mock_run)
         assert "--force" in cmd
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -568,7 +579,7 @@ class TestCallCapabilities:
         mock_run.return_value = MagicMock(stdout='{"k":"v"}', stderr="", returncode=0)
         result = call("hello", capabilities=JSON_ONLY)
         assert result.ok
-        cmd = mock_run.call_args[0][0]
+        cmd = _last_subprocess_cmd(mock_run)
         assert "--output-format" in cmd
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -577,7 +588,7 @@ class TestCallCapabilities:
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         caps = LLMCapabilities(permission_mode="plan")
         call("hello", capabilities=caps)
-        cmd = mock_run.call_args[0][0]
+        cmd = _last_subprocess_cmd(mock_run)
         assert "--permission-mode" in cmd
         perm_idx = cmd.index("--permission-mode")
         assert cmd[perm_idx + 1] == "plan"
@@ -833,7 +844,7 @@ class TestAdapterOutputs:
 # ---------------------------------------------------------------------------
 
 class TestRenderExecCommandCapabilities:
-    def test_ac1_claude_text_only_capabilities(self):
+    def test_render_exec_claude_text_only_adds_permission_and_disallowed_tools(self):
         """AC1: capabilities=TEXT_ONLY → --permission-mode default --disallowed-tools ...; no --dangerously-skip-permissions"""
         from ghdag.llm.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["claude"]
@@ -848,7 +859,7 @@ class TestRenderExecCommandCapabilities:
             assert tool in cmd
         assert "--dangerously-skip-permissions" not in cmd
 
-    def test_ac2_claude_dangerous_full_access(self):
+    def test_render_exec_claude_dangerous_uses_bypass_permissions(self):
         """AC2: capabilities=DANGEROUS_FULL_ACCESS → --permission-mode bypassPermissions"""
         from ghdag.llm.capabilities import DANGEROUS_FULL_ACCESS
         spec = ENGINE_SPECS["claude"]
@@ -860,7 +871,7 @@ class TestRenderExecCommandCapabilities:
         assert "bypassPermissions" in cmd
         assert "--dangerously-skip-permissions" not in cmd
 
-    def test_ac3_cursor_text_only_no_force(self):
+    def test_render_exec_cursor_text_only_omits_force(self):
         """AC3: cursor + capabilities=TEXT_ONLY → does not include --force"""
         from ghdag.llm.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["cursor"]
@@ -870,7 +881,7 @@ class TestRenderExecCommandCapabilities:
         )
         assert "--force" not in cmd
 
-    def test_ac8_claude_capabilities_none_preserves_danger_flag(self):
+    def test_render_exec_claude_default_keeps_dangerously_skip_permissions(self):
         """AC8: capabilities=None (default) → --dangerously-skip-permissions as before"""
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
@@ -1004,7 +1015,7 @@ class TestEngineIsolation:
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="codex", capabilities=TEXT_ONLY, isolation=True)
         assert mock_run.called
-        kwargs = mock_run.call_args.kwargs
+        kwargs = _last_subprocess_kwargs(mock_run)
         assert "env" in kwargs
         assert kwargs["env"]["CODEX_HOME"] == str(tmp_path) + "/"
 
@@ -1018,7 +1029,7 @@ class TestEngineIsolation:
         monkeypatch.setattr(engines_mod, "_CODEX_DAG_HOME", str(tmp_path) + "/")
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="codex", capabilities=TEXT_ONLY, isolation=True)
-        kwargs = mock_run.call_args.kwargs
+        kwargs = _last_subprocess_kwargs(mock_run)
         assert "env" not in kwargs or "CODEX_HOME" not in kwargs.get("env", {})
         err = capsys.readouterr().err
         assert "codex isolation skipped" in err
@@ -1031,7 +1042,7 @@ class TestEngineIsolation:
         monkeypatch.delenv("GHDAG_ENGINE_ISOLATION", raising=False)
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         call("hello", engine="codex", capabilities=TEXT_ONLY, isolation=None)
-        kwargs = mock_run.call_args.kwargs
+        kwargs = _last_subprocess_kwargs(mock_run)
         assert "env" not in kwargs or "CODEX_HOME" not in kwargs.get("env", {})
 
     @patch("ghdag.llm.engines.subprocess.run")

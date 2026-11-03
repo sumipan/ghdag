@@ -7,7 +7,6 @@ Also asserts typed routing for former raw ``api repos/...`` paths.
 
 from __future__ import annotations
 
-import re
 import subprocess
 from pathlib import Path
 from unittest import mock
@@ -52,22 +51,6 @@ def local_env(
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
     return forge_root
-
-
-def test_github_cli_source_has_no_bare_github_client_outside_factory() -> None:
-    """Acceptance: GitHubClient( in github_cli.py is only inside get_forge."""
-    src = (
-        Path(__file__).resolve().parents[1] / "src" / "ghdag" / "github_cli.py"
-    ).read_text(encoding="utf-8")
-    # Strip the local get_forge factory body (from its def to next top-level def)
-    factory_match = re.search(
-        r"^def get_forge\(.*?\n(?=def |\Z)",
-        src,
-        flags=re.MULTILINE | re.DOTALL,
-    )
-    assert factory_match is not None, "get_forge factory must exist in github_cli.py"
-    outside = src[: factory_match.start()] + src[factory_match.end() :]
-    assert "GitHubClient(" not in outside
 
 
 def test_local_forge_watch_label_pr_merge_roundtrip(

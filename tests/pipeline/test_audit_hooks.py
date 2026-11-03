@@ -34,7 +34,7 @@ def _make_metrics(status: str = "success") -> TaskMetrics:
 
 
 class TestAuditHooks:
-    def test_ac5_is_subclass_of_default_hooks(self):
+    def test_audit_hooks_extends_default_hooks(self):
         assert issubclass(AuditHooks, DefaultHooks)
 
     def test_on_task_success(self, tmp_path):
@@ -95,7 +95,7 @@ class TestAuditHooks:
         assert r["event_type"] == "task_empty_result"
         assert r["status"] == "empty_result"
 
-    def test_ac6_audit_path_none_no_write(self, tmp_path):
+    def test_audit_hooks_with_no_path_writes_nothing(self, tmp_path):
         hooks = AuditHooks(audit_path=None)
         task = _make_task()
         metrics = _make_metrics()

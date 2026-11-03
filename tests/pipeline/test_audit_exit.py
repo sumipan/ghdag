@@ -11,7 +11,7 @@ UUID = "8cad156e-0000-0000-0000-000000000001"
 
 
 class TestWriteTaskExitAudit:
-    def test_ac1_task_complete(self, tmp_path):
+    def test_write_task_exit_audit_records_task_complete_fields(self, tmp_path):
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -38,7 +38,7 @@ class TestWriteTaskExitAudit:
         assert r["engine"] == "claude"
         assert "+00:00" in r["timestamp"]
 
-    def test_ac2_task_failed(self, tmp_path):
+    def test_write_task_exit_audit_records_task_failed(self, tmp_path):
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -55,7 +55,7 @@ class TestWriteTaskExitAudit:
         assert r["event_type"] == "task_failed"
         assert r["status"] == "failure"
 
-    def test_ac3_task_rejected(self, tmp_path):
+    def test_write_task_exit_audit_records_task_rejected(self, tmp_path):
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -69,7 +69,7 @@ class TestWriteTaskExitAudit:
         assert r["event_type"] == "task_rejected"
         assert r["status"] == "rejected"
 
-    def test_ac4_task_dep_failed_all_none(self, tmp_path):
+    def test_write_task_exit_audit_dep_failed_metrics_null(self, tmp_path):
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -86,7 +86,7 @@ class TestWriteTaskExitAudit:
         assert r["model"] is None
         assert r["engine"] is None
 
-    def test_ac5_task_empty_result(self, tmp_path):
+    def test_write_task_exit_audit_records_empty_result(self, tmp_path):
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
             audit_path,
@@ -100,7 +100,7 @@ class TestWriteTaskExitAudit:
         assert r["event_type"] == "task_empty_result"
         assert r["status"] == "empty_result"
 
-    def test_ac9_oserror_logs_stderr_no_exception(self, tmp_path, capsys):
+    def test_write_task_exit_audit_oserror_logs_warning_only(self, tmp_path, capsys):
         audit_path = tmp_path / "audit.jsonl"
         audit_path.mkdir()  # make it a directory so open() fails
 
@@ -161,7 +161,7 @@ class TestWriteTaskExitAudit:
         assert r["parent_correlation_id"] is None
         assert r["orchestration_id"] is None
 
-    def test_ac10_coexists_with_enqueue_record(self, tmp_path):
+    def test_exit_audit_appends_alongside_enqueue_record(self, tmp_path):
         """AC-10: enqueue (write_audit_log) and exit records coexist in one file."""
         from ghdag.pipeline.audit import AuditContext, write_audit_log
 
@@ -183,7 +183,7 @@ class TestWriteTaskExitAudit:
 
     # --- Issue #961 tests ---
 
-    def test_ac2_exit_audit_with_correlation_id(self, tmp_path):
+    def test_write_task_exit_audit_includes_correlation_id(self, tmp_path):
         """AC-2: passing correlation_id to write_task_exit_audit includes it in the record."""
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(
@@ -197,7 +197,7 @@ class TestWriteTaskExitAudit:
         r = json.loads(audit_path.read_text().strip())
         assert r["correlation_id"] == "test:key"
 
-    def test_ac3_enqueue_and_exit_same_correlation_id(self, tmp_path):
+    def test_enqueue_and_exit_audit_share_correlation_id(self, tmp_path):
         """AC-3: enqueue and exit records share the same correlation_id."""
         from ghdag.pipeline.audit import AuditContext, write_audit_log
 

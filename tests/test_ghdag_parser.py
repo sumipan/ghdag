@@ -96,7 +96,7 @@ class TestParseJsonl:
         assert tasks[0].engine is None
         assert tasks[0].model is None
 
-    def test_p12_engine_present_model_absent(self):
+    def test_parse_jsonl_engine_without_model_defaults_model_none(self):
         """P12: when only engine exists and model is missing, model is None (AC2)"""
         text = '{"uuid":"c","command":"bash -o pipefail run.sh","engine":"shell"}\n'
         tasks = parse_jsonl(text)

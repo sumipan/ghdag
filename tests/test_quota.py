@@ -57,7 +57,7 @@ def test_begin_run_registers_running_and_finish_run_clears_it(tmp_path: Path) ->
     assert "task-1" not in gate.snapshot().running_tasks
 
 
-def test_resume_releases_only_after_all_blockers_removed(tmp_path: Path) -> None:
+def test_resume_when_last_blocker_cleared(tmp_path: Path) -> None:
     gate = QuotaGate(tmp_path / "quota-gate.json")
     gate.report(engine="claude", status="paused", observed_at=_dt(12), reason="quota paused")
     gate.drain(engine="claude", reason="model switch", now=_dt(12, 1))
