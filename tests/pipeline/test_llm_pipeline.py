@@ -5,46 +5,11 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from ghdag_pipeline_conftest_helpers import _TEST_AUDIT_CTX, _make_api, _track_build_order
 
 from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import DependencyError, LLMPipelineAPI
 from ghdag.workflow.schema import StepConfig
-
-_TEST_AUDIT_CTX = AuditContext(source="test")
-
-
-def _track_build_order(order_builder: MagicMock) -> list[tuple[str, dict]]:
-    """Record build_order(template, ctx) calls via side_effect."""
-    captured: list[tuple[str, dict]] = []
-
-    def _side(template: str, ctx: dict) -> str:
-        captured.append((template, ctx))
-        return order_builder.build_order.return_value or "order content"
-
-    order_builder.build_order.side_effect = _side
-    return captured
-
-
-def _make_api(
-    queue_dir: str = "queue",
-) -> tuple[LLMPipelineAPI, MagicMock, MagicMock]:
-    """LLMPipelineAPI with mocked PipelineState and OrderBuilder."""
-    pipeline_state = MagicMock()
-    pipeline_state.check_idempotency.return_value = True
-    pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
-    order_builder = MagicMock()
-    order_builder.build_order.return_value = "order content"
-    api = LLMPipelineAPI(
-        pipeline_state=pipeline_state,
-        order_builder=order_builder,
-        queue_dir=queue_dir,
-    )
-    return api, pipeline_state, order_builder
-
-
-# ---------------------------------------------------------------------------
-# AC1-1: 1 step (engine=claude, depends=[])
-# ---------------------------------------------------------------------------
 
 
 class TestAC1SingleStep:
@@ -87,13 +52,6 @@ class TestAC1SingleStep:
         assert "--dangerously-skip-permissions" not in exec_lines[0]
         assert "--permission-mode default" in exec_lines[0]
         assert "--disallowed-tools" in exec_lines[0]
-
-
-# ---------------------------------------------------------------------------
-# AC1-2 / AC1-3: idempotency_key
-# ---------------------------------------------------------------------------
-
-
 class TestAC1IdempotencyKey:
     def test_no_idempotency_key_no_comment(self):
         """Without idempotency_key, no leading comment line."""
@@ -102,13 +60,6 @@ class TestAC1IdempotencyKey:
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         assert not exec_lines[0].startswith("# idempotency:")
-
-
-# ---------------------------------------------------------------------------
-# AC1-2 / AC4: 2 steps with depends
-# ---------------------------------------------------------------------------
-
-
 class TestAC1TwoStepsWithDepends:
     def test_p2_has_depends_p1_uuid(self):
         """p2 exec record depends includes p1_uuid."""
@@ -158,13 +109,6 @@ class TestAC1TwoStepsWithDepends:
         p3 = _json.loads(exec_lines[2])
         assert p1["uuid"] in p2["depends"]
         assert p2["uuid"] in p3["depends"]
-
-
-# ---------------------------------------------------------------------------
-# AC4: engine name is reflected in result_filename / exec line
-# ---------------------------------------------------------------------------
-
-
 class TestAC4EngineResultFilename:
     def test_claude_engine_result_filename(self):
         """When engine=claude, result_filename is {ts}-claude-result-{uuid}.md."""
@@ -213,57 +157,29 @@ class TestAC4EngineResultFilename:
         record = _json.loads(exec_lines[0])
         assert "--dangerously-skip-permissions" not in record["command"]
         assert "gemini" in record["command"]
-
-
-# ---------------------------------------------------------------------------
-# AC3: DagEngine-compatible format
-# ---------------------------------------------------------------------------
-
-
 class TestAC3ExecFormat:
+
     def test_uuid_field_in_exec_record(self):
         """exec record uuid field is UUID format (36-char hyphenated)."""
         import json as _json
         import re
         api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        steps = [StepConfig(template='brushup', model='claude-opus-4-6')]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
         record = _json.loads(exec_lines[0])
-        uuid_pattern = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-        assert re.match(uuid_pattern, record["uuid"])
-
-    def test_depends_field_in_exec_record(self):
-        """exec record depends field includes p1 uuid."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [
-            StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
-            StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
-        ]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        p1_record = _json.loads(exec_lines[0])
-        p2_record = _json.loads(exec_lines[1])
-        assert p1_record["uuid"] in p2_record["depends"]
+        uuid_pattern = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+        assert re.match(uuid_pattern, record['uuid'])
 
     def test_result_path_in_exec_record(self):
         """exec record includes a result_path field."""
         import json as _json
         api, pipeline_state, _ = _make_api()
-        pipeline_state.write_order_file.return_value = "20260419-claude-order-abc.md"
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        pipeline_state.write_order_file.return_value = '20260419-claude-order-abc.md'
+        steps = [StepConfig(template='brushup', model='claude-opus-4-6')]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
         record = _json.loads(exec_lines[0])
-        assert "result_path" in record
-        assert "-result-" in record["result_path"]
-
-
-# ---------------------------------------------------------------------------
-# base_context is carried into each step context
-# ---------------------------------------------------------------------------
-
+        assert 'result_path' in record
+        assert '-result-' in record['result_path']
 
 class TestBaseContextPropagation:
     def test_base_context_keys_in_step_context(self):
@@ -299,288 +215,6 @@ class TestBaseContextPropagation:
         api.submit(steps, base, audit_context=_TEST_AUDIT_CTX)
 
         assert set(base.keys()) == original_keys
-
-
-# ---------------------------------------------------------------------------
-# Regression: per-workflow OrderBuilder switching
-# Prevents cross-workflow template resolution mix-ups (observed in issue #610 as
-# `FileNotFoundError: workflows/inkwell/brushup.md`).
-# ---------------------------------------------------------------------------
-
-
-class TestPerWorkflowOrderBuilder:
-    def test_order_builder_resolved_by_workflow_name(self):
-        """The OrderBuilder matching base_context['workflow_name'] is used."""
-        from unittest.mock import MagicMock
-
-        from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-
-        pipeline_state = MagicMock()
-        pipeline_state.check_idempotency.return_value = True
-        written_orders: list[str] = []
-
-        def _write_order(_ts: str, _uid: str, content: str, _queue_dir: str, **_kw) -> str:
-            written_orders.append(content)
-            return "ts-claude-order-uuid.md"
-
-        pipeline_state.write_order_file.side_effect = _write_order
-
-        default_builder = MagicMock()
-        default_builder.build_order.return_value = "default order content"
-        inkwell_builder = MagicMock()
-        inkwell_builder.build_order.return_value = "inkwell order content"
-        issuesmith_builder = MagicMock()
-        issuesmith_builder.build_order.return_value = "issuesmith order content"
-
-        api = LLMPipelineAPI(
-            pipeline_state=pipeline_state,
-            order_builder=default_builder,
-            queue_dir="queue",
-            order_builders={
-                "inkwell": inkwell_builder,
-                "issuesmith": issuesmith_builder,
-            },
-        )
-
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-
-        # submit with issuesmith workflow_name → issuesmith_builder is called
-        api.submit(steps, {"workflow_name": "issuesmith", "issue_number": "610"}, audit_context=_TEST_AUDIT_CTX)
-        assert written_orders[-1] == "issuesmith order content"
-
-        # re-submit with another workflow name → matching builder is called
-        api.submit(steps, {"workflow_name": "inkwell"}, audit_context=_TEST_AUDIT_CTX)
-        assert written_orders[-1] == "inkwell order content"
-
-    def test_falls_back_to_default_builder_when_workflow_unknown(self):
-        """Falls back to default when order_builders has no matching entry."""
-        from unittest.mock import MagicMock
-
-        from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-
-        pipeline_state = MagicMock()
-        pipeline_state.check_idempotency.return_value = True
-        written_orders: list[str] = []
-
-        def _write_order(_ts: str, _uid: str, content: str, _queue_dir: str, **_kw) -> str:
-            written_orders.append(content)
-            return "ts-claude-order-uuid.md"
-
-        pipeline_state.write_order_file.side_effect = _write_order
-
-        default_builder = MagicMock()
-        default_builder.build_order.return_value = "default order"
-        inkwell_builder = MagicMock()
-        inkwell_builder.build_order.return_value = "inkwell order"
-
-        api = LLMPipelineAPI(
-            pipeline_state=pipeline_state,
-            order_builder=default_builder,
-            queue_dir="queue",
-            order_builders={"inkwell": inkwell_builder},
-        )
-
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {"workflow_name": "research"}, audit_context=_TEST_AUDIT_CTX)  # unregistered
-        assert written_orders[-1] == "default order"
-
-    def test_falls_back_to_default_when_workflow_name_missing(self):
-        """Works with default when base_context has no workflow_name (backward compatible)."""
-        from unittest.mock import MagicMock
-
-        from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-
-        pipeline_state = MagicMock()
-        pipeline_state.check_idempotency.return_value = True
-        written_orders: list[str] = []
-
-        def _write_order(_ts: str, _uid: str, content: str, _queue_dir: str, **_kw) -> str:
-            written_orders.append(content)
-            return "ts-claude-order-uuid.md"
-
-        pipeline_state.write_order_file.side_effect = _write_order
-
-        default_builder = MagicMock()
-        default_builder.build_order.return_value = "default order"
-
-        api = LLMPipelineAPI(
-            pipeline_state=pipeline_state,
-            order_builder=default_builder,
-            queue_dir="queue",
-            order_builders={"inkwell": MagicMock()},
-        )
-
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)  # no workflow_name key
-        assert written_orders[-1] == "default order"
-
-    def test_backward_compat_no_order_builders_kwarg(self):
-        """Legacy call style without order_builders still works."""
-        from unittest.mock import MagicMock
-
-        from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-
-        pipeline_state = MagicMock()
-        pipeline_state.check_idempotency.return_value = True
-        written_orders: list[str] = []
-
-        def _write_order(_ts: str, _uid: str, content: str, _queue_dir: str, **_kw) -> str:
-            written_orders.append(content)
-            return "ts-claude-order-uuid.md"
-
-        pipeline_state.write_order_file.side_effect = _write_order
-
-        order_builder = MagicMock()
-        order_builder.build_order.return_value = "order content"
-
-        api = LLMPipelineAPI(
-            pipeline_state=pipeline_state,
-            order_builder=order_builder,
-            queue_dir="queue",
-        )
-
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        api.submit(steps, {"workflow_name": "issuesmith"}, audit_context=_TEST_AUDIT_CTX)  # always falls back to default
-        assert written_orders[-1] == "order content"
-
-
-# ---------------------------------------------------------------------------
-# Issue #3029: submit(order_builder=..., workflow_roles=...) public kwargs
-# ---------------------------------------------------------------------------
-
-
-class TestSubmitOrderBuilderAndWorkflowRoles:
-    def test_submit_order_builder_kwarg_skips_resolve(self):
-        """With submit(order_builder=wrapped), _resolve_order_builder is not called."""
-        api, pipeline_state, _ = _make_api()
-        wrapped = MagicMock()
-        wrapped.build_order.return_value = "wrapped order"
-        written_orders: list[str] = []
-
-        def _write_order(_ts: str, _uid: str, content: str, _queue_dir: str, **_kw) -> str:
-            written_orders.append(content)
-            return "ts-claude-order-uuid.md"
-
-        pipeline_state.write_order_file.side_effect = _write_order
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-
-        resolve_called = False
-
-        def _resolve(*args, **kwargs):
-            nonlocal resolve_called
-            resolve_called = True
-            return api._resolve_order_builder(*args, **kwargs)
-
-        with patch.object(api, "_resolve_order_builder", side_effect=_resolve):
-            exec_lines = api.submit(
-                steps,
-                {"workflow_name": "issuesmith", "issue_number": "1"},
-                audit_context=_TEST_AUDIT_CTX,
-                order_builder=wrapped,
-            )
-
-        assert resolve_called is False
-        assert written_orders[-1] == "wrapped order"
-        assert len(exec_lines) == 1
-
-    def test_workflow_roles_set_role_annotations(self):
-        """With workflow_roles, step.role is set in annotations."""
-        import json as _json
-
-        api, pipeline_state, _ = _make_api()
-        steps = [
-            StepConfig(
-                id="cp2",
-                template="brushup",
-                model="claude-opus-4-6",
-                role="design",
-            )
-        ]
-        lines = api.submit(
-            steps,
-            {"workflow_name": "issuesmith", "issue_number": "1"},
-            audit_context=_TEST_AUDIT_CTX,
-            workflow_roles={"design": ["claude", "codex"]},
-        )
-        parsed = _json.loads(lines[0])
-        assert parsed["annotations"]["role"] == "design"
-        assert parsed["annotations"]["role_engines"] == ["claude", "codex"]
-
-    def test_role_annotations_drive_quota_gate_admit(self, tmp_path):
-        """AC-2: annotations from loaded roles affect QuotaGate.admit(role, role_engines)."""
-        from datetime import datetime, timedelta, timezone
-
-        from ghdag.io import exec_jsonl
-        from ghdag.quota import QuotaGate
-
-        api, pipeline_state, _ = _make_api(queue_dir=str(tmp_path / "queue"))
-        captured: list[dict] = []
-
-        def _capture_append(records, **kwargs):
-            captured.extend(records)
-
-        pipeline_state.append_exec_records.side_effect = _capture_append
-
-        steps = [
-            StepConfig(
-                id="cp2",
-                template="brushup",
-                model="claude-opus-4-6",
-                engine="claude",
-                role="design",
-            )
-        ]
-        api.submit(
-            steps,
-            {"workflow_name": "issuesmith"},
-            audit_context=_TEST_AUDIT_CTX,
-            workflow_roles={"design": ["claude", "codex"]},
-        )
-        assert captured[0]["annotations"]["role"] == "design"
-
-        jst = timezone(timedelta(hours=9))
-        gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
-        gate.report(
-            engine="claude",
-            status="paused",
-            observed_at=datetime(2026, 9, 5, 12, tzinfo=jst),
-        )
-        gate.report(
-            engine="codex",
-            status="paused",
-            observed_at=datetime(2026, 9, 5, 12, tzinfo=jst),
-        )
-        exec_path = tmp_path / "jobs" / "exec.jsonl"
-        exec_jsonl.append(
-            exec_path,
-            [
-                {
-                    "uuid": "task-1",
-                    "command": "claude -p hi",
-                    "engine": "claude",
-                    "depends": [],
-                    "annotations": captured[0]["annotations"],
-                }
-            ],
-            _TEST_AUDIT_CTX,
-            audit_path=tmp_path / "audit.jsonl",
-            quota_gate=gate,
-        )
-        decision = gate.begin_run(
-            task_uuid="task-1",
-            engine="claude",
-            role="design",
-            role_engines=["claude", "codex"],
-            now=datetime(2026, 9, 5, 12, 1, tzinfo=jst),
-        )
-        assert decision.allowed is False
-
-
-# ---------------------------------------------------------------------------
-# AC3: depends pre-validation (Issue #766)
-# ---------------------------------------------------------------------------
-
-
 class TestAC3DependsValidation:
     def test_unknown_dependency_raises_value_error(self):
         """Undefined depends id → ValueError('Unknown dependency: ...')"""
@@ -634,13 +268,6 @@ class TestAC3DependsValidation:
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
         pipeline_state.write_order_file.assert_not_called()
         pipeline_state.append_exec_records.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# JSONL mode: write JSON records to exec.jsonl
-# ---------------------------------------------------------------------------
-
-
 class TestJsonlMode:
     def test_returns_json_strings(self):
         """exec_lines are JSON strings (including a uuid field)."""
@@ -728,13 +355,6 @@ class TestJsonlMode:
         record = _json.loads(exec_lines[0])
         assert record["idempotency_key"] == key
         assert "# idempotency:" not in exec_lines[0]
-
-
-# ---------------------------------------------------------------------------
-# Issue #984: audit_context required tests (replaces AC-1, AC-5)
-# ---------------------------------------------------------------------------
-
-
 class TestAuditContextPropagation:
     def test_submit_without_audit_context_raises_type_error(self):
         """AC-5 (required): submit() without audit_context raises TypeError."""
@@ -759,12 +379,6 @@ class TestAuditContextPropagation:
         api.submit(steps, {}, audit_context=ctx)
 
         assert forwarded[0] is ctx
-
-
-# ---------------------------------------------------------------------------
-# Issue #1014: result content injection into context (AC1-AC4)
-# ---------------------------------------------------------------------------
-
 _P1_UUID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 _P2_UUID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 _P3_UUID = "cccccccc-cccc-cccc-cccc-cccccccccccc"
@@ -784,8 +398,6 @@ def _make_api_with_tmpdir(tmp_path):
         queue_dir=str(tmp_path),
     )
     return api, pipeline_state, order_builder
-
-
 class TestResultContentInjection:
     """Issue #1014: ${dep_id_result_content} context injection."""
 
@@ -868,459 +480,3 @@ class TestResultContentInjection:
         p3_ctx = captured[2][1]
         assert p3_ctx["p1_result_content"] == content_p1
         assert p3_ctx["p2_result_content"] == content_p2
-
-
-# ---------------------------------------------------------------------------
-# StepConfig.permission → exec record capabilities (AC5, AC10, AC12)
-# ---------------------------------------------------------------------------
-
-
-class TestStepConfigPermission:
-    def test_submit_text_only_permission_adds_mode_and_disallowed_tools(self):
-        """AC5: permission='text_only' → exec record command has --permission-mode default --disallowed-tools"""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="text_only")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert "--permission-mode" in record["command"]
-        assert "default" in record["command"]
-        assert "--disallowed-tools" in record["command"]
-
-    def test_submit_text_only_permission_omits_dangerously_skip(self):
-        """AC5: permission='text_only' → no --dangerously-skip-permissions"""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="text_only")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert "--dangerously-skip-permissions" not in record["command"]
-
-    def test_submit_default_permission_applies_text_only_preset(self):
-        """AC10: permission=None (default) → TEXT_ONLY (--permission-mode default --disallowed-tools)"""
-        import json as _json
-        api, _, _ = _make_api()
-        steps_default = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        steps_none = [StepConfig(template="brushup", model="claude-opus-4-6", permission=None)]
-
-        lines_default = api.submit(steps_default, {}, audit_context=_TEST_AUDIT_CTX)
-        lines_none = api.submit(steps_none, {}, audit_context=_TEST_AUDIT_CTX)
-
-        rec_default = _json.loads(lines_default[0])
-        rec_none = _json.loads(lines_none[0])
-        for record in (rec_default, rec_none):
-            assert "--permission-mode default" in record["command"]
-            assert "--disallowed-tools" in record["command"]
-            assert "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch" in record["command"]
-            assert "--dangerously-skip-permissions" not in record["command"]
-            assert record["annotations"].get("safe_default_applied") is True
-            assert record["annotations"].get("safe_default_preset") == "text_only"
-
-    def test_submit_unknown_permission_preset_raises(self):
-        """AC12: permission='unknown_preset' → ValueError"""
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="unknown_preset")]
-        with pytest.raises(ValueError, match="unknown_preset"):
-            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-    def test_permission_dangerous_full_access(self):
-        """permission='dangerous_full_access' → --permission-mode bypassPermissions"""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="dangerous_full_access")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert "--permission-mode" in record["command"]
-        assert "bypassPermissions" in record["command"]
-
-    def test_permission_dangerous_full_access_codex(self):
-        """codex + permission='dangerous_full_access' → sandbox bypass flags are attached.
-
-        nexus#2558 regression: without the flags, codex starts as workspace-write and
-        cannot write outside cwd (diary repo), so skills fail silently.
-        """
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [
-            StepConfig(
-                template="brushup",
-                engine="codex",
-                model="gpt-5.6-terra",
-                permission="dangerous_full_access",
-            )
-        ]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert "--dangerously-bypass-approvals-and-sandbox" in record["command"]
-        assert record["command"].split().count("--json") == 1
-
-    def test_safe_default_permission_applied_when_env_set_and_permission_none(self, monkeypatch):
-        """AC2: with env set and permission=None, the safe default is applied."""
-        import json as _json
-
-        monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "text_only")
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6", permission=None)]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert "--permission-mode default" in record["command"]
-        assert "--disallowed-tools" in record["command"]
-        assert "--dangerously-skip-permissions" not in record["command"]
-        assert record["annotations"].get("safe_default_applied") is True
-        assert record["annotations"].get("safe_default_preset") == "text_only"
-        assert "default_permission_applied" not in record["annotations"]
-
-    def test_safe_default_rollback_dangerous_full_access(self, monkeypatch):
-        """GHDAG_SAFE_DEFAULT_PERMISSION=dangerous_full_access can roll back to the dangerous default."""
-        import json as _json
-
-        monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "dangerous_full_access")
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6", permission=None)]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert "bypassPermissions" in record["command"]
-        assert "--disallowed-tools" not in record["command"]
-        assert record["annotations"].get("safe_default_applied") is True
-        assert record["annotations"].get("safe_default_preset") == "dangerous_full_access"
-
-    def test_explicit_permission_wins_over_safe_default_env(self, monkeypatch):
-        """AC3: an explicit permission overrides the env default."""
-        import json as _json
-
-        monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "text_only")
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6", permission="dangerous_full_access")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert "--permission-mode bypassPermissions" in record["command"]
-        assert "safe_default_applied" not in record["annotations"]
-        assert "safe_default_preset" not in record["annotations"]
-
-    def test_cursor_dangerous_full_access_includes_force(self):
-        """AC4: cursor + dangerous_full_access attaches --force."""
-        import json as _json
-
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="skill", model="auto", engine="cursor", permission="dangerous_full_access")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert "--force" in record["command"]
-
-    def test_cursor_text_only_does_not_include_force(self):
-        """AC5: cursor + text_only does not attach --force."""
-        import json as _json
-
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="skill", model="auto", engine="cursor", permission="text_only")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert "--force" not in record["command"]
-
-    def test_invalid_safe_default_permission_raises_value_error(self, monkeypatch):
-        """AC6: invalid GHDAG_SAFE_DEFAULT_PERMISSION raises ValueError."""
-        monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "invalid_preset")
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6", permission=None)]
-        with pytest.raises(ValueError, match="GHDAG_SAFE_DEFAULT_PERMISSION"):
-            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-    def test_shell_engine_command_unchanged_when_safe_default_env_set(self, monkeypatch):
-        """AC7: shell engine is unaffected by the safe-default env."""
-        import json as _json
-
-        monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "text_only")
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="cp1-gate", model="bash", engine="shell", permission=None)]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert record["command"] == "bash -o pipefail queue/ts-claude-order-uuid.md"
-
-
-# ---------------------------------------------------------------------------
-# S0-2 (#1295): default permission audit annotations (AC1–AC3, AC7)
-# ---------------------------------------------------------------------------
-
-
-class TestDefaultPermissionAuditAnnotations:
-    def test_submit_claude_default_sets_safe_default_annotations(self):
-        """AC1: permission=None → safe_default_applied + safe_default_preset=text_only."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert record["annotations"]["safe_default_applied"] is True
-        assert record["annotations"]["safe_default_preset"] == "text_only"
-        assert "default_permission_applied" not in record["annotations"]
-        assert "injected_danger_flag" not in record["annotations"]
-
-    def test_submit_explicit_text_only_skips_default_annotation_key(self):
-        """AC2: permission='text_only' → no default_permission_applied key."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [
-            StepConfig(
-                template="brushup",
-                model="claude-sonnet-4-6",
-                permission="text_only",
-            )
-        ]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert "default_permission_applied" not in record["annotations"]
-
-    def test_submit_gemini_skips_default_permission_annotation(self):
-        """AC3: gemini (danger_flag=None) → no default_permission_applied key."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert "default_permission_applied" not in record["annotations"]
-
-    def test_submit_shell_skips_default_permission_annotation(self):
-        """AC3: shell (danger_flag=None) → no default_permission_applied key."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="echo", engine="shell")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert "default_permission_applied" not in record["annotations"]
-
-    def test_submit_cursor_default_text_only_without_force(self):
-        """AC7: cursor + permission=None → TEXT_ONLY default (no --force)."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="impl", model="cursor", engine="cursor")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert record["annotations"]["safe_default_applied"] is True
-        assert record["annotations"]["safe_default_preset"] == "text_only"
-        assert "--force" not in record["command"]
-        assert "default_permission_applied" not in record["annotations"]
-
-
-# ---------------------------------------------------------------------------
-# metadata kwarg — annotations reflected from submit() (Issue #1295)
-# ---------------------------------------------------------------------------
-
-
-class TestMetadataInAnnotations:
-    def test_metadata_reflected_in_record_annotations(self):
-        """submit(metadata={"k": "v"}) includes {"k": "v"} in annotations."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata={"k": "v"})
-
-        record = _json.loads(exec_lines[0])
-        assert record["annotations"].get("k") == "v"
-
-    def test_metadata_channel_and_thread_ts(self):
-        """Passing channel_id and thread_ts via metadata stores them in annotations."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        metadata = {"channel_id": "C123", "thread_ts": "1234567890.000"}
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=metadata)
-
-        record = _json.loads(exec_lines[0])
-        assert record["annotations"]["channel_id"] == "C123"
-        assert record["annotations"]["thread_ts"] == "1234567890.000"
-
-    def test_submit_with_metadata_completes_without_error(self):
-        """submit(metadata=...) completes successfully (no exception)."""
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        result = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata={"foo": "bar"})
-        assert len(result) == 1
-
-
-class TestMetadataMultipleSteps:
-    def test_all_steps_get_same_annotations(self):
-        """When submitting multiple steps, every record gets the same annotations."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [
-            StepConfig(id="s1", template="t1", model="m1"),
-            StepConfig(id="s2", template="t2", model="m2", depends=["s1"]),
-            StepConfig(id="s3", template="t3", model="m3", depends=["s2"]),
-        ]
-        metadata = {"channel_id": "C999", "thread_ts": "9999.000"}
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=metadata)
-
-        assert len(exec_lines) == 3
-        for line in exec_lines:
-            record = _json.loads(line)
-            assert record["annotations"]["channel_id"] == "C999"
-            assert record["annotations"]["thread_ts"] == "9999.000"
-
-    def test_two_steps_both_have_annotations(self):
-        """Both steps (independent and dependent) receive annotations."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [
-            StepConfig(id="p1", template="p1", model="claude-sonnet-4-6"),
-            StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
-        ]
-        metadata = {"k": "v"}
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=metadata)
-
-        for line in exec_lines:
-            record = _json.loads(line)
-            assert record["annotations"].get("k") == "v"
-
-
-class TestMetadataRoundTrip:
-    def test_roundtrip_via_parse_jsonl(self):
-        """submit() with metadata: exec.jsonl → parse_jsonl() → Task.annotations match."""
-        import json as _json
-
-        from ghdag.dag.parser import parse_jsonl
-
-        api, pipeline_state, _ = _make_api()
-        captured_records: list[dict] = []
-
-        def capture_records(records, **kwargs):
-            captured_records.extend(records)
-
-        pipeline_state.append_exec_records.side_effect = capture_records
-
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        metadata = {"channel_id": "C123", "thread_ts": "1234567890.000"}
-        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=metadata)
-
-        assert len(captured_records) == 1
-        jsonl_content = _json.dumps(captured_records[0], ensure_ascii=False)
-        tasks = parse_jsonl(jsonl_content)
-
-        assert len(tasks) == 1
-        assert tasks[0].annotations["channel_id"] == "C123"
-        assert tasks[0].annotations["thread_ts"] == "1234567890.000"
-
-    def test_roundtrip_multiple_steps(self):
-        """Multi-step round-trip: every Task.annotations matches metadata."""
-        import json as _json
-
-        from ghdag.dag.parser import parse_jsonl
-
-        api, pipeline_state, _ = _make_api()
-        captured_records: list[dict] = []
-
-        def capture_records(records, **kwargs):
-            captured_records.extend(records)
-
-        pipeline_state.append_exec_records.side_effect = capture_records
-
-        steps = [
-            StepConfig(id="p1", template="p1", model="m"),
-            StepConfig(id="p2", template="p2", model="m", depends=["p1"]),
-        ]
-        metadata = {"slack_channel_id": "C001", "slack_thread_ts": "111.222"}
-        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=metadata)
-
-        assert len(captured_records) == 2
-        jsonl_text = "\n".join(
-            _json.dumps(r, ensure_ascii=False) for r in captured_records
-        )
-        tasks = parse_jsonl(jsonl_text)
-
-        assert len(tasks) == 2
-        for task in tasks:
-            assert task.annotations["slack_channel_id"] == "C001"
-            assert task.annotations["slack_thread_ts"] == "111.222"
-
-
-class TestMetadataBackwardCompat:
-    def test_no_metadata_annotations_empty(self):
-        """When metadata is omitted, gemini has no metadata-derived annotation keys (safe default only)."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        annotations = record.get("annotations", {})
-        assert annotations.get("safe_default_applied") is True
-        assert annotations.get("safe_default_preset") == "text_only"
-        assert "step_name" in annotations
-        assert len(annotations) == 3
-
-    def test_no_metadata_does_not_break_existing_behavior(self):
-        """Without metadata, existing fields (uuid, command, result_path) remain valid."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        assert "uuid" in record
-        assert "command" in record
-        assert "result_path" in record
-
-
-class TestMetadataWithIdempotencyKey:
-    def test_idempotency_key_and_metadata_together(self):
-        """idempotency_key and metadata can be specified together."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(
-            steps,
-            {},
-            idempotency_key="workflow:handler:42",
-            audit_context=_TEST_AUDIT_CTX,
-            metadata={"channel_id": "C123"},
-        )
-
-        record = _json.loads(exec_lines[0])
-        assert record["idempotency_key"] == "workflow:handler:42"
-        assert record["annotations"]["channel_id"] == "C123"
-
-
-class TestMetadataEmptyDict:
-    def test_empty_metadata_dict_annotations_stays_empty(self):
-        """With metadata={}, gemini has no metadata-derived annotation keys (safe default only)."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata={})
-
-        record = _json.loads(exec_lines[0])
-        annotations = record.get("annotations", {})
-        assert annotations.get("safe_default_applied") is True
-        assert annotations.get("safe_default_preset") == "text_only"
-        assert "step_name" in annotations
-        assert len(annotations) == 3
-
-
-class TestMetadataExplicitNone:
-    def test_explicit_none_metadata_same_as_omitted(self):
-        """With metadata=None explicitly, gemini matches the omitted case (safe default only)."""
-        import json as _json
-        api, _, _ = _make_api()
-        steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=None)
-
-        record = _json.loads(exec_lines[0])
-        annotations = record.get("annotations", {})
-        assert annotations.get("safe_default_applied") is True
-        assert annotations.get("safe_default_preset") == "text_only"
-        assert "step_name" in annotations
-        assert len(annotations) == 3
