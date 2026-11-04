@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.106.4 - 2026-11-04
+
 ### Changed
 
 - Split oversized test modules under `tests/` per TESTING.md T8 (pipeline, cleanup, CLI, DAG engine, LLM, workflow); removed sixteen duplicate contract tests listed in issue #5967.
