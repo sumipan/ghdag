@@ -61,6 +61,8 @@ class TestVersion:
         main(["version"])
         captured = capsys.readouterr()
         assert captured.out.strip() == __version__
+
+
 class TestPythonM:
     def test_python_m_help_exits_0(self):
         import subprocess

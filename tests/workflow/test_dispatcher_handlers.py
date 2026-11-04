@@ -12,7 +12,6 @@ from ghdag_workflow_conftest_helpers import (
     _make_issue,
 )
 
-from ghdag.github_client import GitHubClient as TokenGitHubClient
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.schema import (
     HandlerConfig,
@@ -347,22 +346,18 @@ class TestTC6ResetHandler:
         removed = {label for _issue, label in github_client.removed_labels}
         assert removed == {"custom:draft-running", "custom:impl-running"}
         assert "other:reset" not in removed
+
+
 class TestTC7Compatibility:
-
-    def test_dispatcher_import(self):
-        assert WorkflowDispatcher is not None
-
-    def test_github_import(self):
-        assert TokenGitHubClient is not None
 
     def test_poll_once_returns_match(self):
         workflow = _make_extended_workflow()
         dispatcher, github_client, _, _ = _make_dispatcher(workflow)
-        issue = _make_issue(1, ['pipeline:draft-ready'])
+        issue = _make_issue(1, ["pipeline:draft-ready"])
         github_client.list_all_issues_return = [issue]
         matches = dispatcher.poll_once()
         assert len(matches) >= 1
-        assert matches[0]['issue'] == 1
-        assert matches[0]['workflow'] == 'stash-pipeline'
-        assert matches[0]['handler'] == 'brushup'
+        assert matches[0]["issue"] == 1
+        assert matches[0]["workflow"] == "stash-pipeline"
+        assert matches[0]["handler"] == "brushup"
 

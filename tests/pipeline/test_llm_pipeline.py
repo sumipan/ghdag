@@ -52,6 +52,8 @@ class TestAC1SingleStep:
         assert "--dangerously-skip-permissions" not in exec_lines[0]
         assert "--permission-mode default" in exec_lines[0]
         assert "--disallowed-tools" in exec_lines[0]
+
+
 class TestAC1IdempotencyKey:
     def test_no_idempotency_key_no_comment(self):
         """Without idempotency_key, no leading comment line."""
@@ -60,6 +62,8 @@ class TestAC1IdempotencyKey:
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         assert not exec_lines[0].startswith("# idempotency:")
+
+
 class TestAC1TwoStepsWithDepends:
     def test_p2_has_depends_p1_uuid(self):
         """p2 exec record depends includes p1_uuid."""
@@ -109,6 +113,8 @@ class TestAC1TwoStepsWithDepends:
         p3 = _json.loads(exec_lines[2])
         assert p1["uuid"] in p2["depends"]
         assert p2["uuid"] in p3["depends"]
+
+
 class TestAC4EngineResultFilename:
     def test_claude_engine_result_filename(self):
         """When engine=claude, result_filename is {ts}-claude-result-{uuid}.md."""
@@ -157,6 +163,8 @@ class TestAC4EngineResultFilename:
         record = _json.loads(exec_lines[0])
         assert "--dangerously-skip-permissions" not in record["command"]
         assert "gemini" in record["command"]
+
+
 class TestAC3ExecFormat:
 
     def test_uuid_field_in_exec_record(self):
@@ -164,22 +172,25 @@ class TestAC3ExecFormat:
         import json as _json
         import re
         api, _, _ = _make_api()
-        steps = [StepConfig(template='brushup', model='claude-opus-4-6')]
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
         record = _json.loads(exec_lines[0])
-        uuid_pattern = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-        assert re.match(uuid_pattern, record['uuid'])
+        uuid_pattern = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        assert re.match(uuid_pattern, record["uuid"])
 
     def test_result_path_in_exec_record(self):
         """exec record includes a result_path field."""
         import json as _json
         api, pipeline_state, _ = _make_api()
-        pipeline_state.write_order_file.return_value = '20260419-claude-order-abc.md'
-        steps = [StepConfig(template='brushup', model='claude-opus-4-6')]
+        pipeline_state.write_order_file.return_value = "20260419-claude-order-abc.md"
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
         record = _json.loads(exec_lines[0])
-        assert 'result_path' in record
-        assert '-result-' in record['result_path']
+        assert "result_path" in record
+        assert "-result-" in record["result_path"]
+
 
 class TestBaseContextPropagation:
     def test_base_context_keys_in_step_context(self):
@@ -215,6 +226,8 @@ class TestBaseContextPropagation:
         api.submit(steps, base, audit_context=_TEST_AUDIT_CTX)
 
         assert set(base.keys()) == original_keys
+
+
 class TestAC3DependsValidation:
     def test_unknown_dependency_raises_value_error(self):
         """Undefined depends id → ValueError('Unknown dependency: ...')"""
@@ -268,6 +281,8 @@ class TestAC3DependsValidation:
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
         pipeline_state.write_order_file.assert_not_called()
         pipeline_state.append_exec_records.assert_not_called()
+
+
 class TestJsonlMode:
     def test_returns_json_strings(self):
         """exec_lines are JSON strings (including a uuid field)."""
@@ -355,6 +370,8 @@ class TestJsonlMode:
         record = _json.loads(exec_lines[0])
         assert record["idempotency_key"] == key
         assert "# idempotency:" not in exec_lines[0]
+
+
 class TestAuditContextPropagation:
     def test_submit_without_audit_context_raises_type_error(self):
         """AC-5 (required): submit() without audit_context raises TypeError."""
@@ -398,6 +415,8 @@ def _make_api_with_tmpdir(tmp_path):
         queue_dir=str(tmp_path),
     )
     return api, pipeline_state, order_builder
+
+
 class TestResultContentInjection:
     """Issue #1014: ${dep_id_result_content} context injection."""
 

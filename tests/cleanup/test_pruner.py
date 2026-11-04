@@ -96,6 +96,8 @@ class TestJsonlPrune:
         content = exec_jsonl.read_text()
         assert "NOT_VALID_JSON" in content
         assert UUID_A not in content
+
+
 class TestDoneDeleteOrder:
     def test_done_marker_unlinked_after_exec_prune_writes(self, tmp_path):
         """Delete the done marker only after exec prune completes"""
@@ -145,6 +147,8 @@ class TestDoneDeleteOrder:
             f"exec prune should happen before done marker deletion, "
             f"but order was: {call_order}"
         )
+
+
 class TestStuckDoneExecPrune:
     def test_stuck_uuid_pruned_from_exec(self, tmp_path):
         """Case C: done marker present, files absent → removed from exec.jsonl"""

@@ -7,11 +7,8 @@ import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
-
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.workflow.loader import ValidationError, load_workflows
 from ghdag.workflow.schema import (
     HandlerConfig,
     OnTriggerConfig,
@@ -87,130 +84,10 @@ def _setup_extended_yaml(tmp_path: Path) -> None:
     _make_templates(tmp_path, "brushup", "p1-implement", "p2-verify", "p3-report", "merge")
 
 
-class TestTC1YamlParseOk:
-    def test_load_returns_config_list(self, tmp_path):
-        _setup_extended_yaml(tmp_path)
-        configs = load_workflows(tmp_path)
-        assert len(configs) == 1
-
-    def test_workflow_name(self, tmp_path):
-        _setup_extended_yaml(tmp_path)
-        config = load_workflows(tmp_path)[0]
-        assert config.name == "stash-pipeline"
-
-    def test_trigger_count(self, tmp_path):
-        _setup_extended_yaml(tmp_path)
-        config = load_workflows(tmp_path)[0]
-        assert len(config.triggers) == 4
-
-    def test_trigger_handler_field(self, tmp_path):
-        _setup_extended_yaml(tmp_path)
-        config = load_workflows(tmp_path)[0]
-        assert config.triggers[0].label == "pipeline:draft-ready"
-        assert config.triggers[0].handler == "brushup"
-
-    def test_handlers_is_dict(self, tmp_path):
-        _setup_extended_yaml(tmp_path)
-        config = load_workflows(tmp_path)[0]
-        assert isinstance(config.handlers, dict)
-        assert "impl" in config.handlers
-
-    def test_impl_handler_has_three_steps(self, tmp_path):
-        _setup_extended_yaml(tmp_path)
-        config = load_workflows(tmp_path)[0]
-        assert len(config.handlers["impl"].steps) == 3
-
-    def test_impl_steps_ids_and_models(self, tmp_path):
-        _setup_extended_yaml(tmp_path)
-        config = load_workflows(tmp_path)[0]
-        steps = config.handlers["impl"].steps
-        assert steps[0].id == "p1"
-        assert steps[0].model == "claude-sonnet-4-6"
-        assert steps[1].id == "p2"
-        assert steps[1].depends == ["p1"]
-        assert steps[2].id == "p3"
-        assert steps[2].depends == ["p2"]
-
-    def test_on_trigger_issue_context(self, tmp_path):
-        _setup_extended_yaml(tmp_path)
-        config = load_workflows(tmp_path)[0]
-        assert config.handlers["brushup"].on_trigger is not None
-        assert config.handlers["brushup"].on_trigger.issue_context is True
-
-    def test_reset_handler_type(self, tmp_path):
-        _setup_extended_yaml(tmp_path)
-        config = load_workflows(tmp_path)[0]
-        assert config.handlers["reset"].type == "reset"
-
-    def test_steps_model_missing_raises_validation_error(self, tmp_path):
-        yaml_no_model = """\
-name: test
-triggers:
-  - label: "pipeline:draft-ready"
-    handler: brushup
-handlers:
-  brushup:
-    steps:
-      - template: brushup
-"""
-        (tmp_path / "bad.yml").write_text(yaml_no_model, encoding="utf-8")
-        with pytest.raises(ValidationError, match="model"):
-            load_workflows(tmp_path)
-
-    def test_trigger_missing_handler_raises_validation_error(self, tmp_path):
-        yaml_no_handler = """\
-name: test
-triggers:
-  - label: "pipeline:draft-ready"
-handlers:
-  brushup:
-    steps:
-      - template: brushup
-        model: claude-sonnet-4-6
-"""
-        (tmp_path / "bad.yml").write_text(yaml_no_handler, encoding="utf-8")
-        with pytest.raises(ValidationError, match="handler"):
-            load_workflows(tmp_path)
-
-    def test_trigger_missing_label_raises_validation_error(self, tmp_path):
-        yaml_no_label = """\
-name: test
-triggers:
-  - handler: brushup
-handlers:
-  brushup:
-    steps:
-      - template: brushup
-        model: claude-sonnet-4-6
-"""
-        (tmp_path / "bad.yml").write_text(yaml_no_label, encoding="utf-8")
-        with pytest.raises(ValidationError, match="label"):
-            load_workflows(tmp_path)
-
-    def test_unknown_keys_ignored(self, tmp_path):
-        yaml_unknown = """\
-name: test
-triggers:
-  - label: "pipeline:draft-ready"
-    handler: brushup
-handlers:
-  brushup:
-    steps:
-      - template: brushup
-        model: claude-sonnet-4-6
-        unknown_future_key: some_value
-polling_interval: 30
-"""
-        (tmp_path / "test.yml").write_text(yaml_unknown, encoding="utf-8")
-        _make_templates(tmp_path, "brushup")
-        with pytest.raises(ValidationError, match=r"handlers\.brushup\.steps\[0\]\.unknown_future_key") as exc_info:
-            load_workflows(tmp_path)
-        assert "Allowed:" in str(exc_info.value)
-
-
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_extended_workflow() -> WorkflowConfig:
     return WorkflowConfig(

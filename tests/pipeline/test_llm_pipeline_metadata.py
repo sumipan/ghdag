@@ -13,21 +13,24 @@ class TestMetadataInAnnotations:
         """submit(metadata={"k": "v"}) includes {"k": "v"} in annotations."""
         import json as _json
         api, _, _ = _make_api()
-        steps = [StepConfig(template='brushup', model='claude-opus-4-6')]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata={'k': 'v'})
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata={"k": "v"})
+
         record = _json.loads(exec_lines[0])
-        assert record['annotations'].get('k') == 'v'
+        assert record["annotations"].get("k") == "v"
 
     def test_metadata_channel_and_thread_ts(self):
         """Passing channel_id and thread_ts via metadata stores them in annotations."""
         import json as _json
         api, _, _ = _make_api()
-        steps = [StepConfig(template='brushup', model='claude-opus-4-6')]
-        metadata = {'channel_id': 'C123', 'thread_ts': '1234567890.000'}
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
+        metadata = {"channel_id": "C123", "thread_ts": "1234567890.000"}
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=metadata)
+
         record = _json.loads(exec_lines[0])
-        assert record['annotations']['channel_id'] == 'C123'
-        assert record['annotations']['thread_ts'] == '1234567890.000'
+        assert record["annotations"]["channel_id"] == "C123"
+        assert record["annotations"]["thread_ts"] == "1234567890.000"
+
 
 class TestMetadataMultipleSteps:
 
@@ -35,14 +38,20 @@ class TestMetadataMultipleSteps:
         """When submitting multiple steps, every record gets the same annotations."""
         import json as _json
         api, _, _ = _make_api()
-        steps = [StepConfig(id='s1', template='t1', model='m1'), StepConfig(id='s2', template='t2', model='m2', depends=['s1']), StepConfig(id='s3', template='t3', model='m3', depends=['s2'])]
-        metadata = {'channel_id': 'C999', 'thread_ts': '9999.000'}
+        steps = [
+            StepConfig(id="s1", template="t1", model="m1"),
+            StepConfig(id="s2", template="t2", model="m2", depends=["s1"]),
+            StepConfig(id="s3", template="t3", model="m3", depends=["s2"]),
+        ]
+        metadata = {"channel_id": "C999", "thread_ts": "9999.000"}
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata=metadata)
+
         assert len(exec_lines) == 3
         for line in exec_lines:
             record = _json.loads(line)
-            assert record['annotations']['channel_id'] == 'C999'
-            assert record['annotations']['thread_ts'] == '9999.000'
+            assert record["annotations"]["channel_id"] == "C999"
+            assert record["annotations"]["thread_ts"] == "9999.000"
+
 
 class TestMetadataRoundTrip:
     def test_roundtrip_via_parse_jsonl(self):
@@ -102,20 +111,24 @@ class TestMetadataRoundTrip:
         for task in tasks:
             assert task.annotations["slack_channel_id"] == "C001"
             assert task.annotations["slack_thread_ts"] == "111.222"
+
+
 class TestMetadataBackwardCompat:
 
     def test_no_metadata_annotations_empty(self):
         """When metadata is omitted, gemini has no metadata-derived annotation keys (safe default only)."""
         import json as _json
         api, _, _ = _make_api()
-        steps = [StepConfig(template='brushup', model='gemini-2.5-pro', engine='gemini')]
+        steps = [StepConfig(template="brushup", model="gemini-2.5-pro", engine="gemini")]
         exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
         record = _json.loads(exec_lines[0])
-        annotations = record.get('annotations', {})
-        assert annotations.get('safe_default_applied') is True
-        assert annotations.get('safe_default_preset') == 'text_only'
-        assert 'step_name' in annotations
+        annotations = record.get("annotations", {})
+        assert annotations.get("safe_default_applied") is True
+        assert annotations.get("safe_default_preset") == "text_only"
+        assert "step_name" in annotations
         assert len(annotations) == 3
+
 
 class TestMetadataWithIdempotencyKey:
     def test_idempotency_key_and_metadata_together(self):

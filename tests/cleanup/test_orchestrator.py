@@ -62,6 +62,8 @@ class TestDryRun:
 
         out = capsys.readouterr().out
         assert "[dry]" in out
+
+
 class TestQueueDirMissing:
     def test_missing_queue_dir_exits_1(self, tmp_path, capsys):
         queue_dir = tmp_path / "nonexistent_queue"
@@ -102,6 +104,8 @@ class TestNoMatchingFiles:
         assert res.archived_done == 0
         assert res.archived_orphan == 0
         assert res.pruned_exec == 0
+
+
 class TestAutoRepairFalse:
     def test_case_d_no_archive_detected_orphan(self, tmp_path, capsys):
         """auto_repair=False: Case D orphan is detect-only, no file move, detected_orphan=1"""

@@ -167,6 +167,8 @@ class TestLlmAuditPath:
                 main(["llm", "hello"])
 
         assert exc.value.code == 0
+
+
 class TestLLMCapabilitiesArgs:
     @staticmethod
     def _make_result(returncode=0):
@@ -250,6 +252,8 @@ class TestLLMCapabilitiesArgs:
         caps = captured["capabilities"]
         assert caps.permission_mode == "plan"
         assert caps.disallowed_tools == TEXT_ONLY.disallowed_tools
+
+
 class TestCLI:
     def test_llm_list_engines(self):
         """ghdag llm --list-engines"""

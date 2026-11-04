@@ -333,6 +333,8 @@ class TestValidateDependenciesEngine:
         assert is_done(config.exec_done_dir, "uuid-b")
         succeeded = load_succeeded_from_dir(config.exec_done_dir)
         assert "uuid-b" not in succeeded
+
+
 class TestStdinMissingInputSkip:
     """AC-1–AC-5: skip behavior when stdin input file is missing"""
 

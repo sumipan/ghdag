@@ -87,6 +87,8 @@ class TestArchivedDone:
         dest_dir = archive_dir / "2026-01"
         assert (dest_dir / order.name).exists()
         assert (dest_dir / result.name).exists()
+
+
 class TestArchivedOrphan:
     def test_orphan_task_older_than_orphan_days_is_archived(self, tmp_path):
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
@@ -145,6 +147,8 @@ class TestArchivedOrphan:
 
         assert res.archived_orphan == 0
         assert order.exists()
+
+
 class TestResultOnlyDone:
     def test_result_only_done_task_archived_without_error(self, tmp_path):
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
@@ -188,6 +192,8 @@ class TestOrderOnlyOrphan:
 
         assert res.archived_orphan == 1
         assert not order.exists()
+
+
 class TestBoundaryValues:
     def test_exactly_cutoff_days_is_archived(self, tmp_path):
         """Tasks exactly at cutoff_days are archived (<=)"""
@@ -240,6 +246,8 @@ class TestExecMdMissing:
         assert res.archived_done == 1
         assert res.pruned_exec == 0
         assert not order.exists()
+
+
 class TestUUIDCaseInsensitive:
     def test_uppercase_uuid_in_filename_matches_lowercase_done_flag(self, tmp_path):
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
@@ -258,6 +266,8 @@ class TestUUIDCaseInsensitive:
         )
 
         assert res.archived_done == 1
+
+
 class TestCompoundToolName:
     def test_compound_tool_name_done_task_is_archived(self, tmp_path):
         """Compound tool-name files like claude-investigator are archived when completed"""
@@ -322,6 +332,8 @@ class TestCompoundToolName:
 
         assert res.archived_orphan == 1
         assert not order.exists()
+
+
 class TestStderrKind:
     def test_stderr_file_done_task_is_archived(self, tmp_path):
         """claude-stderr stderr files are archived as completed"""
@@ -368,6 +380,8 @@ class TestStderrKind:
         from ghdag.cleanup import QUEUE_FILE_RE
         fname = f"{TS}-gemini-stderr-{UUID_C}.md"
         assert QUEUE_FILE_RE.match(fname) is not None
+
+
 class TestOrphanDoneMark:
     def test_orphan_archive_creates_done_marker(self, tmp_path):
         """Create an ORPHAN_ARCHIVED done marker before orphan archive"""

@@ -36,6 +36,8 @@ class _RecordingEngine:
 
     def run(self):
         _RecordingEngine.ran = True
+
+
 class TestRunNormal:
     def test_run_calls_dag_engine_with_defaults(self, tmp_path):
         exec_md = tmp_path / "exec.jsonl"
@@ -165,6 +167,8 @@ class TestRunError:
             main(["run", "nonexistent_exec.jsonl"])
         assert exc.value.code == 1
         assert "not found" in capsys.readouterr().err
+
+
 class TestRunMaxConcurrency:
     def test_max_concurrency_arg(self, tmp_path):
         """--max-concurrency is passed correctly to DagConfig"""

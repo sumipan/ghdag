@@ -140,6 +140,8 @@ polling_interval: 30
         with pytest.raises(ValidationError, match=r"handlers\.brushup\.steps\[0\]\.unknown_future_key") as exc_info:
             load_workflows(tmp_path)
         assert "Allowed:" in str(exc_info.value)
+
+
 class TestTC8StashPipelineYaml:
     def test_stash_pipeline_parseable(self, tmp_path):
         stash_pipeline_content = """\
@@ -196,23 +198,47 @@ polling_interval: 30
         config = configs[0]
         assert config.name == "stash-pipeline"
         assert config.handlers["impl"].steps[0].id == "p1"
+
+
 class TestTC9ContextHook:
 
     def test_yaml_context_hook_parsed(self, tmp_path):
         """context_hook is parsed from YAML into HandlerConfig"""
-        yaml_content = 'name: test-pipeline\ntriggers:\n  - label: "pipeline:draft-ready"\n    handler: brushup\nhandlers:\n  brushup:\n    context_hook: "python -m my_hook"\n    steps:\n      - template: brushup\n        model: claude-opus-4-6\n'
-        (tmp_path / 'test.yml').write_text(yaml_content, encoding='utf-8')
-        _make_templates(tmp_path, 'brushup')
+        yaml_content = """\
+name: test-pipeline
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    context_hook: "python -m my_hook"
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
         configs = load_workflows(tmp_path)
-        assert configs[0].handlers['brushup'].context_hook == 'python -m my_hook'
+        assert configs[0].handlers["brushup"].context_hook == "python -m my_hook"
 
     def test_yaml_no_context_hook_is_none(self, tmp_path):
         """context_hook is None when omitted"""
-        yaml_content = 'name: test-pipeline\ntriggers:\n  - label: "pipeline:draft-ready"\n    handler: brushup\nhandlers:\n  brushup:\n    steps:\n      - template: brushup\n        model: claude-opus-4-6\n'
-        (tmp_path / 'test.yml').write_text(yaml_content, encoding='utf-8')
-        _make_templates(tmp_path, 'brushup')
+        yaml_content = """\
+name: test-pipeline
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "brushup")
         configs = load_workflows(tmp_path)
-        assert configs[0].handlers['brushup'].context_hook is None
+        assert configs[0].handlers["brushup"].context_hook is None
+
 
 class TestTC10TemplateDir:
     def test_template_dir_parsed_from_yaml(self, tmp_path):
@@ -309,6 +335,8 @@ handlers:
             handlers={},
         )
         assert config.template_dir is None
+
+
 class TestTCEngineKey:
     """TC-engine-1–4: engine key priority and agent fallback"""
 
@@ -391,16 +419,7 @@ handlers:
         configs = load_workflows(tmp_path)
         step = configs[0].handlers["brushup"].steps[0]
         assert step.engine == "claude"
-class TestAC1AgentFieldRemoved:
 
-    def test_yaml_agent_key_ignored_defaults_to_claude(self, tmp_path):
-        """YAML with agent: cursor → unknown key rejected (was ignored, default claude)"""
-        yaml_content = 'name: test-pipeline\ntriggers:\n  - label: "pipeline:draft-ready"\n    handler: brushup\nhandlers:\n  brushup:\n    steps:\n      - template: brushup\n        model: claude-opus-4-6\n        agent: cursor\n'
-        (tmp_path / 'test.yml').write_text(yaml_content, encoding='utf-8')
-        _make_templates(tmp_path, 'brushup')
-        with pytest.raises(ValidationError, match='handlers\\.brushup\\.steps\\[0\\]\\.agent') as exc_info:
-            load_workflows(tmp_path)
-        assert 'Allowed:' in str(exc_info.value)
 
 class TestTC11StaticValidation:
     """Test group covering AC-3–AC-10"""

@@ -36,6 +36,8 @@ class TestBuildLLMCmd:
         """Basic cursor command construction (CLI is cursor-agent, no capabilities flags)"""
         cmd = build_llm_cmd("cursor", "composer-2", "hello")
         assert cmd == ["cursor-agent", "--model", "composer-2", "-p"]
+
+
 class TestBuildLLMCmdCapabilities:
     def test_text_only_default(self):
         """TEXT_ONLY: --permission-mode default --disallowed-tools Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch"""

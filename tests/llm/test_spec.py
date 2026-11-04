@@ -59,50 +59,63 @@ class TestEngineSpec:
     def test_shell_extra_args_pipefail(self):
         assert "-o" in ENGINE_SPECS["shell"].extra_args
         assert "pipefail" in ENGINE_SPECS["shell"].extra_args
+
+
 class TestRenderExecCommand:
 
     def test_claude_with_model(self):
-        spec = ENGINE_SPECS['claude']
-        cmd = render_exec_command(spec, order_path='queue/order.md', model='claude-opus-4-6')
+        spec = ENGINE_SPECS["claude"]
+        cmd = render_exec_command(spec, order_path="queue/order.md", model="claude-opus-4-6")
         assert cmd == "claude -p --model 'claude-opus-4-6' --output-format stream-json --verbose --dangerously-skip-permissions < queue/order.md"
 
     def test_claude_without_model(self):
-        spec = ENGINE_SPECS['claude']
-        cmd = render_exec_command(spec, order_path='queue/order.md', model=None)
-        assert cmd == 'claude -p --output-format stream-json --verbose --dangerously-skip-permissions < queue/order.md'
+        spec = ENGINE_SPECS["claude"]
+        cmd = render_exec_command(spec, order_path="queue/order.md", model=None)
+        assert cmd == "claude -p --output-format stream-json --verbose --dangerously-skip-permissions < queue/order.md"
 
     def test_gemini_with_model(self):
-        spec = ENGINE_SPECS['gemini']
-        cmd = render_exec_command(spec, order_path='queue/order.md', model='gemini-2.5-flash')
+        spec = ENGINE_SPECS["gemini"]
+        cmd = render_exec_command(spec, order_path="queue/order.md", model="gemini-2.5-flash")
         assert cmd == "gemini -p --model 'gemini-2.5-flash' --approval-mode yolo < queue/order.md"
 
     def test_cursor_with_model(self):
-        spec = ENGINE_SPECS['cursor']
-        cmd = render_exec_command(spec, order_path='queue/order.md', model='auto')
-        assert cmd == "cursor-agent --model 'auto' -p --force --output-format stream-json --stream-partial-output < queue/order.md"
+        spec = ENGINE_SPECS["cursor"]
+        cmd = render_exec_command(spec, order_path="queue/order.md", model="auto")
+        assert cmd == (
+            "cursor-agent --model 'auto' -p --force --output-format stream-json "
+            "--stream-partial-output < queue/order.md"
+        )
 
     def test_cursor_without_model(self):
-        spec = ENGINE_SPECS['cursor']
-        cmd = render_exec_command(spec, order_path='queue/order.md', model=None)
-        assert cmd == 'cursor-agent -p --force --output-format stream-json --stream-partial-output < queue/order.md'
+        spec = ENGINE_SPECS["cursor"]
+        cmd = render_exec_command(spec, order_path="queue/order.md", model=None)
+        assert cmd == (
+            "cursor-agent -p --force --output-format stream-json "
+            "--stream-partial-output < queue/order.md"
+        )
 
     def test_shell_command(self):
-        spec = ENGINE_SPECS['shell']
-        cmd = render_exec_command(spec, order_path='queue/order.sh', model=None)
-        assert cmd == 'bash -o pipefail queue/order.sh'
+        spec = ENGINE_SPECS["shell"]
+        cmd = render_exec_command(spec, order_path="queue/order.sh", model=None)
+        assert cmd == "bash -o pipefail queue/order.sh"
 
     def test_prompt_ignored_for_flag_only(self):
         """FLAG_ONLY does not put the prompt string on argv"""
-        spec = ENGINE_SPECS['claude']
-        cmd = render_exec_command(spec, order_path='jobs/o.md', model='claude-sonnet-4-6', prompt='any-string')
+        spec = ENGINE_SPECS["claude"]
+        cmd = render_exec_command(
+            spec, order_path="jobs/o.md", model="claude-sonnet-4-6", prompt="any-string",
+        )
         assert "-p '" not in cmd
-        assert 'any-string' not in cmd
+        assert "any-string" not in cmd
 
     def test_no_engine_embeds_prompt_value_in_argv(self):
         """Generated commands for all ENGINE_SPECS must not contain `-p '`"""
         for name, spec in ENGINE_SPECS.items():
-            cmd = render_exec_command(spec, order_path='jobs/o.md', model=spec.default_model, prompt='hello')
-            assert "-p '" not in cmd, f'{name}: {cmd}'
+            cmd = render_exec_command(
+                spec, order_path="jobs/o.md", model=spec.default_model, prompt="hello",
+            )
+            assert "-p '" not in cmd, f"{name}: {cmd}"
+
 
 class TestRenderExecCommandCapabilities:
     def test_render_exec_claude_text_only_adds_permission_and_disallowed_tools(self):

@@ -5,16 +5,13 @@ from __future__ import annotations
 import pytest
 
 from ghdag.llm import (
-    DANGEROUS_FULL_ACCESS,
     ENGINE_DEFAULTS,
     JSON_ONLY,
     TEXT_ONLY,
-    WEB_RESEARCH,
     EngineModelError,
     LLMCapabilities,
     LLMParseError,
     LLMResult,
-    build_llm_cmd,
     list_engines,
     list_models,
     validate_engine_model,
@@ -116,95 +113,14 @@ class TestValidateEngineModel:
 # Command construction
 # ---------------------------------------------------------------------------
 
-class TestBuildLLMCmd:
-    def test_basic_claude(self):
-        """Basic claude command construction (includes capabilities flags)"""
-        cmd = build_llm_cmd("claude", "claude-opus-4-6", "hello")
-        # Check basic elements
-        assert cmd[0] == "claude"
-        assert "--model" in cmd
-        assert "claude-opus-4-6" in cmd
-        assert "-p" in cmd
-        # nexus #3805: STDIN engines keep the prompt body out of argv
-        assert "hello" not in cmd
-        # TEXT_ONLY default: permission-mode and disallowed-tools are attached
-        assert "--permission-mode" in cmd
-        assert "--disallowed-tools" in cmd
-
-    def test_basic_gemini(self):
-        """Basic gemini command construction (no capabilities flags)"""
-        cmd = build_llm_cmd("gemini", "gemini-2.5-flash", "hello")
-        assert cmd == ["gemini", "--model", "gemini-2.5-flash", "-p"]
-
-    def test_basic_cursor(self):
-        """Basic cursor command construction (CLI is cursor-agent, no capabilities flags)"""
-        cmd = build_llm_cmd("cursor", "composer-2", "hello")
-        assert cmd == ["cursor-agent", "--model", "composer-2", "-p"]
-
-
 # ---------------------------------------------------------------------------
 # LLMCapabilities
 # ---------------------------------------------------------------------------
 
-class TestCapabilities:
-    def test_text_only_preset(self):
-        assert TEXT_ONLY.permission_mode == "default"
-        assert TEXT_ONLY.output_format == "text"
-        assert "Bash" in TEXT_ONLY.disallowed_tools
-        assert "Edit" in TEXT_ONLY.disallowed_tools
-        assert "Write" in TEXT_ONLY.disallowed_tools
-        assert "NotebookEdit" in TEXT_ONLY.disallowed_tools
-        assert "WebFetch" in TEXT_ONLY.disallowed_tools
-        assert "WebSearch" in TEXT_ONLY.disallowed_tools
-
-    def test_json_only_preset(self):
-        assert JSON_ONLY.permission_mode == "default"
-        assert JSON_ONLY.output_format == "json"
-        assert "Bash" in JSON_ONLY.disallowed_tools
-
-    def test_web_research_preset(self):
-        assert WEB_RESEARCH.permission_mode == "default"
-        assert WEB_RESEARCH.output_format == "text"
-        assert WEB_RESEARCH.web_search is True
-        assert WEB_RESEARCH.allowed_tools == ()
-        assert "Bash" in WEB_RESEARCH.disallowed_tools
-        assert "Edit" in WEB_RESEARCH.disallowed_tools
-
-    def test_default_capabilities_web_search_false(self):
-        assert LLMCapabilities().web_search is False
-
-    def test_dangerous_full_access_preset(self):
-        assert DANGEROUS_FULL_ACCESS.permission_mode == "bypassPermissions"
-        assert len(DANGEROUS_FULL_ACCESS.disallowed_tools) == 0
-        assert len(DANGEROUS_FULL_ACCESS.allowed_tools) == 0
-
-    def test_frozen(self):
-        import dataclasses
-        with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
-            TEXT_ONLY.permission_mode = "bypassPermissions"  # type: ignore
-
-    def test_custom_capabilities(self):
-        caps = LLMCapabilities(permission_mode="plan", output_format="json")
-        assert caps.permission_mode == "plan"
-        assert caps.output_format == "json"
-
-    def test_force_cursor(self):
-        """cursor with dangerously_skip_permissions=True attaches --force"""
-        cmd = build_llm_cmd(
-            "cursor", "auto", "hello",
-            dangerously_skip_permissions=True,
-        )
-        assert "--force" in cmd
-
-    def test_force_cursor_not_added_by_default(self):
-        """cursor with dangerously_skip_permissions=False does not attach --force"""
-        cmd = build_llm_cmd("cursor", "auto", "hello")
-        assert "--force" not in cmd
-
-
 # ---------------------------------------------------------------------------
 # LLMResult
 # ---------------------------------------------------------------------------
+
 
 class TestLLMResult:
     def test_ok_success(self):
@@ -267,6 +183,8 @@ class TestLLMResultValidate:
         r = LLMResult(stdout='{"type":"system"}\n', stderr="", returncode=0)
         with pytest.raises(LLMParseError, match="no result line"):
             r.validate(LLMCapabilities(stream=True))
+
+
 class TestSupportsCapability:
     """supports_capability(engine, capability) — nexus #3034 AC-1 / CLAUDE.md §11."""
 

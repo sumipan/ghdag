@@ -34,6 +34,8 @@ def _last_subprocess_cmd(mock_run: MagicMock) -> list:
 def _last_subprocess_kwargs(mock_run: MagicMock) -> dict:
     assert mock_run.mock_calls, "subprocess.run was not invoked"
     return dict(mock_run.mock_calls[-1].kwargs)
+
+
 class TestValidateCapabilitiesForEngine:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_gemini_with_disallowed_tools_raises(self, mock_run):
@@ -103,6 +105,7 @@ class TestValidateCapabilitiesForEngine:
 # ---------------------------------------------------------------------------
 # call() — mock subprocess
 # ---------------------------------------------------------------------------
+
 
 class TestCall:
     @patch("ghdag.llm.engines.subprocess.run")
@@ -239,6 +242,8 @@ class TestCallCapabilities:
         assert "--permission-mode" in cmd
         perm_idx = cmd.index("--permission-mode")
         assert cmd[perm_idx + 1] == "plan"
+
+
 class TestEngineIsolation:
     """Engine isolation opt-in — nexus #3174 (conditionalizes always-on isolation from #3044)."""
 

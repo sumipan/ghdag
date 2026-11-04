@@ -169,6 +169,8 @@ class TestSweepExtras:
 
         assert res.archived_done == 1
         assert res.swept_extras == 0
+
+
 class TestIsSweepableExtra:
     """Unit tests for is_sweepable_extra token detection."""
 
