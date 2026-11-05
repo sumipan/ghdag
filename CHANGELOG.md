@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.106.5 - 2026-11-05
+
 ### Added
 
 - `LLMResult.raw_stdout` preserves claude/cursor stream subprocess JSONL before `stdout` extraction (sumipan/nexus#6026).
