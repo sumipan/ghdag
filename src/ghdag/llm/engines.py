@@ -270,6 +270,8 @@ class LLMResult:
     ``None`` means the caller must classify from ``stdout`` / ``stderr``
     (``call_managed`` does this through the engine's output adapter).
     """
+    raw_stdout: str | None = None
+    """Subprocess stdout before claude/cursor stream extraction; ``None`` otherwise."""
 
     @property
     def ok(self) -> bool:
@@ -291,6 +293,9 @@ class LLMResult:
         With stream=True on cursor, the reconstructed assistant-turn body is preferred,
         falling back to the legacy stream result if absent. For claude, the final result
         is extracted from the JSONL and replaces stdout. For codex, raw JSONL is kept.
+        On successful claude/cursor stream calls, ``raw_stdout`` holds the pre-extraction
+        stdout (including trailing newlines); it stays ``None`` for non-stream, codex,
+        and failed calls.
         Returns:
             self (allows chaining)
         Raises:
@@ -299,6 +304,7 @@ class LLMResult:
         if not self.ok:
             return self
         if capabilities.stream and engine != "codex":
+            self.raw_stdout = self.stdout
             if engine == "cursor":
                 from ghdag.llm.adapters.cursor_stream import reconstruct_assistant_turns
 

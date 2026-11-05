@@ -297,12 +297,13 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 
 | Field / member | Type | Meaning |
 |---|---|---|
-| `stdout` | `str` | Raw process stdout |
+| `stdout` | `str` | Process stdout after validation (for claude/cursor stream, the extracted or reconstructed body; for codex stream, the raw JSONL) |
 | `stderr` | `str` | Raw process stderr |
 | `returncode` | `int` | Process exit code; `124` (`TIMEOUT_RETURNCODE`) on timeout, `127` when the binary is missing, `126` when it is not executable |
 | `latency_ms` | `float` | Wall-clock latency in milliseconds |
 | `session_id` | `str \| None` | Engine session ID, when the adapter can extract one |
 | `failure_class` | `FailureClass \| None` | Failure class set by `call()` itself (for example `FailureClass.TIMEOUT`); `None` when the caller has to classify stdout / stderr |
+| `raw_stdout` | `str \| None` | On successful claude or cursor stream calls, the subprocess JSONL before `stdout` is replaced; `None` for non-stream, codex stream, and failed calls. Use `TextResult.raw.raw_stdout` from `call_text()`. |
 | `ok` | property | `returncode == 0` |
 | `timed_out` | property | `failure_class is FailureClass.TIMEOUT` |
 

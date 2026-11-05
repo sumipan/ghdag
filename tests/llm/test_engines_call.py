@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -309,3 +310,96 @@ class TestEngineIsolation:
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         result = call("hello", engine="cursor", capabilities=TEXT_ONLY)
         assert result.ok
+
+
+class TestLLMResultRawStdout:
+    """Preserve subprocess JSONL on claude/cursor stream before stdout extraction (#6026)."""
+
+    _CLAUDE_STREAM_JSONL = (
+        '{"type":"system","subtype":"init"}\n'
+        '{"type":"rate_limit_event","rate_limit_info":{"unifiedWindows":{}}}\n'
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}\n'
+        '{"type":"result","subtype":"success","result":"final answer"}\n'
+    )
+
+    _CURSOR_STREAM_JSONL = (
+        Path(__file__).resolve().parents[1]
+        / "fixtures"
+        / "cursor_stream_repro.jsonl"
+    ).read_text(encoding="utf-8")
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_claude_stream_preserves_raw_stdout_before_result_extraction(
+        self, mock_run: MagicMock,
+    ):
+        mock_run.return_value = MagicMock(
+            stdout=self._CLAUDE_STREAM_JSONL,
+            stderr="",
+            returncode=0,
+        )
+        result = call(
+            "hello",
+            engine="claude",
+            capabilities=LLMCapabilities(stream=True),
+        )
+        assert result.stdout == "final answer"
+        assert result.raw_stdout == self._CLAUDE_STREAM_JSONL
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_cursor_stream_preserves_raw_stdout_before_turn_reconstruction(
+        self, mock_run: MagicMock,
+    ):
+        mock_run.return_value = MagicMock(
+            stdout=self._CURSOR_STREAM_JSONL,
+            stderr="",
+            returncode=0,
+        )
+        result = call(
+            "hello",
+            engine="cursor",
+            capabilities=LLMCapabilities(stream=True),
+        )
+        assert result.stdout == "llamas are great."
+        assert result.raw_stdout == self._CURSOR_STREAM_JSONL
+
+    @pytest.mark.parametrize(
+        ("engine", "capabilities", "stdout"),
+        [
+            ("claude", TEXT_ONLY, "plain stdout"),
+            (
+                "codex",
+                LLMCapabilities(stream=True),
+                '{"type":"item.completed"}\n{"type":"result","result":"x"}\n',
+            ),
+        ],
+    )
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_raw_stdout_stays_none_without_stdout_replacement(
+        self,
+        mock_run: MagicMock,
+        engine: str,
+        capabilities: LLMCapabilities,
+        stdout: str,
+    ):
+        mock_run.return_value = MagicMock(stdout=stdout, stderr="", returncode=0)
+        result = call("hello", engine=engine, capabilities=capabilities)
+        assert result.raw_stdout is None
+        assert result.stdout == stdout
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_failed_stream_call_keeps_raw_stdout_none_and_stdout_unchanged(
+        self, mock_run: MagicMock,
+    ):
+        error_stdout = self._CLAUDE_STREAM_JSONL + "TIMEOUT: claude timed out\n"
+        mock_run.return_value = MagicMock(
+            stdout=error_stdout,
+            stderr="",
+            returncode=1,
+        )
+        result = call(
+            "hello",
+            engine="claude",
+            capabilities=LLMCapabilities(stream=True),
+        )
+        assert result.raw_stdout is None
+        assert result.stdout == error_stdout

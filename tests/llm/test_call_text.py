@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from ghdag.core.ports.output import EngineErrorKind
-from ghdag.llm import TextResult, call_text
+from ghdag.llm import LLMCapabilities, TextResult, call_text
 from ghdag.llm.engines import LLMResult
 
 # ---------------------------------------------------------------------------
@@ -197,6 +197,32 @@ class TestCallText:
         with patch("ghdag.llm.engines.call", return_value=mock_result):
             result = call_text("test prompt", engine="claude")
         assert result.body == '{"key": "val"}'
+
+
+class TestCallTextStreamRawStdout:
+    """call_text() exposes claude stream JSONL via raw.raw_stdout (#6026)."""
+
+    _STREAM_JSONL = (
+        '{"type":"system","subtype":"init"}\n'
+        '{"type":"rate_limit_event","rate_limit_info":{}}\n'
+        '{"type":"assistant","message":{"content":[{"type":"text","text":"mid"}]}}\n'
+        '{"type":"result","subtype":"success","result":"extracted body"}\n'
+    )
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_text_exposes_claude_stream_raw_stdout(self, mock_run):
+        mock_run.return_value = type(
+            "Proc",
+            (),
+            {"stdout": self._STREAM_JSONL, "stderr": "", "returncode": 0},
+        )()
+        result = call_text(
+            "test prompt",
+            engine="claude",
+            capabilities=LLMCapabilities(stream=True),
+        )
+        assert result.body == "extracted body"
+        assert result.raw.raw_stdout == self._STREAM_JSONL
 
 
 class TestCallTextCwd:
