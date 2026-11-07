@@ -177,7 +177,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 
 | Command | Arguments (defaults) |
 |---|---|
-| `run` | `exec_jsonl`; `--interval SEC` (`1.0`); `--hooks MODULE` (module with a `DagHooks` implementation; default `AuditHooks`); `--max-concurrency N` (unlimited); `--brake-state PATH` (optional budget-brake JSON for `QuotaGate`, e.g. `jobs/issuesmith-brake.json` — wired to `DagConfig.brake_state_path`) |
+| `run` | `exec_jsonl`; `--interval SEC` (`1.0`); `--hooks MODULE` (module with a `DagHooks` implementation; default `AuditHooks`); `--max-concurrency N` (unlimited) |
 | `watch` | `workflows_dir`; `--interval SEC` (`30`); `--exec-md PATH` (`jobs/exec.jsonl`); `--once`; `--pause-file PATH` (disabled); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `<exec-md parent's parent>/.pipeline-state`) |
 | `trigger` | `issue_number`; `--handler NAME` (required); `--workflows-dir PATH` (`workflows`); `--exec-md PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto-detected when there is only one workflow); `--redispatch`; `--reason TEXT`; `--state-dir PATH` (same default as `watch`) |
 | `status` | `--issue N` and/or `--running` (at least one); `--handler` and `--workflow` (required with `--issue`); `--json`; `--exec-jsonl PATH` (`$GHDAG_EXEC_JSONL` or `jobs/exec.jsonl`); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `.pipeline-state`); `--done-dir PATH` / `--running-dir PATH` (`$GHDAG_STATE_DIR/done` / `running` or `<exec.jsonl parent>/done` / `running`); `--audit-path PATH` (optional; adds `started_at` / `elapsed_sec` to completed steps) |
@@ -201,7 +201,6 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 |---|---|
 | `ghdag run` working directory | Tasks run with `cwd` set to the parent of the `exec.jsonl` directory (for `jobs/exec.jsonl`, the repository root) |
 | One runner per queue | `DagEngine` holds `<queue dir>/.ghdag.lock`; a second runner on the same queue logs "Another DagEngine is already running" and stops |
-| `ghdag run --brake-state` | Passes `brake_state_path` into `DagConfig` and `QuotaGate`; deferred tasks are not released while the brake file marks an engine `paused` (same `engines.<name>.status` shape as quota state) |
 | `ghdag run --hooks` | Imports the module (the current directory is put on `sys.path`) and instantiates its `HOOKS_CLASS` attribute, or else the first public class in the module that defines `on_task_success` |
 | `ghdag trigger --redispatch` | Increments the handler generation and starts a new run (for when `dag recover` is not possible); `--reason` is written to `audit.jsonl` |
 | `ghdag watch` and rate limits | When GitHub reports a rate limit with a reset time, polls are skipped until the reset (log: `rate limited: skip poll until <ISO8601>`) |
@@ -254,7 +253,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `LLMPipelineAPI` | `(pipeline_state, order_builder, queue_dir="queue", *, order_builders=None)` |
 | `LLMPipelineAPI.submit` | `(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None, workflow_roles=None) -> list[str]` |
 | `PipelineState` | `(state_dir, exec_jsonl_path)`; also `PipelineState.from_repo_root(repo_root)` |
-| `QuotaGate` | `(state_path, audit_path=None, brake_state_path=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `wait_idle` |
+| `QuotaGate` | `(state_path, audit_path=None, pause_ttl_seconds=3600, limits=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `wait_idle` |
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
 | `issue_status` | `(issue_number, *, handler=None, workflow=None, exec_jsonl_path, state_dir, done_dir, running_uuids=None, audit_path=None, running_dir=None) -> IssueStatus` |
 | `running_tasks` | `(running_dir) -> list[RunningTask]` |
@@ -890,7 +889,7 @@ sinks:
 
 ### Quota state (`quota-gate.json`)
 
-Managed by `QuotaGate` and `ghdag quota`. Top-level keys: `engines` (per engine: `status`, `observed_at`, `resume_at`, `reason`, `override_until`), `draining_engines`, `running_tasks`. An engine is unavailable while it is draining, reported `paused`, or marked `paused` in the optional brake file (`QuotaGate(brake_state_path=...)`, same `engines.<name>.status` shape). `ghdag quota status` adds per-engine `queued` / `running` / `idle` counts. Legacy schema-version-1 state may contain `deferred_tasks`; it is ignored on read and removed on the next write.
+Managed by `QuotaGate` and `ghdag quota`. Top-level keys: `engines` (per engine: `status`, `observed_at`, `resume_at`, `reason`, `override_until`), `draining_engines`, `running_tasks`. An engine is unavailable while it is draining or reported `paused`. Budget-side pauses are written into this state by `QuotaGate.report(kind="budget")`. `ghdag quota status` adds per-engine `queued` / `running` / `idle` counts. Legacy schema-version-1 state may contain `deferred_tasks`; it is ignored on read and removed on the next write.
 
 ### Language pack (`GHDAG_LANGUAGE_PACK`)
 

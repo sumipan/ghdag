@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.107.0 - 2026-11-07
+
+### Removed
+
+- **Breaking**: `DagConfig.brake_state_path`, `QuotaGate(brake_state_path=)`, and `ghdag run --brake-state`. Since v0.106.0 these had no effect on quota admission; use `QuotaGate.report(kind="budget")` to pause engines via quota state instead.
+
 ## 0.106.5 - 2026-11-05
 
 ### Added
