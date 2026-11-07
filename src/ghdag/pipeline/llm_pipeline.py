@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -157,7 +158,7 @@ class LLMPipelineAPI:
         self._queue_dir = queue_dir
         self._order_builders: dict[str, OrderBuilder] = dict(order_builders or {})
 
-    def set_order_builders(self, mapping: dict[str, OrderBuilder]) -> None:
+    def set_order_builders(self, mapping: Mapping[str, OrderBuilder]) -> None:
         """Replace the per-workflow order builder map (default builder unchanged)."""
         self._order_builders = dict(mapping)
 
