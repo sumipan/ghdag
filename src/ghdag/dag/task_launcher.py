@@ -29,6 +29,8 @@ from ghdag.config.env import (
     stall_guard_interval_sec,
     stall_guard_stall_sec,
 )
+from ghdag.core.command import inject_resume
+from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.stall_guard import StallTracker
 from ghdag.core.vocabulary import (
     DONE_CANCELLED,
@@ -1446,22 +1448,12 @@ class TaskLauncher:
         task.command = command
 
     def _inject_resume_command(self, command: str, engine: str | None, session_id: str) -> str:
-        quoted = f"'{session_id}'"
-        if engine == "claude":
-            if "--resume " in command:
-                return command
-            return f"{command} --resume {quoted}"
-        if engine == "cursor":
-            if "--resume " in command:
-                return command
-            if " < " in command:
-                return command.replace(" < ", f" --resume {quoted} < ", 1)
-            return f"{command} --resume {quoted}"
-        if engine == "codex":
-            if "codex exec resume " in command:
-                return command
-            return command.replace("codex exec -", f"codex exec resume {quoted}", 1)
-        return command
+        if not engine:
+            return command
+        spec = ENGINE_SPECS.get(engine)
+        if spec is None:
+            return command
+        return inject_resume(spec, command, session_id)
 
     def _is_resume_fallback_target(self, task: Task, stderr_text: str) -> bool:
         if task.annotations.get("_resume_fallback_launched"):

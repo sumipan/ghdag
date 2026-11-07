@@ -262,6 +262,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.llm.call_managed` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, capabilities=TEXT_ONLY, fallback_candidates=(), additional_tags=None, quota_gate=None, fallback_on_timeout=False, isolation=None) -> ManagedResult` |
 | `ghdag.llm.build_llm_cmd` | `(engine, model, prompt, *, capabilities=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=False) -> list[str]` — when `isolation=True`, claude adds `--disable-slash-commands`; codex adds `-c skills.include_instructions=false`; cursor is unchanged |
 | `ghdag.core.command.render_exec_command` | `(spec, *, order_path, model, prompt=None, capabilities=None, resume_session_id=None, isolation=False) -> str` |
+| `ghdag.core.command.inject_resume` | `(spec, command, session_id) -> str` — insert resume into a command string produced by `render_exec_command` (no resume) |
 | `ghdag.core.container.container_prefix` | `(capabilities, *, workdir='"$PWD"') -> list[str]` |
 | `ghdag.workflow.load_workflows` | `(directory) -> list[WorkflowConfig]` |
 | `ghdag.workflow.get_forge` | `(repo=None) -> ForgePort` |
