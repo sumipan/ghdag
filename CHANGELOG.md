@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.111.2 - 2026-11-07
+
+### Changed
+
+- `parse_fanout_spec`: when a `ghdag_fanout:` anchor is present, invalid YAML, a missing `---` separator, malformed `children`, or invalid child entries raise `FanoutError` instead of returning None (sumipan/nexus#6088).
+
 ## 0.111.1 - 2026-11-07
 
 ### Fixed

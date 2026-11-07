@@ -318,6 +318,36 @@ ghdag_fanout:
         assert "FANOUT_PARSE_FAILED" in hooks.failure[0][3] or "--fo--" in hooks.failure[0][3]
         assert hooks.failure[0][4].failure_class == FailureClass.FANOUT_PARSE_FAILED
 
+        lines = [ln for ln in exec_file.read_text().splitlines()]
+        assert len(lines) == 0
+
+    def test_invalid_yaml_marks_parent_fanout_parse_failed(self, tmp_path):
+        engine, hooks, exec_file = _make_engine(tmp_path)
+        uuid = "parent-yaml-fail"
+        result_file = tmp_path / "result_yaml.md"
+        task = Task(uuid=uuid, command="true", result_path=str(result_file))
+
+        invalid_fanout = b"""\
+Some output.
+
+---
+ghdag_fanout:
+  children: [
+"""
+        rt = _make_completed_running_task(uuid, task, stdout_content=invalid_fanout)
+        engine._launcher._running[uuid] = rt
+
+        engine._launcher.check_completions()
+
+        done_file = tmp_path / "done" / uuid
+        assert done_file.exists()
+        assert done_file.read_text() == "FANOUT_PARSE_FAILED"
+
+        assert len(hooks.failure) == 1
+        assert hooks.failure[0][0] == uuid
+        assert hooks.failure[0][4].failure_class == FailureClass.FANOUT_PARSE_FAILED
+        assert not hooks.success
+
         lines = [ln for ln in exec_file.read_text().splitlines() if ln.strip()]
         assert len(lines) == 0
 

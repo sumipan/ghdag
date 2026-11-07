@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import json
-import logging
 from dataclasses import dataclass
 
 import yaml
 
 from ghdag.core.vocabulary import FANOUT_ANCHOR, FANOUT_KEY, FANOUT_SEPARATOR
 from ghdag.exceptions import GhdagError
-
-logger = logging.getLogger(__name__)
 
 
 class FanoutError(GhdagError, ValueError):
@@ -34,9 +31,9 @@ def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
 
     Searches backwards for the last line starting with ``ghdag_fanout:``, then
     verifies a ``---`` separator exists before it. Parses everything from the
-    anchor line as YAML. Returns None if no anchor or separator is found, or
-    if parsing fails (with a warning log). Raises ValueError if child ``id``
-    values are duplicated.
+    anchor line as YAML. Returns None if no anchor is found, if the file cannot
+    be read, or if ``children`` is an empty list (no fan-out needed). Raises
+    ``FanoutError`` when an anchor is present but the spec is invalid.
     """
     if result_path is None:
         return None
@@ -59,36 +56,43 @@ def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
         return None
 
     if not any(lines[i].strip() == "---" for i in range(fanout_line_idx)):
-        return None
+        raise FanoutError("ghdag_fanout: anchor without preceding '---' line")
 
     yaml_text = "\n".join(lines[fanout_line_idx:])
     try:
         data = yaml.safe_load(yaml_text)
     except yaml.YAMLError as exc:
-        logger.warning("parse_fanout_spec: invalid YAML in %s: %s", result_path, exc)
-        return None
+        raise FanoutError(f"invalid YAML after ghdag_fanout: anchor: {exc}") from exc
 
     if not isinstance(data, dict) or FANOUT_KEY not in data:
-        return None
+        raise FanoutError("ghdag_fanout must be a mapping")
 
     fanout_data = data[FANOUT_KEY]
     if not isinstance(fanout_data, dict):
-        return None
+        raise FanoutError("ghdag_fanout must be a mapping")
 
-    children_data = fanout_data.get("children") or []
+    if "children" not in fanout_data or fanout_data["children"] is None:
+        raise FanoutError("ghdag_fanout.children is missing")
+
+    children_data = fanout_data["children"]
+    if not isinstance(children_data, list):
+        raise FanoutError("ghdag_fanout.children must be a list")
+
     if not children_data:
         return None
 
     ids: list[str] = []
     children: list[FanOutItem] = []
-    for c in children_data:
-        try:
-            child_id = c["id"]
-            child_cmd = c["command"]
-        except (KeyError, TypeError) as exc:
-            logger.warning("parse_fanout_spec: malformed child entry in %s: %s", result_path, exc)
-            return None
-        if FANOUT_SEPARATOR in str(child_id):
+    for i, c in enumerate(children_data):
+        if not isinstance(c, dict):
+            raise FanoutError(f"child #{i}: entry must be a mapping")
+        if "id" not in c or not isinstance(c["id"], str):
+            raise FanoutError(f"child #{i}: 'id' must be a string")
+        if "command" not in c or not isinstance(c["command"], str):
+            raise FanoutError(f"child #{i}: 'command' must be a string")
+        child_id = c["id"]
+        child_cmd = c["command"]
+        if FANOUT_SEPARATOR in child_id:
             raise FanoutError(
                 f"child id {child_id!r} contains reserved separator {FANOUT_SEPARATOR!r}"
             )
