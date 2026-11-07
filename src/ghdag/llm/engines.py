@@ -33,7 +33,7 @@ from ghdag.core.command import (
 from ghdag.core.models.metrics import FailureClass
 from ghdag.core.ports.output import EngineError
 from ghdag.core.stall_guard import StallEvent, StallTracker
-from ghdag.exceptions import GhdagError
+from ghdag.exceptions import ConfigError
 from ghdag.llm._config import load_engine_models
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.capabilities import TEXT_ONLY, LLMCapabilities, LLMParseError
@@ -68,8 +68,10 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-class EngineModelError(GhdagError):
+class EngineModelError(ConfigError):
     """Raised when an unknown engine or unauthorized model is specified."""
+
+    code = "ENGINE_MODEL_INVALID"
 
 
 # ---------------------------------------------------------------------------
@@ -107,9 +109,11 @@ def list_models(engine: str) -> list[str]:
     """
     models = get_engine_models()
     if engine not in models:
+        available = sorted(models.keys())
         raise EngineModelError(
-            f"Unknown engine: {engine!r}. "
-            f"Available: {sorted(models.keys())}"
+            f"Unknown engine: {engine!r}. Available: {available}",
+            code="ENGINE_UNKNOWN",
+            hint=f"available engines: {available}",
         )
     return sorted(models[engine])
 
@@ -127,9 +131,11 @@ def validate_engine_model(engine: str, model: str | None) -> str:
     """
     models = get_engine_models()
     if engine not in models:
+        available = sorted(models.keys())
         raise EngineModelError(
-            f"Unknown engine: {engine!r}. "
-            f"Available: {sorted(models.keys())}"
+            f"Unknown engine: {engine!r}. Available: {available}",
+            code="ENGINE_UNKNOWN",
+            hint=f"available engines: {available}",
         )
 
     if model is None:
@@ -142,9 +148,14 @@ def validate_engine_model(engine: str, model: str | None) -> str:
 
     allowed = models[engine]
     if model not in allowed:
+        allowed_sorted = sorted(allowed)
         raise EngineModelError(
-            f"Model not in allowlist: {model!r} (engine={engine}). "
-            f"Allowed: {sorted(allowed)}"
+            f"Model not in allowlist: {model!r} (engine={engine}). Allowed: {allowed_sorted}",
+            code="MODEL_NOT_ALLOWED",
+            hint=(
+                f"allowed models: {allowed_sorted}; "
+                "override with llm-models.yml / GHDAG_LLM_MODELS"
+            ),
         )
     return model
 

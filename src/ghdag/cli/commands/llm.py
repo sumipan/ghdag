@@ -2,20 +2,34 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 from ghdag.config.env import ghdag_audit_path
+from ghdag.exceptions import CliUsageError
+
+
+def _llm_result_envelope(result, *, engine: str, model: str | None) -> dict[str, object]:
+    failure = result.failure_class
+    return {
+        "ok": result.ok,
+        "returncode": result.returncode,
+        "engine": engine,
+        "model": model,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "latency_ms": result.latency_ms,
+        "failure_class": failure.value if failure is not None else None,
+        "cause": None,
+        "retry_policy": None,
+        "session_id": result.session_id,
+    }
 
 
 def cmd_llm(args) -> None:
     """ghdag llm: one-shot LLM call (no workflow required)."""
-    from ghdag.llm.engines import (
-        EngineModelError,
-        call,
-        list_engines,
-        list_models,
-    )
+    from ghdag.llm.engines import call, list_engines, list_models, validate_engine_model
 
     if args.list_engines:
         for engine in list_engines():
@@ -23,23 +37,25 @@ def cmd_llm(args) -> None:
         return
 
     if args.list_models:
-        try:
-            for model in list_models(args.engine):
-                print(model)
-        except EngineModelError as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            sys.exit(1)
+        for model in list_models(args.engine):
+            print(model)
         return
 
     prompt = args.prompt
     if prompt is None:
         if sys.stdin.isatty():
-            print("error: prompt required (positional arg or stdin)", file=sys.stderr)
-            sys.exit(1)
+            raise CliUsageError(
+                "prompt required (positional arg or stdin)",
+                code="LLM_PROMPT_REQUIRED",
+                hint="pass the prompt as an argument or on stdin",
+            )
         prompt = sys.stdin.read().strip()
         if not prompt:
-            print("error: empty prompt from stdin", file=sys.stderr)
-            sys.exit(1)
+            raise CliUsageError(
+                "empty prompt from stdin",
+                code="LLM_PROMPT_REQUIRED",
+                hint="pass the prompt as an argument or on stdin",
+            )
 
     stdin_text = None
     if args.read_stdin and not sys.stdin.isatty():
@@ -66,20 +82,19 @@ def cmd_llm(args) -> None:
     if capabilities is not None:
         call_kwargs["capabilities"] = capabilities
 
-    try:
-        result = call(prompt, **call_kwargs)
-    except EngineModelError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        sys.exit(1)
+    result = call(prompt, **call_kwargs)
 
-    if result.stdout:
-        print(result.stdout, end="")
-    if result.stderr:
-        print(result.stderr, end="", file=sys.stderr)
+    if args.output_json:
+        resolved_model = validate_engine_model(args.engine, args.model)
+        print(json.dumps(_llm_result_envelope(result, engine=args.engine, model=resolved_model)))
+    else:
+        if result.stdout:
+            print(result.stdout, end="")
+        if result.stderr:
+            print(result.stderr, end="", file=sys.stderr)
 
     audit_path = args.audit_path or ghdag_audit_path()
     if audit_path and result.ok:
-        from ghdag.llm.engines import validate_engine_model
         from ghdag.pipeline.audit import (
             compute_prompt_hash,
             write_llm_audit_log,

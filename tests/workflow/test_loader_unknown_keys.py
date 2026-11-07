@@ -76,8 +76,10 @@ def test_load_workflows_rejects_unknown_keys(
     with pytest.raises(ValidationError) as exc_info:
         load_workflows(tmp_path)
 
-    assert unknown_path in str(exc_info.value)
-    assert "Allowed:" in str(exc_info.value)
+    err = exc_info.value
+    assert unknown_path in str(err)
+    assert err.code == "WORKFLOW_UNKNOWN_KEY"
+    assert err.hint is not None and "Allowed:" in err.hint
 
 
 def test_step_unknown_keys_are_sorted_and_list_all_allowed_keys(tmp_path: Path) -> None:
@@ -90,11 +92,13 @@ def test_step_unknown_keys_are_sorted_and_list_all_allowed_keys(tmp_path: Path) 
     with pytest.raises(ValidationError) as exc_info:
         load_workflows(tmp_path)
 
-    assert str(exc_info.value) == (
+    err = exc_info.value
+    assert str(err) == (
         "wf.yml: unknown key(s) in handlers.impl.steps[0]: "
-        "handlers.impl.steps[0].a_unknown, handlers.impl.steps[0].z_unknown. "
-        f"Allowed: {', '.join(sorted(STEP_KEYS))}"
+        "handlers.impl.steps[0].a_unknown, handlers.impl.steps[0].z_unknown."
     )
+    assert err.code == "WORKFLOW_UNKNOWN_KEY"
+    assert err.hint == f"Allowed: {', '.join(sorted(STEP_KEYS))}"
 
 
 def test_reset_handler_rejects_unknown_key(tmp_path: Path) -> None:

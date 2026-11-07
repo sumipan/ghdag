@@ -8,11 +8,28 @@ from dataclasses import dataclass
 import yaml
 
 from ghdag.core.vocabulary import FANOUT_ANCHOR, FANOUT_KEY, FANOUT_SEPARATOR
-from ghdag.exceptions import GhdagError
+from ghdag.exceptions import ConfigError
+
+_FANOUT_CHILDREN_HINT = "children must be a list of {id, command} mappings"
 
 
-class FanoutError(GhdagError, ValueError):
+class FanoutError(ConfigError):
     """Raised when a fan-out spec contains invalid entries."""
+
+    code = "FANOUT_INVALID"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str | None = None,
+        hint: str | None = None,
+    ) -> None:
+        super().__init__(
+            message,
+            code=code,
+            hint=hint if hint is not None else _FANOUT_CHILDREN_HINT,
+        )
 
 
 @dataclass

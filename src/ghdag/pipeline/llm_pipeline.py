@@ -16,14 +16,16 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from ghdag.config.env import engine_isolation_enabled, ghdag_safe_default_permission
-from ghdag.exceptions import GhdagError
+from ghdag.exceptions import ConfigError
 from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import PipelineState
 
 
-class DependencyError(GhdagError, ValueError):
+class DependencyError(ConfigError):
     """Raised when step dependencies are invalid or circular."""
+
+    code = "STEP_DEPENDENCY_INVALID"
 
 if TYPE_CHECKING:
     from ghdag.workflow.schema import StepConfig, WorkflowConfig
@@ -50,7 +52,11 @@ def _validate_depends(steps: "list[StepConfig]") -> None:
     for step in steps:
         for dep_id in step.depends:
             if dep_id not in step_ids:
-                raise DependencyError(f"Unknown dependency: {dep_id!r}")
+                raise DependencyError(
+                    f"Unknown dependency: {dep_id!r}",
+                    code="STEP_DEPENDENCY_UNKNOWN",
+                    hint=f"defined step ids: {sorted(step_ids)}",
+                )
 
     # Detect cycles via topological sort
     in_degree: dict[str, int] = {s.id: 0 for s in steps if s.id is not None}
@@ -74,7 +80,10 @@ def _validate_depends(steps: "list[StepConfig]") -> None:
                 queue.append(neighbor)
 
     if visited < len(in_degree):
-        raise DependencyError("circular dependency detected among steps")
+        raise DependencyError(
+            "circular dependency detected among steps",
+            code="STEP_DEPENDENCY_CYCLE",
+        )
 
     dep_map: dict[str, set[str]] = {
         s.id: set(s.depends) for s in steps if s.id is not None
@@ -99,17 +108,28 @@ def _validate_depends(steps: "list[StepConfig]") -> None:
             continue
         if not isinstance(resume_from, str):
             raise DependencyError(
-                f"resume_from must be a single step id string (fan-in is unsupported): {resume_from!r}"
+                f"resume_from must be a single step id string (fan-in is unsupported): {resume_from!r}",
+                code="STEP_RESUME_FROM_INVALID",
             )
         if step.id is None:
-            raise DependencyError("resume_from requires step.id to be set")
+            raise DependencyError(
+                "resume_from requires step.id to be set",
+                code="STEP_RESUME_FROM_INVALID",
+            )
         if resume_from not in step_ids:
-            raise DependencyError(f"Unknown resume_from dependency: {resume_from!r}")
+            raise DependencyError(
+                f"Unknown resume_from dependency: {resume_from!r}",
+                code="STEP_RESUME_FROM_INVALID",
+            )
         if step.id == resume_from:
-            raise DependencyError("resume_from cannot reference itself")
+            raise DependencyError(
+                "resume_from cannot reference itself",
+                code="STEP_RESUME_FROM_INVALID",
+            )
         if not _is_transitive_ancestor(step.id, resume_from):
             raise DependencyError(
-                f"resume_from {resume_from!r} must be a transitive ancestor of step {step.id!r}"
+                f"resume_from {resume_from!r} must be a transitive ancestor of step {step.id!r}",
+                code="STEP_RESUME_FROM_INVALID",
             )
 
 
@@ -341,10 +361,12 @@ class LLMPipelineAPI:
         from ghdag.llm.capabilities import PRESETS
         from ghdag.llm.spec import ENGINE_SPECS, render_exec_command
 
+        preset_keys = sorted(PRESETS.keys())
         if permission is not None and permission not in PRESETS:
-            raise ValueError(
-                f"Unknown permission preset: {permission!r}. "
-                f"Available: {sorted(PRESETS.keys())}"
+            raise ConfigError(
+                f"Unknown permission preset: {permission!r}. Available: {preset_keys}",
+                code="STEP_PERMISSION_UNKNOWN",
+                hint=f"available presets: {preset_keys}",
             )
 
         safe_default_env: str | None = None
@@ -355,9 +377,11 @@ class LLMPipelineAPI:
             safe_default_env = ghdag_safe_default_permission()
             if safe_default_env:
                 if safe_default_env not in PRESETS:
-                    raise ValueError(
+                    raise ConfigError(
                         f"Unknown GHDAG_SAFE_DEFAULT_PERMISSION: {safe_default_env!r}. "
-                        f"Available: {sorted(PRESETS.keys())}"
+                        f"Available: {preset_keys}",
+                        code="STEP_PERMISSION_UNKNOWN",
+                        hint=f"available presets: {preset_keys}",
                     )
                 capabilities = PRESETS[safe_default_env]
                 safe_default_applied = True
@@ -366,6 +390,15 @@ class LLMPipelineAPI:
                 capabilities = PRESETS["text_only"]
                 safe_default_applied = True
 
+        if engine not in ENGINE_SPECS:
+            from ghdag.llm.engines import EngineModelError
+
+            available = sorted(ENGINE_SPECS.keys())
+            raise EngineModelError(
+                f"Unknown engine: {engine!r}. Available: {available}",
+                code="ENGINE_UNKNOWN",
+                hint=f"available engines: {available}",
+            )
         spec = ENGINE_SPECS[engine]
         annotations: dict[str, object] = {}
         if permission is None and safe_default_applied:

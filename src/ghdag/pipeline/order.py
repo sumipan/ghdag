@@ -11,15 +11,27 @@ import string
 from pathlib import Path
 
 from ghdag.core.ports.order import OrderBuilder
+from ghdag.exceptions import ConfigError
 
 __all__ = ["OrderBuilder", "InlineOrderBuilder", "TemplateOrderBuilder", "TemplateVariableError"]
 
 
-class TemplateVariableError(ValueError, KeyError):
-    """Missing template variable error. Subclass of both ValueError and KeyError."""
+_TEMPLATE_VAR_HINT = (
+    "Define the variable in the context, or write a literal dollar sign as $$"
+)
+
+
+class TemplateVariableError(ConfigError, KeyError):
+    """Missing template variable error."""
+
+    code = "TEMPLATE_UNDEFINED_VARIABLE"
+
+    def __init__(self, message: str) -> None:
+        ConfigError.__init__(self, message, hint=_TEMPLATE_VAR_HINT)
+        KeyError.__init__(self, message)
 
     def __str__(self) -> str:
-        return self.args[0] if self.args else ""
+        return self.message
 
 
 def _check_missing_vars(

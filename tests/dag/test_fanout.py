@@ -73,8 +73,14 @@ class TestParseFanoutSpec:
             "    - id: dup\n      command: echo 1\n"
             "    - id: dup\n      command: echo 2\n"
         )
-        with pytest.raises(FanoutError, match="[Dd]uplicate"):
+        with pytest.raises(FanoutError, match="[Dd]uplicate") as exc_info:
             parse_fanout_spec(str(f))
+        from ghdag.exceptions import ConfigError
+
+        err = exc_info.value
+        assert isinstance(err, ConfigError)
+        assert err.code == "FANOUT_INVALID"
+        assert err.hint is not None
 
     def test_uses_last_separator(self, tmp_path):
         """Only the content after the LAST '---' is parsed."""

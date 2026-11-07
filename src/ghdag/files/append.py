@@ -14,6 +14,9 @@ _NEXT_HEADING_RE = re.compile(r"^#{1,6}\s+")
 class AppendRecoverError(GhdagError, ValueError):
     """Partial write detected (start marker present without completion marker)."""
 
+    code = "APPEND_RECOVER_FAILED"
+    exit_code = 1
+
 
 def _hash16(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]

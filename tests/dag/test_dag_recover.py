@@ -177,8 +177,13 @@ class TestExecuteRecover:
         plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
         with pytest.raises(RecoverError) as exc_info:
             execute_recover(plan, queue_dir=jobs, done_dir=done)
-        assert UUID_A in str(exc_info.value)
-        assert "--redispatch" in str(exc_info.value)
+        err = exc_info.value
+        from ghdag.exceptions import GhdagError
+
+        assert isinstance(err, GhdagError)
+        assert err.code == "RECOVER_NOT_POSSIBLE"
+        assert UUID_A in str(err)
+        assert "--redispatch" in str(err)
 
     def test_reuses_existing_frozen_order_without_context_hook(self, tmp_path):
         """Recover does not create new order files — only clears done markers."""

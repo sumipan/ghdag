@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 class DuplicateTaskError(GhdagError, ValueError):
     """Raised when enqueueing a uuid that is already queued and not yet done."""
 
+    code = "EXEC_DUPLICATE_TASK"
+    exit_code = 3
+
 
 def _uuids_in_jsonl_text(text: str) -> set[str]:
     uuids: set[str] = set()

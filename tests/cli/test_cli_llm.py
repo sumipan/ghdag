@@ -283,10 +283,41 @@ class TestCLI:
         assert "claude-opus-4-6" in output
         assert "claude-sonnet-4-6" in output
 
-    def test_llm_list_models_unknown_engine(self):
-        """ghdag llm --list-models --engine unknown → exit 1"""
+    def test_llm_list_models_unknown_engine(self, capsys):
+        """ghdag llm --list-models --engine unknown → exit 3"""
         from ghdag.cli import main
 
         with pytest.raises(SystemExit) as exc_info:
             main(["llm", "--list-models", "--engine", "unknown"])
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 3
+        assert capsys.readouterr().err.splitlines()[0].startswith("error[ENGINE_UNKNOWN]:")
+
+
+class TestLlmStructuredOutput:
+    def test_llm_json_envelope_on_success(self, capsys, monkeypatch):
+        monkeypatch.delenv("GHDAG_AUDIT_PATH", raising=False)
+        monkeypatch.setattr("ghdag.config.env.ghdag_audit_path", lambda: None)
+        from ghdag.llm.engines import LLMResult
+
+        mock_result = LLMResult(stdout="ok\n", stderr="", returncode=0, latency_ms=12.0)
+        with patch("ghdag.llm.engines.call", return_value=mock_result), \
+             patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
+            from ghdag.cli import main
+            with pytest.raises(SystemExit) as exc:
+                main(["llm", "hello", "--json"])
+        assert exc.value.code == 0
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        payload = json.loads(captured.out.strip())
+        assert payload["ok"] is True
+        assert payload["returncode"] == 0
+        assert payload["stdout"] == "ok\n"
+        assert payload["failure_class"] is None
+
+    def test_llm_prompt_required_on_tty_exits_2(self, capsys, monkeypatch):
+        monkeypatch.setattr("sys.stdin", type("Tty", (), {"isatty": lambda self: True})())
+        from ghdag.cli import main
+        with pytest.raises(SystemExit) as exc:
+            main(["llm"])
+        assert exc.value.code == 2
+        assert capsys.readouterr().err.splitlines()[0].startswith("error[LLM_PROMPT_REQUIRED]:")

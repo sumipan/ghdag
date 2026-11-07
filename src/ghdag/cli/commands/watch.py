@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 from ghdag.config.env import state_dir as resolve_state_dir
+from ghdag.exceptions import CliUsageError
 
 
 def cmd_watch(args) -> None:
@@ -19,8 +19,11 @@ def cmd_watch(args) -> None:
 
     workflows_path = Path(args.workflows_dir)
     if not workflows_path.exists():
-        print(f"error: directory not found: {workflows_path}", file=sys.stderr)
-        sys.exit(1)
+        raise CliUsageError(
+            f"directory not found: {workflows_path}",
+            code="WORKFLOWS_DIR_NOT_FOUND",
+            hint="pass --workflows-dir PATH",
+        )
 
     workflows = load_workflows(workflows_path)
     for wf in workflows:

@@ -235,8 +235,9 @@ class TestAC3DependsValidation:
         steps = [
             StepConfig(id="step_a", template="t", model="m", depends=["nonexistent_step"]),
         ]
-        with pytest.raises(DependencyError, match="nonexistent_step"):
+        with pytest.raises(DependencyError, match="nonexistent_step") as exc_info:
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+        assert exc_info.value.code == "STEP_DEPENDENCY_UNKNOWN"
 
     def test_circular_dependency_a_b_a_raises_value_error(self):
         """A→B→A circular dependency → ValueError containing 'circular dependency'"""
@@ -589,3 +590,18 @@ class TestEnvPassthroughInAnnotations:
 
         record = _json.loads(exec_lines[0])
         assert "env_passthrough" not in record.get("annotations", {})
+
+
+class TestUnknownEngine:
+    def test_unknown_engine_raises_engine_model_error(self):
+        """#6142: unknown engine → EngineModelError(ENGINE_UNKNOWN), not KeyError."""
+        from ghdag.llm.engines import EngineModelError
+
+        api, _, _ = _make_api()
+        steps = [
+            StepConfig(template="t", model="claude-opus-4-6", engine="nonexistent"),
+        ]
+        with pytest.raises(EngineModelError) as exc_info:
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+        assert exc_info.value.code == "ENGINE_UNKNOWN"
+        assert "claude" in (exc_info.value.hint or "")

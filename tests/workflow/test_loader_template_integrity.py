@@ -133,13 +133,14 @@ handlers:
         with pytest.raises(ValidationError) as exc_info:
             load_workflows(tmp_path)
         msg = str(exc_info.value)
+        hint = exc_info.value.hint or ""
         assert "impl" in msg
         assert "steps[1]" in msg
         assert "p2" in msg
         assert "p1_result_content" in msg
-        assert "p1_result_filename" in msg
-        assert "Put 'p1' in depends" in msg
-        assert "enqueue" in msg.lower()
+        assert "p1_result_filename" in hint
+        assert "Put 'p1' in depends" in hint
+        assert "enqueue" in hint.lower()
 
     def test_result_filename_with_depends_passes(self, tmp_path):
         """AC-3: ${p1_result_filename} with depends: [p1] → no error."""
@@ -195,13 +196,14 @@ handlers:
         with pytest.raises(ValidationError) as exc_info:
             load_workflows(tmp_path)
         msg = str(exc_info.value)
+        hint = exc_info.value.hint or ""
         assert "impl" in msg
         assert "steps[1]" in msg
         assert "p2" in msg
         assert "p1_result_content" in msg
-        assert "p1_result_filename" in msg
-        assert "Put 'p1' in depends" in msg
-        assert "enqueue" in msg.lower()
+        assert "p1_result_filename" in hint
+        assert "Put 'p1' in depends" in hint
+        assert "enqueue" in hint.lower()
 
     def test_unknown_id_in_result_var_passes(self, tmp_path):
         """AC-3: ${unknown_result_filename} where 'unknown' is not a step id → no error."""

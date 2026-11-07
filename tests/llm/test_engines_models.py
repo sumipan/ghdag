@@ -91,14 +91,18 @@ class TestValidateEngineModel:
         assert result == "auto"
 
     def test_unknown_engine(self):
-        """Unknown engine → EngineModelError"""
-        with pytest.raises(EngineModelError, match="Unknown engine"):
+        """Unknown engine → EngineModelError(ENGINE_UNKNOWN)"""
+        with pytest.raises(EngineModelError, match="Unknown engine") as exc_info:
             validate_engine_model("openai", "gpt-4o")
+        assert exc_info.value.code == "ENGINE_UNKNOWN"
+        assert "claude" in (exc_info.value.hint or "")
 
     def test_invalid_model(self):
-        """Disallowed model → EngineModelError"""
-        with pytest.raises(EngineModelError, match="Model not in allowlist"):
+        """Disallowed model → EngineModelError(MODEL_NOT_ALLOWED)"""
+        with pytest.raises(EngineModelError, match="Model not in allowlist") as exc_info:
             validate_engine_model("claude", "gpt-4o")
+        assert exc_info.value.code == "MODEL_NOT_ALLOWED"
+        assert exc_info.value.exit_code == 3
 
     def test_invalid_model_contains_info(self):
         """Error message includes engine name and model name"""
