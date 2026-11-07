@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.113.0 - 2026-11-08
+
 ### Fixed
 
 - `ghdag watch` hot reload: include `.yaml` workflow files in mtime checks and refresh per-workflow order builders after a successful reload (sumipan/nexus#6092).
