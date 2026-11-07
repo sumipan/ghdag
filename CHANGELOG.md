@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.109.0 - 2026-11-07
+
 ### Added
 
 - `ghdag.core.command.inject_resume` — pure helper to insert resume flags into a `render_exec_command` string when only the command text is available (e.g. `TaskLauncher` resume wiring).
