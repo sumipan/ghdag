@@ -285,6 +285,8 @@ class LLMPipelineAPI:
                 role_engines = list((workflow_roles or {}).get(step.role, []))
                 record.setdefault("annotations", {})["role"] = step.role
                 record.setdefault("annotations", {})["role_engines"] = role_engines
+            if step.env_passthrough:
+                record.setdefault("annotations", {})["env_passthrough"] = step.env_passthrough
             if metadata:
                 record.setdefault("annotations", {}).update(metadata)
             if idempotency_key:

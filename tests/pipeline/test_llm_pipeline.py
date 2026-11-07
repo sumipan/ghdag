@@ -499,3 +499,33 @@ class TestResultContentInjection:
         p3_ctx = captured[2][1]
         assert p3_ctx["p1_result_content"] == content_p1
         assert p3_ctx["p2_result_content"] == content_p2
+
+
+class TestEnvPassthroughInAnnotations:
+    def test_submit_writes_env_passthrough_to_annotations(self):
+        """Non-empty StepConfig.env_passthrough is copied to record annotations."""
+        import json as _json
+
+        api, _, _ = _make_api()
+        steps = [
+            StepConfig(
+                template="brushup",
+                model="claude-opus-4-6",
+                env_passthrough=["MY_TOKEN"],
+            ),
+        ]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert record["annotations"]["env_passthrough"] == ["MY_TOKEN"]
+
+    def test_submit_omits_env_passthrough_key_when_empty(self):
+        """Empty env_passthrough does not add annotations.env_passthrough."""
+        import json as _json
+
+        api, _, _ = _make_api()
+        steps = [StepConfig(template="brushup", model="claude-opus-4-6", env_passthrough=[])]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "env_passthrough" not in record.get("annotations", {})

@@ -746,7 +746,7 @@ Every variable ghdag reads (`os.environ` / `os.getenv` in `src/ghdag/`). Most re
 
 ### Task environment policy
 
-`TaskLauncher` builds each task environment from a copy of the host `os.environ`, then applies `GHDAG_TASK_ENV_ALLOW` or `GHDAG_TASK_ENV_DENY` (allow wins when both are set). Names in `annotations.env_passthrough` bypass deny patterns. Every `GHDAG_*` variable and the injected task keys (`GHDAG_TASK_UUID`, `GHDAG_RESULT_PATH`, optional `GHDAG_PREVIOUS_ATTEMPT`) are always kept. The number of denied variables is attached to the next `task_started` audit record.
+`TaskLauncher` builds each task environment from a copy of the host `os.environ`, then applies `GHDAG_TASK_ENV_ALLOW` or `GHDAG_TASK_ENV_DENY` (allow wins when both are set). Names in `annotations.env_passthrough` bypass deny patterns. Workflow steps declare passthrough names with `env_passthrough`; `LLMPipelineAPI.submit()` writes that list into each exec record's `annotations` so the launcher receives it without hand-editing `exec.jsonl`. Every `GHDAG_*` variable and the injected task keys (`GHDAG_TASK_UUID`, `GHDAG_RESULT_PATH`, optional `GHDAG_PREVIOUS_ATTEMPT`) are always kept. The number of denied variables is attached to the next `task_started` audit record.
 
 ### Secret redaction
 
@@ -797,6 +797,7 @@ Variables ghdag sets for child processes (not configuration):
 | | `skill_name` | `str \| None` | no | `None` | Skill the step invokes (checked by `workflow.typecheck`) |
 | | `render` | `str` | no | `"frozen"` | `"frozen"` (expand at enqueue) or `"live"` (expand at run time) |
 | | `role` | `str \| None` | no | `None` | `QuotaGate` role; must be declared in `roles` |
+| | `env_passthrough` | `list[str]` | no | `[]` | Host env var names exempt from `GHDAG_TASK_ENV_DENY`; non-empty values are copied to `annotations.env_passthrough` on enqueue so `TaskLauncher` can apply them |
 
 ### exec.jsonl task fields
 
