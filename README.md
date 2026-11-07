@@ -12,13 +12,13 @@ Unlike CI-hosted orchestrators (GitHub Actions, Dagger), nothing runs on a hoste
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.112.0-blue)
+![version](https://img.shields.io/badge/version-v0.112.1-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.112.0** (`pyproject.toml` `version = "0.112.0"`) |
+| Current release | **v0.112.1** (`pyproject.toml` `version = "0.112.1"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -35,7 +35,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.112.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.112.1"
 ```
 
 Install from a checkout with the development tools:
@@ -895,7 +895,7 @@ sinks:
 
 Managed by `QuotaGate` and `ghdag quota`. Top-level keys: `engines`, `draining_engines`, `running_tasks`, and optional `limits`.
 
-Each `engines.<name>` entry stores derived fields (`status`, `observed_at`, `resume_at`, `reason`, `override_until`) plus a `sources` array. Each source object has `kind` (`budget`, `failure`, `manual`, or `drain`), `reason`, `until`, `set_by`, `observed_at`, and `available`. Pauses are merged from active sources; `ghdag quota report` appends or updates a source for the given `kind`. An engine is unavailable while it is draining (`draining_engines`) or any active source keeps it `paused`. Budget-side pauses use `QuotaGate.report(kind="budget")`. `ghdag quota status` adds per-engine `queued` / `running` / `idle` counts.
+Each `engines.<name>` entry stores derived fields (`status`, `observed_at`, `resume_at`, `reason`, `override_until`) plus a `sources` array. Each source object has `kind` (`budget`, `failure`, `manual`, or `drain`), `reason`, `until`, `set_by`, `observed_at`, and `available`. Pauses are merged from active sources; `QuotaGate.report(kind=...)` appends or updates the source for that `kind` (default `failure`). `ghdag quota report` has no `--kind` option and always records a `failure` source. An engine is unavailable while it is draining (`draining_engines`) or any active source keeps it `paused`. Budget-side pauses use `QuotaGate.report(kind="budget")`. `ghdag quota status` adds per-engine `queued` / `running` / `idle` counts.
 
 ### Language pack (`GHDAG_LANGUAGE_PACK`)
 
@@ -1044,7 +1044,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.112.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.112.1"
 ```
 
 and read `CHANGELOG.md` before upgrading.
