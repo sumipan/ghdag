@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `ghdag.core.command.inject_resume` — pure helper to insert resume flags into a `render_exec_command` string when only the command text is available (e.g. `TaskLauncher` resume wiring).
+
+### Fixed
+
+- `TaskLauncher._inject_resume_command` now uses `inject_resume`, so codex `web_search` / `--search` commands get `exec resume` injected correctly (sumipan/nexus#6084).
+
 ## 0.108.0 - 2026-11-07
 
 ### Fixed

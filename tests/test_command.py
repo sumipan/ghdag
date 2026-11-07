@@ -8,7 +8,7 @@ import shlex
 import pytest
 
 from ghdag.core.capabilities import WEB_RESEARCH, LLMCapabilities
-from ghdag.core.command import build_llm_cmd, render_exec_command
+from ghdag.core.command import build_llm_cmd, inject_resume, render_exec_command
 from ghdag.core.container import container_prefix
 from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
 from ghdag.llm.capabilities import TEXT_ONLY
@@ -411,3 +411,85 @@ class TestRenderExecCommandContainer:
     def test_gemini_shell_reject_container(self, engine: str) -> None:
         with pytest.raises(NotImplementedError, match="sandbox"):
             _validate_capabilities_for_engine(engine, _CONTAINER)
+
+
+class TestInjectResume:
+    """Resume injection into render_exec_command strings (sumipan/nexus#6084)."""
+
+    @pytest.mark.parametrize("engine", ["claude", "cursor", "codex"])
+    @pytest.mark.parametrize("model", ["M", None])
+    @pytest.mark.parametrize(
+        "capabilities",
+        [None, LLMCapabilities(stream=True)],
+    )
+    def test_inject_resume_matches_render_exec_command(
+        self,
+        engine: str,
+        model: str | None,
+        capabilities: LLMCapabilities | None,
+    ) -> None:
+        spec = ENGINE_SPECS[engine]
+        base = render_exec_command(
+            spec,
+            order_path="jobs/x.md",
+            model=model,
+            capabilities=capabilities,
+        )
+        expected = render_exec_command(
+            spec,
+            order_path="jobs/x.md",
+            model=model,
+            capabilities=capabilities,
+            resume_session_id="S",
+        )
+        assert inject_resume(spec, base, "S") == expected
+
+    def test_inject_resume_claude_keeps_stdin_redirect_last(self) -> None:
+        base = (
+            "claude -p --model 'M' --output-format stream-json --verbose "
+            "--dangerously-skip-permissions < jobs/x.md"
+        )
+        expected = (
+            "claude -p --model 'M' --resume 'S' --output-format stream-json "
+            "--verbose --dangerously-skip-permissions < jobs/x.md"
+        )
+        assert inject_resume(ENGINE_SPECS["claude"], base, "S") == expected
+
+    def test_inject_resume_cursor_after_prompt_flag(self) -> None:
+        base = (
+            "cursor-agent --model 'M' -p --force --output-format stream-json "
+            "--stream-partial-output < jobs/x.md"
+        )
+        expected = (
+            "cursor-agent --model 'M' -p --resume 'S' --force "
+            "--output-format stream-json --stream-partial-output < jobs/x.md"
+        )
+        assert inject_resume(ENGINE_SPECS["cursor"], base, "S") == expected
+
+    def test_inject_resume_codex_with_search(self) -> None:
+        base = (
+            "codex --search exec - --model 'M' --json --skip-git-repo-check "
+            "< jobs/x.md"
+        )
+        expected = (
+            "codex --search exec resume 'S' --model 'M' --json "
+            "--skip-git-repo-check < jobs/x.md"
+        )
+        assert inject_resume(ENGINE_SPECS["codex"], base, "S") == expected
+
+    @pytest.mark.parametrize("engine", ["claude", "cursor", "codex"])
+    def test_inject_resume_already_resumed_is_unchanged(self, engine: str) -> None:
+        spec = ENGINE_SPECS[engine]
+        cmd = render_exec_command(
+            spec,
+            order_path="jobs/x.md",
+            model="M",
+            resume_session_id="OLD",
+        )
+        assert inject_resume(spec, cmd, "S") == cmd
+
+    @pytest.mark.parametrize("engine", ["gemini", "shell"])
+    def test_inject_resume_unsupported_engine_is_unchanged(self, engine: str) -> None:
+        spec = ENGINE_SPECS[engine]
+        cmd = render_exec_command(spec, order_path="jobs/x.md", model="M")
+        assert inject_resume(spec, cmd, "S") == cmd

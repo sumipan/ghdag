@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import shlex
 from collections.abc import Callable
 from typing import Protocol
@@ -22,9 +23,14 @@ __all__ = [
     "_dedupe_extra_args",
     "build_llm_cmd",
     "get_adapter",
+    "inject_resume",
     "register_adapter",
     "render_exec_command",
 ]
+
+_RESUME_ALREADY_CLAUDE_CURSOR = re.compile(r"(?<!\S)--resume(?=[\s=]|$)")
+_RESUME_ALREADY_CODEX = re.compile(r"(?<!\S)exec\s+resume(?!\S)")
+_MODEL_WITH_VALUE = re.compile(r"(?<!\S)--model\s+(?:'[^']*'|\S+)")
 
 
 def _dedupe_extra_args(
@@ -312,6 +318,50 @@ def render_exec_command(
         _append_danger_or_perm()
 
     return " ".join(parts) + f" < {shlex.quote(order_path)}"
+
+
+def inject_resume(spec: EngineSpec, command: str, session_id: str) -> str:
+    """Insert resume flags into a render_exec_command-produced shell command string."""
+    quoted = f"'{session_id}'"
+    resume_snippet = f" --resume {quoted}"
+
+    if spec.name in {"claude", "cursor"}:
+        if _RESUME_ALREADY_CLAUDE_CURSOR.search(command):
+            return command
+        positions: list[int] = []
+        if spec.prompt_flag_token:
+            prompt_re = re.compile(
+                rf"(?<!\S){re.escape(spec.prompt_flag_token)}(?=[\s=]|$)"
+            )
+            match = prompt_re.search(command)
+            if match:
+                positions.append(match.end())
+        model_match = _MODEL_WITH_VALUE.search(command)
+        if model_match:
+            positions.append(model_match.end())
+        if positions:
+            insert_at = max(positions)
+            return command[:insert_at] + resume_snippet + command[insert_at:]
+        if " < " in command:
+            idx = command.rfind(" < ")
+            return command[:idx] + resume_snippet + command[idx:]
+        return command + resume_snippet
+
+    if spec.name == "codex":
+        if _RESUME_ALREADY_CODEX.search(command):
+            return command
+        if len(spec.subcommand) >= 2:
+            sub0, sub1 = spec.subcommand[0], spec.subcommand[1]
+            pattern = re.compile(
+                rf"(?<!\S){re.escape(sub0)}\s+{re.escape(sub1)}(?=\s)"
+            )
+            match = pattern.search(command)
+            if match:
+                replacement = f"{sub0} resume {quoted}"
+                return command[: match.start()] + replacement + command[match.end() :]
+        return command
+
+    return command
 
 
 def build_llm_cmd(

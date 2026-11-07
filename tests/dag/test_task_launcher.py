@@ -13,6 +13,9 @@ from ghdag_dag_conftest_helpers import (
     _make_config,
 )
 
+from ghdag.core.capabilities import WEB_RESEARCH
+from ghdag.core.command import render_exec_command
+from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.vocabulary import DONE_SKIPPED_MISSING_INPUT
 from ghdag.dag.models import DagConfig, Task
 from ghdag.llm.compaction import CompactionResult
@@ -255,3 +258,87 @@ def test_popen_failure_restores_command_without_resume(tmp_path: Path) -> None:
     assert "_command_without_resume" not in task.annotations
     assert "resumed_session_id" not in task.annotations
     assert "child-uuid" not in launcher._quota_gate.snapshot().running_tasks
+
+
+def test_apply_resume_codex_search_command(tmp_path: Path) -> None:
+    """Issue #6084: codex --search commands get exec resume injected in the right place."""
+    launcher = _make_launcher(tmp_path)
+    launcher._session_store.record("parent-uuid", "codex", "sess-parent")
+    original_command = render_exec_command(
+        ENGINE_SPECS["codex"],
+        order_path="child.md",
+        model="M",
+        capabilities=WEB_RESEARCH,
+    )
+    task = Task(
+        uuid="child-uuid",
+        command=original_command,
+        engine="codex",
+        annotations={"resume_from_uuid": "parent-uuid"},
+    )
+    skipped = CompactionResult(
+        status="skipped",
+        reason="below_threshold",
+        session_id="sess-parent",
+        parent_session_id="sess-parent",
+        summary_tokens=None,
+        tokens_before=10,
+        tokens_after=10,
+        compacted_key=None,
+    )
+    expected_command = (
+        "codex --search exec resume 'sess-parent' --model 'M' --json "
+        "--skip-git-repo-check < child.md"
+    )
+
+    with patch(
+        "ghdag.dag.task_launcher.compact_resume_session",
+        return_value=skipped,
+    ), patch("ghdag.dag.task_launcher.write_compaction_audit"):
+        launcher._apply_resume_if_available("child-uuid", task)
+
+    assert task.command == expected_command
+    assert task.annotations["_command_without_resume"] == original_command
+    assert task.annotations["resumed_session_id"] == "sess-parent"
+
+
+def test_apply_resume_claude_matches_render(tmp_path: Path) -> None:
+    """Issue #6084: claude resume injection matches render_exec_command placement."""
+    launcher = _make_launcher(tmp_path)
+    launcher._session_store.record("parent-uuid", "claude", "sess-parent")
+    original_command = render_exec_command(
+        ENGINE_SPECS["claude"],
+        order_path="child.md",
+        model="M",
+    )
+    task = Task(
+        uuid="child-uuid",
+        command=original_command,
+        engine="claude",
+        annotations={"resume_from_uuid": "parent-uuid"},
+    )
+    skipped = CompactionResult(
+        status="skipped",
+        reason="below_threshold",
+        session_id="sess-parent",
+        parent_session_id="sess-parent",
+        summary_tokens=None,
+        tokens_before=10,
+        tokens_after=10,
+        compacted_key=None,
+    )
+    expected_command = render_exec_command(
+        ENGINE_SPECS["claude"],
+        order_path="child.md",
+        model="M",
+        resume_session_id="sess-parent",
+    )
+
+    with patch(
+        "ghdag.dag.task_launcher.compact_resume_session",
+        return_value=skipped,
+    ), patch("ghdag.dag.task_launcher.write_compaction_audit"):
+        launcher._apply_resume_if_available("child-uuid", task)
+
+    assert task.command == expected_command
+    assert task.annotations["_command_without_resume"] == original_command
