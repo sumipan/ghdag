@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `GHDAG_ENGINE_ISOLATION=0` (and `false` / `no` / `off`) now correctly disables isolation. Previously any non-empty string was truthy. Access unified via `config.env.engine_isolation_enabled()`.
+
 ## 0.107.2 - 2026-11-07
 
 ### Fixed

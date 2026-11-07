@@ -24,6 +24,7 @@ __all__ = [
     "ghdag_llm_models",
     "latency_span_path",
     "session_compaction_enabled",
+    "engine_isolation_enabled",
     "enable_git",
     "ghdag_vcs_config",
     "ghdag_state_dir",
@@ -78,6 +79,16 @@ def ghdag_llm_models() -> str | None:
 def session_compaction_enabled() -> bool:
     """Return whether ``GHDAG_SESSION_COMPACTION`` opts in (``1``/``true``/``yes``/``on``)."""
     return os.environ.get("GHDAG_SESSION_COMPACTION", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def engine_isolation_enabled() -> bool:
+    """Return whether ``GHDAG_ENGINE_ISOLATION`` opts in (``1``/``true``/``yes``/``on``)."""
+    return os.environ.get("GHDAG_ENGINE_ISOLATION", "").strip().lower() in {
         "1",
         "true",
         "yes",

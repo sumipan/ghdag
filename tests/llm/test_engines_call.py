@@ -261,6 +261,28 @@ class TestEngineIsolation:
         assert "--disable-slash-commands" in cmd
 
     @patch("ghdag.llm.engines.subprocess.run")
+    def test_claude_call_env_zero_omits_disable_slash_commands(
+        self, mock_run: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Issue sumipan/nexus#6085: GHDAG_ENGINE_ISOLATION=0 must not enable isolation."""
+        monkeypatch.setenv("GHDAG_ENGINE_ISOLATION", "0")
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("hello", engine="claude", capabilities=TEXT_ONLY, isolation=None)
+        cmd = _last_subprocess_cmd(mock_run)
+        assert "--disable-slash-commands" not in cmd
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_claude_call_env_one_includes_disable_slash_commands(
+        self, mock_run: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Issue sumipan/nexus#6085: GHDAG_ENGINE_ISOLATION=1 enables isolation."""
+        monkeypatch.setenv("GHDAG_ENGINE_ISOLATION", "1")
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("hello", engine="claude", capabilities=TEXT_ONLY, isolation=None)
+        cmd = _last_subprocess_cmd(mock_run)
+        assert "--disable-slash-commands" in cmd
+
+    @patch("ghdag.llm.engines.subprocess.run")
     def test_codex_call_sets_codex_home_when_isolation_and_auth(
         self, mock_run: MagicMock, tmp_path, monkeypatch
     ) -> None:

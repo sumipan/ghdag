@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ghdag.config.env import (
+    engine_isolation_enabled,
     stall_guard_enabled,
     stall_guard_interval_sec,
     stall_guard_stall_sec,
@@ -181,7 +182,7 @@ def _resolve_isolation(isolation: bool | None) -> bool:
     """Resolve from the explicit isolation value, else from the GHDAG_ENGINE_ISOLATION env var."""
     if isolation is not None:
         return isolation
-    return bool(os.environ.get("GHDAG_ENGINE_ISOLATION"))
+    return engine_isolation_enabled()
 
 # Capabilities treated as noop (value accepted but not reflected in CLI flags) because
 # the engine has no equivalent concept.
