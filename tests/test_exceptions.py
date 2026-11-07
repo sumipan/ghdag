@@ -6,6 +6,8 @@ from ghdag import GhdagError
 from ghdag.dag.fanout import FanoutError
 from ghdag.exceptions import (
     AuthError,
+    CliUsageError,
+    ConfigError,
     GitHubApiError,
     NetworkError,
     PermissionDeniedError,
@@ -21,6 +23,7 @@ from ghdag.llm.capabilities import LLMParseError
 from ghdag.llm.engines import EngineModelError
 from ghdag.pipeline.config import ModelValidationError
 from ghdag.pipeline.llm_pipeline import DependencyError
+from ghdag.tool.exceptions import ToolRegistryError
 from ghdag.workflow.dispatcher import ContextHookError
 from ghdag.workflow.engine import AdapterNotFoundError
 from ghdag.workflow.loader import ValidationError
@@ -107,3 +110,38 @@ def test_auth_error_inheritance():
 def test_github_api_subclasses_inherit_from_github_api_error(exc_cls):
     assert issubclass(exc_cls, GitHubApiError)
     assert issubclass(exc_cls, GhdagError)
+
+
+def test_ghdag_error_to_dict_includes_code_hint_and_exit_code():
+    """Issue #6153 — machine-readable GhdagError.to_dict()."""
+    err = GhdagError("boom", code="X_Y", hint="do z")
+    assert err.to_dict() == {
+        "code": "X_Y",
+        "message": "boom",
+        "hint": "do z",
+        "exit_code": 1,
+    }
+
+
+def test_rate_limit_error_positional_args_preserve_fields():
+    """Issue #6153 — GitHub rate limit code and positional compat."""
+    err = RateLimitError("limited", 403, 1_700_000_000)
+    assert err.status_code == 403
+    assert err.reset_at == 1_700_000_000
+    assert err.code == "GITHUB_RATE_LIMIT"
+    assert err.exit_code == 4
+
+
+def test_config_and_cli_usage_errors_exit_codes():
+    """Issue #6153 — ConfigError / CliUsageError hierarchy."""
+    assert ConfigError("bad").exit_code == 3
+    assert CliUsageError("bad").exit_code == 2
+    assert isinstance(ConfigError("bad"), GhdagError)
+    assert isinstance(CliUsageError("bad"), GhdagError)
+
+
+def test_tool_registry_error_code_and_exit_code():
+    """Issue #6153 — ToolRegistryError machine-readable code."""
+    err = ToolRegistryError("x")
+    assert err.code == "TOOL_REGISTRY_INVALID"
+    assert err.exit_code == 3

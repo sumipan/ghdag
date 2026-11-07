@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
+
+from ghdag.core.exceptions import GhdagError
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -15,7 +18,49 @@ def main(argv: list[str] | None = None) -> None:
     if not hasattr(args, "func"):
         parser.print_help()
         sys.exit(0)
-    args.func(args)
+    try:
+        args.func(args)
+    except GhdagError as exc:
+        output_json = bool(getattr(args, "output_json", False))
+        _print_error(exc, output_json=output_json)
+        raise SystemExit(exc.exit_code) from None
+
+
+def _print_error(exc: GhdagError, *, output_json: bool) -> None:
+    if output_json:
+        print(json.dumps({"error": exc.to_dict()}, ensure_ascii=False))
+        return
+    print(f"error[{exc.code}]: {exc.message}", file=sys.stderr)
+    if exc.hint:
+        print(f"  hint: {exc.hint}", file=sys.stderr)
+
+
+def _add_json_flag(parser: argparse.ArgumentParser) -> None:
+    if any(
+        "--json" in (action.option_strings or [])
+        for action in parser._actions
+    ):
+        return
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="output_json",
+        help="Emit JSON",
+    )
+
+
+def _iter_leaf_parsers(parser: argparse.ArgumentParser):
+    for action in parser._actions:
+        if not isinstance(action, argparse._SubParsersAction):
+            continue
+        for subparser in action.choices.values():
+            if any(
+                isinstance(a, argparse._SubParsersAction)
+                for a in subparser._actions
+            ):
+                yield from _iter_leaf_parsers(subparser)
+            else:
+                yield subparser
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -153,6 +198,8 @@ def _build_parser() -> argparse.ArgumentParser:
     ui_parser.set_defaults(func=cmd_ui)
 
     # ghdag llm
+    from ghdag.llm.capabilities import PRESETS
+
     llm_parser = subparsers.add_parser(
         "llm",
         help="One-shot LLM call without workflow",
@@ -197,7 +244,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--capabilities-preset",
         default=None,
         dest="capabilities_preset",
-        choices=["text_only", "json_only", "web_research", "dangerous_full_access"],
+        choices=sorted(PRESETS),
         help="Capabilities preset name",
     )
     llm_parser.add_argument(
@@ -327,11 +374,6 @@ def _build_parser() -> argparse.ArgumentParser:
         "--running",
         action="store_true",
         help="List tasks from jobs/running (alone or with --issue)",
-    )
-    status_parser.add_argument(
-        "--json",
-        action="store_true",
-        help="Emit JSON",
     )
     status_parser.add_argument(
         "--exec-jsonl",
@@ -597,6 +639,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     quota_status.set_defaults(func=cmd_quota_status)
 
+    for leaf in _iter_leaf_parsers(parser):
+        _add_json_flag(leaf)
+
     return parser
 
 
@@ -614,4 +659,7 @@ def _cmd_version(args: argparse.Namespace) -> None:
     """Print __version__ to stdout."""
     from ghdag import __version__
 
-    print(__version__)
+    if args.output_json:
+        print(json.dumps({"version": __version__}))
+    else:
+        print(__version__)
