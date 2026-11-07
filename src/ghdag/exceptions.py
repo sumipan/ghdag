@@ -2,6 +2,8 @@
 
 from ghdag.core.exceptions import (
     AuthError,
+    CliUsageError,
+    ConfigError,
     GhdagError,
     GitHubApiError,
     NetworkError,
@@ -16,4 +18,6 @@ __all__ = [
     "RateLimitError",
     "PermissionDeniedError",
     "NetworkError",
+    "ConfigError",
+    "CliUsageError",
 ]

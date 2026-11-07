@@ -175,3 +175,34 @@ def test_unregistered_full_parser_gives_no_violations() -> None:
     refs = extract_cli_references(_all_reference_lines())
     violations = unregistered(refs, registered)
     assert violations == [], violations
+
+
+def _iter_leaf_parsers(parser: argparse.ArgumentParser):
+    for action in parser._actions:
+        if not isinstance(action, argparse._SubParsersAction):
+            continue
+        for subparser in action.choices.values():
+            if any(
+                isinstance(a, argparse._SubParsersAction)
+                for a in subparser._actions
+            ):
+                yield from _iter_leaf_parsers(subparser)
+            else:
+                yield subparser
+
+
+def test_leaf_subcommands_register_json_flag() -> None:
+    """Issue #6153 — every leaf CLI subcommand exposes --json."""
+    from ghdag.cli.main import _build_parser
+
+    parser = _build_parser()
+    missing: list[str] = []
+    for leaf in _iter_leaf_parsers(parser):
+        prog = leaf.prog or "?"
+        has_json = any(
+            "--json" in (action.option_strings or [])
+            for action in leaf._actions
+        )
+        if not has_json:
+            missing.append(prog)
+    assert missing == [], f"missing --json on: {missing}"

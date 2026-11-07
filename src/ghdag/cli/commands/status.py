@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from dataclasses import asdict
 from pathlib import Path
 
 from ghdag.config.env import state_dir as resolve_state_dir
+from ghdag.exceptions import CliUsageError
 
 
 def cmd_status(args) -> None:
@@ -16,11 +16,10 @@ def cmd_status(args) -> None:
     from ghdag.status import issue_status, running_tasks
 
     if not args.issue_number and not args.running:
-        print(
-            "error: specify --issue N and/or --running",
-            file=sys.stderr,
+        raise CliUsageError(
+            "specify --issue N and/or --running",
+            code="STATUS_TARGET_REQUIRED",
         )
-        sys.exit(1)
 
     exec_jsonl = Path(
         args.exec_jsonl
@@ -41,7 +40,7 @@ def cmd_status(args) -> None:
     if args.running and not args.issue_number:
         tasks = running_tasks(running_dir)
         payload = [asdict(t) for t in tasks]
-        if args.json:
+        if args.output_json:
             print(json.dumps(payload, ensure_ascii=False, indent=2))
         else:
             if not tasks:
@@ -54,11 +53,10 @@ def cmd_status(args) -> None:
         return
 
     if not args.handler or not args.workflow:
-        print(
-            "error: --handler and --workflow are required with --issue",
-            file=sys.stderr,
+        raise CliUsageError(
+            "--handler and --workflow are required with --issue",
+            code="STATUS_HANDLER_WORKFLOW_REQUIRED",
         )
-        sys.exit(1)
 
     running_uuids: set[str] = set()
     if running_dir.is_dir():
@@ -76,36 +74,35 @@ def cmd_status(args) -> None:
         running_dir=running_dir,
     )
 
-    if args.json:
-        body = {
+    running_tasks_list = running_tasks(running_dir) if args.running else []
+
+    if args.output_json:
+        body: dict[str, object] = {
             "generation": status.generation,
             "running": status.running,
             "steps": [asdict(s) for s in status.steps],
             "orphan_uuids": status.orphan_uuids,
         }
+        if args.running:
+            body["running_tasks"] = [asdict(t) for t in running_tasks_list]
         print(json.dumps(body, ensure_ascii=False, indent=2))
-    else:
-        print(f"generation: {status.generation}")
-        print(f"running: {status.running}")
-        print(f"orphan_uuids: {', '.join(status.orphan_uuids) or '-'}")
-        for step in status.steps:
-            deps = ", ".join(step.depends) if step.depends else "-"
-            print(
-                f"  {step.step_name} uuid={step.uuid} status={step.status} "
-                f"depends=[{deps}]"
-            )
+        return
+
+    print(f"generation: {status.generation}")
+    print(f"running: {status.running}")
+    print(f"orphan_uuids: {', '.join(status.orphan_uuids) or '-'}")
+    for step in status.steps:
+        deps = ", ".join(step.depends) if step.depends else "-"
+        print(
+            f"  {step.step_name} uuid={step.uuid} status={step.status} "
+            f"depends=[{deps}]"
+        )
 
     if args.running:
-        tasks = running_tasks(running_dir)
-        if args.json:
-            # Already printed issue JSON; append running as a second document
-            # only in text mode to keep --json single-object for --issue.
-            pass
-        else:
-            print("")
-            print(f"running tasks: {len(tasks)}")
-            for t in tasks:
-                print(
-                    f"  {t.uuid} engine={t.engine or '-'} "
-                    f"elapsed_sec={t.elapsed_sec:.1f}"
-                )
+        print("")
+        print(f"running tasks: {len(running_tasks_list)}")
+        for t in running_tasks_list:
+            print(
+                f"  {t.uuid} engine={t.engine or '-'} "
+                f"elapsed_sec={t.elapsed_sec:.1f}"
+            )
