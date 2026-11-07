@@ -12,13 +12,13 @@ Unlike CI-hosted orchestrators (GitHub Actions, Dagger), nothing runs on a hoste
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.112.1-blue)
+![version](https://img.shields.io/badge/version-v0.114.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.112.1** (`pyproject.toml` `version = "0.112.1"`) |
+| Current release | **v0.114.0** (`pyproject.toml` `version = "0.114.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -35,7 +35,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.112.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.114.0"
 ```
 
 Install from a checkout with the development tools:
@@ -329,7 +329,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.config` | `env` (accessors listed under [Environment variables](#environment-variables)) |
 | `ghdag.core` | `command` |
 | `ghdag.core.ports` | `ForgePort` |
-| `ghdag.dag` | `DagConfig`, `DagEngine`, `DagHooks`, `DefaultHooks`, `RunningTask`, `Task`, `check_pipeline_status`, `extract_tee_target`, `parse_jsonl` |
+| `ghdag.dag` | `DagConfig`, `DagEngine`, `DagHooks`, `DefaultHooks`, `RunningTask`, `Task`, `check_pipeline_status`, `default_check_rejected`, `extract_tee_target`, `parse_jsonl` |
 | `ghdag.files` | `AppendResult`, `AppendStatus`, `MdFile`, `PathTraversalError`, `PromoteResult`, `PromoteStatus`, `WriteResult`, `md_append`, `md_promote`, `md_read`, `md_write` |
 | `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
 | `ghdag.io` | Submodules `audit`, `audit_query`, `done`, `exec_jsonl`, `queue`, `sessions` |
@@ -350,13 +350,13 @@ Modules that declare their own `__all__` (private `_` names omitted). Modules ma
 
 | Module | Public symbols |
 |---|---|
-| `ghdag.exceptions` (shim) | `GhdagError`, `GitHubApiError`, `AuthError`, `RateLimitError`, `PermissionDeniedError`, `NetworkError` |
+| `ghdag.exceptions` (shim) | `GhdagError`, `GitHubApiError`, `AuthError`, `RateLimitError`, `PermissionDeniedError`, `NetworkError`, `ConfigError`, `CliUsageError` |
 | `ghdag.status` | `IssueStatus`, `StepStatus`, `RunningTask`, `issue_status`, `running_tasks` |
 | `ghdag.github_cli` | `GitHubClient`, `DEFAULT_REPO`, `API_BASE`, `GRAPHQL_URL`, `get_forge` |
 | `ghdag.audit.span` | `EVENT_TYPE_E2E_COMPLETED`, `EVENT_TYPE_E2E_FAILED`, `EVENT_TYPE_LATENCY_SPAN`, `LATENCY_SPAN_JSONL`, `emit_span`, `make_span_id` |
-| `ghdag.config.env` | `github_token`, `github_repositories_raw`, `ghdag_audit_path`, `ghdag_token_warn_threshold`, `ghdag_safe_default_permission`, `ghdag_llm_models`, `latency_span_path`, `session_compaction_enabled`, `enable_git`, `ghdag_vcs_config`, `ghdag_state_dir`, `state_dir`, `ghdag_language_pack`, `stall_guard_enabled`, `stall_guard_stall_sec`, `stall_guard_interval_sec`, `ghdag_task_env_deny`, `ghdag_task_env_allow`, `ghdag_redact_patterns_path`, `set_pending_env_denied_count`, `pending_env_denied_count` |
+| `ghdag.config.env` | `github_token`, `github_repositories_raw`, `ghdag_audit_path`, `ghdag_token_warn_threshold`, `ghdag_safe_default_permission`, `ghdag_llm_models`, `latency_span_path`, `session_compaction_enabled`, `engine_isolation_enabled`, `enable_git`, `ghdag_vcs_config`, `ghdag_state_dir`, `state_dir`, `RuntimePaths`, `resolve_runtime_paths`, `ghdag_language_pack`, `stall_guard_enabled`, `stall_guard_stall_sec`, `stall_guard_interval_sec`, `ghdag_task_env_deny`, `ghdag_task_env_allow`, `ghdag_redact_patterns_path`, `set_pending_env_denied_count`, `pending_env_denied_count` |
 | `ghdag.config.language` | `STATE_IDS`, `UI_KEYS`, `LanguagePack`, `EN`, `load_language_pack`, `get_language_pack` |
-| `ghdag.core.command` | `AdapterNotFoundError`, `EngineAdapter`, `build_llm_cmd`, `get_adapter`, `register_adapter`, `render_exec_command` |
+| `ghdag.core.command` | `AdapterNotFoundError`, `EngineAdapter`, `build_llm_cmd`, `get_adapter`, `inject_resume`, `register_adapter`, `render_exec_command` |
 | `ghdag.core.container` | `CONTAINER_WORKDIR`, `container_prefix` |
 | `ghdag.dag.hooks` | `DagHooks`, `DefaultHooks` |
 | `ghdag.dag.models` | `Task`, `DagConfig`, `RunningTask` |
@@ -1024,6 +1024,7 @@ Standard exceptions raised by the public API: `ValueError` (unknown `GHDAG_FORGE
 | `EngineError` | `ghdag.core.ports.output` | Dataclass returned by `EngineOutputAdapter.extract_error` (`kind`, `message`, `retryable`, `resume_at`) |
 | `FailureClass` | `ghdag.core.models.metrics` | Enum of task failure classes (for example `INTERACTIVE_PROMPT`, `QUOTA_EXHAUSTED`, `TIMEOUT`, `PROCESS_ERROR`) |
 | `TypeCheckError` | `ghdag.workflow.typecheck` | Dataclass describing a skill I/O mismatch |
+| `WaitQuotaParseError` | `ghdag.dag._util` | Frozen dataclass (`reason`) when `parse_wait_quota_signal` or `parse_wait_quota_result_path` cannot parse `PIPELINE_STATUS: WAIT_QUOTA` output; the runner treats it like a normal failed result |
 | `CommitResult` | `ghdag.vcs.sink` | Outcome of a sink call (`committed`, `pushed`, `skipped`, `reason`, `sha`, `paths`) |
 
 ### Done markers
@@ -1078,7 +1079,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.112.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.114.0"
 ```
 
 and read `CHANGELOG.md` before upgrading.
