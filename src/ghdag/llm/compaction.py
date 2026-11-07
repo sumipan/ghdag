@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ghdag.llm.capabilities import JSON_ONLY
 from ghdag.llm.engines import TextResult, call_text
 from ghdag.llm.session import SessionRecord, SessionStore
 
@@ -141,6 +142,7 @@ def compact_resume_session(
             model=model,
             resume_session_id=parent_record.session_id,
             cwd=cwd,
+            capabilities=JSON_ONLY,
         )
     except Exception:
         return CompactionResult(
@@ -175,6 +177,7 @@ def compact_resume_session(
             engine=parent_record.engine,
             model=model,
             cwd=cwd,
+            capabilities=JSON_ONLY,
         )
     except Exception:
         return CompactionResult(

@@ -11,6 +11,7 @@ import pytest
 
 from ghdag.dag.models import DagConfig, Task
 from ghdag.dag.task_launcher import TaskLauncher
+from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.compaction import (
     GENSHIJIN_HANDOFF_PROMPT,
     CompactionPolicy,
@@ -75,6 +76,139 @@ def _text_result(body: str, *, session_id: str | None, ok: bool = True) -> TextR
         session_id=session_id,
     )
     return TextResult(body=body, success=ok, raw=raw, error=None)
+
+
+def _claude_json_text_result(payload: dict) -> TextResult:
+    """Build a TextResult as call_text would from claude --output-format json stdout."""
+    stdout = json.dumps(payload)
+    adapter = ClaudeJsonAdapter()
+    body = adapter.extract_result_text(stdout.encode(), b"").decode()
+    session_id = adapter.extract_session_id(stdout.encode(), b"")
+    raw = LLMResult(stdout=stdout, stderr="", returncode=0, session_id=session_id)
+    return TextResult(body=body, success=True, raw=raw, error=None)
+
+
+def test_compact_resume_passes_json_capabilities_to_both_calls(tmp_path):
+    """Issue #6090: both summary and seed LLM calls use JSON output capabilities."""
+    store = SessionStore(tmp_path / ".sessions")
+    store.record("parent", "claude", "sess-parent")
+    parent = store.lookup("parent")
+    assert parent is not None
+
+    calls: list[dict] = []
+
+    def fake_call_text(prompt, **kwargs):
+        calls.append(kwargs)
+        if kwargs.get("resume_session_id") == "sess-parent":
+            return _text_result(
+                '{"facts":[],"unresolved":[],"next":[],"files":[],"constraints":[]}',
+                session_id="sess-parent",
+            )
+        return _text_result("ack", session_id="sess-compacted")
+
+    compact_resume_session(
+        store=store,
+        parent_key="parent",
+        parent_record=parent,
+        compacted_key="child__compacted",
+        policy=CompactionPolicy(token_threshold=10, enabled=True),
+        token_usage=50_000,
+        call_text_fn=fake_call_text,
+    )
+
+    assert len(calls) == 2
+    for call_kwargs in calls:
+        caps = call_kwargs.get("capabilities")
+        assert caps is not None
+        assert caps.output_format == "json"
+
+
+def test_compact_resume_records_session_id_from_claude_json_output(tmp_path):
+    """Issue #6090: compaction records session_id parsed from claude JSON stdout."""
+    store = SessionStore(tmp_path / ".sessions")
+    store.record("parent", "claude", "sess-parent")
+    parent = store.lookup("parent")
+    assert parent is not None
+
+    summary_json = (
+        '{"facts":[],"unresolved":[],"next":[],"files":[],"constraints":[]}'
+    )
+
+    def fake_call_text(prompt, **kwargs):
+        if kwargs.get("resume_session_id") == "sess-parent":
+            return _claude_json_text_result(
+                {
+                    "type": "result",
+                    "result": summary_json,
+                    "session_id": "sess-parent",
+                }
+            )
+        return _claude_json_text_result(
+            {
+                "type": "result",
+                "result": "ack",
+                "session_id": "sess-compacted",
+            }
+        )
+
+    result = compact_resume_session(
+        store=store,
+        parent_key="parent",
+        parent_record=parent,
+        compacted_key="child__compacted",
+        policy=CompactionPolicy(token_threshold=10, enabled=True),
+        token_usage=50_000,
+        call_text_fn=fake_call_text,
+    )
+
+    assert result.status == "compacted"
+    assert result.session_id == "sess-compacted"
+    compacted = store.lookup("child__compacted")
+    assert compacted is not None
+    assert compacted.session_id == "sess-compacted"
+
+
+def test_compact_resume_falls_back_when_seed_has_no_session_id(tmp_path):
+    """Issue #6090: missing seed session_id falls back without recording compaction."""
+    store = SessionStore(tmp_path / ".sessions")
+    store.record("parent", "claude", "sess-parent")
+    parent = store.lookup("parent")
+    assert parent is not None
+
+    def fake_call_text(prompt, **kwargs):
+        if kwargs.get("resume_session_id") == "sess-parent":
+            return _text_result(
+                '{"facts":[],"unresolved":[],"next":[],"files":[],"constraints":[]}',
+                session_id="sess-parent",
+            )
+        return _text_result("ack", session_id=None)
+
+    result = compact_resume_session(
+        store=store,
+        parent_key="parent",
+        parent_record=parent,
+        compacted_key="child__compacted",
+        policy=CompactionPolicy(token_threshold=10, enabled=True),
+        token_usage=50_000,
+        call_text_fn=fake_call_text,
+    )
+
+    assert result.status == "fallback"
+    assert result.reason == "prompt_error"
+    assert result.session_id == "sess-parent"
+    assert store.lookup("child__compacted") is None
+
+
+def test_readme_compaction_row_mentions_json_output_mode():
+    """Issue #6090: README module inventory documents JSON output mode for compaction."""
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(
+        encoding="utf-8"
+    )
+    for line in readme.splitlines():
+        if "`llm/compaction.py`" in line:
+            assert "JSON output mode" in line
+            return
+    pytest.fail("README.md has no llm/compaction.py module inventory row")
 
 
 def test_compact_resume_creates_new_session_with_lineage(tmp_path):
