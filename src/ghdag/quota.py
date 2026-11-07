@@ -90,7 +90,6 @@ class QuotaGate:
         self,
         state_path: str | Path,
         audit_path: str | Path | None = None,
-        brake_state_path: str | Path | None = None,
         pause_ttl_seconds: int | None = 3600,
         limits: Mapping[str, int] | None = None,
     ):
@@ -104,7 +103,6 @@ class QuotaGate:
         self._state_path = Path(state_path)
         self._lock_path = self._state_path.with_suffix(self._state_path.suffix + ".lock")
         self._audit_path = Path(audit_path) if audit_path else None
-        self._brake_state_path = Path(brake_state_path) if brake_state_path else None
         self._pause_ttl_seconds = pause_ttl_seconds
         self._limits = dict(limits) if limits is not None else None
 
@@ -650,15 +648,6 @@ class QuotaGate:
             running_tasks=running_tasks,
             limits=limits,
         )
-
-    def _load_brake_state(self) -> dict | None:
-        if self._brake_state_path is None or not self._brake_state_path.exists():
-            return None
-        try:
-            loaded = json.loads(self._brake_state_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return None
-        return loaded if isinstance(loaded, dict) else None
 
     def _load_state_unlocked(self) -> dict:
         """Private: use read_state() / modify()."""
@@ -1251,13 +1240,7 @@ def _engine_effective_available(
     state: dict,
     engine: str,
     observed_at: datetime,
-    brake_state: dict | None = None,
 ) -> bool:
-    if brake_state is not None:
-        brake_engines = brake_state.get("engines", {})
-        brake_eng = brake_engines.get(engine, {})
-        if isinstance(brake_eng, dict) and brake_eng.get("status") == "paused":
-            return False
     eng_payload = state["engines"].get(engine)
     engine_state = _to_engine_state(eng_payload, now=observed_at)
     stored_sources = _sources_from_engine_payload(eng_payload)

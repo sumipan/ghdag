@@ -77,12 +77,6 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="N",
         help="Maximum number of concurrent tasks (default: unlimited)",
     )
-    run_parser.add_argument(
-        "--brake-state",
-        default=None,
-        metavar="PATH",
-        help="Path to budget-brake state JSON (e.g. jobs/brake.json)",
-    )
     run_parser.set_defaults(func=cmd_run)
 
     # ghdag watch

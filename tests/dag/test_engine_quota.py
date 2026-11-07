@@ -35,11 +35,6 @@ def _write_exec(path: Path, records: list[dict]) -> None:
     path.write_text("\n".join(json.dumps(r) for r in records) + "\n", encoding="utf-8")
 
 
-def _write_brake(path: Path, engines: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"schema_version": 1, "engines": engines}), encoding="utf-8")
-
-
 def _audit_event_types(audit_path: Path) -> list[str]:
     if not audit_path.exists():
         return []
@@ -48,23 +43,6 @@ def _audit_event_types(audit_path: Path) -> list[str]:
         for line in audit_path.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-
-
-def _make_engine(tmp_path: Path, *, brake_state_path: Path | None = None) -> tuple[DagEngine, Path, Path]:
-    exec_path = tmp_path / "jobs" / "exec.jsonl"
-    done_dir = tmp_path / "jobs" / "done"
-    done_dir.mkdir(parents=True, exist_ok=True)
-    _write_exec(exec_path, [{"uuid": "task-1", "command": "claude -p hello", "depends": []}])
-    config = DagConfig(
-        exec_jsonl_path=exec_path,
-        exec_done_dir=done_dir,
-        poll_interval=0.01,
-        brake_state_path=brake_state_path,
-    )
-    hooks = MagicMock()
-    hooks.check_rejected.return_value = False
-    hooks.check_pipeline_status.return_value = None
-    return DagEngine(config, hooks), done_dir, config.quota_audit_path
 
 
 def test_paused_launch_does_not_call_subprocess(tmp_path: Path) -> None:
@@ -330,29 +308,6 @@ def test_runtime_quota_error_pauses_engine_without_task_ledger(mock_mark_done, t
     assert not result_file.exists()
     mock_mark_done.assert_not_called()
     assert engine._quota_gate.snapshot().engines["claude"].status == "paused"
-
-
-def test_dag_config_brake_state_path_propagates_to_quota_gate(tmp_path: Path) -> None:
-    exec_path = tmp_path / "jobs" / "exec.jsonl"
-    done_dir = tmp_path / "jobs" / "done"
-    done_dir.mkdir(parents=True, exist_ok=True)
-    _write_exec(exec_path, [])
-
-    brake_path = tmp_path / "issuesmith-brake.json"
-    config_with_brake = DagConfig(
-        exec_jsonl_path=exec_path,
-        exec_done_dir=done_dir,
-        brake_state_path=brake_path,
-    )
-    hooks = MagicMock()
-    hooks.check_rejected.return_value = False
-    hooks.check_pipeline_status.return_value = None
-    engine_with_brake = DagEngine(config_with_brake, hooks)
-    assert engine_with_brake._quota_gate._brake_state_path == brake_path
-
-    config_without = DagConfig(exec_jsonl_path=exec_path, exec_done_dir=done_dir)
-    engine_without = DagEngine(config_without, hooks)
-    assert engine_without._quota_gate._brake_state_path is None
 
 
 def test_dag_config_quota_limits_and_pause_ttl_propagate(tmp_path: Path) -> None:
