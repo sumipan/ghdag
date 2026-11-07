@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.111.1 - 2026-11-07
+
+### Fixed
+
+- `compact_resume_session` passes `JSON_ONLY` capabilities to both LLM calls so claude JSON stdout yields a parseable `session_id` for compaction (sumipan/nexus#6090).
+
 ## 0.111.0 - 2026-11-07
 
 ### Changed

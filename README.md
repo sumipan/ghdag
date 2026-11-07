@@ -653,7 +653,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `llm/_config.py` | `llm-models.yml` loading (`ConfigLoadError`) |
 | `llm/_constants.py` | `DEFAULT_ENGINE_MODELS` |
 | `llm/capabilities.py` | Capabilities re-export and `LLMParseError` |
-| `llm/compaction.py` | Resume-session handoff summary compaction |
+| `llm/compaction.py` | Resume-session handoff summary compaction (JSON output mode) |
 | `llm/engines.py` | Engine / model allow-list, `call` / `call_text`, `supports_capability` (`EngineModelError`) |
 | `llm/managed.py` | `call_managed`: failure classification, quota report, fallback |
 | `llm/session.py` | `SessionRecord`, `SessionStore` |
