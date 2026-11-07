@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.112.1 - 2026-11-08
+
+### Fixed
+
+- `ghdag trigger`: step count in dispatch output uses `len(exec_lines)` (JSONL exec records only; drops legacy `-1` for a comment line) (sumipan/nexus#6094).
+
 ## 0.112.0 - 2026-11-07
 
 ### Changed

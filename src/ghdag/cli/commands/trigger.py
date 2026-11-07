@@ -106,6 +106,6 @@ def cmd_trigger(args) -> None:
     if result.reason:
         print(f"  reason: {result.reason}")
     if result.status == "dispatched":
-        print(f"  exec_lines: {len(result.exec_lines) - 1} step(s)")
+        print(f"  exec_lines: {len(result.exec_lines)} step(s)")
     if result.status != "dispatched":
         sys.exit(1)
