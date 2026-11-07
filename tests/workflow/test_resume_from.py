@@ -28,6 +28,27 @@ def _make_api() -> LLMPipelineAPI:
     )
 
 
+def test_submit_resolves_forward_resume_from():
+    """resume_from referencing a later step in the list does not raise KeyError."""
+    api = _make_api()
+    steps = [
+        StepConfig(
+            id="b",
+            template="p2",
+            model="claude-sonnet-4-6",
+            engine="claude",
+            depends=["a"],
+            resume_from="a",
+        ),
+        StepConfig(id="a", template="p1", model="claude-sonnet-4-6", engine="claude"),
+    ]
+    lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+    a = json.loads(lines[1])
+    b = json.loads(lines[0])
+
+    assert b["annotations"]["resume_from_uuid"] == a["uuid"]
+
+
 def test_submit_records_resume_from_uuid_annotation():
     import uuid as _uuid
 

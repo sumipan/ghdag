@@ -236,12 +236,18 @@ class LLMPipelineAPI:
 
         records: list[dict] = []
 
+        step_uuid_list: list[str] = []
         for step in steps:
             step_uuid = str(uuid.uuid4())
             engine = step.engine
             step_id = step.id if step.id else step_uuid
             step_uuid_map[step_id] = step_uuid
             step_engine_map[step_id] = engine
+            step_uuid_list.append(step_uuid)
+
+        for step, step_uuid in zip(steps, step_uuid_list, strict=True):
+            engine = step.engine
+            step_id = step.id if step.id else step_uuid
 
             result_filename = f"{ts}-{engine}-result-{step_uuid}.md"
             context = dict(base_context)
@@ -252,18 +258,17 @@ class LLMPipelineAPI:
                 "result_filename": result_filename,
             })
             for dep_id in step.depends:
-                if dep_id in step_uuid_map:
-                    dep_uuid = step_uuid_map[dep_id]
-                    dep_engine = step_engine_map[dep_id]
-                    dep_result_filename = f"{ts}-{dep_engine}-result-{dep_uuid}.md"
-                    context[f"{dep_id}_result_filename"] = dep_result_filename
+                dep_uuid = step_uuid_map[dep_id]
+                dep_engine = step_engine_map[dep_id]
+                dep_result_filename = f"{ts}-{dep_engine}-result-{dep_uuid}.md"
+                context[f"{dep_id}_result_filename"] = dep_result_filename
 
-                    dep_result_path = os.path.join(self._queue_dir, dep_result_filename)
-                    if os.path.isfile(dep_result_path):
-                        with open(dep_result_path, encoding="utf-8") as f:
-                            context[f"{dep_id}_result_content"] = f.read()
-                    else:
-                        context[f"{dep_id}_result_content"] = ""
+                dep_result_path = os.path.join(self._queue_dir, dep_result_filename)
+                if os.path.isfile(dep_result_path):
+                    with open(dep_result_path, encoding="utf-8") as f:
+                        context[f"{dep_id}_result_content"] = f.read()
+                else:
+                    context[f"{dep_id}_result_content"] = ""
 
             order_content = order_builder.build_order(step.template, context)
             order_filename = self._state.write_order_file(
@@ -271,7 +276,7 @@ class LLMPipelineAPI:
             )
             record = self._build_exec_record(
                 step_uuid=step_uuid,
-                depends=[step_uuid_map[d] for d in step.depends if d in step_uuid_map],
+                depends=[step_uuid_map[d] for d in step.depends],
                 order_filename=order_filename,
                 result_filename=result_filename,
                 engine=engine,
