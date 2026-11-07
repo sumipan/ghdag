@@ -329,7 +329,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.config` | `env` (accessors listed under [Environment variables](#environment-variables)) |
 | `ghdag.core` | `command` |
 | `ghdag.core.ports` | `ForgePort` |
-| `ghdag.dag` | `DagConfig`, `DagEngine`, `DagHooks`, `DefaultHooks`, `RunningTask`, `Task`, `check_pipeline_status`, `extract_tee_target`, `parse_jsonl` |
+| `ghdag.dag` | `DagConfig`, `DagEngine`, `DagHooks`, `DefaultHooks`, `RunningTask`, `Task`, `check_pipeline_status`, `default_check_rejected`, `extract_tee_target`, `parse_jsonl` |
 | `ghdag.files` | `AppendResult`, `AppendStatus`, `MdFile`, `PathTraversalError`, `PromoteResult`, `PromoteStatus`, `WriteResult`, `md_append`, `md_promote`, `md_read`, `md_write` |
 | `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
 | `ghdag.io` | Submodules `audit`, `audit_query`, `done`, `exec_jsonl`, `queue`, `sessions` |
@@ -356,7 +356,7 @@ Modules that declare their own `__all__` (private `_` names omitted). Modules ma
 | `ghdag.audit.span` | `EVENT_TYPE_E2E_COMPLETED`, `EVENT_TYPE_E2E_FAILED`, `EVENT_TYPE_LATENCY_SPAN`, `LATENCY_SPAN_JSONL`, `emit_span`, `make_span_id` |
 | `ghdag.config.env` | `github_token`, `github_repositories_raw`, `ghdag_audit_path`, `ghdag_token_warn_threshold`, `ghdag_safe_default_permission`, `ghdag_llm_models`, `latency_span_path`, `session_compaction_enabled`, `engine_isolation_enabled`, `enable_git`, `ghdag_vcs_config`, `ghdag_state_dir`, `state_dir`, `RuntimePaths`, `resolve_runtime_paths`, `ghdag_language_pack`, `stall_guard_enabled`, `stall_guard_stall_sec`, `stall_guard_interval_sec`, `ghdag_task_env_deny`, `ghdag_task_env_allow`, `ghdag_redact_patterns_path`, `set_pending_env_denied_count`, `pending_env_denied_count` |
 | `ghdag.config.language` | `STATE_IDS`, `UI_KEYS`, `LanguagePack`, `EN`, `load_language_pack`, `get_language_pack` |
-| `ghdag.core.command` | `AdapterNotFoundError`, `EngineAdapter`, `build_llm_cmd`, `get_adapter`, `register_adapter`, `render_exec_command` |
+| `ghdag.core.command` | `AdapterNotFoundError`, `EngineAdapter`, `build_llm_cmd`, `get_adapter`, `inject_resume`, `register_adapter`, `render_exec_command` |
 | `ghdag.core.container` | `CONTAINER_WORKDIR`, `container_prefix` |
 | `ghdag.dag.hooks` | `DagHooks`, `DefaultHooks` |
 | `ghdag.dag.models` | `Task`, `DagConfig`, `RunningTask` |
