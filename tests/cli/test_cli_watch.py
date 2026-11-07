@@ -124,3 +124,40 @@ class TestWatchError:
             main(["watch", "nonexistent_workflows_dir/"])
         assert exc.value.code == 1
         assert "not found" in capsys.readouterr().err
+
+
+class TestWatchOrderBuilderConstruction:
+    def test_watch_builds_order_builders_via_build_order_builders(self, tmp_path):
+        """watch delegates order builder construction to build_order_builders (#6092)."""
+        from unittest.mock import MagicMock
+
+        from ghdag.workflow.schema import WorkflowConfig
+
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        loaded = [WorkflowConfig(name="stub", triggers=[], handlers={}, polling_interval=0)]
+
+        fake_mapping = {"stub-wf": MagicMock()}
+
+        def fake_build(workflows):
+            assert workflows is loaded
+            return fake_mapping
+
+        llm_kwargs: dict = {}
+
+        class FakeLLMPipelineAPI:
+            def __init__(self, **kwargs):
+                llm_kwargs.update(kwargs)
+
+        with patch("ghdag.workflow.loader.load_workflows", return_value=loaded), \
+             patch("ghdag.pipeline.llm_pipeline.build_order_builders", side_effect=fake_build), \
+             patch("ghdag.workflow.dispatcher.WorkflowDispatcher") as mock_disp_cls, \
+             patch("ghdag.github_client.create_github_clients", return_value=[]), \
+             patch("ghdag.pipeline.state.PipelineState"), \
+             patch("ghdag.pipeline.llm_pipeline.LLMPipelineAPI", FakeLLMPipelineAPI), \
+             patch("ghdag.pipeline.order.TemplateOrderBuilder"):
+            mock_disp_cls.return_value.run = lambda *a, **k: None
+            from ghdag.cli import main
+            main(["watch", str(workflows_dir)])
+
+        assert llm_kwargs["order_builders"] is fake_mapping

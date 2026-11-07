@@ -252,6 +252,8 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `DagEngine` | `(config: DagConfig, hooks: DagHooks \| None = None)` |
 | `WorkflowDispatcher` | `(workflows, github_client, pipeline, queue_dir="queue", pause_file=None, workflows_dir=None)`; `github_client` is one `GitHubIssuePort` or a list of them |
 | `LLMPipelineAPI` | `(pipeline_state, order_builder, queue_dir="queue", *, order_builders=None)` |
+| `LLMPipelineAPI.set_order_builders` | `(mapping) -> None` — replace per-workflow builders; default `order_builder` unchanged |
+| `build_order_builders` | `(workflows) -> dict[str, OrderBuilder]` — build per-workflow `TemplateOrderBuilder` map (`ghdag.pipeline.llm_pipeline`) |
 | `LLMPipelineAPI.submit` | `(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None, workflow_roles=None) -> list[str]` |
 | `PipelineState` | `(state_dir, exec_jsonl_path)`; also `PipelineState.from_repo_root(repo_root)` |
 | `QuotaGate` | `(state_path, audit_path=None, pause_ttl_seconds=3600, limits=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `wait_idle` |

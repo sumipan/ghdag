@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
 from ghdag.github_client import GitHubIssuePort
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
+from ghdag.pipeline.order import TemplateOrderBuilder
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.loader import load_workflows
 from ghdag.workflow.schema import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
@@ -361,3 +364,181 @@ class TestAC8BackwardCompatibility:
             queue_dir="queue",
         )
         assert dispatcher._workflows_dir is None
+
+
+def _make_real_pipeline(tmp_path: Path, workflows: list[WorkflowConfig]) -> LLMPipelineAPI:
+    default_template_dir = next(
+        (wf.template_dir for wf in workflows if wf.template_dir), "templates"
+    )
+    return LLMPipelineAPI(
+        pipeline_state=MagicMock(),
+        order_builder=TemplateOrderBuilder(default_template_dir),
+        queue_dir=str(tmp_path / "queue"),
+        order_builders=build_order_builders(workflows),
+    )
+
+
+def _write_workflow_bundle(
+    workflows_dir: Path,
+    *,
+    wf_yaml: str,
+    wf2_yaml: str | None = None,
+    tpl_a_step: str = "from tpl_a",
+    tpl_b_step: str = "from tpl_b",
+) -> None:
+    workflows_dir.mkdir(parents=True, exist_ok=True)
+    (workflows_dir / "wf.yml").write_text(wf_yaml)
+    tpl_a = workflows_dir / "tpl_a"
+    tpl_a.mkdir(exist_ok=True)
+    (tpl_a / "step.md").write_text(tpl_a_step)
+    tpl_b = workflows_dir / "tpl_b"
+    tpl_b.mkdir(exist_ok=True)
+    (tpl_b / "step.md").write_text(tpl_b_step)
+    if wf2_yaml is not None:
+        (workflows_dir / "wf2.yml").write_text(wf2_yaml)
+
+
+_WF_TPL_A = """\
+name: wf
+template_dir: tpl_a
+triggers:
+  - label: "wf:ready"
+    handler: h
+handlers:
+  h:
+    steps:
+      - template: step
+        model: claude-opus-4-6
+polling_interval: 0
+"""
+
+_WF2_TPL_B = """\
+name: wf2
+template_dir: tpl_b
+triggers:
+  - label: "wf2:ready"
+    handler: h
+handlers:
+  h:
+    steps:
+      - template: step
+        model: claude-opus-4-6
+polling_interval: 0
+"""
+
+_WF_TPL_B = """\
+name: wf
+template_dir: tpl_b
+triggers:
+  - label: "wf:ready"
+    handler: h
+handlers:
+  h:
+    steps:
+      - template: step
+        model: claude-opus-4-6
+polling_interval: 0
+"""
+
+
+class TestHotReloadOrderBuilders:
+    """Issue sumipan/nexus#6092 — yaml mtime and order builder refresh on reload."""
+
+    def test_reload_on_yaml_extension_mtime_change(self, tmp_path):
+        """`.yaml` workflow mtime changes trigger reload (AC 6092-1)."""
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        yaml_path = workflows_dir / "only.yaml"
+        tdir = workflows_dir / "templates"
+        tdir.mkdir()
+        (tdir / "brushup.md").write_text("# brushup\n")
+        yaml_path.write_text(_INITIAL_YAML)
+        initial = load_workflows(workflows_dir)
+        dispatcher = WorkflowDispatcher(
+            workflows=initial,
+            workflows_dir=workflows_dir,
+            github_client=_make_github_mock(),
+            pipeline=_make_pipeline_mock(),
+            queue_dir=str(tmp_path),
+        )
+        assert len(dispatcher._workflows[0].handlers) == 1
+
+        yaml_path.write_text(_UPDATED_YAML)
+        (tdir / "impl.md").write_text("# impl\n")
+        bump = time.time() + 60
+        os.utime(yaml_path, (bump, bump))
+
+        dispatcher.run(max_iterations=1)
+
+        assert len(dispatcher._workflows[0].handlers) == 2
+        assert "impl" in dispatcher._workflows[0].handlers
+
+    def test_reload_registers_order_builder_for_new_workflow(self, tmp_path):
+        """New workflow after reload resolves its template_dir (AC 6092-2)."""
+        workflows_dir = tmp_path / "workflows"
+        _write_workflow_bundle(workflows_dir, wf_yaml=_WF_TPL_A)
+        initial = load_workflows(workflows_dir)
+        pipeline = _make_real_pipeline(tmp_path, initial)
+        dispatcher = WorkflowDispatcher(
+            workflows=initial,
+            workflows_dir=workflows_dir,
+            github_client=_make_github_mock(),
+            pipeline=pipeline,
+            queue_dir=str(tmp_path),
+        )
+        _write_workflow_bundle(
+            workflows_dir,
+            wf_yaml=_WF_TPL_A,
+            wf2_yaml=_WF2_TPL_B,
+        )
+        bump = time.time() + 60
+        os.utime(workflows_dir / "wf2.yml", (bump, bump))
+
+        dispatcher._maybe_reload_workflows()
+
+        out = pipeline._resolve_order_builder("wf2").build_order("step", {})
+        assert out == "from tpl_b"
+
+    def test_reload_switches_template_dir(self, tmp_path):
+        """template_dir change on reload switches builder templates (AC 6092-3)."""
+        workflows_dir = tmp_path / "workflows"
+        _write_workflow_bundle(workflows_dir, wf_yaml=_WF_TPL_A)
+        initial = load_workflows(workflows_dir)
+        pipeline = _make_real_pipeline(tmp_path, initial)
+        dispatcher = WorkflowDispatcher(
+            workflows=initial,
+            workflows_dir=workflows_dir,
+            github_client=_make_github_mock(),
+            pipeline=pipeline,
+            queue_dir=str(tmp_path),
+        )
+        assert pipeline._resolve_order_builder("wf").build_order("step", {}) == "from tpl_a"
+
+        (workflows_dir / "wf.yml").write_text(_WF_TPL_B)
+        bump = time.time() + 60
+        os.utime(workflows_dir / "wf.yml", (bump, bump))
+        dispatcher._maybe_reload_workflows()
+
+        assert pipeline._resolve_order_builder("wf").build_order("step", {}) == "from tpl_b"
+
+    def test_invalid_yaml_keeps_old_order_builders(self, tmp_path):
+        """Invalid YAML on reload leaves order builders unchanged (AC 6092-4)."""
+        workflows_dir = tmp_path / "workflows"
+        _write_workflow_bundle(workflows_dir, wf_yaml=_WF_TPL_A)
+        initial = load_workflows(workflows_dir)
+        pipeline = _make_real_pipeline(tmp_path, initial)
+        before = pipeline._resolve_order_builder("wf")
+        dispatcher = WorkflowDispatcher(
+            workflows=initial,
+            workflows_dir=workflows_dir,
+            github_client=_make_github_mock(),
+            pipeline=pipeline,
+            queue_dir=str(tmp_path),
+        )
+        (workflows_dir / "wf.yml").write_text("invalid: yaml: {broken")
+        bump = time.time() + 60
+        os.utime(workflows_dir / "wf.yml", (bump, bump))
+        dispatcher._maybe_reload_workflows()
+
+        after = pipeline._resolve_order_builder("wf")
+        assert after is before

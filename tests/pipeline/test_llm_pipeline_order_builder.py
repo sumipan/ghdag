@@ -272,3 +272,25 @@ class TestSubmitOrderBuilderAndWorkflowRoles:
             now=datetime(2026, 9, 5, 12, 1, tzinfo=jst),
         )
         assert decision.allowed is False
+
+
+class TestSetOrderBuilders:
+    def test_set_order_builders_replaces_mapping(self):
+        """Replacing the map drops removed workflow keys (sumipan/nexus#6092)."""
+        from unittest.mock import MagicMock
+
+        from ghdag.pipeline.order import TemplateOrderBuilder
+
+        default = TemplateOrderBuilder("templates")
+        builder_a = MagicMock()
+        builder_b = MagicMock()
+        api = LLMPipelineAPI(
+            pipeline_state=MagicMock(),
+            order_builder=default,
+            queue_dir="queue",
+            order_builders={"a": builder_a},
+        )
+        api.set_order_builders({"b": builder_b})
+
+        assert api._resolve_order_builder("a") is default
+        assert api._resolve_order_builder("b") is builder_b
