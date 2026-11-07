@@ -12,13 +12,13 @@ Unlike CI-hosted orchestrators (GitHub Actions, Dagger), nothing runs on a hoste
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.104.2-blue)
+![version](https://img.shields.io/badge/version-v0.112.1-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.104.2** (`pyproject.toml` `version = "0.104.2"`) |
+| Current release | **v0.112.1** (`pyproject.toml` `version = "0.112.1"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -35,7 +35,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.104.2"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.112.1"
 ```
 
 Install from a checkout with the development tools:
@@ -236,7 +236,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `PipelineState` | class | `ghdag.pipeline.state` | Pipeline state directory, handler generations, `exec.jsonl` appends |
 | `DagEngine` | class | `ghdag.dag.engine` | Local DAG runner: `.run()`, `.append_task(...)`, `.mark_done(...)` |
 | `WorkflowDispatcher` | class | `ghdag.workflow.dispatcher` | Label-driven dispatch: `.poll_once()`, `.run()`, `.dispatch(...)` |
-| `QuotaGate` | class | `ghdag.quota` | Engine quota, drain and role admission; task deferral |
+| `QuotaGate` | class | `ghdag.quota` | Engine quota, pause sources (`budget` / `failure` / `manual` / `drain`), drain mode, and role admission |
 | `IssueStatus` | dataclass | `ghdag.status` | Aggregated status of one Issue x handler run |
 | `StepStatus` | dataclass | `ghdag.status` | Status of one step |
 | `RunningTask` | dataclass | `ghdag.status` | Snapshot of one `running/<uuid>.json` |
@@ -567,7 +567,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `github_cli.py` | `gh`-style CLI (`python -m ghdag.github_cli`) over `get_forge()` |
 | `github_client.py` | `GitHubClient` REST / GraphQL client (ETag cache, pagination, rate limits) |
 | `maintenance.py` | Queue validation and repair (`exec.jsonl`, done markers) |
-| `quota.py` | `QuotaGate`: engine quota, drain, role admission, deferral |
+| `quota.py` | `QuotaGate`: engine quota, pause sources, drain mode, role admission |
 | `status.py` | `issue_status` / `running_tasks` and their dataclasses |
 | `audit/__init__.py` | Audit span API package |
 | `audit/span.py` | `emit_span` / `make_span_id` latency span writer |
@@ -893,7 +893,9 @@ sinks:
 
 ### Quota state (`quota-gate.json`)
 
-Managed by `QuotaGate` and `ghdag quota`. Top-level keys: `engines` (per engine: `status`, `observed_at`, `resume_at`, `reason`, `override_until`), `draining_engines`, `running_tasks`. An engine is unavailable while it is draining or reported `paused`. Budget-side pauses are written into this state by `QuotaGate.report(kind="budget")`. `ghdag quota status` adds per-engine `queued` / `running` / `idle` counts. Legacy schema-version-1 state may contain `deferred_tasks`; it is ignored on read and removed on the next write.
+Managed by `QuotaGate` and `ghdag quota`. Top-level keys: `engines`, `draining_engines`, `running_tasks`, and optional `limits`.
+
+Each `engines.<name>` entry stores derived fields (`status`, `observed_at`, `resume_at`, `reason`, `override_until`) plus a `sources` array. Each source object has `kind` (`budget`, `failure`, `manual`, or `drain`), `reason`, `until`, `set_by`, `observed_at`, and `available`. Pauses are merged from active sources; `QuotaGate.report(kind=...)` appends or updates the source for that `kind` (default `failure`). `ghdag quota report` has no `--kind` option and always records a `failure` source. An engine is unavailable while it is draining (`draining_engines`) or any active source keeps it `paused`. Budget-side pauses use `QuotaGate.report(kind="budget")`. `ghdag quota status` adds per-engine `queued` / `running` / `idle` counts.
 
 ### Language pack (`GHDAG_LANGUAGE_PACK`)
 
@@ -980,6 +982,7 @@ All exception types defined under `src/ghdag/`.
 | `PathTraversalError` | `GhdagError`, `ValueError` | `ghdag.core.models.files` (also `ghdag.files`) | A Markdown path escapes the repository root |
 | `ContextHookError` | `GhdagError`, `ValueError` | `ghdag.workflow.dispatcher` | A handler `context_hook` exited non-zero or returned invalid JSON |
 | `AppendRecoverError` | `GhdagError`, `ValueError` | `ghdag.files.append` | `md_append` cannot recover a partial append |
+| `DuplicateTaskError` | `GhdagError`, `ValueError` | `ghdag.io.exec_jsonl` | An append would duplicate an active task UUID or idempotency key |
 | `ValidationError` | `GhdagError`, `ValueError` | `ghdag.workflow.loader` | Invalid workflow YAML |
 
 ### Outside the `GhdagError` hierarchy
@@ -1041,7 +1044,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.104.2"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.112.1"
 ```
 
 and read `CHANGELOG.md` before upgrading.
