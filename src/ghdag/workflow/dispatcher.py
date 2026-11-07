@@ -909,4 +909,10 @@ class WorkflowDispatcher:
                 hint=_CONTEXT_HOOK_HINT,
             ) from e
 
+        if not isinstance(data, dict):
+            raise ContextHookError(
+                "context_hook stdout JSON must be an object",
+                hint=_CONTEXT_HOOK_HINT,
+            )
+
         return {str(k): str(v) for k, v in data.items()}
