@@ -42,7 +42,7 @@ NONTERMINAL_CLOSED_KEYS = frozenset({"action", "terminal_labels", "trigger"})
 @dataclass
 class StepConfig:
     template: str           # order template file name (without extension)
-    model: str              # execution model (required)
+    model: str | None = None  # execution model (required except shell)
     id: str | None = None   # step ID (referenced by depends)
     engine: str = "claude"  # LLM engine name ("claude", "gemini", "cursor", etc.)
     depends: list[str] = field(default_factory=list)  # list of dependency step IDs

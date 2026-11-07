@@ -24,3 +24,15 @@ class TestAC1AgentFieldRemoved:
         with pytest.raises(TypeError):
             StepConfig(template="t", model="m", agent="cursor")  # type: ignore
 
+
+class TestStepConfigOptionalModel:
+    """Issue #6167 — model optional for shell; positional args preserved."""
+
+    def test_template_only_leaves_model_none(self):
+        step = StepConfig("t")
+        assert step.model is None
+
+    def test_template_and_model_positional(self):
+        step = StepConfig("t", "m")
+        assert step.model == "m"
+

@@ -14,6 +14,7 @@ from ghdag_workflow_conftest_helpers import (
     _setup_extended_yaml,
 )
 
+from ghdag.pipeline.llm_pipeline import DependencyError
 from ghdag.workflow.loader import ValidationError, load_workflows
 from ghdag.workflow.schema import (
     TriggerConfig,
@@ -601,3 +602,137 @@ handlers:
         configs = load_workflows(tmp_path)
         assert len(configs) == 1
         assert configs[0].name == "test"
+
+
+class TestLoadTimeStepValidation:
+    """Issue #6167 — engine, model, permission, depends validated at load time."""
+
+    def test_unknown_engine_raises_with_code_and_hint(self, tmp_path):
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: h
+handlers:
+  h:
+    steps:
+      - template: step1
+        model: claude-sonnet-4-6
+        engine: nonexistent
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "step1")
+        with pytest.raises(ValidationError) as exc_info:
+            load_workflows(tmp_path)
+        err = exc_info.value
+        assert err.code == "STEP_ENGINE_UNKNOWN"
+        assert err.hint is not None and "claude" in err.hint
+
+    def test_shell_step_without_model_loads_with_none_model(self, tmp_path):
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: h
+handlers:
+  h:
+    steps:
+      - template: step1
+        engine: shell
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "step1")
+        config = load_workflows(tmp_path)[0]
+        step = config.handlers["h"].steps[0]
+        assert step.engine == "shell"
+        assert step.model is None
+
+    def test_non_shell_missing_model_raises_step_model_required(self, tmp_path):
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: h
+handlers:
+  h:
+    steps:
+      - template: step1
+        engine: claude
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "step1")
+        with pytest.raises(ValidationError) as exc_info:
+            load_workflows(tmp_path)
+        assert exc_info.value.code == "STEP_MODEL_REQUIRED"
+
+    def test_unknown_permission_preset_raises(self, tmp_path):
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: h
+handlers:
+  h:
+    steps:
+      - template: step1
+        model: claude-sonnet-4-6
+        permission: unknown_preset
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "step1")
+        with pytest.raises(ValidationError) as exc_info:
+            load_workflows(tmp_path)
+        err = exc_info.value
+        assert err.code == "STEP_PERMISSION_UNKNOWN"
+        assert err.hint is not None and "text_only" in err.hint
+
+    def test_unknown_depends_id_raises_with_defined_ids_in_hint(self, tmp_path):
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: h
+handlers:
+  h:
+    steps:
+      - id: existing
+        template: step1
+        model: claude-sonnet-4-6
+      - id: bad
+        template: step2
+        model: claude-sonnet-4-6
+        depends: [nope]
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "step1", "step2")
+        with pytest.raises(ValidationError) as exc_info:
+            load_workflows(tmp_path)
+        err = exc_info.value
+        assert err.code == "STEP_DEPENDENCY_UNKNOWN"
+        assert err.hint is not None and "existing" in err.hint
+
+    def test_dependency_cycle_surfaces_dependency_error_as_cause(self, tmp_path):
+        yaml_content = """\
+name: test
+triggers:
+  - label: "pipeline:draft-ready"
+    handler: h
+handlers:
+  h:
+    steps:
+      - id: a
+        template: step1
+        model: claude-sonnet-4-6
+        depends: [b]
+      - id: b
+        template: step2
+        model: claude-sonnet-4-6
+        depends: [a]
+"""
+        (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
+        _make_templates(tmp_path, "step1", "step2")
+        with pytest.raises(ValidationError) as exc_info:
+            load_workflows(tmp_path)
+        err = exc_info.value
+        assert err.code == "STEP_DEPENDENCY_CYCLE"
+        assert isinstance(err.__cause__, DependencyError)

@@ -41,7 +41,7 @@ def build_order_builders(workflows: list[WorkflowConfig]) -> dict[str, OrderBuil
     }
 
 
-def _validate_depends(steps: "list[StepConfig]") -> None:
+def validate_depends(steps: "list[StepConfig]") -> None:
     """Pre-validate depends: detect undefined references and cycles.
 
     Raises:
@@ -237,7 +237,7 @@ class LLMPipelineAPI:
         Returns:
             list of written JSON records as strings (for DispatchResult)
         """
-        _validate_depends(steps)
+        validate_depends(steps)
 
         ts = datetime.now(tz=ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d%H%M%S")
         if order_builder is None:
