@@ -13,6 +13,7 @@ from pathlib import Path
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, urlparse
 
+from ghdag.config.env import RuntimePaths, resolve_runtime_paths
 from ghdag.config.language import LanguagePack, get_language_pack
 from ghdag.io.audit_query import get_correlation_top_n
 
@@ -108,9 +109,13 @@ def _progress_from_event(event: dict) -> dict:
     return out
 
 
+def _repo_runtime_paths(repo_root: Path) -> RuntimePaths:
+    return resolve_runtime_paths(repo_root / "jobs" / "exec.jsonl")
+
+
 def _latest_progress(repo_root: Path, uuid: str) -> dict | None:
-    """Return the latest meaningful progress from jobs/events/<uuid>.jsonl."""
-    path = repo_root / "jobs" / "events" / f"{uuid}.jsonl"
+    """Return the latest meaningful progress from events/<uuid>.jsonl."""
+    path = _repo_runtime_paths(repo_root).events_dir / f"{uuid}.jsonl"
     if not path.is_file():
         return None
     last: dict | None = None
@@ -159,15 +164,16 @@ def _build_snapshot(
 
 
 def _request_cancel(repo_root: Path, uuid: str) -> tuple[bool, str]:
-    """Create jobs/cancel/<uuid> when jobs/running/<uuid>.json exists."""
-    running_path = repo_root / "jobs" / "running" / f"{uuid}.json"
+    """Create cancel/<uuid> when running/<uuid>.json exists under the runtime state dir."""
+    paths = _repo_runtime_paths(repo_root)
+    running_path = paths.running_dir / f"{uuid}.json"
     if not running_path.is_file():
         return False, "No running process found for that UUID"
-    cancel_dir = repo_root / "jobs" / "cancel"
+    cancel_dir = paths.cancel_dir
     try:
         cancel_dir.mkdir(parents=True, exist_ok=True)
         (cancel_dir / uuid).write_text("", encoding="utf-8")
-        logger.info("Stop: wrote jobs/cancel/%s", uuid)
+        logger.info("Stop: wrote cancel/%s", uuid)
         return True, ""
     except OSError as e:
         return False, str(e)
@@ -333,14 +339,14 @@ class _Handler(BaseHTTPRequestHandler):
         if uuid is None:
             return
 
-        done_file = self.repo_root / "jobs" / "done" / uuid
+        done_file = _repo_runtime_paths(self.repo_root).done_dir / uuid
         if not done_file.is_file():
             self._send_json_response(404, {"ok": False, "error": "No done marker found"})
             return
 
         try:
             done_file.unlink()
-            logger.info("Retry: removed jobs/done/%s", uuid)
+            logger.info("Retry: removed done/%s", uuid)
         except OSError as e:
             self._send_json_response(500, {"ok": False, "error": str(e)})
             return

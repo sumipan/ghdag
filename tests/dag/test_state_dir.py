@@ -75,10 +75,25 @@ def test_state_dir_expands_user(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 # --- AC-5b: unset => current defaults; explicit args win ---
 
 
-def test_dag_config_defaults_unchanged(unset: None, tmp_path: Path) -> None:
+def test_dag_config_done_dir_follows_exec_jsonl(
+    unset: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue sumipan/nexus#6089: exec_done_dir follows exec.jsonl, not cwd (AC2)."""
+    (tmp_path / "elsewhere").mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(tmp_path / "elsewhere")
     config = DagConfig(exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl")
-    assert config.exec_done_dir == Path("jobs/done")
+    assert config.exec_done_dir == tmp_path / "jobs" / "done"
     assert config.quota_state_path == tmp_path / "jobs" / "quota-gate.json"
+
+
+def test_task_launcher_audit_stays_in_queue_dir(state: Path, tmp_path: Path) -> None:
+    """Issue sumipan/nexus#6089: launcher audit stays on queue dir when state dir is set (AC3)."""
+    launcher = _launcher(DagConfig(exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl"))
+    assert launcher._queue_audit_path() == tmp_path / "jobs" / "audit.jsonl"
+    assert launcher._running_path("u1") == state / "running" / "u1.json"
+    assert launcher._cancel_path("u1") == state / "cancel" / "u1"
+    assert launcher._events_path("u1") == state / "events" / "u1.jsonl"
+    assert launcher._session_store._store_dir == state / ".sessions"
 
 
 def test_task_launcher_defaults_unchanged(unset: None, tmp_path: Path) -> None:

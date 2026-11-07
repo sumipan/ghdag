@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.112.0 - 2026-11-07
+
+### Changed
+
+- `resolve_runtime_paths` in `config/env.py` centralizes queue vs `GHDAG_STATE_DIR` paths; `DagConfig` defaults, `ghdag ui`, and `ghdag cleanup` use it. `TaskLauncher` audit events use `DagConfig.audit_path` (queue dir) so they stay aligned with `AuditHooks` when state dir is split (sumipan/nexus#6089).
+
 ## 0.111.2 - 2026-11-07
 
 ### Changed

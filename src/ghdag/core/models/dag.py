@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ghdag.config.env import state_dir
+from ghdag.config.env import resolve_runtime_paths
 
 
 @dataclass
@@ -25,7 +25,7 @@ class Task:
 @dataclass
 class DagConfig:
     exec_jsonl_path: str | Path
-    # ``None`` resolves to ``state_dir("jobs") / "done"`` in ``__post_init__``; readers always
+    # ``None`` resolves via ``resolve_runtime_paths`` in ``__post_init__``; readers always
     # see a ``Path``, so the annotation omits ``None`` to keep call sites narrow.
     exec_done_dir: str | Path = None  # type: ignore[assignment]
     poll_interval: float = 1.0
@@ -47,9 +47,10 @@ class DagConfig:
     engine_limits: dict[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        queue_dir = Path(self.exec_jsonl_path).parent
+        paths = resolve_runtime_paths(self.exec_jsonl_path)
+        queue_dir = paths.queue_dir
         if self.exec_done_dir is None:
-            self.exec_done_dir = state_dir("jobs") / "done"
+            self.exec_done_dir = paths.done_dir
         else:
             self.exec_done_dir = Path(self.exec_done_dir)
         if self.lock_file is None:
@@ -57,14 +58,14 @@ class DagConfig:
         else:
             self.lock_file = Path(self.lock_file)
         if self.quota_state_path is None:
-            self.quota_state_path = state_dir(queue_dir) / "quota-gate.json"
+            self.quota_state_path = paths.quota_state_path
         else:
             self.quota_state_path = Path(self.quota_state_path)
         if self.quota_audit_path is None:
-            self.quota_audit_path = queue_dir / "audit.jsonl"
+            self.quota_audit_path = paths.audit_path
         else:
             self.quota_audit_path = Path(self.quota_audit_path)
         if self.audit_path is None:
-            self.audit_path = queue_dir / "audit.jsonl"
+            self.audit_path = paths.audit_path
         else:
             self.audit_path = Path(self.audit_path)
