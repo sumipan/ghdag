@@ -115,9 +115,15 @@ def test_launch_injects_resume_after_admission(tmp_path: Path) -> None:
     call_order: list[str] = []
     real_begin = launcher._quota_gate.begin_run
 
+    real_lookup = launcher._session_store.lookup
+
     def track_begin(**kwargs):
         call_order.append("begin_run")
         return real_begin(**kwargs)
+
+    def track_lookup(key):
+        call_order.append("lookup")
+        return real_lookup(key)
 
     skipped = CompactionResult(
         status="skipped",
@@ -139,7 +145,7 @@ def test_launch_injects_resume_after_admission(tmp_path: Path) -> None:
     with patch.object(launcher._quota_gate, "begin_run", side_effect=track_begin), patch.object(
         launcher._session_store,
         "lookup",
-        wraps=launcher._session_store.lookup,
+        side_effect=track_lookup,
     ) as mock_lookup, patch(
         "ghdag.dag.task_launcher.compact_resume_session",
         return_value=skipped,
@@ -151,7 +157,7 @@ def test_launch_injects_resume_after_admission(tmp_path: Path) -> None:
     ) as mock_popen:
         assert launcher.launch("child-uuid", task) is True
 
-    assert call_order == ["begin_run"]
+    assert call_order == ["begin_run", "lookup"]
     mock_lookup.assert_called_once_with("parent-uuid")
     popen_argv = mock_popen.call_args[0][0]
     assert "--resume 'sess-parent'" in popen_argv[4]
