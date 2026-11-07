@@ -1,6 +1,7 @@
 import re
 from unittest.mock import MagicMock, patch
 
+from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.metrics.parsers import parse_token_count
 from ghdag.workflow.conditional_step import run_with_template, substitute_vars
 
@@ -108,12 +109,33 @@ def test_run_with_template_cursor_engine(tmp_path):
 
     assert code == 0
     cmd = mock_run.call_args[0][0]
-    assert cmd[:3] == ["cursor", "agent", "-p"]
+    assert cmd[0] == ENGINE_SPECS["cursor"].cli
+    assert "agent" not in cmd[:2]
+    assert "-p" in cmd
     assert "--force" in cmd
     assert "--model" in cmd
     assert cmd[cmd.index("--model") + 1] == "auto"
     assert "--dangerously-skip-permissions" not in cmd
     assert mock_run.call_args[1]["input"] == "Cursor order ok"
+
+
+def test_run_with_template_codex_engine(tmp_path):
+    template_file = tmp_path / "test.md"
+    template_file.write_text("Codex order")
+
+    with patch("ghdag.workflow.conditional_step.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0)
+        code = run_with_template(
+            str(template_file),
+            {},
+            engine="codex",
+        )
+
+    assert code == 0
+    cmd = mock_run.call_args[0][0]
+    assert cmd[0] == "codex"
+    assert cmd[1:3] == ["exec", "-"]
+    assert "--dangerously-bypass-approvals-and-sandbox" in cmd
 
 
 def test_run_with_template_default_engine_is_claude(tmp_path):

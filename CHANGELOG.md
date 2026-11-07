@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.110.2 - 2026-11-07
+
+### Fixed
+
+- `ghdag.workflow.conditional_step`: build LLM argv via `build_llm_cmd` and `ENGINE_SPECS` (cursor uses `cursor-agent`; `--engine` adds codex with engine-default models) (sumipan/nexus#6086).
+
 ## 0.110.1 - 2026-11-07
 
 ### Fixed
