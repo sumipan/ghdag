@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.107.1 - 2026-11-07
+
 ### Fixed
 
 - `LLMPipelineAPI.submit()` now copies workflow `StepConfig.env_passthrough` into exec record `annotations.env_passthrough` so `TaskLauncher` honors YAML passthrough under deny lists (sumipan/nexus#6080).
