@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.110.1 - 2026-11-07
+
+### Fixed
+
+- `LLMPipelineAPI._submit_jsonl` resolves `depends` and `resume_from` to UUIDs even when the referenced step appears later in the `steps` list (sumipan/nexus#6083).
+
 ## 0.110.0 - 2026-11-07
 
 ### Added

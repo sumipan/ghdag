@@ -501,6 +501,66 @@ class TestResultContentInjection:
         assert p3_ctx["p2_result_content"] == content_p2
 
 
+_A_UUID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+_B_UUID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+_FORWARD_TS = "20260523120000"
+
+
+class TestForwardDepends:
+    """sumipan/nexus#6083: forward references in step order."""
+
+    def test_forward_depends_resolved_to_uuid_and_filename(self):
+        """Depends on a later step still resolves uuid and dep result filename in context."""
+        import json as _json
+
+        api, _, order_builder = _make_api()
+        captured = _track_build_order(order_builder)
+        steps = [
+            StepConfig(id="b", template="p2", model="claude-sonnet-4-6", depends=["a"]),
+            StepConfig(id="a", template="p1", model="claude-sonnet-4-6"),
+        ]
+        with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_B_UUID, _A_UUID]), patch(
+            "ghdag.pipeline.llm_pipeline.datetime"
+        ) as mock_dt:
+            mock_dt.now.return_value.strftime.return_value = _FORWARD_TS
+            exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        b_record = _json.loads(exec_lines[0])
+        a_record = _json.loads(exec_lines[1])
+        assert a_record["uuid"] in b_record["depends"]
+
+        b_ctx = captured[0][1]
+        expected = f"{_FORWARD_TS}-claude-result-{_A_UUID}.md"
+        assert b_ctx["a_result_filename"] == expected
+
+    def test_records_keep_input_order(self):
+        """Return value and append_exec_records preserve steps input order (B before A)."""
+        import json as _json
+
+        api, pipeline_state, _ = _make_api()
+        appended: list[list[dict]] = []
+
+        def _append(records, audit_context=None, **kwargs):
+            appended.append(list(records))
+
+        pipeline_state.append_exec_records.side_effect = _append
+        steps = [
+            StepConfig(id="b", template="p2", model="claude-sonnet-4-6", depends=["a"]),
+            StepConfig(id="a", template="p1", model="claude-sonnet-4-6"),
+        ]
+        with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_B_UUID, _A_UUID]), patch(
+            "ghdag.pipeline.llm_pipeline.datetime"
+        ) as mock_dt:
+            mock_dt.now.return_value.strftime.return_value = _FORWARD_TS
+            exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        assert len(exec_lines) == 2
+        assert _json.loads(exec_lines[0])["annotations"]["step_name"] == "b"
+        assert _json.loads(exec_lines[1])["annotations"]["step_name"] == "a"
+        assert appended[0][0]["annotations"]["step_name"] == "b"
+        assert appended[0][1]["annotations"]["step_name"] == "a"
+
+
 class TestEnvPassthroughInAnnotations:
     def test_submit_writes_env_passthrough_to_annotations(self):
         """Non-empty StepConfig.env_passthrough is copied to record annotations."""
