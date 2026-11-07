@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.114.0 - 2026-11-08
+
 ### Added
 
 - `ghdag.io.done.done_failure_class()` maps done-marker bodies to `FailureClass` using vocabulary constants (sumipan/nexus#6155).
