@@ -203,7 +203,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 | One runner per queue | `DagEngine` holds `<queue dir>/.ghdag.lock`; a second runner on the same queue logs "Another DagEngine is already running" and stops |
 | `ghdag run --hooks` | Imports the module (the current directory is put on `sys.path`) and instantiates its `HOOKS_CLASS` attribute, or else the first public class in the module that defines `on_task_success` |
 | `ghdag trigger --redispatch` | Increments the handler generation and starts a new run (for when `dag recover` is not possible); `--reason` is written to `audit.jsonl` |
-| `ghdag watch` and rate limits | When GitHub reports a rate limit with a reset time, polls are skipped until the reset (log: `rate limited: skip poll until <ISO8601>`) |
+| `ghdag watch` and rate limits | Watch builds clients with `rate_limit_max_wait_sec=0` (`GHDAG_RATE_LIMIT_MAX_WAIT_SEC` has no effect). On `RateLimitError` from poll or dispatch, polls are skipped until reset (log: `rate limited: skip poll until <ISO8601>`). Pause-file detection and workflow hot reload keep running; when remaining quota drops to the threshold, the polling interval is doubled temporarily (`_observe_rate_limit`) |
 | `ghdag dag recover` | Clears the done markers of failed and pending steps so the runner runs them again; running steps are left alone. Existing result files are first moved to `<result>.prev-<timestamp>` unless `--keep-results` is given |
 | `ghdag dag cancel` | Creates `cancel/<uuid>` only when `running/<uuid>.json` exists; otherwise prints `error: not running: <uuid>` and exits `1`. The CLI never signals a process: the runner polls the cancel markers, stops the task's process group and writes `CANCELLED` |
 | `ghdag llm` exit codes | Exits with the engine's exit code; `124` on timeout (partial output is printed), `127` when the engine binary is missing and `126` when it is not executable (`<cmd>: command not found` / `permission denied` on stderr, no traceback) |
@@ -289,6 +289,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.vcs.NullSink` | `(name, *, reason, audit_path=None)`; same `commit` / `flush` interface, always `skipped=True` |
 | `ghdag.vcs.LocalGitSink.create` | `(tmp_dir, *, owner, allow_prefixes, branch="main", push="immediate", audit_path=None) -> GitSink` |
 | `ghdag.github_client.GitHubClient` | `(token=None, repo=None, etag_cache_path=None, rate_limit_max_wait_sec=None)` |
+| `ghdag.github_client.create_github_clients` | `(*, token=None, rate_limit_max_wait_sec=None) -> list[GitHubIssuePort]` |
 | `ghdag.forge.local.LocalForge` | `(root, *, repo="local/forge", checks_command=None)` |
 
 ### `LLMResult` and timeouts
@@ -522,7 +523,7 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 | Repository | `repo` argument, else the first entry of `GITHUB_REPOSITORIES`; `GhdagError` when neither is set |
 | Pagination | List endpoints (`list_issues`, `list_all_issues`, `get_issue_comments`, `milestone_list`, `pr_list`, `pr_checks`, `run_logs_failed`, ...) follow `Link: rel="next"`; `pr_list(limit=None)` returns every matching PR |
 | ETag cache | Conditional requests (`If-None-Match` -> 304) are cached in memory; with `etag_cache_path` or `GHDAG_ETAG_CACHE` the cache is persisted to one JSON file (at most 2000 entries, LRU, atomic writes) shared across processes |
-| Rate limits | On 403 with `X-RateLimit-Remaining: 0` the client sleeps until the reset and retries once if the wait is at most `rate_limit_max_wait_sec` (argument, then `GHDAG_RATE_LIMIT_MAX_WAIT_SEC`, then `900`); otherwise it raises `RateLimitError(reset_at=...)` at once |
+| Rate limits | On 403 with `X-RateLimit-Remaining: 0` the client sleeps until the reset and retries once if the wait is at most `rate_limit_max_wait_sec` (argument, then `GHDAG_RATE_LIMIT_MAX_WAIT_SEC`, then `900`); otherwise it raises `RateLimitError(reset_at=...)` at once. `rate_limit_max_wait_sec=0` means never wait: before reset, raise `RateLimitError(reset_at=...)` immediately; after reset, retry once without sleeping |
 
 `get_forge()` picks the backend from `GHDAG_FORGE`:
 
@@ -737,7 +738,7 @@ Every variable ghdag reads (`os.environ` / `os.getenv` in `src/ghdag/`). Most re
 | `GHDAG_FORGE` | `github` | `forge.get_forge`, `github_cli.get_forge` | Forge backend: `github` or `local` |
 | `GHDAG_FORGE_ROOT` | none | `forge.get_forge` | Data root of `LocalForge`; required when `GHDAG_FORGE=local` |
 | `GHDAG_ETAG_CACHE` | unset (in-memory only) | `github_client.GitHubClient` | Path of the persistent ETag cache file |
-| `GHDAG_RATE_LIMIT_MAX_WAIT_SEC` | `900` | `github_client.GitHubClient` | Longest rate-limit sleep before `RateLimitError` is raised; non-integer values fall back to `900` |
+| `GHDAG_RATE_LIMIT_MAX_WAIT_SEC` | `900` | `github_client.GitHubClient` | Longest rate-limit sleep before `RateLimitError` is raised; non-integer values fall back to `900`. Ignored by `ghdag watch` (clients always use `0`) |
 | `ENABLE_GIT` | off | `config.env.enable_git` (`vcs.get_sink`) | `1` / `true` / `yes` lets `get_sink` return a real `GitSink`; otherwise every sink is a `NullSink` |
 | `GHDAG_VCS_CONFIG` | none | `config.env.ghdag_vcs_config` (`vcs.get_sink`) | Path to the [VCS sink config](#vcs-sink-config-ghdag_vcs_config); required for real sinks when `ENABLE_GIT` is on |
 | `LATENCY_SPAN_PATH` | unset (`LATENCY_SPAN_JSONL` = `jobs/latency_span.jsonl`) | `config.env.latency_span_path` | Overrides the default span JSONL path used by `ghdag.audit.emit_span` when `log_path` is omitted (`ghdag.audit.span.LATENCY_SPAN_JSONL`) |

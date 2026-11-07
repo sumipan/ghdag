@@ -107,3 +107,11 @@ def test_create_github_clients_raises_without_token(monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORIES", "o/r")
     with pytest.raises(AuthError):
         create_github_clients()
+
+
+def test_create_github_clients_passes_rate_limit_max_wait_sec(monkeypatch):
+    monkeypatch.setenv("GITHUB_REPOSITORIES", "o1/r1,o2/r2")
+    clients = create_github_clients(token="t", rate_limit_max_wait_sec=0)
+    assert len(clients) == 2
+    assert clients[0]._rate_limit_max_wait_sec == 0
+    assert clients[1]._rate_limit_max_wait_sec == 0

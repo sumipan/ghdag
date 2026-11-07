@@ -420,6 +420,24 @@ class WorkflowDispatcher:
                     )
                     if isinstance(issue_number, int):
                         self._consecutive_failures.pop((issue_number, handler_name), None)
+                except RateLimitError as exc:
+                    self._append_dispatch_failed_audit(issue_number, handler_name, exc)
+                    if exc.reset_at is not None:
+                        if (
+                            self._rate_limited_until is None
+                            or exc.reset_at > self._rate_limited_until
+                        ):
+                            self._rate_limited_until = exc.reset_at
+                        logger.warning(
+                            "rate limited: skip poll until %s",
+                            _epoch_to_iso(self._rate_limited_until),
+                        )
+                        break
+                    logger.exception(
+                        "dispatch failed: issue #%s handler=%s — skipping",
+                        issue_number,
+                        handler_name,
+                    )
                 except Exception as exc:
                     logger.exception(
                         "dispatch failed: issue #%s handler=%s — skipping",

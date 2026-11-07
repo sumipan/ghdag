@@ -96,6 +96,36 @@ def test_rate_limit_waits_reset_then_retries_success(
     assert call_count["n"] == 2
 
 
+def test_rate_limit_max_wait_zero_raises_without_sleep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rate cap 0: no sleep, single urlopen, RateLimitError with reset_at."""
+    client = GitHubClient(token="token", repo="owner/repo", rate_limit_max_wait_sec=0)
+    now = 1_700_000_000
+    monkeypatch.setattr(time, "time", lambda: now)
+    slept: list[float] = []
+    monkeypatch.setattr(time, "sleep", lambda s: slept.append(s))
+    call_count = {"n": 0}
+
+    def fake_urlopen(req, timeout=120):
+        call_count["n"] += 1
+        raise _http_error(
+            403,
+            headers={
+                "X-RateLimit-Remaining": "0",
+                "X-RateLimit-Reset": str(now + 60),
+            },
+        )
+
+    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
+    with pytest.raises(RateLimitError) as exc_info:
+        client._request("GET", "/repos/owner/repo/issues/1")
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.reset_at == now + 60
+    assert slept == []
+    assert call_count["n"] == 1
+
+
 def test_rate_limit_over_15_min_raises_immediately(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
