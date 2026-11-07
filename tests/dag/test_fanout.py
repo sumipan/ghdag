@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 
 import pytest
 
@@ -56,13 +55,11 @@ class TestParseFanoutSpec:
         f.write_text("content\n---\nsome_other_key: value\n")
         assert parse_fanout_spec(str(f)) is None
 
-    def test_invalid_yaml_returns_none_and_warns(self, tmp_path, caplog):
+    def test_invalid_yaml_after_anchor_raises(self, tmp_path):
         f = tmp_path / "result.md"
-        f.write_text("content\n---\nghdag_fanout: [invalid: yaml: {\n")
-        with caplog.at_level(logging.WARNING, logger="ghdag.dag.fanout"):
-            result = parse_fanout_spec(str(f))
-        assert result is None
-        assert any("invalid" in r.message.lower() or "yaml" in r.message.lower() for r in caplog.records)
+        f.write_text("---\nghdag_fanout:\n  children: [\n")
+        with pytest.raises(FanoutError, match="YAML"):
+            parse_fanout_spec(str(f))
 
     def test_empty_children_list_returns_none(self, tmp_path):
         f = tmp_path / "result.md"
@@ -92,13 +89,11 @@ class TestParseFanoutSpec:
         assert len(spec.children) == 1
         assert spec.children[0].id == "only-one"
 
-    def test_children_missing_field_returns_none(self, tmp_path, caplog):
-        """Children without required fields should be handled gracefully."""
+    def test_child_missing_command_raises(self, tmp_path):
         f = tmp_path / "result.md"
         f.write_text("---\nghdag_fanout:\n  children:\n    - id: x\n")
-        with caplog.at_level(logging.WARNING, logger="ghdag.dag.fanout"):
-            result = parse_fanout_spec(str(f))
-        assert result is None
+        with pytest.raises(FanoutError, match="command"):
+            parse_fanout_spec(str(f))
 
     def test_t2_child_id_contains_fo_separator_raises(self, tmp_path):
         """T2: child.id = 'foo--fo--bar' → ValueError (contains reserved separator)."""
@@ -158,15 +153,15 @@ class TestParseFanoutSpec:
         assert len(spec.children) == 1
         assert spec.children[0].id == "x"
 
-    def test_fanout_yaml_without_separator_returns_none(self, tmp_path):
-        """AC5: ghdag_fanout: without preceding --- → None (separator required)."""
+    def test_anchor_without_separator_raises(self, tmp_path):
         f = tmp_path / "result.md"
         f.write_text(
             "ghdag_fanout:\n"
             "  children:\n"
             "    - id: x\n      command: echo 1\n"
         )
-        assert parse_fanout_spec(str(f)) is None
+        with pytest.raises(FanoutError, match="---"):
+            parse_fanout_spec(str(f))
 
     def test_other_yaml_keys_before_fanout_still_parses(self, tmp_path):
         """AC6: Other root-level YAML keys between --- and ghdag_fanout: → correct parse."""
@@ -209,11 +204,39 @@ class TestParseFanoutSpec:
         )
         assert parse_fanout_spec(str(f)) is None
 
-    def test_fanout_anchor_non_dict_value_returns_none(self, tmp_path):
-        """ghdag_fanout: with a scalar (non-dict) value → None."""
+    def test_fanout_value_not_mapping_raises(self, tmp_path):
         f = tmp_path / "result.md"
         f.write_text("---\nghdag_fanout: plain-string-value\n")
-        assert parse_fanout_spec(str(f)) is None
+        with pytest.raises(FanoutError, match="mapping"):
+            parse_fanout_spec(str(f))
+
+    def test_children_key_missing_raises(self, tmp_path):
+        f = tmp_path / "result.md"
+        f.write_text("---\nghdag_fanout:\n  other: 1\n")
+        with pytest.raises(FanoutError, match="children"):
+            parse_fanout_spec(str(f))
+
+    def test_children_not_list_raises(self, tmp_path):
+        f = tmp_path / "result.md"
+        f.write_text(
+            "---\nghdag_fanout:\n"
+            "  children:\n"
+            "    id: x\n"
+            "    command: echo 1\n"
+        )
+        with pytest.raises(FanoutError, match="list"):
+            parse_fanout_spec(str(f))
+
+    def test_child_id_not_string_raises(self, tmp_path):
+        f = tmp_path / "result.md"
+        f.write_text(
+            "---\nghdag_fanout:\n"
+            "  children:\n"
+            "    - id: 1\n"
+            "      command: echo 1\n"
+        )
+        with pytest.raises(FanoutError, match="id"):
+            parse_fanout_spec(str(f))
 
 
 class TestBuildChildJsonlRecord:
