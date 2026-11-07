@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -25,7 +26,17 @@ class DependencyError(GhdagError, ValueError):
     """Raised when step dependencies are invalid or circular."""
 
 if TYPE_CHECKING:
-    from ghdag.workflow.schema import StepConfig
+    from ghdag.workflow.schema import StepConfig, WorkflowConfig
+
+
+def build_order_builders(workflows: list[WorkflowConfig]) -> dict[str, OrderBuilder]:
+    """Build per-workflow TemplateOrderBuilders from loaded workflow configs."""
+    from ghdag.pipeline.order import TemplateOrderBuilder
+
+    return {
+        wf.name: TemplateOrderBuilder(wf.template_dir or "templates")
+        for wf in workflows
+    }
 
 
 def _validate_depends(steps: "list[StepConfig]") -> None:
@@ -146,6 +157,10 @@ class LLMPipelineAPI:
         self._order_builder = order_builder
         self._queue_dir = queue_dir
         self._order_builders: dict[str, OrderBuilder] = dict(order_builders or {})
+
+    def set_order_builders(self, mapping: Mapping[str, OrderBuilder]) -> None:
+        """Replace the per-workflow order builder map (default builder unchanged)."""
+        self._order_builders = dict(mapping)
 
     def check_idempotency(self, key: str) -> bool:
         """Delegate the idempotency check to PipelineState."""

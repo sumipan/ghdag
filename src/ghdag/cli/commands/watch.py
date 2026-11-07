@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import cast
 
 from ghdag.config.env import state_dir as resolve_state_dir
 
@@ -12,8 +11,8 @@ from ghdag.config.env import state_dir as resolve_state_dir
 def cmd_watch(args) -> None:
     """Thin wrapper that builds a WorkflowDispatcher and calls run()."""
     from ghdag.github_client import create_github_clients
-    from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-    from ghdag.pipeline.order import OrderBuilder, TemplateOrderBuilder
+    from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
+    from ghdag.pipeline.order import TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
     from ghdag.workflow.loader import load_workflows
@@ -40,10 +39,7 @@ def cmd_watch(args) -> None:
         state_dir=state_dir,
         exec_jsonl_path=str(exec_jsonl_resolved),
     )
-    order_builders: dict[str, TemplateOrderBuilder] = {
-        wf.name: TemplateOrderBuilder(wf.template_dir or "templates")
-        for wf in workflows
-    }
+    order_builders = build_order_builders(workflows)
     default_template_dir = next(
         (wf.template_dir for wf in workflows if wf.template_dir), "templates"
     )
@@ -53,7 +49,7 @@ def cmd_watch(args) -> None:
         pipeline_state=pipeline_state,
         order_builder=default_order_builder,
         queue_dir=queue_dir,
-        order_builders=cast(dict[str, OrderBuilder], order_builders),
+        order_builders=order_builders,
     )
     dispatcher = WorkflowDispatcher(
         workflows=workflows,

@@ -20,7 +20,7 @@ from ghdag.pipeline.audit import (
     write_rate_limit_audit,
 )
 from ghdag.pipeline.audit_query import detect_correlation_bursts
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import build_idempotency_key
 from ghdag.workflow.loader import load_workflows
@@ -450,18 +450,19 @@ class WorkflowDispatcher:
                 time.sleep(self._current_polling_interval)
 
     def _get_max_mtime(self) -> float:
-        """Return max mtime of *.yml files in workflows_dir, or 0.0 if none."""
+        """Return max mtime of *.yml and *.yaml in workflows_dir, or 0.0 if none."""
         if self._workflows_dir is None:
             return 0.0
         mtimes = [
             p.stat().st_mtime
-            for p in self._workflows_dir.glob("*.yml")
+            for pattern in ("*.yml", "*.yaml")
+            for p in self._workflows_dir.glob(pattern)
             if p.is_file()
         ]
         return max(mtimes, default=0.0)
 
     def _maybe_reload_workflows(self) -> None:
-        """Reload workflows from disk if any *.yml mtime has changed."""
+        """Reload workflows from disk if any workflow file mtime has changed."""
         if self._workflows_dir is None:
             return
         current_mtime = self._get_max_mtime()
@@ -471,6 +472,7 @@ class WorkflowDispatcher:
         try:
             new_workflows = load_workflows(self._workflows_dir)
             self._workflows = new_workflows
+            self._pipeline.set_order_builders(build_order_builders(new_workflows))
             logger.info("workflows reloaded from %s", self._workflows_dir)
         except Exception as exc:
             logger.warning(
