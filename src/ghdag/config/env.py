@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextvars
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 _pending_env_denied_count: contextvars.ContextVar[int] = contextvars.ContextVar(
@@ -29,6 +30,8 @@ __all__ = [
     "ghdag_vcs_config",
     "ghdag_state_dir",
     "state_dir",
+    "RuntimePaths",
+    "resolve_runtime_paths",
     "ghdag_language_pack",
     "stall_guard_enabled",
     "stall_guard_stall_sec",
@@ -122,6 +125,36 @@ def state_dir(default: str | Path) -> Path:
     if raw:
         return Path(raw).expanduser()
     return Path(default)
+
+
+@dataclass(frozen=True)
+class RuntimePaths:
+    """Queue vs state paths derived from an exec.jsonl location."""
+
+    queue_dir: Path
+    state_dir: Path
+    done_dir: Path
+    running_dir: Path
+    events_dir: Path
+    cancel_dir: Path
+    quota_state_path: Path
+    audit_path: Path
+
+
+def resolve_runtime_paths(exec_jsonl_path: str | Path) -> RuntimePaths:
+    """Resolve runtime directories from an exec.jsonl path (no I/O, no ``resolve()``)."""
+    queue_dir = Path(exec_jsonl_path).parent
+    runtime_state = state_dir(queue_dir)
+    return RuntimePaths(
+        queue_dir=queue_dir,
+        state_dir=runtime_state,
+        done_dir=runtime_state / "done",
+        running_dir=runtime_state / "running",
+        events_dir=runtime_state / "events",
+        cancel_dir=runtime_state / "cancel",
+        quota_state_path=runtime_state / "quota-gate.json",
+        audit_path=queue_dir / "audit.jsonl",
+    )
 
 
 def ghdag_language_pack() -> str | None:

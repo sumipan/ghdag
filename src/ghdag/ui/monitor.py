@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional, cast
 
+from ghdag.config.env import resolve_runtime_paths
 from ghdag.io.done import dep_succeeded, read_done_content
 from ghdag.pipeline.status import (
     STATE_DEFERRED,
@@ -406,8 +407,8 @@ def _detect_exec_path(repo_root: Path) -> Path:
 
 
 def _detect_exec_done_dir(repo_root: Path) -> Path:
-    """Return the done-marker directory path (jobs/done/)."""
-    return repo_root / "jobs" / "done"
+    """Return the done-marker directory path."""
+    return resolve_runtime_paths(repo_root / "jobs" / "exec.jsonl").done_dir
 
 
 def build_rows(
@@ -426,7 +427,7 @@ def build_rows(
     if running_uuids_override is not None:
         run_set = running_uuids_override
     elif detect_running:
-        jobs_running_dir = repo_root / "jobs" / "running"
+        jobs_running_dir = resolve_runtime_paths(exec_path).running_dir
         if jobs_running_dir.is_dir():
             run_set = running_uuids_from_jobs_dir(jobs_running_dir, tasks.keys())
         else:

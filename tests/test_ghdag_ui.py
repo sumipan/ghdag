@@ -621,3 +621,81 @@ class TestServer:
             with pytest.raises(GhdagError):
                 server_mod.run_server(tmp_path, port=0)
             mock_http.assert_not_called()
+
+
+class TestStateDir:
+    """Issue sumipan/nexus#6089: ghdag ui respects GHDAG_STATE_DIR."""
+
+    UUID = "aaaa-bbbb-cccc-0002"
+
+    def _make_state_repo(self, tmp_path: Path) -> Path:
+        import json as _json
+
+        state = tmp_path / "s"
+        jobs = tmp_path / "jobs"
+        jobs.mkdir(parents=True)
+        (jobs / "exec.jsonl").write_text(
+            _json.dumps({"uuid": self.UUID, "command": "echo run", "depends": []}) + "\n",
+            encoding="utf-8",
+        )
+        (state / "running").mkdir(parents=True)
+        (state / "running" / f"{self.UUID}.json").write_text("{}", encoding="utf-8")
+        return tmp_path
+
+    def _start(self, repo: Path):
+        from http.server import HTTPServer
+
+        from ghdag.ui.server import _Handler
+
+        _Handler.repo_root = repo
+        _Handler.poll_interval = 1.0
+        _Handler.max_visible = 30
+        _Handler.github_base_url = None
+        _Handler.language_pack = None
+
+        server = HTTPServer(("127.0.0.1", 0), _Handler)
+        port = server.server_address[1]
+        t = threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+        return server, port
+
+    def test_rows_running_from_state_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("GHDAG_STATE_DIR", str(tmp_path / "s"))
+        repo = self._make_state_repo(tmp_path)
+        server, port = self._start(repo)
+        try:
+            import urllib.request
+
+            resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/rows", timeout=5)
+            data = json.loads(resp.read().decode("utf-8"))
+        finally:
+            server.shutdown()
+        assert len(data) == 1
+        assert data[0]["uuid"] == self.UUID
+        assert data[0]["state_id"] == "running"
+
+    def test_stop_writes_cancel_in_state_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("GHDAG_STATE_DIR", str(tmp_path / "s"))
+        repo = self._make_state_repo(tmp_path)
+        state = tmp_path / "s"
+        server, port = self._start(repo)
+        try:
+            import urllib.request
+
+            req = urllib.request.Request(
+                f"http://127.0.0.1:{port}/api/stop",
+                data=json.dumps({"uuid": self.UUID}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            resp = urllib.request.urlopen(req, timeout=5)
+            body = json.loads(resp.read().decode("utf-8"))
+        finally:
+            server.shutdown()
+        assert body["ok"] is True
+        assert (state / "cancel" / self.UUID).is_file()
+        assert not (tmp_path / "jobs" / "cancel").exists()

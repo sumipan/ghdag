@@ -4,17 +4,20 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from ghdag.config.env import resolve_runtime_paths
+
 
 def cmd_cleanup(args) -> None:
     """ghdag cleanup: clean up queue/."""
     from ghdag.cleanup import cleanup_queue
 
     repo_root = Path(args.repo_root).resolve()
+    paths = resolve_runtime_paths(repo_root / "jobs" / "exec.jsonl")
     result = cleanup_queue(
-        queue_dir=repo_root / "jobs",
-        archive_dir=repo_root / "jobs" / "archive",
-        done_dir=repo_root / "jobs" / "done",
-        exec_md=repo_root / "jobs" / "exec.jsonl",
+        queue_dir=paths.queue_dir,
+        archive_dir=paths.queue_dir / "archive",
+        done_dir=paths.done_dir,
+        exec_md=paths.queue_dir / "exec.jsonl",
         cutoff_days=args.cutoff_days,
         orphan_days=args.orphan_days,
         dry_run=args.dry_run,

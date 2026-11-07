@@ -208,6 +208,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 | `ghdag dag cancel` | Creates `cancel/<uuid>` only when `running/<uuid>.json` exists; otherwise prints `error: not running: <uuid>` and exits `1`. The CLI never signals a process: the runner polls the cancel markers, stops the task's process group and writes `CANCELLED` |
 | `ghdag llm` exit codes | Exits with the engine's exit code; `124` on timeout (partial output is printed), `127` when the engine binary is missing and `126` when it is not executable (`<cmd>: command not found` / `permission denied` on stderr, no traceback) |
 | `ghdag ui` start-up | Loads the language pack before binding, so an invalid `GHDAG_LANGUAGE_PACK` makes the command fail with `GhdagError` |
+| `ghdag ui` / `ghdag cleanup` and `GHDAG_STATE_DIR` | `done/`, `running/`, `events/`, and `cancel/` follow `GHDAG_STATE_DIR` when set (via `resolve_runtime_paths` on `jobs/exec.jsonl`); `jobs/` still holds the queue, archive, and audit |
 | `shell` task failure output | A non-zero `shell` task writes its stdout (stderr merged with `2>&1`) plus a final `EXIT_CODE: <n>` line to `result_path`; the done marker keeps the exit code, so the task still counts as failed |
 
 ### Module entry points
@@ -825,7 +826,7 @@ Each line is parsed into `Task` (`ghdag.core.models.dag`). When a UUID appears o
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `exec_jsonl_path` | `str \| Path` | required | Queue file |
-| `exec_done_dir` | `str \| Path \| None` | `None` -> `$GHDAG_STATE_DIR/done` or `jobs/done` | Done-marker directory; its parent also holds `running/`, `cancel/`, `events/`, `.sessions/` |
+| `exec_done_dir` | `str \| Path \| None` | `None` -> `$GHDAG_STATE_DIR/done` or `<exec.jsonl parent>/done` | Done-marker directory; its parent also holds `running/`, `cancel/`, `events/`, `.sessions/` |
 | `poll_interval` | `float` | `1.0` | Poll interval (seconds) |
 | `launch_stagger` | `float` | `0.5` | Delay between launches (seconds) |
 | `max_retry` | `int` | `1` | Engine-error retry budget |

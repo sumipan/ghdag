@@ -144,6 +144,28 @@ def test_state_dir_set(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     assert env.state_dir("jobs") == tmp_path / "state"
 
 
+def test_resolve_runtime_paths_unset_and_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Issue sumipan/nexus#6089: resolve_runtime_paths (AC1)."""
+    monkeypatch.delenv("GHDAG_STATE_DIR", raising=False)
+    unset = env.resolve_runtime_paths("/x/jobs/exec.jsonl")
+    assert unset.queue_dir == Path("/x/jobs")
+    assert unset.state_dir == Path("/x/jobs")
+    assert unset.done_dir == Path("/x/jobs/done")
+    assert unset.audit_path == Path("/x/jobs/audit.jsonl")
+
+    monkeypatch.setenv("GHDAG_STATE_DIR", "/s")
+    with_state = env.resolve_runtime_paths("/x/jobs/exec.jsonl")
+    assert with_state.state_dir == Path("/s")
+    assert with_state.done_dir == Path("/s/done")
+    assert with_state.running_dir == Path("/s/running")
+    assert with_state.events_dir == Path("/s/events")
+    assert with_state.cancel_dir == Path("/s/cancel")
+    assert with_state.quota_state_path == Path("/s/quota-gate.json")
+    assert with_state.audit_path == Path("/x/jobs/audit.jsonl")
+
+
 def test_ghdag_language_pack(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GHDAG_LANGUAGE_PACK", "/cfg/ja.yaml")
     assert env.ghdag_language_pack() == "/cfg/ja.yaml"

@@ -8,6 +8,7 @@ Test approach:
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -79,6 +80,32 @@ class TestCleanupNormal:
 
         assert captured["cutoff_days"] == 3
         assert captured["orphan_days"] == 14
+
+    def test_cleanup_done_dir_follows_state_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Issue sumipan/nexus#6089: cleanup uses GHDAG_STATE_DIR for done_dir (AC6)."""
+        state = tmp_path / "s"
+        monkeypatch.setenv("GHDAG_STATE_DIR", str(state))
+        captured: dict = {}
+
+        def fake_cleanup(**kwargs):
+            captured.update(kwargs)
+            return self._make_mock_result()
+
+        jobs = tmp_path / "jobs"
+        jobs.mkdir(parents=True)
+        (jobs / "exec.jsonl").write_text("", encoding="utf-8")
+
+        with patch("ghdag.cleanup.cleanup_queue", side_effect=fake_cleanup):
+            from ghdag.cli import main
+
+            main(["cleanup", str(tmp_path)])
+
+        assert captured["done_dir"] == state / "done"
+        assert captured["queue_dir"] == jobs
+        assert captured["archive_dir"] == jobs / "archive"
+        assert captured["exec_md"] == jobs / "exec.jsonl"
 
     def test_cleanup_help_exits_0(self, capsys):
 

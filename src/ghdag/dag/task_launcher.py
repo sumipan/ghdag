@@ -1356,7 +1356,7 @@ class TaskLauncher:
                 logger.warning("Failed to remove control file %s", path, exc_info=True)
 
     def _queue_audit_path(self) -> Path:
-        return self._queue_dir() / "audit.jsonl"
+        return Path(self._config.audit_path)
 
     def _compaction_policy(self) -> CompactionPolicy:
         """Opt-in: enable via GHDAG_SESSION_COMPACTION=1 (default off)."""
