@@ -386,7 +386,7 @@ Modules without `__all__` that are meant for direct import:
 |---|---|
 | `ghdag.github_client` | `GitHubClient`, `create_github_client`, `create_github_clients`, `GitHubIssueClient` (alias of `GitHubClient`) |
 | `ghdag.forge` | `get_forge` |
-| `ghdag.forge.local` | `LocalForge`: file-backed `ForgePort` that stores Issues and PRs under `<root>/.forge/` |
+| `ghdag.forge.local` | `LocalForge`: file-backed `ForgePort` and `GitHubIssuePort` (usable with `WorkflowDispatcher`); Issues and PRs under `<root>/.forge/`; Issue `id` equals `number`; parent sub-issue links in each issue JSON as `sub_issues` (child numbers) |
 | `ghdag.maintenance` | `validate_exec_jsonl`, `repair_exec_jsonl`, `repair_jobs_done` |
 | `ghdag.markdown.body_editor` | `split_h2_sections`, `count_heading`, `get_section`, `upsert_section`, `filter_section_by_paths`, `get_subsections` |
 | `ghdag.core.vocabulary` | Done-marker constants (`DONE_*`), `QUEUE_FILE_RE`, `PIPELINE_STATUS_RE`, `FANOUT_SEPARATOR`, `FANOUT_ANCHOR`, `FANOUT_KEY` |

@@ -5,12 +5,16 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
 from ghdag.core.exceptions import GitHubApiError
 from ghdag.core.ports.forge import ForgePort
 from ghdag.forge.local import LocalForge
+from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.workflow.dispatcher import WorkflowDispatcher
+from ghdag.workflow.schema import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -304,3 +308,159 @@ def test_graphql_not_supported_and_protocol_conformance(tmp_path: Path) -> None:
         forge.graphql("query { x }")
     assert isinstance(forge, ForgePort)
     assert isinstance(GitHubClient(token="t", repo="o/r"), ForgePort)
+
+
+def test_list_all_issues_filters_by_state(forge: LocalForge) -> None:
+    """Issue #6093 AC2: list_all_issues filters open / closed / all without label filter."""
+    o1 = forge.issue_create("open-a", "b", labels=["a"])
+    o2 = forge.issue_create("open-b", "b", labels=["b"])
+    closed = forge.issue_create("closed-one", "b")
+    forge.issue_close(closed)
+
+    open_nums = {i["number"] for i in forge.list_all_issues("open")}
+    assert open_nums == {o1, o2}
+    closed_nums = {i["number"] for i in forge.list_all_issues("closed")}
+    assert closed_nums == {closed}
+    all_nums = {i["number"] for i in forge.list_all_issues("all")}
+    assert all_nums == {o1, o2, closed}
+
+
+def test_dispatcher_poll_once_matches_local_forge_issue(
+    forge: LocalForge, tmp_path: Path
+) -> None:
+    """Issue #6093 AC3: WorkflowDispatcher poll_once with LocalForge as client."""
+    workflow = WorkflowConfig(
+        name="wf",
+        triggers=[TriggerConfig(label="wf:go", handler="h")],
+        handlers={
+            "h": HandlerConfig(
+                steps=[StepConfig(template="t", model="claude-opus-4-6")],
+            ),
+        },
+        polling_interval=30,
+    )
+    pipeline = MagicMock(spec=LLMPipelineAPI)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir()
+    dispatcher = WorkflowDispatcher(
+        workflows=[workflow],
+        github_client=forge,
+        pipeline=pipeline,
+        queue_dir=queue_dir,
+    )
+    number = forge.issue_create("poll", "body", labels=["wf:go"])
+    results = dispatcher.poll_once()
+    assert len(results) == 1
+    assert results[0]["issue"] == number
+    assert results[0]["workflow"] == "wf"
+    assert results[0]["handler"] == "h"
+
+
+def test_get_last_rate_limit_none_and_observe_rate_limit_ok(
+    forge: LocalForge, tmp_path: Path
+) -> None:
+    """Issue #6093 AC4: get_last_rate_limit is None; observe does not write audit."""
+    assert forge.get_last_rate_limit() is None
+    workflow = WorkflowConfig(
+        name="wf",
+        triggers=[TriggerConfig(label="wf:go", handler="h")],
+        handlers={
+            "h": HandlerConfig(
+                steps=[StepConfig(template="t", model="claude-opus-4-6")],
+            ),
+        },
+        polling_interval=30,
+    )
+    pipeline = MagicMock(spec=LLMPipelineAPI)
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir()
+    dispatcher = WorkflowDispatcher(
+        workflows=[workflow],
+        github_client=forge,
+        pipeline=pipeline,
+        queue_dir=queue_dir,
+    )
+    dispatcher._observe_rate_limit()
+    assert not (queue_dir / "audit.jsonl").exists()
+
+
+def test_add_comment_appends_comment(forge: LocalForge) -> None:
+    """Issue #6093 AC5: add_comment delegates to issue_comment."""
+    number = forge.issue_create("c", "b")
+    assert forge.add_comment(number, "hello") is None
+    comments = forge.get_issue_comments(number)
+    assert comments[-1]["body"] == "hello"
+
+
+def test_issue_get_returns_id_equal_to_number(forge: LocalForge) -> None:
+    """Issue #6093 AC6: issue id mirrors issue number."""
+    number = forge.issue_create("id-test", "b")
+    assert forge.issue_get(number)["id"] == number
+    assert forge.issue_get(number, fields=["id", "number"]) == {
+        "id": number,
+        "number": number,
+    }
+    assert forge.get_issue(number)["id"] == number
+
+
+def test_sub_issue_add_list_summary(forge: LocalForge) -> None:
+    """Issue #6093 AC7: sub-issue link, list, and summary."""
+    parent = forge.issue_create("parent", "b")
+    c1 = forge.issue_create("c1", "b")
+    c2 = forge.issue_create("c2", "b")
+    assert forge.sub_issues_summary(parent) == {
+        "total": 0,
+        "completed": 0,
+        "percent_completed": 0,
+    }
+    forge.add_sub_issue(parent, c1)
+    forge.add_sub_issue(parent, c2)
+    forge.issue_close(c2)
+    listed = [i["number"] for i in forge.list_sub_issues(parent)]
+    assert listed == [c1, c2]
+    assert forge.sub_issues_summary(parent) == {
+        "total": 2,
+        "completed": 1,
+        "percent_completed": 50,
+    }
+
+
+def test_add_sub_issue_duplicate_returns_none(forge: LocalForge) -> None:
+    """Issue #6093 AC8: duplicate add_sub_issue is idempotent."""
+    parent = forge.issue_create("p", "b")
+    child = forge.issue_create("c", "b")
+    first = forge.add_sub_issue(parent, child)
+    assert first is not None
+    assert first["number"] == parent
+    assert forge.add_sub_issue(parent, child) is None
+    assert len(forge.list_sub_issues(parent)) == 1
+
+
+def test_remove_sub_issue_unlinks(forge: LocalForge) -> None:
+    """Issue #6093 AC9: remove_sub_issue unlinks or no-ops."""
+    parent = forge.issue_create("p", "b")
+    child = forge.issue_create("c", "b")
+    forge.add_sub_issue(parent, child)
+    removed = forge.remove_sub_issue(parent, child)
+    assert removed is not None
+    assert removed["number"] == parent
+    assert forge.list_sub_issues(parent) == []
+
+    other_parent = forge.issue_create("p2", "b")
+    assert forge.remove_sub_issue(other_parent, child) is None
+
+
+def test_add_sub_issue_missing_child_raises_404(
+    forge: LocalForge, forge_root: Path
+) -> None:
+    """Issue #6093 AC10: missing child yields 404 and leaves parent unchanged."""
+    parent = forge.issue_create("p", "b")
+    with pytest.raises(GitHubApiError) as exc_info:
+        forge.add_sub_issue(parent, 9999)
+    assert exc_info.value.status_code == 404
+    parent_data = json.loads(
+        (forge_root / ".forge" / "issues" / f"{parent}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "sub_issues" not in parent_data

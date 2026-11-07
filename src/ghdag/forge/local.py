@@ -204,8 +204,10 @@ class LocalForge:
     def issue_get(self, number: int, fields: list[str] | None = None) -> dict:
         raw = self._load_issue(number)
         state = str(raw.get("state", "open")).lower()
+        number_int = int(raw["number"])
         full: dict[str, Any] = {
-            "number": int(raw["number"]),
+            "number": number_int,
+            "id": number_int,
             "title": raw.get("title", ""),
             "body": raw.get("body", ""),
             "state": state,
@@ -245,9 +247,79 @@ class LocalForge:
                 out["state"] = state.upper()
             elif field == "number":
                 out["number"] = int(raw["number"])
+            elif field == "id":
+                out["id"] = number_int
             else:
                 out[field] = raw.get(field, full.get(field))
         return out
+
+    def get_issue(self, number: int) -> dict:
+        return self.issue_get(number)
+
+    def list_all_issues(self, state: str = "open") -> list[dict]:
+        results: list[dict[str, Any]] = []
+        want = state.lower()
+        for path in sorted(self._issues_dir.glob("*.json")):
+            if path.name.endswith(".comments.json"):
+                continue
+            data = cast(dict[str, Any], self._read_json(path))
+            st = str(data.get("state", "open")).lower()
+            if want != "all" and st != want:
+                continue
+            results.append(data)
+        return results
+
+    def get_last_rate_limit(self) -> dict[str, int] | None:
+        return None
+
+    def add_comment(self, number: int, body: str) -> None:
+        self.issue_comment(number, body)
+
+    def add_sub_issue(self, parent_number: int, child_id: int) -> dict | None:
+        parent = self._load_issue(parent_number)
+        self._load_issue(child_id)
+        sub_issues: list[int] = list(parent.get("sub_issues") or [])
+        if child_id in sub_issues:
+            return None
+        sub_issues.append(child_id)
+        parent["sub_issues"] = sub_issues
+        self._save_issue(parent)
+        return self.issue_get(parent_number)
+
+    def list_sub_issues(self, parent_number: int) -> list[dict]:
+        parent = self._load_issue(parent_number)
+        sub_issues: list[int] = list(parent.get("sub_issues") or [])
+        out: list[dict[str, Any]] = []
+        for child_id in sub_issues:
+            try:
+                out.append(self.issue_get(child_id))
+            except GitHubApiError:
+                continue
+        return out
+
+    def remove_sub_issue(self, parent_number: int, child_id: int) -> dict | None:
+        parent = self._load_issue(parent_number)
+        sub_issues: list[int] = list(parent.get("sub_issues") or [])
+        if child_id not in sub_issues:
+            return None
+        sub_issues = [x for x in sub_issues if x != child_id]
+        parent["sub_issues"] = sub_issues
+        self._save_issue(parent)
+        return self.issue_get(parent_number)
+
+    def sub_issues_summary(self, parent_number: int) -> dict:
+        children = self.list_sub_issues(parent_number)
+        total = len(children)
+        if total == 0:
+            return {"total": 0, "completed": 0, "percent_completed": 0}
+        completed = sum(
+            1 for c in children if str(c.get("state", "open")).lower() == "closed"
+        )
+        return {
+            "total": total,
+            "completed": completed,
+            "percent_completed": completed * 100 // total,
+        }
 
     def issue_create(
         self,
