@@ -125,6 +125,35 @@ class TestDepSucceeded:
             assert dep_succeeded(tmp_path, "dep") is expected, repr(raw)
 
 
+class TestDoneFailureClass:
+    def test_success_marker_is_not_a_failure_class(self) -> None:
+        from ghdag.io.done import done_failure_class
+
+        assert done_failure_class("0") is None
+        assert done_failure_class('{"status":"ok"}\n') is None
+
+    def test_marker_mapping_table(self) -> None:
+        from ghdag.core.models.metrics import FailureClass
+        from ghdag.core.vocabulary import (
+            DONE_EMPTY_RESULT,
+            DONE_ENGINE_ERROR,
+            DONE_TIMEOUT,
+        )
+        from ghdag.io.done import done_failure_class
+
+        assert done_failure_class("REJECTED_FINAL") is FailureClass.REJECTED
+        assert done_failure_class(f"{DONE_ENGINE_ERROR}\n") is FailureClass.ENGINE_ERROR
+        assert (
+            done_failure_class("PIPELINE_FAILED:PLAN_FAILED")
+            is FailureClass.PIPELINE_FAILED
+        )
+        assert done_failure_class("3") is FailureClass.PROCESS_ERROR
+        assert done_failure_class("CANCELLED") is None
+        assert done_failure_class("???") is FailureClass.UNKNOWN_FAILURE
+        assert done_failure_class(DONE_EMPTY_RESULT) is FailureClass.EMPTY_RESULT
+        assert done_failure_class(DONE_TIMEOUT) is FailureClass.TIMEOUT
+
+
 class TestShimCompat:
     def test_dag_state_reexports_same_objects(self) -> None:
         import ghdag.dag.state as dag_state

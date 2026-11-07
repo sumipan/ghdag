@@ -146,6 +146,10 @@ In production, use `ghdag.vcs.get_sink(name)`. It returns a no-op `NullSink` unl
 
 The parser is built by `ghdag.cli.main._build_parser()`. Global options: `--verbose` / `-v` (DEBUG logging) and `--quiet` / `-q` (WARNING and above).
 
+Every leaf subcommand accepts `--json` (`dest="output_json"`). With `--json`, success responses are a single JSON object or array on stdout. Failures raised as `GhdagError` are printed on stdout as one line: `{"error": {"code", "message", "hint", "exit_code"}}` (stderr stays empty). Without `--json`, failures go to stderr as `error[<CODE>]: <message>` and, when present, `  hint: <hint>` on the following line; the process exits with the exception's `exit_code`.
+
+`ghdag status --issue … --json` includes `steps[]` with `done_value`, `failure_class`, `cause`, and `retry_policy` when a done marker is present (see [`done_failure_class`](#done-failure-class-mapping)).
+
 ### Commands
 
 | Command | Description |
@@ -238,7 +242,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `WorkflowDispatcher` | class | `ghdag.workflow.dispatcher` | Label-driven dispatch: `.poll_once()`, `.run()`, `.dispatch(...)` |
 | `QuotaGate` | class | `ghdag.quota` | Engine quota, pause sources (`budget` / `failure` / `manual` / `drain`), drain mode, and role admission |
 | `IssueStatus` | dataclass | `ghdag.status` | Aggregated status of one Issue x handler run |
-| `StepStatus` | dataclass | `ghdag.status` | Status of one step |
+| `StepStatus` | dataclass | `ghdag.status` | Status of one step (`status` plus optional `done_value`, `failure_class`, `cause`, `retry_policy` from the done marker) |
 | `RunningTask` | dataclass | `ghdag.status` | Snapshot of one `running/<uuid>.json` |
 | `issue_status` | function | `ghdag.status` | Build an `IssueStatus` from the queue, state and done directories |
 | `running_tasks` | function | `ghdag.status` | List the `RunningTask` entries of a running directory |
@@ -410,7 +414,7 @@ Presets live in `PRESETS`. Workflow steps pick one with `StepConfig.permission`,
 | `dangerous_full_access` | `DANGEROUS_FULL_ACCESS` | `permission_mode="bypassPermissions"` |
 | `readonly_observe` | `READONLY_OBSERVE` | `sandbox="readonly"` (claude: `--permission-mode plan`; cursor: `--sandbox enabled`); `disallowed_tools=("Edit", "NotebookEdit")` |
 
-`readonly_observe` is available to workflow steps and the Python API, not to `ghdag llm --capabilities-preset`. Engine support is reported by `ghdag.llm.engines.supports_capability`: codex and cursor ignore `disallowed_tools`, codex also ignores `allowed_tools`, cursor ignores `web_search` (accepted, no argv change), and gemini supports none of `allowed_tools`, `disallowed_tools`, `permission_mode`, `stream`, `sandbox`, `resume`, and `web_search` (`call()` raises `NotImplementedError` for non-default values it cannot honour). `supports_capability(engine, "web_search")` is `True` for claude, cursor, and codex, and `False` for gemini and shell.
+`readonly_observe` is available to workflow steps, `ghdag llm --capabilities-preset`, and the Python API. Engine support is reported by `ghdag.llm.engines.supports_capability`: codex and cursor ignore `disallowed_tools`, codex also ignores `allowed_tools`, cursor ignores `web_search` (accepted, no argv change), and gemini supports none of `allowed_tools`, `disallowed_tools`, `permission_mode`, `stream`, `sandbox`, `resume`, and `web_search` (`call()` raises `NotImplementedError` for non-default values it cannot honour). `supports_capability(engine, "web_search")` is `True` for claude, cursor, and codex, and `False` for gemini and shell.
 
 `EngineSpec.pre_subcommand_args` holds static CLI tokens placed after `cli` and before `subcommand` (for example codex `--search` from `web_search=True` is assembled at command-build time, not stored on the frozen spec).
 
@@ -963,36 +967,50 @@ All exception types defined under `src/ghdag/`.
 
 ### `GhdagError` hierarchy
 
-`except GhdagError` catches every type in this table.
+`except GhdagError` catches every type in this table. Each row lists the default `code` and `exit_code` class attributes (`GhdagError.to_dict()` includes `hint` when set).
 
-| Exception | Parent(s) | Defined in | Raised when |
-|---|---|---|---|
-| `GhdagError` | `Exception` | `ghdag.core.exceptions` (also `ghdag`, `ghdag.exceptions`) | Base class; also raised directly, for example for an invalid language pack or a missing default repository |
-| `GitHubApiError` | `GhdagError` | `ghdag.core.exceptions` | A GitHub API call failed; has `status_code` |
-| `AuthError` | `GitHubApiError` | `ghdag.core.exceptions` | 401, or no token configured |
-| `RateLimitError` | `GitHubApiError` | `ghdag.core.exceptions` | 403 with `X-RateLimit-Remaining: 0`; has `reset_at` (epoch seconds) |
-| `PermissionDeniedError` | `GitHubApiError` | `ghdag.core.exceptions` | 403 / 404 on a private resource |
-| `NetworkError` | `GitHubApiError` | `ghdag.core.exceptions` | Timeout, DNS or connection failure |
-| `ModelValidationError` | `GhdagError` | `ghdag.pipeline.config` | Invalid model configuration |
-| `EngineModelError` | `GhdagError` | `ghdag.llm.engines` | Unknown engine, or model not in the allow-list |
-| `LLMParseError` | `GhdagError` | `ghdag.llm.capabilities` | Output does not match `output_format`; has `raw`, `reason` |
-| `ToolRegistryError` | `GhdagError` | `ghdag.tool.exceptions` | Tool definition naming violation or duplicate |
-| `DependencyError` | `GhdagError`, `ValueError` | `ghdag.pipeline.llm_pipeline` | Invalid step dependencies |
-| `ConfigLoadError` | `GhdagError`, `ValueError` | `ghdag.llm._config` | Invalid `llm-models.yml` |
-| `FanoutError` | `GhdagError`, `ValueError` | `ghdag.dag.fanout` | Invalid fan-out specification |
-| `AdapterNotFoundError` | `GhdagError`, `ValueError` | `ghdag.core.command` | No engine adapter for an engine name |
-| `PathTraversalError` | `GhdagError`, `ValueError` | `ghdag.core.models.files` (also `ghdag.files`) | A Markdown path escapes the repository root |
-| `ContextHookError` | `GhdagError`, `ValueError` | `ghdag.workflow.dispatcher` | A handler `context_hook` exited non-zero or returned invalid JSON |
-| `AppendRecoverError` | `GhdagError`, `ValueError` | `ghdag.files.append` | `md_append` cannot recover a partial append |
-| `DuplicateTaskError` | `GhdagError`, `ValueError` | `ghdag.io.exec_jsonl` | An append would duplicate an active task UUID or idempotency key |
-| `ValidationError` | `GhdagError`, `ValueError` | `ghdag.workflow.loader` | Invalid workflow YAML |
+### Exit codes (CLI)
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Operational failure (for example `RecoverError`, trigger not dispatched, `audit-query --burst-detect` hit) |
+| `2` | CLI usage (`CliUsageError`, argparse errors) |
+| `3` | Configuration or input validation (`ConfigError` and subclasses) |
+| `4` | GitHub API errors (`GitHubApiError` and subclasses) |
+
+`ghdag llm` still exits with the engine's own code (`124` timeout, `126` / `127` missing binary, otherwise the engine return code).
+
+| Exception | Parent(s) | Code | Exit | Defined in | Raised when |
+|---|---|---|---|---|---|
+| `GhdagError` | `Exception` | `GHDAG_ERROR` | 1 | `ghdag.core.exceptions` (also `ghdag`, `ghdag.exceptions`) | Base class; also raised directly, for example for an invalid language pack or a missing default repository |
+| `ConfigError` | `GhdagError`, `ValueError` | `CONFIG_INVALID` | 3 | `ghdag.core.exceptions` | Invalid configuration or validated input |
+| `CliUsageError` | `GhdagError` | `CLI_USAGE` | 2 | `ghdag.core.exceptions` | Invalid CLI argument combination |
+| `GitHubApiError` | `GhdagError` | `GITHUB_API_ERROR` | 4 | `ghdag.core.exceptions` | A GitHub API call failed; has `status_code` |
+| `AuthError` | `GitHubApiError` | `GITHUB_AUTH` | 4 | `ghdag.core.exceptions` | 401, or no token configured |
+| `RateLimitError` | `GitHubApiError` | `GITHUB_RATE_LIMIT` | 4 | `ghdag.core.exceptions` | 403 with `X-RateLimit-Remaining: 0`; has `reset_at` (epoch seconds) |
+| `PermissionDeniedError` | `GitHubApiError` | `GITHUB_PERMISSION_DENIED` | 4 | `ghdag.core.exceptions` | 403 / 404 on a private resource |
+| `NetworkError` | `GitHubApiError` | `GITHUB_NETWORK` | 4 | `ghdag.core.exceptions` | Timeout, DNS or connection failure |
+| `ValidationError` | `ConfigError` | `WORKFLOW_INVALID` | 3 | `ghdag.workflow.loader` | Invalid workflow YAML |
+| `TemplateVariableError` | `ConfigError`, `KeyError` | `TEMPLATE_UNDEFINED_VARIABLE` | 3 | `ghdag.pipeline.order` | A template variable is undefined |
+| `DependencyError` | `ConfigError` | `STEP_DEPENDENCY_INVALID` | 3 | `ghdag.pipeline.llm_pipeline` | Invalid step dependencies |
+| `ModelValidationError` | `GhdagError` | `STEP_MODEL_INVALID` | 3 | `ghdag.pipeline.config` | Invalid model configuration |
+| `EngineModelError` | `ConfigError` | `ENGINE_MODEL_INVALID` | 3 | `ghdag.llm.engines` | Unknown engine, or model not in the allow-list |
+| `LLMParseError` | `GhdagError` | `LLM_OUTPUT_NOT_JSON` | 3 | `ghdag.llm.capabilities` | Output does not match `output_format`; has `raw`, `reason` |
+| `ConfigLoadError` | `GhdagError`, `ValueError` | `LLM_MODELS_CONFIG_INVALID` | 3 | `ghdag.llm._config` | Invalid `llm-models.yml` |
+| `FanoutError` | `ConfigError` | `FANOUT_INVALID` | 3 | `ghdag.dag.fanout` | Invalid fan-out specification |
+| `RecoverError` | `GhdagError` | `RECOVER_NOT_POSSIBLE` | 1 | `ghdag.dag.recover` | A recover plan, or its execution, is not possible |
+| `ToolRegistryError` | `GhdagError` | `TOOL_REGISTRY_INVALID` | 3 | `ghdag.tool.exceptions` | Tool definition naming violation or duplicate |
+| `AdapterNotFoundError` | `GhdagError`, `ValueError` | `ADAPTER_NOT_FOUND` | 3 | `ghdag.core.command` | No engine adapter for an engine name |
+| `PathTraversalError` | `GhdagError`, `ValueError` | `PATH_TRAVERSAL` | 3 | `ghdag.core.models.files` (also `ghdag.files`) | A Markdown path escapes the repository root |
+| `ContextHookError` | `ConfigError` | `CONTEXT_HOOK_FAILED` | 3 | `ghdag.workflow.dispatcher` | A handler `context_hook` exited non-zero or returned invalid JSON |
+| `AppendRecoverError` | `GhdagError`, `ValueError` | `APPEND_RECOVER_FAILED` | 1 | `ghdag.files.append` | `md_append` cannot recover a partial append |
+| `DuplicateTaskError` | `GhdagError`, `ValueError` | `EXEC_DUPLICATE_TASK` | 3 | `ghdag.io.exec_jsonl` | An append would duplicate an active task UUID or idempotency key |
 
 ### Outside the `GhdagError` hierarchy
 
 | Exception | Parent(s) | Defined in | Raised when |
 |---|---|---|---|
-| `TemplateVariableError` | `ValueError`, `KeyError` | `ghdag.pipeline.order` | A template variable is undefined |
-| `RecoverError` | `Exception` | `ghdag.dag.recover` | A recover plan, or its execution, is not possible |
 | `OwnershipError` | `ValueError` | `ghdag.vcs.sink` (also `ghdag.vcs`) | A sink path is absolute, contains `..` or is outside `allow_prefixes`, no paths were given, or the commit subject does not start with `<owner>(` |
 | `ConflictError` | `RuntimeError` | `ghdag.vcs.sink` (also `ghdag.vcs`) | The rebase onto the remote conflicted; local versions were saved under `inbox/` (`inbox_paths`) |
 
@@ -1032,6 +1050,20 @@ Contents of `done/<uuid>` (constants in `ghdag.core.vocabulary`):
 | `LEGACY_DONE_DEFERRED` | `DEFERRED` | Legacy marker removed during the first exec load so the task becomes pending again |
 
 Any other content is the task's non-zero exit code.
+
+### `done_failure_class` mapping
+
+`ghdag.io.done.done_failure_class(raw)` maps the first line of a done marker to `FailureClass` (or `None` when the marker is not a failure class). `ghdag.status.issue_status` exposes the value as `StepStatus.failure_class` with matching `cause` and `retry_policy` from the enum.
+
+| Done marker (first line) | `FailureClass` |
+|---|---|
+| `0` or JSON `{"status":"ok",…}` with exit `0` / omitted | *(none)* |
+| `REJECTED`, `REJECTED_FINAL` | `REJECTED` |
+| `ENGINE_ERROR`, `ENGINE_ERROR_FINAL`, `ENGINE_ENVIRONMENT_ERROR`, `INTERACTIVE_PROMPT`, `TIMEOUT`, `EMPTY_RESULT`, `FANOUT_CHILD_FAILED`, `FANOUT_PARSE_FAILED`, `DEP_FAILED`, `UNKNOWN_FAILURE` | same name |
+| `PIPELINE_FAILED:<reason>` | `PIPELINE_FAILED` |
+| Non-zero integer | `PROCESS_ERROR` |
+| `CANCELLED`, `SKIPPED_MISSING_INPUT`, `ORPHAN_ARCHIVED`, `ORPHANED_ON_RESTART` | *(none — terminal state, not a failure class)* |
+| Anything else | `UNKNOWN_FAILURE` |
 
 ## Not in Scope
 

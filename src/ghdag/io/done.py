@@ -8,14 +8,61 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from ghdag.core.models.metrics import FailureClass
 from ghdag.core.vocabulary import (
+    DONE_CANCELLED,
+    DONE_DEP_FAILED,
     DONE_EMPTY_RESULT,
     DONE_ENGINE_ENV_ERROR,
     DONE_ENGINE_ERROR,
     DONE_ENGINE_ERROR_FINAL,
+    DONE_FANOUT_CHILD_FAILED,
+    DONE_FANOUT_PARSE_FAILED,
+    DONE_INTERACTIVE_PROMPT,
+    DONE_ORPHAN_ARCHIVED,
+    DONE_ORPHANED_ON_RESTART,
+    DONE_PIPELINE_FAILED_PREFIX,
     DONE_REJECTED,
     DONE_REJECTED_FINAL,
+    DONE_SKIPPED_MISSING_INPUT,
     DONE_SUCCESS,
+    DONE_TIMEOUT,
+    DONE_UNKNOWN_FAILURE,
+)
+
+__all__ = [
+    "dep_succeeded",
+    "done_failure_class",
+    "interpret_done",
+    "is_done",
+    "load_done_from_dir",
+    "load_succeeded_from_dir",
+    "mark_done",
+    "read_done_content",
+]
+
+_MARKER_FAILURE_CLASS: dict[str, FailureClass] = {
+    DONE_REJECTED: FailureClass.REJECTED,
+    DONE_REJECTED_FINAL: FailureClass.REJECTED,
+    DONE_ENGINE_ERROR: FailureClass.ENGINE_ERROR,
+    DONE_ENGINE_ERROR_FINAL: FailureClass.ENGINE_ERROR,
+    DONE_ENGINE_ENV_ERROR: FailureClass.ENGINE_ENVIRONMENT_ERROR,
+    DONE_INTERACTIVE_PROMPT: FailureClass.INTERACTIVE_PROMPT,
+    DONE_TIMEOUT: FailureClass.TIMEOUT,
+    DONE_EMPTY_RESULT: FailureClass.EMPTY_RESULT,
+    DONE_FANOUT_CHILD_FAILED: FailureClass.FANOUT_CHILD_FAILED,
+    DONE_FANOUT_PARSE_FAILED: FailureClass.FANOUT_PARSE_FAILED,
+    DONE_DEP_FAILED: FailureClass.DEP_FAILED,
+    DONE_UNKNOWN_FAILURE: FailureClass.UNKNOWN_FAILURE,
+}
+
+_STATE_MARKERS_WITHOUT_FAILURE_CLASS = frozenset(
+    {
+        DONE_CANCELLED,
+        DONE_SKIPPED_MISSING_INPUT,
+        DONE_ORPHAN_ARCHIVED,
+        DONE_ORPHANED_ON_RESTART,
+    }
 )
 
 
@@ -113,6 +160,42 @@ def read_done_content(exec_done_dir: Path, uuid: str) -> Optional[str]:
         return p.read_text(encoding="utf-8")
     except OSError:
         return None
+
+
+def done_failure_class(raw: str | None) -> FailureClass | None:
+    """Map a done-marker body to :class:`FailureClass`, if applicable."""
+    if raw is None:
+        return None
+    lines = raw.strip().splitlines()
+    first = lines[0].strip() if lines else ""
+    if first == "":
+        return FailureClass.UNKNOWN_FAILURE
+    if first == DONE_SUCCESS:
+        return None
+    if first.startswith("{"):
+        try:
+            obj = json.loads(first)
+        except json.JSONDecodeError:
+            return FailureClass.UNKNOWN_FAILURE
+        if isinstance(obj, dict) and obj.get("status") == "ok":
+            exit_code = obj.get("exit_code", obj.get("exitCode"))
+            if exit_code in (0, None):
+                return None
+        return FailureClass.UNKNOWN_FAILURE
+    if first in _STATE_MARKERS_WITHOUT_FAILURE_CLASS:
+        return None
+    if first.startswith(DONE_PIPELINE_FAILED_PREFIX):
+        return FailureClass.PIPELINE_FAILED
+    marker = _MARKER_FAILURE_CLASS.get(first)
+    if marker is not None:
+        return marker
+    try:
+        exit_code = int(first)
+    except ValueError:
+        return FailureClass.UNKNOWN_FAILURE
+    if exit_code == 0:
+        return None
+    return FailureClass.PROCESS_ERROR
 
 
 def dep_succeeded(exec_done_dir: Path, dep_uuid: str) -> bool:

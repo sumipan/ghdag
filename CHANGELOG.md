@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `ghdag.io.done.done_failure_class()` maps done-marker bodies to `FailureClass` using vocabulary constants (sumipan/nexus#6155).
+- `ghdag.status.StepStatus` adds `done_value`, `failure_class`, `cause`, and `retry_policy`; `issue_status` fills them from done markers (`status --json` includes them in `steps[]`).
+
+### Changed
+
+- README: CLI `--json` / structured CLI errors, exit-code table, `done_failure_class` mapping, and `StepStatus` failure fields (sumipan/nexus#6155).
+
 ## 0.113.0 - 2026-11-08
 
 ### Fixed

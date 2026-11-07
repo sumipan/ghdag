@@ -14,7 +14,12 @@ from ghdag.core.vocabulary import (
     DONE_SKIPPED_MISSING_INPUT,
 )
 from ghdag.io import audit_query, exec_jsonl
-from ghdag.io.done import dep_succeeded, interpret_done, read_done_content
+from ghdag.io.done import (
+    dep_succeeded,
+    done_failure_class,
+    interpret_done,
+    read_done_content,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +79,10 @@ class StepStatus:
     started_at: str | None
     elapsed_sec: float | None
     result_path: str | None
+    done_value: str | None = None
+    failure_class: str | None = None
+    cause: str | None = None
+    retry_policy: str | None = None
 
 
 @dataclass
@@ -108,6 +117,20 @@ class _StepRecord:
 def _first_line(raw: str) -> str:
     lines = raw.strip().splitlines()
     return lines[0].strip() if lines else ""
+
+
+def _step_done_metadata(
+    raw: str | None,
+    *,
+    status: str,
+) -> tuple[str | None, str | None, str | None, str | None]:
+    if status in ("pending", "running") or raw is None:
+        return None, None, None, None
+    done_value = _first_line(raw) or None
+    failure = done_failure_class(raw)
+    if failure is None:
+        return done_value, None, None, None
+    return done_value, failure.value, failure.cause, failure.retry_policy
 
 
 def _done_kind(raw: str | None) -> str | None:
@@ -419,6 +442,12 @@ def issue_status(
         ):
             orphan_uuids.append(rec.uuid)
 
+        done_raw = read_done_content(done_path, rec.uuid)
+        done_value, failure_class, cause, retry_policy = _step_done_metadata(
+            done_raw,
+            status=status,
+        )
+
         steps.append(
             StepStatus(
                 uuid=rec.uuid,
@@ -428,6 +457,10 @@ def issue_status(
                 started_at=started_at,
                 elapsed_sec=elapsed_sec,
                 result_path=rec.result_path,
+                done_value=done_value,
+                failure_class=failure_class,
+                cause=cause,
+                retry_policy=retry_policy,
             )
         )
 
