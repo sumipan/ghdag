@@ -80,6 +80,30 @@ def test_session_compaction_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
     assert env.session_compaction_enabled() is False
 
 
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "YES", "on", "ON", " 1 "])
+def test_engine_isolation_enabled_truthy(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """Issue sumipan/nexus#6085: opt-in values enable engine isolation."""
+    monkeypatch.setenv("GHDAG_ENGINE_ISOLATION", value)
+    assert env.engine_isolation_enabled() is True
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no", "off", "", "  "])
+def test_engine_isolation_enabled_falsy(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """Issue sumipan/nexus#6085: ``0`` and other non-truthy strings disable isolation."""
+    monkeypatch.setenv("GHDAG_ENGINE_ISOLATION", value)
+    assert env.engine_isolation_enabled() is False
+
+
+def test_engine_isolation_enabled_unset(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GHDAG_ENGINE_ISOLATION", raising=False)
+    assert env.engine_isolation_enabled() is False
+    assert "engine_isolation_enabled" in env.__all__
+
+
 @pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "YES", " 1 "])
 def test_enable_git_truthy(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
     monkeypatch.setenv("ENABLE_GIT", value)

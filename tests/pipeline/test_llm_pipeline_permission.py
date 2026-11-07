@@ -69,6 +69,27 @@ class TestStepConfigPermission:
         assert "--permission-mode" in record["command"]
         assert "bypassPermissions" in record["command"]
 
+    def test_codex_submit_engine_isolation_zero_omits_skills_config(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Issue sumipan/nexus#6085: GHDAG_ENGINE_ISOLATION=0 must not add skills off."""
+        import json as _json
+
+        monkeypatch.setenv("GHDAG_ENGINE_ISOLATION", "0")
+        api, _, _ = _make_api()
+        steps = [
+            StepConfig(
+                template="brushup",
+                engine="codex",
+                model="gpt-5.6-terra",
+                permission="text_only",
+            )
+        ]
+        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        assert "skills.include_instructions=false" not in record["command"]
+
     def test_permission_dangerous_full_access_codex(self):
         """codex + permission='dangerous_full_access' → sandbox bypass flags are attached.
 

@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
-from ghdag.config.env import ghdag_safe_default_permission
+from ghdag.config.env import engine_isolation_enabled, ghdag_safe_default_permission
 from ghdag.exceptions import GhdagError
 from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.order import OrderBuilder
@@ -361,7 +361,7 @@ class LLMPipelineAPI:
                 order_path=f"{self._queue_dir}/{order_filename}",
                 model=model,
                 capabilities=capabilities,
-                isolation=bool(os.environ.get("GHDAG_ENGINE_ISOLATION")),
+                isolation=engine_isolation_enabled(),
             ),
             "depends": depends,
             "result_path": f"{self._queue_dir}/{result_filename}",
