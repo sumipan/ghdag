@@ -40,7 +40,7 @@ handlers:
         (tdir / "brushup.md").write_text("# brushup\n", encoding="utf-8")
         (tdir / "p1-implement.md").write_text("# p1-implement\n", encoding="utf-8")
 
-    def test_trigger_calls_dispatch(self, tmp_path):
+    def test_trigger_calls_dispatch(self, tmp_path, capsys):
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
         self._write_workflow_yaml(workflows_dir)
@@ -50,7 +50,10 @@ handlers:
         mock_dispatch_result = MagicMock()
         mock_dispatch_result.status = "dispatched"
         mock_dispatch_result.reason = ""
-        mock_dispatch_result.exec_lines = ["# idempotency: ...", "uuid: cat ..."]
+        mock_dispatch_result.exec_lines = [
+            '{"uuid": "11111111-1111-1111-1111-111111111111", "command": "cat a"}',
+            '{"uuid": "22222222-2222-2222-2222-222222222222", "command": "cat b"}',
+        ]
         mock_github_client = MagicMock()
         mock_github_client.get_issue.return_value = {
             "number": 42,
@@ -82,6 +85,46 @@ handlers:
             ])
 
         assert trigger_state["dispatch_issue"]["number"] == 42
+        out = capsys.readouterr().out
+        assert "exec_lines: 2 step(s)" in out
+
+    def test_trigger_prints_zero_steps_when_exec_lines_empty(self, tmp_path, capsys):
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        self._write_workflow_yaml(workflows_dir)
+        exec_md = tmp_path / "exec.jsonl"
+        exec_md.write_text("")
+
+        mock_dispatch_result = MagicMock()
+        mock_dispatch_result.status = "dispatched"
+        mock_dispatch_result.reason = ""
+        mock_dispatch_result.exec_lines = []
+        mock_github_client = MagicMock()
+        mock_github_client.get_issue.return_value = {
+            "number": 7, "title": "T", "body": "", "labels": [], "url": "",
+        }
+
+        class FakeDispatcher:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def dispatch(self, *args, **kwargs):
+                return mock_dispatch_result
+
+        with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", FakeDispatcher), \
+             patch("ghdag.github_client.create_github_client", return_value=mock_github_client), \
+             patch("ghdag.pipeline.state.PipelineState"), \
+             patch("ghdag.pipeline.order.TemplateOrderBuilder"):
+            from ghdag.cli import main
+            main([
+                "trigger", "7",
+                "--handler", "brushup",
+                "--workflows-dir", str(workflows_dir),
+                "--exec-md", str(exec_md),
+            ])
+
+        out = capsys.readouterr().out
+        assert "exec_lines: 0 step(s)" in out
 
     def test_trigger_with_workflow_option(self, tmp_path):
         workflows_dir = tmp_path / "workflows"
@@ -93,7 +136,9 @@ handlers:
         mock_dispatch_result = MagicMock()
         mock_dispatch_result.status = "dispatched"
         mock_dispatch_result.reason = ""
-        mock_dispatch_result.exec_lines = ["# idempotency: ..."]
+        mock_dispatch_result.exec_lines = [
+            '{"uuid": "33333333-3333-3333-3333-333333333333", "command": "cat"}',
+        ]
         mock_github_client = MagicMock()
         mock_github_client.get_issue.return_value = {
             "number": 10, "title": "T", "body": "", "labels": [], "url": "",
