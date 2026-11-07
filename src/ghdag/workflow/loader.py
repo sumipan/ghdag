@@ -10,6 +10,8 @@ from pathlib import Path
 
 import yaml
 
+from ghdag.core.capabilities import PRESETS
+from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.models.workflow import (
     HANDLER_KEYS,
     NONTERMINAL_CLOSED_KEYS,
@@ -72,11 +74,27 @@ def load_workflow_file(path: str | Path) -> WorkflowConfig:
         raise ValidationError(f"YAML root must be a mapping: {path.name}")
 
     workflow_dir = path.parent.resolve()
-    _validate(data, path.name)
+    filename = path.name
+    _validate(data, filename)
     config = _parse(data, workflow_dir=workflow_dir)
     validate_workflow_roles(config)
+    _validate_handler_depends(config, filename)
     _validate_references(config, workflow_dir=workflow_dir)
     return config
+
+
+def _validate_handler_depends(config: WorkflowConfig, filename: str) -> None:
+    from ghdag.pipeline.llm_pipeline import DependencyError, validate_depends
+
+    for handler_name, handler in config.handlers.items():
+        try:
+            validate_depends(handler.steps)
+        except DependencyError as exc:
+            raise ValidationError(
+                f"{filename}: handler '{handler_name}': {exc.message}",
+                code=exc.code,
+                hint=exc.hint,
+            ) from exc
 
 
 def _reject_unknown_keys(
@@ -159,10 +177,27 @@ def _validate(data: dict, filename: str) -> None:
                     f"handler '{handler_name}' step[{i}] requires 'template': {filename}",
                     code="STEP_TEMPLATE_REQUIRED",
                 )
-            if "model" not in step:
+            engine = str(step.get("engine", "claude"))
+            if engine not in ENGINE_SPECS:
+                raise ValidationError(
+                    f"handler '{handler_name}' step[{i}] has unknown engine {engine!r}: {filename}",
+                    code="STEP_ENGINE_UNKNOWN",
+                    hint=f"available engines: {', '.join(sorted(ENGINE_SPECS))}",
+                )
+            if engine != "shell" and "model" not in step:
+                step_id = step.get("id") or step.get("template") or str(i)
                 raise ValidationError(
                     f"handler '{handler_name}' step[{i}] requires 'model': {filename}",
                     code="STEP_MODEL_REQUIRED",
+                    hint=f"every non-shell step needs model: {step_id}",
+                )
+            permission = step.get("permission")
+            if permission is not None and permission not in PRESETS:
+                raise ValidationError(
+                    f"handler '{handler_name}' step[{i}] has unknown permission "
+                    f"preset {permission!r}: {filename}",
+                    code="STEP_PERMISSION_UNKNOWN",
+                    hint=f"available presets: {', '.join(sorted(PRESETS))}",
                 )
             render = step.get("render", "frozen")
             if render not in ("frozen", "live"):
@@ -327,7 +362,7 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
                 StepConfig(
                     id=s.get("id"),
                     template=s["template"],
-                    model=s["model"],
+                    model=s.get("model"),
                     engine=s.get("engine", "claude"),
                     depends=s.get("depends", []),
                     resume_from=s.get("resume_from"),

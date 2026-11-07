@@ -8,7 +8,7 @@ import pytest
 from ghdag_pipeline_conftest_helpers import _TEST_AUDIT_CTX, _make_api, _track_build_order
 
 from ghdag.pipeline.audit import AuditContext
-from ghdag.pipeline.llm_pipeline import DependencyError, LLMPipelineAPI
+from ghdag.pipeline.llm_pipeline import DependencyError, LLMPipelineAPI, validate_depends
 from ghdag.workflow.schema import StepConfig
 
 
@@ -590,6 +590,22 @@ class TestEnvPassthroughInAnnotations:
 
         record = _json.loads(exec_lines[0])
         assert "env_passthrough" not in record.get("annotations", {})
+
+
+class TestValidateDependsPublic:
+    """Issue #6167 — validate_depends is importable and rejects unknown deps."""
+
+    def test_import_validate_depends(self):
+        assert callable(validate_depends)
+
+    def test_unknown_dependency_raises_dependency_error(self):
+        steps = [
+            StepConfig(id="a", template="t", model="m"),
+            StepConfig(id="b", template="t", model="m", depends=["missing"]),
+        ]
+        with pytest.raises(DependencyError) as exc_info:
+            validate_depends(steps)
+        assert exc_info.value.code == "STEP_DEPENDENCY_UNKNOWN"
 
 
 class TestUnknownEngine:
