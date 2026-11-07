@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.107.2 - 2026-11-07
+
+### Fixed
+
+- `TaskLauncher.launch()` now injects `--resume` only after quarantine, stdin input checks, and `QuotaGate.begin_run` admit the task, so paused / quarantined / missing-input polls no longer repeat `SessionStore.lookup`, compaction, or `session_compaction` audit; a Popen failure restores the pre-resume command and annotations (sumipan/nexus#6081).
+
 ## 0.107.1 - 2026-11-07
 
 ### Fixed

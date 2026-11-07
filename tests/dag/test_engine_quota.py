@@ -45,6 +45,48 @@ def _audit_event_types(audit_path: Path) -> list[str]:
     ]
 
 
+def test_paused_launch_skips_resume_lookup_and_compaction_audit(tmp_path: Path) -> None:
+    """Issue #6081: paused quota gate must not repeat resume lookup or compaction audit."""
+    config = DagConfig(
+        exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl",
+        exec_done_dir=tmp_path / "jobs" / "done",
+    )
+    hooks = MagicMock()
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = None
+    engine = DagEngine(config, hooks)
+    engine._quota_gate.report(
+        engine="claude",
+        status="paused",
+        observed_at=datetime(2026, 9, 2, 12, 0, tzinfo=JST),
+        resume_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
+    )
+    engine._launcher._session_store.record("parent-uuid", "claude", "sess-parent")
+    original_command = "claude -p hello"
+    task = Task(
+        uuid="child-uuid",
+        command=original_command,
+        engine="claude",
+        annotations={"resume_from_uuid": "parent-uuid"},
+    )
+
+    with patch.object(
+        engine._launcher._session_store,
+        "lookup",
+        wraps=engine._launcher._session_store.lookup,
+    ) as mock_lookup, patch(
+        "ghdag.dag.task_launcher.write_compaction_audit",
+    ) as mock_audit:
+        for _ in range(3):
+            assert engine._launcher.launch("child-uuid", task) is False
+
+    mock_lookup.assert_not_called()
+    mock_audit.assert_not_called()
+    assert task.command == original_command
+    audit_path = tmp_path / "jobs" / "audit.jsonl"
+    assert _audit_event_types(audit_path).count("session_compaction") == 0
+
+
 def test_paused_launch_does_not_call_subprocess(tmp_path: Path) -> None:
     exec_path = tmp_path / "jobs" / "exec.jsonl"
     done_dir = tmp_path / "jobs" / "done"
