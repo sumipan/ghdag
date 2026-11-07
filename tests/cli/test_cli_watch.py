@@ -117,13 +117,15 @@ class TestWatchError:
             main(["watch"])
         assert exc.value.code == 2
 
-    def test_watch_nonexistent_dir_exits_1(self, capsys):
+    def test_watch_nonexistent_dir_exits_2(self, capsys):
         from ghdag.cli import main
 
         with pytest.raises(SystemExit) as exc:
             main(["watch", "nonexistent_workflows_dir/"])
-        assert exc.value.code == 1
-        assert "not found" in capsys.readouterr().err
+        assert exc.value.code == 2
+        assert capsys.readouterr().err.splitlines()[0].startswith(
+            "error[WORKFLOWS_DIR_NOT_FOUND]:"
+        )
 
 
 class TestWatchOrderBuilderConstruction:

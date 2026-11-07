@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
+from ghdag.exceptions import GhdagError
 from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-from ghdag.pipeline.order import InlineOrderBuilder
+from ghdag.pipeline.order import InlineOrderBuilder, TemplateOrderBuilder, TemplateVariableError
 from ghdag.workflow.schema import StepConfig
 
 _TEST_AUDIT_CTX = AuditContext(source="test")
@@ -89,3 +92,18 @@ class TestInlineOrderBuilder:
             audit_context=_TEST_AUDIT_CTX,
         )
         assert len(exec_lines) == 1
+
+
+class TestTemplateVariableError:
+    def test_undefined_template_variable_has_code_and_hint(self, tmp_path):
+        tdir = tmp_path / "templates"
+        tdir.mkdir()
+        (tdir / "t.md").write_text("hello $undefined_name", encoding="utf-8")
+        builder = TemplateOrderBuilder(tdir)
+        with pytest.raises(TemplateVariableError) as exc_info:
+            builder.build_order("t", {})
+        err = exc_info.value
+        assert isinstance(err, GhdagError)
+        assert isinstance(err, KeyError)
+        assert err.code == "TEMPLATE_UNDEFINED_VARIABLE"
+        assert err.hint is not None and "$$" in err.hint

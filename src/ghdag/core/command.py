@@ -507,6 +507,9 @@ _CUSTOM_ADAPTERS: dict[str, EngineAdapter] = {}
 class AdapterNotFoundError(GhdagError, ValueError):
     """Raised when an unregistered engine adapter is requested."""
 
+    code = "ADAPTER_NOT_FOUND"
+    exit_code = 3
+
 
 def register_adapter(adapter: EngineAdapter) -> None:
     _CUSTOM_ADAPTERS[adapter.name] = adapter

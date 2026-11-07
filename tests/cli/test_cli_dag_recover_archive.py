@@ -6,6 +6,8 @@ import argparse
 import json
 from pathlib import Path
 
+import pytest
+
 from ghdag.io.exec_jsonl import build_idempotency_key
 from ghdag.workflow.schema import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
 
@@ -143,3 +145,62 @@ class TestCmdRecoverArchive:
         captured = capsys.readouterr()
         assert "archived:" not in captured.out
         assert result_path.read_text(encoding="utf-8") == "PIPELINE_STATUS: VERIFY_FAILED\n"
+
+
+class TestRecoverCliStructuredOutput:
+    def test_recover_dry_run_json(self, tmp_path, capsys, monkeypatch):
+        from ghdag.cli import main
+
+        jobs, done, state_dir, exec_jsonl, _ = _setup(tmp_path)
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        monkeypatch.setattr(
+            "ghdag.workflow.loader.load_workflows",
+            lambda _path: [_make_workflow()],
+        )
+        main([
+            "dag", "recover",
+            "--issue", str(ISSUE_NUMBER),
+            "--handler", "impl",
+            "--workflows-dir", str(workflows_dir),
+            "--exec-md", str(exec_jsonl),
+            "--state-dir", str(state_dir),
+            "--from", "p2",
+            "--dry-run",
+            "--json",
+        ])
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["dry_run"] is True
+        assert isinstance(payload["rerun_uuids"], list)
+
+    def test_recover_error_surfaces_through_main(self, tmp_path, capsys, monkeypatch):
+        from ghdag.cli import main
+
+        jobs, _, state_dir, exec_jsonl, _ = _setup(tmp_path)
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        monkeypatch.setattr(
+            "ghdag.workflow.loader.load_workflows",
+            lambda _path: [_make_workflow()],
+        )
+        monkeypatch.setattr(
+            "ghdag.cli.commands.recover.plan_recover",
+            lambda **kwargs: (_ for _ in ()).throw(
+                __import__("ghdag.dag.recover", fromlist=["RecoverError"]).RecoverError(
+                    "cannot recover"
+                )
+            ),
+        )
+        with pytest.raises(SystemExit) as exc:
+            main([
+                "dag", "recover",
+                "--issue", str(ISSUE_NUMBER),
+                "--handler", "impl",
+                "--workflows-dir", str(workflows_dir),
+                "--exec-md", str(exec_jsonl),
+                "--state-dir", str(state_dir),
+            ])
+        assert exc.value.code == 1
+        assert capsys.readouterr().err.splitlines()[0].startswith(
+            "error[RECOVER_NOT_POSSIBLE]:"
+        )

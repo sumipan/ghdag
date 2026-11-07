@@ -204,7 +204,7 @@ handlers:
             main(["trigger", "42"])
         assert exc.value.code == 2
 
-    def test_trigger_nonexistent_dir_exits_1(self, capsys):
+    def test_trigger_nonexistent_dir_exits_2(self, capsys):
         from ghdag.cli import main
         with pytest.raises(SystemExit) as exc:
             main([
@@ -212,10 +212,11 @@ handlers:
                 "--handler", "brushup",
                 "--workflows-dir", "nonexistent/",
             ])
-        assert exc.value.code == 1
-        assert "not found" in capsys.readouterr().err
+        assert exc.value.code == 2
+        err = capsys.readouterr().err
+        assert err.splitlines()[0].startswith("error[WORKFLOWS_DIR_NOT_FOUND]:")
 
-    def test_trigger_unknown_handler_exits_1(self, tmp_path, capsys):
+    def test_trigger_unknown_handler_exits_2(self, tmp_path, capsys):
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
         self._write_workflow_yaml(workflows_dir)
@@ -227,10 +228,12 @@ handlers:
                 "--handler", "nonexistent",
                 "--workflows-dir", str(workflows_dir),
             ])
-        assert exc.value.code == 1
-        assert "not found" in capsys.readouterr().err
+        assert exc.value.code == 2
+        err_lines = capsys.readouterr().err.splitlines()
+        assert err_lines[0].startswith("error[HANDLER_NOT_FOUND]:")
+        assert err_lines[1].startswith("  hint: available:")
 
-    def test_trigger_unknown_workflow_exits_1(self, tmp_path, capsys):
+    def test_trigger_unknown_workflow_exits_2(self, tmp_path, capsys):
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
         self._write_workflow_yaml(workflows_dir)
@@ -243,8 +246,8 @@ handlers:
                 "--workflow", "wrong-name",
                 "--workflows-dir", str(workflows_dir),
             ])
-        assert exc.value.code == 1
-        assert "not found" in capsys.readouterr().err
+        assert exc.value.code == 2
+        assert "error[WORKFLOW_NOT_FOUND]:" in capsys.readouterr().err
 
     def test_trigger_skipped_exits_1(self, tmp_path, capsys):
         """exit 1 when dispatch returns skipped"""
@@ -279,3 +282,66 @@ handlers:
                     "--exec-md", str(exec_md),
                 ])
             assert exc.value.code == 1
+
+
+class TestTriggerStructuredErrors:
+    def test_invalid_yaml_exits_3_without_traceback(self, tmp_path, capsys):
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        (workflows_dir / "bad.yml").write_text("name: [\n", encoding="utf-8")
+        from ghdag.cli import main
+
+        with pytest.raises(SystemExit) as exc:
+            main([
+                "trigger", "1",
+                "--handler", "impl",
+                "--workflows-dir", str(workflows_dir),
+            ])
+        assert exc.value.code == 3
+        err = capsys.readouterr().err
+        assert err.splitlines()[0].startswith("error[WORKFLOW_")
+        assert "Traceback" not in err
+
+    def test_trigger_json_success_output(self, tmp_path, capsys):
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        TestTriggerNormal()._write_workflow_yaml(workflows_dir)
+        exec_md = tmp_path / "exec.jsonl"
+        exec_md.write_text("")
+
+        mock_dispatch_result = MagicMock()
+        mock_dispatch_result.status = "dispatched"
+        mock_dispatch_result.reason = ""
+        mock_dispatch_result.exec_lines = ['{"uuid": "u", "command": "c"}']
+        mock_github_client = MagicMock()
+        mock_github_client.get_issue.return_value = {
+            "number": 1, "title": "T", "body": "", "labels": [], "url": "",
+        }
+
+        class FakeDispatcher:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def dispatch(self, *args, **kwargs):
+                return mock_dispatch_result
+
+        with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", FakeDispatcher), \
+             patch("ghdag.github_client.create_github_client", return_value=mock_github_client), \
+             patch("ghdag.pipeline.state.PipelineState"), \
+             patch("ghdag.pipeline.order.TemplateOrderBuilder"):
+            from ghdag.cli import main
+            main([
+                "trigger", "1",
+                "--handler", "brushup",
+                "--workflows-dir", str(workflows_dir),
+                "--exec-md", str(exec_md),
+                "--json",
+            ])
+
+        import json as _json
+
+        payload = _json.loads(capsys.readouterr().out.strip())
+        assert payload["issue"] == 1
+        assert payload["handler"] == "brushup"
+        assert payload["status"] == "dispatched"
+        assert payload["exec_lines"] == 1

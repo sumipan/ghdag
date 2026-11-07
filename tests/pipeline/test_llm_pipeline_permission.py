@@ -52,11 +52,14 @@ class TestStepConfigPermission:
             assert record["annotations"].get("safe_default_preset") == "text_only"
 
     def test_submit_unknown_permission_preset_raises(self):
-        """AC12: permission='unknown_preset' → ValueError"""
+        """AC12: permission='unknown_preset' → ConfigError(STEP_PERMISSION_UNKNOWN)"""
+        from ghdag.exceptions import ConfigError
+
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="unknown_preset")]
-        with pytest.raises(ValueError, match="unknown_preset"):
+        with pytest.raises(ConfigError, match="unknown_preset") as exc_info:
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+        assert exc_info.value.code == "STEP_PERMISSION_UNKNOWN"
 
     def test_permission_dangerous_full_access(self):
         """permission='dangerous_full_access' → --permission-mode bypassPermissions"""

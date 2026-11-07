@@ -15,6 +15,9 @@ from ghdag.exceptions import GhdagError
 class ModelValidationError(GhdagError):
     """Raised when an unauthorized model ID is specified."""
 
+    code = "STEP_MODEL_INVALID"
+    exit_code = 3
+
 
 @dataclass
 class PipelineConfig:

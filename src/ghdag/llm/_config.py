@@ -14,6 +14,9 @@ from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
 class ConfigLoadError(GhdagError, ValueError):
     """Raised when the engine config file has an invalid structure."""
 
+    code = "LLM_MODELS_CONFIG_INVALID"
+    exit_code = 3
+
 
 def load_engine_models(
     config_path: str | Path | None = None,

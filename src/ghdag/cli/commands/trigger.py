@@ -2,10 +2,61 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 from ghdag.config.env import state_dir as resolve_state_dir
+from ghdag.exceptions import CliUsageError, ConfigError
+
+
+def _load_workflow_for_cli(args, *, workflows_path: Path):
+    from ghdag.workflow.loader import load_workflows
+
+    if not workflows_path.exists():
+        raise CliUsageError(
+            f"directory not found: {workflows_path}",
+            code="WORKFLOWS_DIR_NOT_FOUND",
+            hint="pass --workflows-dir PATH",
+        )
+
+    workflows = load_workflows(workflows_path)
+    if not workflows:
+        raise ConfigError(
+            "no workflow definitions found",
+            code="WORKFLOW_NONE_FOUND",
+        )
+
+    if args.workflow:
+        matching = [w for w in workflows if w.name == args.workflow]
+        if not matching:
+            names = ", ".join(w.name for w in workflows)
+            raise CliUsageError(
+                f"workflow '{args.workflow}' not found",
+                code="WORKFLOW_NOT_FOUND",
+                hint=f"available: {names}",
+            )
+        workflow = matching[0]
+    elif len(workflows) == 1:
+        workflow = workflows[0]
+    else:
+        names = ", ".join(w.name for w in workflows)
+        raise CliUsageError(
+            f"multiple workflows found ({names}), specify --workflow",
+            code="WORKFLOW_AMBIGUOUS",
+            hint=f"specify --workflow with one of: {names}",
+        )
+
+    handler_name = args.handler
+    if handler_name not in workflow.handlers:
+        available = ", ".join(workflow.handlers.keys())
+        raise CliUsageError(
+            f"handler '{handler_name}' not found in workflow '{workflow.name}'",
+            code="HANDLER_NOT_FOUND",
+            hint=f"available: {available}",
+        )
+
+    return workflow, handler_name
 
 
 def cmd_trigger(args) -> None:
@@ -15,44 +66,9 @@ def cmd_trigger(args) -> None:
     from ghdag.pipeline.order import TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
-    from ghdag.workflow.loader import load_workflows
 
     workflows_path = Path(args.workflows_dir)
-    if not workflows_path.exists():
-        print(f"error: directory not found: {workflows_path}", file=sys.stderr)
-        sys.exit(1)
-
-    workflows = load_workflows(workflows_path)
-    if not workflows:
-        print("error: no workflow definitions found", file=sys.stderr)
-        sys.exit(1)
-
-    if args.workflow:
-        matching = [w for w in workflows if w.name == args.workflow]
-        if not matching:
-            print(f"error: workflow '{args.workflow}' not found", file=sys.stderr)
-            sys.exit(1)
-        workflow = matching[0]
-    elif len(workflows) == 1:
-        workflow = workflows[0]
-    else:
-        names = ", ".join(w.name for w in workflows)
-        print(
-            f"error: multiple workflows found ({names}), specify --workflow",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    handler_name = args.handler
-    if handler_name not in workflow.handlers:
-        available = ", ".join(workflow.handlers.keys())
-        print(
-            f"error: handler '{handler_name}' not found in workflow '{workflow.name}' "
-            f"(available: {available})",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
+    workflow, handler_name = _load_workflow_for_cli(args, workflows_path=workflows_path)
     handler = workflow.handlers[handler_name]
 
     trigger = None
@@ -102,10 +118,22 @@ def cmd_trigger(args) -> None:
         redispatch=args.redispatch,
         redispatch_reason=args.reason,
     )
-    print(f"trigger: issue #{args.issue_number} handler={handler_name} → {result.status}")
-    if result.reason:
-        print(f"  reason: {result.reason}")
-    if result.status == "dispatched":
-        print(f"  exec_lines: {len(result.exec_lines)} step(s)")
+
+    if args.output_json:
+        payload = {
+            "issue": args.issue_number,
+            "handler": handler_name,
+            "status": result.status,
+            "reason": result.reason or None,
+            "exec_lines": len(result.exec_lines),
+        }
+        print(json.dumps(payload, ensure_ascii=False))
+    else:
+        print(f"trigger: issue #{args.issue_number} handler={handler_name} → {result.status}")
+        if result.reason:
+            print(f"  reason: {result.reason}")
+        if result.status == "dispatched":
+            print(f"  exec_lines: {len(result.exec_lines)} step(s)")
+
     if result.status != "dispatched":
         sys.exit(1)

@@ -139,7 +139,7 @@ polling_interval: 30
         _make_templates(tmp_path, "brushup")
         with pytest.raises(ValidationError, match=r"handlers\.brushup\.steps\[0\]\.unknown_future_key") as exc_info:
             load_workflows(tmp_path)
-        assert "Allowed:" in str(exc_info.value)
+        assert exc_info.value.hint is not None and "Allowed:" in exc_info.value.hint
 
 
 class TestTC8StashPipelineYaml:
@@ -378,7 +378,7 @@ handlers:
         _make_templates(tmp_path, "brushup")
         with pytest.raises(ValidationError, match=r"handlers\.brushup\.steps\[0\]\.agent") as exc_info:
             load_workflows(tmp_path)
-        assert "Allowed:" in str(exc_info.value)
+        assert exc_info.value.hint is not None and "Allowed:" in exc_info.value.hint
 
     def test_engine_takes_priority_over_agent(self, tmp_path):
         """TC-engine-3 (updated): agent key rejected even when engine is set"""
@@ -399,7 +399,7 @@ handlers:
         _make_templates(tmp_path, "brushup")
         with pytest.raises(ValidationError, match=r"handlers\.brushup\.steps\[0\]\.agent") as exc_info:
             load_workflows(tmp_path)
-        assert "Allowed:" in str(exc_info.value)
+        assert exc_info.value.hint is not None and "Allowed:" in exc_info.value.hint
 
     def test_neither_engine_nor_agent_defaults_to_claude(self, tmp_path):
         """TC-engine-4: neither set → default 'claude'"""
@@ -457,9 +457,10 @@ handlers:
         (tmp_path / "bad.yml").write_text(yaml_content, encoding="utf-8")
         with pytest.raises(ValidationError) as exc_info:
             load_workflows(tmp_path)
-        msg = str(exc_info.value)
-        assert "nonexistent" in msg
-        assert "brushup" in msg
+        err = exc_info.value
+        assert err.code == "TRIGGER_HANDLER_UNDEFINED"
+        assert err.hint is not None and "brushup" in err.hint
+        assert "nonexistent" in str(err)
 
     def test_template_file_not_found(self, tmp_path):
         """AC-5, AC-6: missing template file → ValueError"""

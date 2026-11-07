@@ -11,7 +11,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ghdag.exceptions import GhdagError, RateLimitError
+from ghdag.exceptions import ConfigError, RateLimitError
 from ghdag.github_client import GitHubIssuePort
 from ghdag.io.audit import now_ts
 from ghdag.pipeline.audit import (
@@ -70,8 +70,13 @@ def _epoch_to_iso(ts: int) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
 
-class ContextHookError(GhdagError, ValueError):
+_CONTEXT_HOOK_HINT = "context_hook must exit 0 and print one flat JSON object"
+
+
+class ContextHookError(ConfigError):
     """Raised when a handler context_hook fails (non-zero exit or invalid stdout)."""
+
+    code = "CONTEXT_HOOK_FAILED"
 
 
 class WorkflowDispatcher:
@@ -888,7 +893,8 @@ class WorkflowDispatcher:
                 stderr_tail,
             )
             raise ContextHookError(
-                f"context_hook failed (rc={result.returncode}): {stderr_tail}"
+                f"context_hook failed (rc={result.returncode}): {stderr_tail}",
+                hint=_CONTEXT_HOOK_HINT,
             )
 
         stdout = result.stdout.strip()
@@ -899,7 +905,8 @@ class WorkflowDispatcher:
             data = json.loads(stdout)
         except json.JSONDecodeError as e:
             raise ContextHookError(
-                f"context_hook stdout is not valid JSON: {e}"
+                f"context_hook stdout is not valid JSON: {e}",
+                hint=_CONTEXT_HOOK_HINT,
             ) from e
 
         return {str(k): str(v) for k, v in data.items()}

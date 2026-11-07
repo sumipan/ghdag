@@ -20,7 +20,7 @@ from ghdag.core.models.workflow import (
     NonterminalClosedConfig,
     validate_workflow_roles,
 )
-from ghdag.exceptions import GhdagError
+from ghdag.exceptions import ConfigError
 from ghdag.workflow.schema import (
     HandlerConfig,
     OnTriggerConfig,
@@ -32,8 +32,10 @@ from ghdag.workflow.schema import (
 logger = logging.getLogger(__name__)
 
 
-class ValidationError(GhdagError, ValueError):
+class ValidationError(ConfigError):
     """Raised when workflow YAML fails validation."""
+
+    code = "WORKFLOW_INVALID"
 
 
 def load_workflows(directory: str | Path) -> list[WorkflowConfig]:
@@ -61,7 +63,10 @@ def load_workflow_file(path: str | Path) -> WorkflowConfig:
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as e:
-        raise ValidationError(f"YAML parse error ({path.name}): {e}") from e
+        raise ValidationError(
+            f"YAML parse error ({path.name}): {e}",
+            code="WORKFLOW_YAML_PARSE",
+        ) from e
 
     if not isinstance(data, dict):
         raise ValidationError(f"YAML root must be a mapping: {path.name}")
@@ -80,9 +85,11 @@ def _reject_unknown_keys(
     unknown = sorted(set(mapping) - allowed)
     if unknown:
         unknown_paths = ", ".join(f"{path}.{key}" for key in unknown)
+        allowed_hint = ", ".join(sorted(allowed))
         raise ValidationError(
-            f"{filename}: unknown key(s) in {path}: {unknown_paths}. "
-            f"Allowed: {', '.join(sorted(allowed))}"
+            f"{filename}: unknown key(s) in {path}: {unknown_paths}.",
+            code="WORKFLOW_UNKNOWN_KEY",
+            hint=f"Allowed: {allowed_hint}",
         )
 
 
@@ -148,9 +155,15 @@ def _validate(data: dict, filename: str) -> None:
                 filename,
             )
             if "template" not in step:
-                raise ValidationError(f"handler '{handler_name}' step[{i}] requires 'template': {filename}")
+                raise ValidationError(
+                    f"handler '{handler_name}' step[{i}] requires 'template': {filename}",
+                    code="STEP_TEMPLATE_REQUIRED",
+                )
             if "model" not in step:
-                raise ValidationError(f"handler '{handler_name}' step[{i}] requires 'model': {filename}")
+                raise ValidationError(
+                    f"handler '{handler_name}' step[{i}] requires 'model': {filename}",
+                    code="STEP_MODEL_REQUIRED",
+                )
             render = step.get("render", "frozen")
             if render not in ("frozen", "live"):
                 raise ValidationError(
@@ -187,9 +200,11 @@ def _validate(data: dict, filename: str) -> None:
     handler_names = set(data["handlers"].keys())
     for i, t in enumerate(data["triggers"]):
         if t["handler"] not in handler_names:
+            available = ", ".join(sorted(handler_names))
             raise ValidationError(
-                f"{filename}: triggers[{i}].handler '{t['handler']}' is not defined in handlers "
-                f"(available: {sorted(handler_names)})"
+                f"{filename}: triggers[{i}].handler '{t['handler']}' is not defined in handlers",
+                code="TRIGGER_HANDLER_UNDEFINED",
+                hint=f"available: {available}",
             )
 
     nonterminal_closed = data.get("nonterminal_closed")
@@ -256,10 +271,14 @@ def _validate_references(config: WorkflowConfig, *, workflow_dir: Path | None = 
                     raise ValidationError(
                         f"handler '{handler_name}' steps[{i}].template '{step.template}' "
                         f"references ${{{ref_id}_result_content}} for a prior step in the "
-                        f"same handler; that value is rendered at enqueue time and is always "
-                        f"empty for earlier steps in the same dispatch. Put '{ref_id}' in "
-                        f"depends, use ${{{ref_id}_result_filename}}, and read "
-                        f"jobs/${{{ref_id}_result_filename}} at run time instead."
+                        f"same handler",
+                        code="STEP_RESULT_CONTENT_SAME_HANDLER",
+                        hint=(
+                            "That value is rendered at enqueue time and is always empty for "
+                            f"earlier steps in the same dispatch. Put '{ref_id}' in depends, "
+                            f"use ${{{ref_id}_result_filename}}, and read "
+                            f"jobs/${{{ref_id}_result_filename}} at run time instead."
+                        ),
                     )
                 if ref_id not in (step.depends or []):
                     raise ValidationError(

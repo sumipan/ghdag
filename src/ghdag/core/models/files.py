@@ -10,6 +10,9 @@ from ghdag.core.exceptions import GhdagError
 class PathTraversalError(GhdagError, ValueError):
     """Raised when a file path escapes the repository root."""
 
+    code = "PATH_TRAVERSAL"
+    exit_code = 3
+
 
 @dataclass(frozen=True)
 class MdFile:

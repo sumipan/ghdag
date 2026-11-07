@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ghdag.exceptions import GhdagError
 from ghdag.status import _read_step_records, _to_recover_status
 
 logger = logging.getLogger(__name__)
@@ -45,8 +46,11 @@ class RecoverResult:
     archived: list[tuple[str, str]] = field(default_factory=list)
 
 
-class RecoverError(Exception):
+class RecoverError(GhdagError):
     """Recover cannot proceed (e.g. missing order files)."""
+
+    code = "RECOVER_NOT_POSSIBLE"
+    exit_code = 1
 
 
 def plan_recover(
