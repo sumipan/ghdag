@@ -118,21 +118,22 @@ class PipelineState:
         return {str(k): int(v) for k, v in data.items() if isinstance(v, int)}
 
     def remove_idempotency_matching(self, workflow_name: str, issue_number: int) -> int:
-        """Remove idempotency records matching workflow_name:*:issue_number from exec.jsonl.
+        """Remove idempotency records for ``workflow_name`` and ``issue_number`` from exec.jsonl.
 
-        Matches both without generation (ending in :issue_number) and with generation (:issue_number:N).
+        Parsed keys must match workflow and issue; handler and generation are ignored.
+        Unparseable keys (other formats) are left unchanged.
 
         Returns:
             number of records removed
         """
-        prefix = f"{workflow_name}:"
-        suffix_exact = f":{issue_number}"
-        suffix_gen = f":{issue_number}:"
-        return self._remove_by_predicate(
-            lambda rec: (k := rec.get("idempotency_key", ""))
-            and k.startswith(prefix)
-            and (k.endswith(suffix_exact) or suffix_gen in k)
-        )
+        def should_remove(rec: dict) -> bool:
+            parsed = exec_jsonl.parse_idempotency_key(rec.get("idempotency_key"))
+            if parsed is None:
+                return False
+            wf, _handler, issue, _gen = parsed
+            return wf == workflow_name and issue == issue_number
+
+        return self._remove_by_predicate(should_remove)
 
     def remove_idempotency_for_handler(
         self,
@@ -140,13 +141,25 @@ class PipelineState:
         handler_name: str,
         issue_number: int,
     ) -> int:
-        """Remove idempotency records exactly matching workflow_name:handler_name:issue_number from exec.jsonl.
+        """Remove idempotency records for workflow × handler × issue from exec.jsonl.
+
+        All generations for the same triple are removed; other keys are unchanged.
 
         Returns:
             number of records removed
         """
-        target_key = f"{workflow_name}:{handler_name}:{issue_number}"
-        return self._remove_by_predicate(lambda rec: rec.get("idempotency_key") == target_key)
+        def should_remove(rec: dict) -> bool:
+            parsed = exec_jsonl.parse_idempotency_key(rec.get("idempotency_key"))
+            if parsed is None:
+                return False
+            wf, handler, issue, _gen = parsed
+            return (
+                wf == workflow_name
+                and handler == handler_name
+                and issue == issue_number
+            )
+
+        return self._remove_by_predicate(should_remove)
 
     def _remove_by_predicate(self, predicate: Callable[[dict], bool]) -> int:
         """Internal helper that removes records for which predicate returns True from exec.jsonl.

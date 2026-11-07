@@ -51,6 +51,34 @@ def build_idempotency_key(
     return f"{base}:{generation}"
 
 
+def parse_idempotency_key(key: str) -> tuple[str, str, int, int] | None:
+    """Parse a handler idempotency key built by ``build_idempotency_key``.
+
+    Workflow and handler names are assumed not to contain colons.
+    Returns ``None`` for malformed keys or non-string input.
+    """
+    if not isinstance(key, str):
+        return None
+    parts = key.split(":")
+    if len(parts) == 3:
+        wf, handler, issue_s = parts
+        gen_s: str | None = None
+    elif len(parts) == 4:
+        wf, handler, issue_s, gen_s = parts
+    else:
+        return None
+    if not wf or not handler:
+        return None
+    if not issue_s.isdecimal():
+        return None
+    issue = int(issue_s)
+    if gen_s is None:
+        return (wf, handler, issue, 0)
+    if not gen_s.isdecimal():
+        return None
+    return (wf, handler, issue, int(gen_s))
+
+
 def handler_generation_key(
     workflow_name: str,
     handler_name: str,
@@ -84,6 +112,7 @@ def get_generation(
 __all__ = [
     "DuplicateTaskError",
     "build_idempotency_key",
+    "parse_idempotency_key",
     "handler_generation_key",
     "get_generation",
     "read",
