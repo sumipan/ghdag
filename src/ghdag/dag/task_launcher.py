@@ -396,7 +396,6 @@ class TaskLauncher:
 
     def launch(self, uuid: str, task: Task) -> bool:
         """Start a subprocess for the given task and register it in _running."""
-        self._apply_resume_if_available(uuid, task)
         logger.info("Launching [%s]: %s", uuid, task.command)
         cwd = str(self._config.cwd) if self._config.cwd else None
         launch_engine = task.engine
@@ -446,6 +445,9 @@ class TaskLauncher:
             )
             return False
 
+        command_before_resume = task.command
+        self._apply_resume_if_available(uuid, task)
+
         interrupted_reruns = self._pending_reruns.pop(uuid, None)
         previous_attempt = "interrupted" if interrupted_reruns is not None else None
 
@@ -490,6 +492,10 @@ class TaskLauncher:
                 )
         except Exception:
             self._quota_gate.finish_run(task_uuid=uuid)
+            if task.command != command_before_resume:
+                task.command = command_before_resume
+                task.annotations.pop("_command_without_resume", None)
+                task.annotations.pop("resumed_session_id", None)
             raise
 
         stderr_buf = io.BytesIO()
