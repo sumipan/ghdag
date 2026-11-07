@@ -257,6 +257,21 @@ class TestPruneAndLoad:
         assert path.read_text(encoding="utf-8") == original
 
 
+def test_parse_idempotency_key_roundtrips_build():
+    from ghdag.io.exec_jsonl import build_idempotency_key, parse_idempotency_key
+
+    assert parse_idempotency_key("wf:h:3:2") == ("wf", "h", 3, 2)
+    assert parse_idempotency_key(build_idempotency_key("wf", "h", 3)) == ("wf", "h", 3, 0)
+    assert parse_idempotency_key(build_idempotency_key("wf", "h", 3, 2)) == ("wf", "h", 3, 2)
+
+
+def test_parse_idempotency_key_rejects_malformed():
+    from ghdag.io.exec_jsonl import parse_idempotency_key
+
+    for bad in ("garbage", "wf:h:x", "wf::3", "wf:h:3:2:9"):
+        assert parse_idempotency_key(bad) is None
+
+
 class TestValidateRepair:
     def test_validate(self, tmp_path: Path) -> None:
         from ghdag.io.exec_jsonl import validate

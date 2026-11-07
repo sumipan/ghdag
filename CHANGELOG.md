@@ -7,6 +7,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `ghdag.io.exec_jsonl.parse_idempotency_key` — inverse of `build_idempotency_key` for structured idempotency key parsing.
+
+### Fixed
+
+- `PipelineState.remove_idempotency_matching` no longer deletes another issue's generation-suffixed keys (e.g. `wf:h:12:3` when resetting issue 3).
+- `PipelineState.remove_idempotency_for_handler` now removes all generations for the same workflow × handler × issue triple.
+
 ## 0.109.0 - 2026-11-07
 
 ### Added
