@@ -89,6 +89,10 @@ class TestIssueStatusUnit:
         for step in result.steps:
             assert isinstance(step, StepStatus)
             assert step.status == "success"
+            assert step.done_value == "0"
+            assert step.failure_class is None
+            assert step.cause is None
+            assert step.retry_policy is None
         assert by_name["a"].result_path == "result-a.md"
         assert by_name["b"].result_path is None
         assert by_name["a"].depends == []
@@ -115,6 +119,45 @@ class TestIssueStatusUnit:
         assert by_name["a"].status == "success"
         assert by_name["b"].status == "running"
         assert by_name["c"].status == "pending"
+
+    def test_issue_status_engine_error_failure_fields(self, tmp_path: Path) -> None:
+        exec_jsonl, done_dir, state_dir = _minimal_graph(tmp_path)
+        (done_dir / "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").write_text(
+            "ENGINE_ERROR", encoding="utf-8"
+        )
+
+        result = issue_status(
+            1,
+            handler="handler",
+            workflow="wf",
+            exec_jsonl_path=exec_jsonl,
+            state_dir=state_dir,
+            done_dir=done_dir,
+        )
+        step_a = next(s for s in result.steps if s.step_name == "a")
+        assert step_a.status == "failed"
+        assert step_a.done_value == "ENGINE_ERROR"
+        assert step_a.failure_class == "ENGINE_ERROR"
+        assert step_a.cause == "transient"
+        assert step_a.retry_policy == "safe"
+
+    def test_issue_status_pending_step_has_no_done_fields(self, tmp_path: Path) -> None:
+        exec_jsonl, done_dir, state_dir = _minimal_graph(tmp_path)
+
+        result = issue_status(
+            1,
+            handler="handler",
+            workflow="wf",
+            exec_jsonl_path=exec_jsonl,
+            state_dir=state_dir,
+            done_dir=done_dir,
+        )
+        step_b = next(s for s in result.steps if s.step_name == "b")
+        assert step_b.status == "pending"
+        assert step_b.done_value is None
+        assert step_b.failure_class is None
+        assert step_b.cause is None
+        assert step_b.retry_policy is None
 
     def test_issue_status_dep_failed(self, tmp_path: Path) -> None:
         exec_jsonl, done_dir, state_dir = _minimal_graph(tmp_path)
