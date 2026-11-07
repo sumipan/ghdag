@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `LocalForge` implements `GitHubIssuePort` (`list_all_issues`, `get_issue`, `add_comment`, sub-issue APIs, `get_last_rate_limit`); `issue_get` includes `id` equal to `number` (sumipan/nexus#6093).
+
 ## 0.112.1 - 2026-11-08
 
 ### Fixed
