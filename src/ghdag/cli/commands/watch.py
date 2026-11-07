@@ -27,7 +27,7 @@ def cmd_watch(args) -> None:
     for wf in workflows:
         wf.polling_interval = args.interval
 
-    github_clients = create_github_clients()
+    github_clients = create_github_clients(rate_limit_max_wait_sec=0)
     exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
     queue_dir = str(exec_jsonl_resolved.parent)
     if isinstance(args.state_dir, str):

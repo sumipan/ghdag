@@ -1120,11 +1120,19 @@ def create_github_client(
     return GitHubClient(token=token_value, repo=f"{resolved_owner}/{resolved_repo}")
 
 
-def create_github_clients(*, token: str | None = None) -> list[GitHubIssuePort]:
+def create_github_clients(
+    *,
+    token: str | None = None,
+    rate_limit_max_wait_sec: int | None = None,
+) -> list[GitHubIssuePort]:
     """Create a list of clients, one per repository in GITHUB_REPOSITORIES."""
     token_value = _resolve_token(token)
     return [
-        GitHubClient(token=token_value, repo=f"{owner}/{repo}")
+        GitHubClient(
+            token=token_value,
+            repo=f"{owner}/{repo}",
+            rate_limit_max_wait_sec=rate_limit_max_wait_sec,
+        )
         for owner, repo in _resolve_repos()
     ]
 

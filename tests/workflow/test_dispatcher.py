@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from datetime import datetime, timezone
@@ -104,4 +105,63 @@ def test_rate_limit_without_reset_does_not_skip(tmp_path):
     dispatcher.run(max_iterations=2)
 
     assert github.list_all_issues.call_count == 2
+    assert dispatcher._rate_limited_until is None
+
+
+def _two_matches(dispatcher: WorkflowDispatcher) -> list[dict]:
+    workflow = dispatcher._workflows[0]
+    trigger = workflow.triggers[0]
+    handler = workflow.handlers[trigger.handler]
+    base = {
+        "_workflow": workflow,
+        "_handler": handler,
+        "_trigger": trigger,
+        "_trigger_rank": 0,
+        "_github": dispatcher._githubs[0],
+    }
+    return [
+        {**base, "_issue_data": {"number": 1}, "handler": trigger.handler},
+        {**base, "_issue_data": {"number": 2}, "handler": trigger.handler},
+    ]
+
+
+def test_dispatch_rate_limit_sets_skip_and_stops_remaining_matches(tmp_path, caplog):
+    dispatcher, _github = _make_dispatcher(tmp_path)
+    reset_at = int(time.time()) + 600
+    matches = _two_matches(dispatcher)
+    dispatcher.poll_once = MagicMock(return_value=matches)  # type: ignore[method-assign]
+    dispatcher.dispatch = MagicMock(  # type: ignore[method-assign]
+        side_effect=RateLimitError("rate limited", status_code=403, reset_at=reset_at),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
+        dispatcher.run(max_iterations=1)
+
+    dispatcher.dispatch.assert_called_once()
+    assert dispatcher._rate_limited_until == reset_at
+    audit_path = tmp_path / "audit.jsonl"
+    assert audit_path.exists()
+    events = [
+        json.loads(line) for line in audit_path.read_text().splitlines() if line.strip()
+    ]
+    failed = [e for e in events if e.get("event") == "dispatcher_dispatch_failed"]
+    assert len(failed) == 1
+    assert failed[0]["exception_class"] == "RateLimitError"
+    skip_lines = [
+        r.getMessage() for r in caplog.records if "rate limited: skip poll until" in r.getMessage()
+    ]
+    assert len(skip_lines) == 1
+
+
+def test_dispatch_rate_limit_without_reset_continues(tmp_path):
+    dispatcher, _github = _make_dispatcher(tmp_path)
+    matches = _two_matches(dispatcher)
+    dispatcher.poll_once = MagicMock(return_value=matches)  # type: ignore[method-assign]
+    dispatcher.dispatch = MagicMock(  # type: ignore[method-assign]
+        side_effect=RateLimitError("rate limited", status_code=403),
+    )
+
+    dispatcher.run(max_iterations=1)
+
+    assert dispatcher.dispatch.call_count == 2
     assert dispatcher._rate_limited_until is None

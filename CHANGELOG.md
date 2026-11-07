@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.111.0 - 2026-11-07
+
+### Changed
+
+- `ghdag watch`: build GitHub clients with `rate_limit_max_wait_sec=0` so rate limits do not block the dispatcher loop; dispatch `RateLimitError` with a reset time skips remaining matches for that iteration and polls until reset (sumipan/nexus#6087).
+- `create_github_clients`: accept `rate_limit_max_wait_sec` and pass it to each `GitHubClient` (sumipan/nexus#6087).
+
 ## 0.110.2 - 2026-11-07
 
 ### Fixed

@@ -42,6 +42,27 @@ class TestWatchNormal:
         assert watch_state["workflows_loaded"] is True
         assert watch_state["dispatcher_ran"] is True
 
+    def test_watch_builds_clients_without_rate_limit_wait(self, tmp_path):
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        create_calls: list[dict] = []
+
+        def fake_create_github_clients(**kwargs):
+            create_calls.append(kwargs)
+            return []
+
+        with patch("ghdag.workflow.loader.load_workflows", return_value=[]), \
+             patch("ghdag.workflow.dispatcher.WorkflowDispatcher") as mock_disp_cls, \
+             patch("ghdag.github_client.create_github_clients", side_effect=fake_create_github_clients), \
+             patch("ghdag.pipeline.state.PipelineState"), \
+             patch("ghdag.pipeline.order.TemplateOrderBuilder"):
+            mock_disp_cls.return_value.run = lambda *a, **k: None
+            from ghdag.cli import main
+            main(["watch", str(workflows_dir)])
+
+        assert len(create_calls) == 1
+        assert create_calls[0] == {"rate_limit_max_wait_sec": 0}
+
     def test_watch_with_options(self, tmp_path):
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
