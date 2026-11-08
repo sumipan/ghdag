@@ -25,6 +25,7 @@ dev = [
   "ruff>=0.4.0",
   "import-linter>=2.0",
   "types-PyYAML>=6.0",
+  "jsonschema>=4.0",
 ]
 
 [project.scripts]
@@ -39,6 +40,7 @@ where = ["src"]
 [tool.setuptools.package-data]
 "ghdag.ui" = ["static/*"]
 "ghdag" = ["py.typed"]
+"ghdag.schemas" = ["*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

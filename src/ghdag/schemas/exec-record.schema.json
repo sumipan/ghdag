@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sumipan/ghdag/schemas/exec-record.schema.json",
+  "title": "exec.jsonl task record",
+  "description": "One JSON object on a single line of jobs/exec.jsonl.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["uuid", "engine", "command", "depends", "result_path", "retry", "annotations"],
+  "properties": {
+    "uuid": {
+      "type": "string",
+      "description": "Task identifier (also the done marker file name)."
+    },
+    "engine": {
+      "type": "string",
+      "enum": ["claude", "codex", "cursor", "gemini", "shell"],
+      "description": "Engine used to run command."
+    },
+    "model": {
+      "type": ["string", "null"],
+      "description": "Model id when the engine accepts a model flag (null for shell)."
+    },
+    "command": {
+      "type": "string",
+      "description": "Shell command line executed by the DAG runner."
+    },
+    "depends": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Upstream task UUIDs that must succeed first."
+    },
+    "result_path": {
+      "type": "string",
+      "description": "Path to the result markdown file for this task."
+    },
+    "retry": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Retry counter for this task."
+    },
+    "annotations": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "step_name": {
+          "description": "Handler step id for this record."
+        },
+        "resume_from_uuid": {
+          "type": "string",
+          "description": "UUID of the parent session to resume."
+        },
+        "role": {
+          "type": "string",
+          "description": "Quota role name."
+        },
+        "role_engines": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "env_passthrough": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "safe_default_applied": {
+          "type": "boolean"
+        },
+        "safe_default_preset": {
+          "type": "string"
+        }
+      },
+      "description": "Structured metadata not passed on the CLI argv."
+    },
+    "idempotency_key": {
+      "type": "string",
+      "description": "Dispatch deduplication key when set by the intake tower."
+    }
+  },
+  "examples": [
+    {
+      "uuid": "11111111-1111-1111-1111-111111111111",
+      "engine": "shell",
+      "model": null,
+      "command": "bash -o pipefail path/to/order.md",
+      "depends": [],
+      "result_path": "jobs/20260101000000-shell-result-11111111-1111-1111-1111-111111111111.md",
+      "retry": 0,
+      "annotations": {
+        "step_name": "prep"
+      }
+    }
+  ]
+}

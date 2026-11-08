@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sumipan/ghdag/schemas/workflow-config.schema.json",
+  "title": "Workflow configuration",
+  "description": "YAML workflow file parsed as a JSON-compatible mapping (one workflow document).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "triggers", "handlers"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Workflow name (must be unique within the workflows directory)."
+    },
+    "triggers": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Trigger definitions in priority order.",
+      "items": { "$ref": "#/$defs/trigger" }
+    },
+    "handlers": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "Handler name to handler configuration.",
+      "additionalProperties": { "$ref": "#/$defs/handler" }
+    },
+    "polling_interval": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Label polling interval in seconds."
+    },
+    "template_dir": {
+      "type": "string",
+      "description": "Directory for order templates (relative paths resolve from the workflow file)."
+    },
+    "label_namespace": {
+      "type": "string",
+      "description": "Label prefix used when rewriting issue labels."
+    },
+    "transitions": {
+      "type": "object",
+      "description": "Allowed label transitions (from label to list of target labels).",
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "reset_label": {
+      "type": "string",
+      "description": "Special label that may be reached from any state."
+    },
+    "roles": {
+      "type": "object",
+      "description": "Quota role name to allowed engine names.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["claude", "codex", "cursor", "gemini", "shell"]
+        }
+      }
+    },
+    "nonterminal_closed": {
+      "$ref": "#/$defs/nonterminal_closed"
+    }
+  },
+  "$defs": {
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "handler"],
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "GitHub Issue label that starts this handler."
+        },
+        "handler": {
+          "type": "string",
+          "description": "Key in handlers."
+        }
+      }
+    },
+    "handler": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "type": "array",
+          "description": "Pipeline steps (required for non-reset handlers).",
+          "items": { "$ref": "#/$defs/step" }
+        },
+        "on_trigger": {
+          "$ref": "#/$defs/on_trigger"
+        },
+        "type": {
+          "type": "string",
+          "description": "Special handler kind such as reset."
+        },
+        "context_hook": {
+          "type": "string",
+          "description": "Shell command run before enqueue to build template context."
+        }
+      }
+    },
+    "on_trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "issue_context": {
+          "type": "boolean",
+          "description": "When true, write issue body and comments into design.md."
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["template"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Step identifier referenced by depends and resume_from."
+        },
+        "template": {
+          "type": "string",
+          "description": "Order template file name (without extension)."
+        },
+        "model": {
+          "type": "string",
+          "description": "LLM model id (required for non-shell engines)."
+        },
+        "engine": {
+          "type": "string",
+          "enum": ["claude", "codex", "cursor", "gemini", "shell"],
+          "description": "Execution engine."
+        },
+        "depends": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Ids of steps that must succeed before this step runs."
+        },
+        "resume_from": {
+          "type": "string",
+          "description": "Parent step id whose LLM session is continued."
+        },
+        "permission": {
+          "type": "string",
+          "enum": [
+            "dangerous_full_access",
+            "json_only",
+            "readonly_observe",
+            "text_only",
+            "web_research"
+          ],
+          "description": "Capabilities preset for LLM engines."
+        },
+        "skill_name": {
+          "type": "string",
+          "description": "Skill invoked for this step."
+        },
+        "render": {
+          "type": "string",
+          "enum": ["frozen", "live"],
+          "description": "When the order template is expanded."
+        },
+        "role": {
+          "type": "string",
+          "description": "Quota role checked before launch."
+        },
+        "env_passthrough": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Environment variable names exempt from the deny list."
+        }
+      }
+    },
+    "nonterminal_closed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["action", "terminal_labels"],
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": ["reopen", "trigger"],
+          "description": "Action taken when a closed non-terminal issue is detected."
+        },
+        "terminal_labels": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Labels that mark a CLOSED issue as terminal."
+        },
+        "trigger": {
+          "type": "string",
+          "description": "Handler trigger label when action is trigger."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "name": "sample-pipeline",
+      "triggers": [
+        {
+          "label": "pipeline:develop-ready",
+          "handler": "impl"
+        }
+      ],
+      "handlers": {
+        "impl": {
+          "steps": [
+            {
+              "template": "impl",
+              "model": "claude-sonnet-4-6"
+            }
+          ]
+        }
+      },
+      "polling_interval": 30
+    },
+    {
+      "name": "two-step",
+      "triggers": [
+        {
+          "label": "pipeline:run",
+          "handler": "mixed"
+        }
+      ],
+      "handlers": {
+        "mixed": {
+          "steps": [
+            {
+              "id": "prep",
+              "template": "prep",
+              "engine": "shell"
+            },
+            {
+              "id": "llm",
+              "template": "impl",
+              "model": "claude-sonnet-4-6",
+              "engine": "claude",
+              "depends": ["prep"]
+            }
+          ]
+        }
+      },
+      "polling_interval": 30
+    }
+  ]
+}

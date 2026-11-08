@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sumipan/ghdag/schemas/done-marker.schema.json",
+  "title": "done marker body",
+  "description": "Contents of jobs/done/<uuid> after a task finishes.",
+  "oneOf": [
+    {
+      "type": "string",
+      "enum": [
+        "0",
+        "REJECTED",
+        "REJECTED_FINAL",
+        "ENGINE_ERROR",
+        "ENGINE_ERROR_FINAL",
+        "ENGINE_ENVIRONMENT_ERROR",
+        "INTERACTIVE_PROMPT",
+        "TIMEOUT",
+        "CANCELLED",
+        "DEP_FAILED",
+        "EMPTY_RESULT",
+        "FANOUT_CHILD_FAILED",
+        "FANOUT_PARSE_FAILED",
+        "SKIPPED_MISSING_INPUT",
+        "UNKNOWN_FAILURE",
+        "ORPHAN_ARCHIVED",
+        "ORPHANED_ON_RESTART",
+        "DEFERRED"
+      ],
+      "description": "Known terminal token on the first line."
+    },
+    {
+      "type": "string",
+      "pattern": "^PIPELINE_FAILED:",
+      "description": "Pipeline failure with detail after the prefix."
+    },
+    {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$",
+      "description": "Legacy non-zero numeric exit code on the first line (zero uses the enum token)."
+    },
+    {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "const": "ok",
+          "description": "Structured success marker."
+        },
+        "exit_code": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exitCode": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    }
+  ],
+  "examples": [
+    "0",
+    "ENGINE_ERROR",
+    "PIPELINE_FAILED: step impl",
+    "42",
+    {
+      "status": "ok",
+      "exit_code": 0
+    }
+  ]
+}

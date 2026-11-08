@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sumipan/ghdag/schemas/issue-status.schema.json",
+  "title": "Issue DAG status JSON",
+  "description": "Payload of ghdag status --issue N --handler H --workflow W --json (with optional running_tasks when --running is set).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["generation", "running", "steps", "orphan_uuids"],
+  "properties": {
+    "generation": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Pipeline generation counter for this issue and handler."
+    },
+    "running": {
+      "type": "boolean",
+      "description": "True when any step is in the running set."
+    },
+    "steps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/step" }
+    },
+    "orphan_uuids": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Task UUIDs present in state but not in the current handler plan."
+    },
+    "running_tasks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/running_task" },
+      "description": "Present when --running is passed with --issue."
+    }
+  },
+  "$defs": {
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uuid",
+        "step_name",
+        "depends",
+        "status",
+        "started_at",
+        "elapsed_sec",
+        "result_path"
+      ],
+      "properties": {
+        "uuid": { "type": "string", "description": "Task UUID." },
+        "step_name": { "type": "string", "description": "Logical step id." },
+        "depends": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Dependency UUIDs."
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "success",
+            "failed",
+            "pending",
+            "running",
+            "skipped",
+            "cancelled",
+            "dep_failed"
+          ],
+          "description": "Collapsed English status for the issue view."
+        },
+        "started_at": {
+          "type": ["string", "null"],
+          "description": "ISO timestamp from audit when available."
+        },
+        "elapsed_sec": {
+          "type": ["number", "null"],
+          "description": "Wall time when the step finished."
+        },
+        "result_path": {
+          "type": ["string", "null"],
+          "description": "Path to the result file."
+        },
+        "done_value": {
+          "type": ["string", "null"],
+          "description": "Raw done marker body when present."
+        },
+        "failure_class": {
+          "type": ["string", "null"],
+          "enum": [
+            null,
+            "TIMEOUT",
+            "REJECTED",
+            "ENGINE_ERROR",
+            "QUOTA_EXHAUSTED",
+            "AUTH",
+            "ENGINE_ENVIRONMENT_ERROR",
+            "INTERACTIVE_PROMPT",
+            "PROCESS_ERROR",
+            "PIPELINE_FAILED",
+            "EMPTY_RESULT",
+            "FANOUT_CHILD_FAILED",
+            "FANOUT_PARSE_FAILED",
+            "DEP_FAILED",
+            "UNKNOWN_FAILURE"
+          ],
+          "description": "FailureClass value when failed."
+        },
+        "cause": {
+          "type": ["string", "null"],
+          "description": "Human-readable failure cause."
+        },
+        "retry_policy": {
+          "type": ["string", "null"],
+          "description": "Suggested retry policy from FailureClass."
+        }
+      }
+    },
+    "running_task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uuid", "started_at", "elapsed_sec", "engine", "pid"],
+      "properties": {
+        "uuid": { "type": "string" },
+        "started_at": { "type": "string" },
+        "elapsed_sec": { "type": "number" },
+        "engine": { "type": ["string", "null"] },
+        "pid": { "type": ["integer", "null"] }
+      }
+    }
+  },
+  "examples": [
+    {
+      "generation": 0,
+      "running": false,
+      "steps": [
+        {
+          "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "step_name": "impl",
+          "depends": [],
+          "status": "success",
+          "started_at": "2026-01-01T00:00:00+00:00",
+          "elapsed_sec": 12.5,
+          "result_path": "jobs/result.md",
+          "done_value": "0",
+          "failure_class": null,
+          "cause": null,
+          "retry_policy": null
+        }
+      ],
+      "orphan_uuids": []
+    }
+  ]
+}
