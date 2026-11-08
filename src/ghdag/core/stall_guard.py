@@ -15,6 +15,8 @@ from dataclasses import dataclass
 logger = logging.getLogger(__name__)
 
 _STATE_SNAP_MARKER = "snap=$(command cat <&3)"
+# GNU ps on Linux truncates the args column; the snap prefix still appears in snapshots.
+_STATE_SNAP_PREFIX = "snap=$(command cat"
 
 
 @dataclass(frozen=True)
@@ -33,10 +35,18 @@ class StallEvent:
     parent_args_head: str
 
 
+def _shell_has_state_snap_marker(args: str) -> bool:
+    if _STATE_SNAP_MARKER in args:
+        return True
+    return _STATE_SNAP_PREFIX in args
+
+
 def _cpu_time_is_zero(time_col: str) -> bool:
     stripped = time_col.strip()
     if not stripped:
         return False
+    if stripped == "-":
+        return True
     for ch in stripped:
         if ch not in "0:.":
             return False
@@ -106,7 +116,7 @@ def find_stalled_state_readers(
             continue
         if parent.comm not in ("zsh", "bash"):
             continue
-        if _STATE_SNAP_MARKER not in parent.args:
+        if not _shell_has_state_snap_marker(parent.args):
             continue
         stalled.append(proc.pid)
     return stalled

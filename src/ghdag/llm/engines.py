@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -428,12 +429,14 @@ def _timeout_result(
 
 def read_ps() -> str:
     """Return ``ps -axo pid=,ppid=,time=,comm=,args=`` output (stall-guard process snapshot)."""
+    ps_exe = shutil.which("ps") or "ps"
     result = subprocess.run(
-        ["ps", "-axo", "pid=,ppid=,time=,comm=,args="],
+        [ps_exe, "-axo", "pid=,ppid=,time=,comm=,args="],
         capture_output=True,
         text=True,
         timeout=10,
         check=False,
+        env={**os.environ, "LC_ALL": "C"},
     )
     if result.returncode != 0:
         raise subprocess.SubprocessError(
