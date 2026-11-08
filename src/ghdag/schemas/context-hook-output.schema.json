@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sumipan/ghdag/schemas/context-hook-output.schema.json",
+  "title": "context hook stdout JSON",
+  "description": "JSON object printed to stdout by a handler context_hook command.",
+  "type": "object",
+  "additionalProperties": {
+    "oneOf": [
+      { "type": "string" },
+      { "type": "number" },
+      { "type": "boolean" }
+    ]
+  },
+  "examples": [
+    {
+      "branch": "feat/demo",
+      "issue_number": 42,
+      "ready": true
+    }
+  ]
+}
