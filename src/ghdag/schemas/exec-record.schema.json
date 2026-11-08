@@ -55,17 +55,21 @@
         },
         "role_engines": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": { "type": "string" },
+          "description": "Engines allowed by the selected quota role."
         },
         "env_passthrough": {
           "type": "array",
-          "items": { "type": "string" }
+          "items": { "type": "string" },
+          "description": "Environment variable names exempt from filtering."
         },
         "safe_default_applied": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Whether the default permission preset was applied."
         },
         "safe_default_preset": {
-          "type": "string"
+          "type": "string",
+          "description": "Name of the automatically selected permission preset."
         }
       },
       "description": "Structured metadata not passed on the CLI argv."

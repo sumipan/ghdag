@@ -48,11 +48,13 @@
         },
         "exit_code": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Process exit code in snake_case form."
         },
         "exitCode": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 0,
+          "description": "Process exit code in legacy camelCase form."
         }
       },
       "additionalProperties": true

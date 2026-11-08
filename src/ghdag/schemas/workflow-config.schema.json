@@ -60,7 +60,8 @@
       }
     },
     "nonterminal_closed": {
-      "$ref": "#/$defs/nonterminal_closed"
+      "$ref": "#/$defs/nonterminal_closed",
+      "description": "Policy for closed issues that have no terminal label."
     }
   },
   "$defs": {
@@ -89,7 +90,8 @@
           "items": { "$ref": "#/$defs/step" }
         },
         "on_trigger": {
-          "$ref": "#/$defs/on_trigger"
+          "$ref": "#/$defs/on_trigger",
+          "description": "Actions performed when this handler is triggered."
         },
         "type": {
           "type": "string",

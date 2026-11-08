@@ -18,7 +18,8 @@
     },
     "steps": {
       "type": "array",
-      "items": { "$ref": "#/$defs/step" }
+      "items": { "$ref": "#/$defs/step" },
+      "description": "Current-generation pipeline steps in execution order."
     },
     "orphan_uuids": {
       "type": "array",
@@ -117,11 +118,11 @@
       "additionalProperties": false,
       "required": ["uuid", "started_at", "elapsed_sec", "engine", "pid"],
       "properties": {
-        "uuid": { "type": "string" },
-        "started_at": { "type": "string" },
-        "elapsed_sec": { "type": "number" },
-        "engine": { "type": ["string", "null"] },
-        "pid": { "type": ["integer", "null"] }
+        "uuid": { "type": "string", "description": "Running task UUID." },
+        "started_at": { "type": "string", "description": "Task start timestamp." },
+        "elapsed_sec": { "type": "number", "description": "Elapsed wall time in seconds." },
+        "engine": { "type": ["string", "null"], "description": "Execution engine when known." },
+        "pid": { "type": ["integer", "null"], "description": "Worker process id when known." }
       }
     }
   },

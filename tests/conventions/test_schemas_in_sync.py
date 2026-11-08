@@ -89,11 +89,7 @@ def test_issue_status_step_fields_match_dataclass() -> None:
     status_enum = set(schema["$defs"]["step"]["properties"]["status"]["enum"])
     assert status_enum == _ISSUE_STEP_STATUSES
 
-    failure_enum = {
-        v
-        for v in schema["$defs"]["step"]["properties"]["failure_class"]["enum"]
-        if v is not None
-    }
+    failure_enum = {v for v in schema["$defs"]["step"]["properties"]["failure_class"]["enum"] if v is not None}
     assert failure_enum == {member.value for member in FailureClass}
 
 
@@ -131,12 +127,30 @@ def test_exec_record_keys_subset_of_schema(tmp_path: Path) -> None:
 
 def test_schema_names_match_package_files() -> None:
     pkg = resources.files("ghdag.schemas")
-    stems = {
-        p.name[: -len(".schema.json")]
-        for p in pkg.iterdir()
-        if p.name.endswith(".schema.json")
-    }
+    stems = {p.name[: -len(".schema.json")] for p in pkg.iterdir() if p.name.endswith(".schema.json")}
     assert set(SCHEMA_NAMES) == stems
+
+
+@pytest.mark.parametrize("name", list(SCHEMA_NAMES))
+def test_schema_properties_have_descriptions(name: str) -> None:
+    schema = load_schema(name)
+    missing: list[str] = []
+
+    def visit(node: object, path: str = "$") -> None:
+        if isinstance(node, dict):
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                for property_name, property_schema in properties.items():
+                    if not isinstance(property_schema, dict) or not property_schema.get("description"):
+                        missing.append(f"{path}.properties.{property_name}")
+            for key, value in node.items():
+                visit(value, f"{path}.{key}")
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                visit(value, f"{path}[{index}]")
+
+    visit(schema)
+    assert not missing, f"{name}: properties without descriptions: {missing}"
 
 
 @pytest.mark.parametrize("name", list(SCHEMA_NAMES))
