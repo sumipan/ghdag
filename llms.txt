@@ -1,0 +1,34 @@
+# ghdag
+
+> ghdag runs labelled GitHub Issues through workflow handlers into a local exec.jsonl queue, then executes the DAG with claude, cursor, codex, gemini, or shell. Intake (`ghdag watch` / `ghdag trigger`) and execution (`ghdag run`) are separate processes that coordinate through files and locks.
+
+## Docs
+
+- [README — CLI Reference](README.md#cli-reference): commands, defaults, module entry points
+- [README — Workflow YAML](README.md#workflow-yaml-ghdagcoremodelsworkflow): loader fields and load-time validation codes
+- [README — exec.jsonl task fields](README.md#execjsonl-task-fields)
+- [README — Error Reference](README.md#error-reference): exceptions, exit codes, error codes
+- [README — Done markers](README.md#done-markers)
+- [README — Capability presets](README.md#capability-presets)
+- [docs/GHDAG.md](docs/GHDAG.md): design guide for hosts embedding ghdag
+
+## Schemas
+
+Bundled JSON Schemas ship under `src/ghdag/schemas/`. Fetch any schema with `ghdag schema show <name>` (`ghdag schema list` prints names).
+
+- [workflow-config](src/ghdag/schemas/workflow-config.schema.json) — workflow YAML document shape
+- [exec-record](src/ghdag/schemas/exec-record.schema.json) — one `exec.jsonl` task line
+- [done-marker](src/ghdag/schemas/done-marker.schema.json) — `done/<uuid>` body
+- [issue-status](src/ghdag/schemas/issue-status.schema.json) — `ghdag status --json` Issue DAG snapshot
+- [context-hook-output](src/ghdag/schemas/context-hook-output.schema.json) — handler `context_hook` stdout on success
+
+## Optional
+
+- [CHANGELOG.md](CHANGELOG.md)
+- [TESTING.md](TESTING.md)
+
+## CLI
+
+- Validate every workflow YAML in a directory: `ghdag validate <workflows_dir>`
+- List schema names: `ghdag schema list`
+- Print one schema: `ghdag schema show <name>`

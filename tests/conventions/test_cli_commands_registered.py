@@ -111,8 +111,20 @@ def _src_lines() -> list[str]:
     return lines
 
 
+def _llms_txt_lines() -> list[str]:
+    path = _REPO_ROOT / "llms.txt"
+    if not path.is_file():
+        return []
+    return path.read_text(encoding="utf-8").splitlines()
+
+
 def _all_reference_lines() -> list[str]:
-    return _readme_lines() + _changelog_unreleased_lines() + _src_lines()
+    return (
+        _readme_lines()
+        + _changelog_unreleased_lines()
+        + _llms_txt_lines()
+        + _src_lines()
+    )
 
 
 def _python_m_modules() -> set[str]:
