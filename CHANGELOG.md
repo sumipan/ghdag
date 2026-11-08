@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.117.0 - 2026-11-08
+
 ### Added
 
 - Workflow load-time validation codes: `STEP_ENGINE_UNKNOWN`, `STEP_PERMISSION_UNKNOWN`, and depends validation at load time (`validate_depends`).
