@@ -24,6 +24,8 @@ Unlike CI-hosted orchestrators (GitHub Actions, Dagger), nothing runs on a hoste
 | Platform | POSIX (`fcntl` locks, process groups) |
 | License | MIT (SPDX: `MIT`) |
 
+For an LLM-oriented overview and schema links, see [llms.txt](./llms.txt).
+
 ## Installation
 
 Prerequisites:
@@ -174,6 +176,9 @@ Every leaf subcommand accepts `--json` (`dest="output_json"`). With `--json`, su
 | `ghdag quota drain` | Stop new launches for an engine (drain mode) |
 | `ghdag quota resume` | Take an engine out of drain mode |
 | `ghdag quota status` | Print a per-engine quota / drain / queue snapshot as JSON |
+| `ghdag validate` | Validate every workflow YAML file in a directory |
+| `ghdag schema list` | List bundled JSON Schema names |
+| `ghdag schema show` | Print one bundled JSON Schema |
 
 ### Arguments and defaults
 
@@ -198,6 +203,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 | `quota drain` | `engine`; `--reason TEXT`; `--state-path PATH` (as above) |
 | `quota resume` | `engine`; `--state-path PATH` (as above) |
 | `quota status` | `--state-path PATH` (as above); `--exec-path PATH` (`jobs/exec.jsonl`); `--done-dir PATH` (`jobs/done`) |
+| `validate` | `workflows_dir` |
 
 ### Behavior notes
 
@@ -772,7 +778,18 @@ Variables ghdag sets for child processes (not configuration):
 
 ### Workflow YAML (`ghdag.core.models.workflow`)
 
-`load_workflows(directory)` loads and validates every workflow YAML file in a directory (`ValidationError` on errors).
+`load_workflows(directory)` and `ghdag validate <workflows_dir>` load and validate every workflow YAML file in a directory (`ValidationError` on errors). The document shape is described by the bundled schema `workflow-config` ([`src/ghdag/schemas/workflow-config.schema.json`](src/ghdag/schemas/workflow-config.schema.json); `ghdag schema show workflow-config`).
+
+Load-time step validation error codes (each `ValidationError` uses the code in the `code` column):
+
+| Code | Raised when |
+|---|---|
+| `STEP_ENGINE_UNKNOWN` | `engine` is not in `ENGINE_SPECS` |
+| `STEP_MODEL_REQUIRED` | `model` is missing on a non-`shell` step |
+| `STEP_PERMISSION_UNKNOWN` | `permission` is not a capability preset |
+| `STEP_DEPENDENCY_UNKNOWN` | `depends` references an unknown step `id` |
+| `STEP_DEPENDENCY_CYCLE` | `depends` has a cycle among step ids |
+| `STEP_RESUME_FROM_INVALID` | `resume_from` is unknown or uses a different engine |
 
 | Type | Field | Type | Required | Default | Meaning |
 |---|---|---|---|---|---|
@@ -797,7 +814,7 @@ Variables ghdag sets for child processes (not configuration):
 | | `context_hook` | `str \| None` | no | `None` | Shell command run before enqueue; stdout must be a JSON object on success. Non-zero exit raises `ContextHookError` and aborts dispatch (no steps enqueued, ready label unchanged). Empty stdout on exit 0 means no extra context. |
 | `OnTriggerConfig` | `issue_context` | `bool` | no | `False` | Write the Issue body and comments to `design.md` |
 | `StepConfig` | `template` | `str` | yes | none | Template name without `.md`; the file must exist |
-| | `model` | `str` | yes | none | Model ID |
+| | `model` | `str \| None` | yes for non-`shell` steps | `None` for `shell` | Model ID (`shell` may omit) |
 | | `id` | `str \| None` | no | `None` | Step ID used by `depends` / `resume_from` |
 | | `engine` | `str` | no | `"claude"` | Engine name |
 | | `depends` | `list[str]` | no | `[]` | Upstream step IDs. `${<id>_result_filename}` requires `<id>` in `depends`. `${<id>_result_content}` is filled at enqueue time, so for a prior step in the same handler dispatch it is always empty—use `${<id>_result_filename}` in `depends` and read `jobs/${<id>_result_filename}` at run time instead. External names (for example from `context_hook`) are not prior step IDs and may still use `_result_content`. |
@@ -810,7 +827,7 @@ Variables ghdag sets for child processes (not configuration):
 
 ### exec.jsonl task fields
 
-Each line is parsed into `Task` (`ghdag.core.models.dag`). When a UUID appears on several lines, the last line wins.
+Each line is parsed into `Task` (`ghdag.core.models.dag`). Field names match the bundled schema `exec-record` (`ghdag schema show exec-record`). When a UUID appears on several lines, the last line wins.
 
 | Field | Type | Required | Default | Meaning |
 |---|---|---|---|---|
@@ -961,6 +978,18 @@ Paths are relative to `--repo-root`.
 | `POST /api/retry` | Body `{"uuid": "..."}`; `Content-Type: application/json` required; same-origin CSRF checks (see [Web UI](#web-ui-ghdag-ui)); deletes `jobs/done/<uuid>` so the runner runs the task again (`404` when there is no marker) |
 | `POST /api/stop` | Body `{"uuid": "..."}`; same CSRF rules as `/api/retry`; writes `jobs/cancel/<uuid>` when `jobs/running/<uuid>.json` exists (`404` otherwise) |
 
+### Schemas
+
+Bundled JSON Schemas live under `src/ghdag/schemas/`. `ghdag schema list` prints logical names; `ghdag schema show <name>` prints the schema JSON.
+
+| Name | What it describes | Synced with |
+|---|---|---|
+| `workflow-config` | Workflow YAML document | `WorkflowConfig` dataclass, `ghdag.workflow.loader` |
+| `exec-record` | One `exec.jsonl` task line | `ghdag.core.models.dag.Task` |
+| `done-marker` | `done/<uuid>` file body | `ghdag.core.vocabulary` done constants |
+| `issue-status` | `ghdag status --json` Issue snapshot | `ghdag.status.issue_status` output shape |
+| `context-hook-output` | Handler `context_hook` stdout on success | `WorkflowDispatcher` context merge |
+
 ## Error Reference
 
 All exception types defined under `src/ghdag/`.
@@ -980,6 +1009,15 @@ All exception types defined under `src/ghdag/`.
 | `4` | GitHub API errors (`GitHubApiError` and subclasses) |
 
 `ghdag llm` still exits with the engine's own code (`124` timeout, `126` / `127` missing binary, otherwise the engine return code).
+
+`ghdag validate` exits `3` when one or more workflow files fail validation (even though each error is a `ValidationError`, which would otherwise imply exit `3` through a single exception).
+
+Additional error `code` values without a dedicated exception type:
+
+| Code | Exception class | Exit | Raised when |
+|---|---|---|---|
+| `SCHEMA_UNKNOWN` | `ConfigError` | 3 | `ghdag schema show` with an unknown schema name |
+| `WORKFLOWS_DIR_NOT_FOUND` | `CliUsageError` | 2 | `ghdag validate` when `workflows_dir` does not exist |
 
 | Exception | Parent(s) | Code | Exit | Defined in | Raised when |
 |---|---|---|---|---|---|
@@ -1029,7 +1067,8 @@ Standard exceptions raised by the public API: `ValueError` (unknown `GHDAG_FORGE
 
 ### Done markers
 
-Contents of `done/<uuid>` (constants in `ghdag.core.vocabulary`):
+Contents of `done/<uuid>` (constants in `ghdag.core.vocabulary`). Marker bodies are described by the bundled schema `done-marker` (`ghdag schema show done-marker`):
+
 
 | Constant | Value | Meaning |
 |---|---|---|

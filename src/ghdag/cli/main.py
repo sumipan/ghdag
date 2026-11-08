@@ -77,9 +77,11 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     from ghdag.cli.commands.recover import cmd_recover
     from ghdag.cli.commands.run import cmd_run
+    from ghdag.cli.commands.schema_show import cmd_schema_list, cmd_schema_show
     from ghdag.cli.commands.status import cmd_status
     from ghdag.cli.commands.trigger import cmd_trigger
     from ghdag.cli.commands.ui import cmd_ui
+    from ghdag.cli.commands.validate import cmd_validate
     from ghdag.cli.commands.watch import cmd_watch
 
     parser = argparse.ArgumentParser(
@@ -638,6 +640,40 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to done marker directory",
     )
     quota_status.set_defaults(func=cmd_quota_status)
+
+    # ghdag validate
+    validate_parser = subparsers.add_parser(
+        "validate",
+        help="Validate workflow YAML files in a directory",
+    )
+    validate_parser.add_argument(
+        "workflows_dir",
+        help="Directory containing workflow *.yml / *.yaml files",
+    )
+    validate_parser.set_defaults(func=cmd_validate)
+
+    # ghdag schema
+    schema_parser = subparsers.add_parser(
+        "schema",
+        help="Bundled JSON Schema utilities",
+    )
+    schema_subparsers = schema_parser.add_subparsers(title="schema subcommands")
+
+    schema_list_parser = schema_subparsers.add_parser(
+        "list",
+        help="List bundled schema names",
+    )
+    schema_list_parser.set_defaults(func=cmd_schema_list)
+
+    schema_show_parser = schema_subparsers.add_parser(
+        "show",
+        help="Print one bundled schema as JSON",
+    )
+    schema_show_parser.add_argument(
+        "name",
+        help="Schema logical name (without .schema.json)",
+    )
+    schema_show_parser.set_defaults(func=cmd_schema_show)
 
     for leaf in _iter_leaf_parsers(parser):
         _add_json_flag(leaf)
