@@ -556,6 +556,107 @@ class TestCallManagedFallback:
         assert result.failure_class == FailureClass.QUOTA_EXHAUSTED.value
 
 
+class TestManagedBodySelectionWithJsonRequest:
+    """Issue sumipan/nexus#6279 — body follows trial result, not caller output_format alone."""
+
+    _STATUS_MARKER = "PIPELINE_STATUS: CP2_PASS"
+    _EXTRACTED = f"review passed\n\n{_STATUS_MARKER}"
+
+    def test_codex_effective_text_body_uses_adapter_output_with_json_request(self):
+        jsonl = '{"type":"item.completed","item":{"text":"ignored"}}\n'
+        mock_adapter = _adapter(body=self._EXTRACTED.encode())
+        llm = LLMResult(stdout=jsonl, stderr="", returncode=0, raw_stdout=None)
+        with (
+            patch("ghdag.llm.managed.call", return_value=llm),
+            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
+            patch("ghdag.llm.managed.validate_engine_model", return_value="codex-default"),
+        ):
+            result = call_managed("p", engine="codex", capabilities=JSON_ONLY)
+
+        assert result.body == self._EXTRACTED
+        assert self._STATUS_MARKER in result.body.splitlines()
+
+    def test_cursor_effective_text_body_uses_adapter_output_with_json_request(self):
+        raw = "stream line one\nstream line two\n"
+        mock_adapter = _adapter(body=self._EXTRACTED.encode())
+        llm = LLMResult(stdout=raw, stderr="", returncode=0, raw_stdout=None)
+        with (
+            patch("ghdag.llm.managed.call", return_value=llm),
+            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
+            patch("ghdag.llm.managed.validate_engine_model", return_value="auto"),
+        ):
+            result = call_managed("p", engine="cursor", capabilities=JSON_ONLY)
+
+        assert result.body == self._EXTRACTED
+        assert self._STATUS_MARKER in result.body.splitlines()
+
+    def test_claude_effective_json_body_uses_validated_stdout(self):
+        validated = json.dumps({"verdict": "pass"})
+        envelope = json.dumps({"type": "result", "result": validated})
+        mock_adapter = _adapter(body=b"adapter-should-not-win")
+        llm = LLMResult(
+            stdout=validated,
+            stderr="",
+            returncode=0,
+            raw_stdout=envelope,
+        )
+        with (
+            patch("ghdag.llm.managed.call", return_value=llm),
+            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
+            patch("ghdag.llm.managed.validate_engine_model", return_value="claude-sonnet-4-6"),
+        ):
+            result = call_managed("p", engine="claude", capabilities=JSON_ONLY)
+
+        assert result.body == validated
+        assert result.body != "adapter-should-not-win"
+
+    def test_fallback_to_codex_uses_adapter_output_with_json_request(self, tmp_path: Path):
+        gate = QuotaGate(tmp_path / "quota-gate.json")
+        jsonl = '{"type":"turn.completed"}\n'
+        calls: list[str] = []
+
+        def fake_call(prompt, *, engine, **kwargs):
+            del prompt, kwargs
+            calls.append(engine)
+            if engine == "claude":
+                return _llm(stdout="session limit", returncode=1)
+            return LLMResult(stdout=jsonl, stderr="", returncode=0, raw_stdout=None)
+
+        def fake_adapter(engine: str):
+            adapter = MagicMock()
+            if engine == "claude":
+                adapter.extract_result_text.return_value = b"session limit"
+                adapter.extract_token_usage.return_value = None
+                adapter.classify_failure.return_value = FailureClass.QUOTA_EXHAUSTED
+            else:
+                adapter.extract_result_text.return_value = self._EXTRACTED.encode()
+                adapter.extract_token_usage.return_value = TokenUsage(token_count=1)
+                adapter.classify_failure.return_value = None
+            return adapter
+
+        with (
+            patch("ghdag.llm.managed.call", side_effect=fake_call),
+            patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
+            patch(
+                "ghdag.llm.managed.validate_engine_model",
+                side_effect=lambda e, m: m or f"{e}-default",
+            ),
+        ):
+            result = call_managed(
+                "p",
+                engine="claude",
+                fallback_candidates=[("codex", "gpt-5.6-sol")],
+                capabilities=JSON_ONLY,
+                quota_gate=gate,
+            )
+
+        assert calls == ["claude", "codex"]
+        assert result.engine_used == "codex"
+        assert result.attempts == 2
+        assert result.body == self._EXTRACTED
+        assert self._STATUS_MARKER in result.body.splitlines()
+
+
 class TestCallManagedExport:
     def test_import_from_ghdag_llm(self):
         from ghdag.llm import ManagedResult as MR

@@ -183,7 +183,7 @@ def _run_once(
     stdout_bytes = stdout_for_adapter.encode("utf-8")
     stderr_bytes = result.stderr.encode("utf-8")
     extracted = adapter.extract_result_text(stdout_bytes, stderr_bytes).decode("utf-8")
-    if capabilities.output_format == "json":
+    if capabilities.output_format == "json" and result.raw_stdout is not None:
         body = result.stdout
     else:
         body = extracted if extracted else result.stdout
