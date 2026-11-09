@@ -177,10 +177,16 @@ def _run_once(
         isolation=isolation,
     )
     adapter = get_output_adapter(engine)
-    stdout_bytes = result.stdout.encode("utf-8")
+    stdout_for_adapter = (
+        result.raw_stdout if result.raw_stdout is not None else result.stdout
+    )
+    stdout_bytes = stdout_for_adapter.encode("utf-8")
     stderr_bytes = result.stderr.encode("utf-8")
     extracted = adapter.extract_result_text(stdout_bytes, stderr_bytes).decode("utf-8")
-    body = extracted if extracted else result.stdout
+    if capabilities.output_format == "json":
+        body = result.stdout
+    else:
+        body = extracted if extracted else result.stdout
     usage = adapter.extract_token_usage(stdout_bytes, stderr_bytes)
     failure_class: str | None = None
     if result.failure_class is not None:

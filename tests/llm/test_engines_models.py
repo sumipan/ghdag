@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from ghdag.llm import (
@@ -187,6 +189,38 @@ class TestLLMResultValidate:
         r = LLMResult(stdout='{"type":"system"}\n', stderr="", returncode=0)
         with pytest.raises(LLMParseError, match="no result line"):
             r.validate(LLMCapabilities(stream=True))
+
+    def test_claude_envelope_json_in_result_body(self):
+        """Claude JSON envelope with embedded JSON in result → parsed stdout (nexus #6246)."""
+        envelope = (
+            '{"type":"result","result":"Here: {\\"ok\\": true}","session_id":"s1"}'
+        )
+        r = LLMResult(stdout=envelope, stderr="", returncode=0)
+        result = r.validate(JSON_ONLY, engine="claude")
+        assert json.loads(result.stdout) == {"ok": True}
+        assert result.raw_stdout == envelope
+
+    def test_claude_envelope_non_json_result_raises_with_body_raw(self):
+        """Non-JSON result text → LLMParseError.raw is adapter body, not envelope."""
+        envelope = '{"type":"result","result":"I cannot do that.","session_id":"s1"}'
+        r = LLMResult(stdout=envelope, stderr="", returncode=0)
+        with pytest.raises(LLMParseError) as exc_info:
+            r.validate(JSON_ONLY, engine="claude")
+        assert exc_info.value.raw == "I cannot do that."
+
+    def test_gemini_fenced_raw_stdout_preserved(self):
+        """Gemini passthrough stdout with fence → extracted JSON and raw_stdout."""
+        raw = '```json\n{"x": 1}\n```'
+        r = LLMResult(stdout=raw, stderr="", returncode=0)
+        result = r.validate(JSON_ONLY, engine="gemini")
+        assert json.loads(result.stdout) == {"x": 1}
+        assert result.raw_stdout == raw
+
+    def test_failed_call_skips_json_validation(self):
+        """returncode != 0 with Claude envelope → validate returns self unchanged."""
+        r = LLMResult(stdout='{"type":"result","result":"x"}', stderr="", returncode=1)
+        result = r.validate(JSON_ONLY, engine="claude")
+        assert result is r
 
 
 class TestSupportsCapability:

@@ -25,7 +25,7 @@ class LLMParseError(GhdagError):
         self.reason = reason
         super().__init__(
             f"LLM output parse failed: {reason}",
-            hint="Return exactly one JSON object with no surrounding prose or code fence",
+            hint="Return exactly one JSON object; surrounding prose and a code fence are allowed",
         )
 
 
