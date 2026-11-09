@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import subprocess
-import time
 from dataclasses import dataclass
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -57,8 +56,8 @@ def _seed_running(launcher: TaskLauncher, uuid: str, task: Task) -> None:
         uuid=uuid,
         task=task,
         proc=proc,  # type: ignore[arg-type]
-        started_at=time.time(),
-        started_at_mono=time.monotonic(),
+        started_at=1_700_000_000.0,
+        started_at_mono=1_700_000_000.0,
         stderr_buf=io.BytesIO(b""),
         retry_depth=0,
         stdout_buf=io.BytesIO(b""),
@@ -146,8 +145,8 @@ class TestRepairTurn:
             uuid=uuid,
             task=task,
             proc=_Proc(returncode=0),  # type: ignore[arg-type]
-            started_at=time.time(),
-            started_at_mono=time.monotonic(),
+            started_at=1_700_000_000.0,
+            started_at_mono=1_700_000_000.0,
             stderr_buf=io.BytesIO(b""),
             retry_depth=0,
             stdout_buf=io.BytesIO(b""),

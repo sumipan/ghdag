@@ -126,7 +126,10 @@ def _repair_order_body(*, code: str, message: str, hint: str | None) -> str:
         f"code: {code}\n"
         f"message: {message}\n"
         f"{hint_line}\n"
-        "Reply again with only the corrected ```ghdag block; "
+        "Reply again with only the corrected "
+        + "```"
+        + "ghdag"
+        + " block; "
         "do not repeat the previous answer.\n"
     )
 
