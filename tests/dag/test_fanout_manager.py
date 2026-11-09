@@ -139,6 +139,51 @@ class TestFanOutManagerUnit:
         assert record["engine"] == "cursor"
         assert record["model"] is None
 
+    def test_invalid_later_child_does_not_append_earlier_sibling(self, tmp_path):
+        import pytest
+
+        from ghdag.dag.fanout import FanoutError, FanOutItem, FanOutSpec
+        from ghdag.dag.fanout_manager import FanOutManager
+        from ghdag.dag.hooks import DagHooks
+        from ghdag.dag.models import Task
+
+        config = _make_config(tmp_path, "")
+        appended: list[str] = []
+        fm = FanOutManager(
+            config,
+            MagicMock(spec=DagHooks),
+            lambda line, _parent: appended.append(line),
+            lambda _: None,
+        )
+        task = Task(uuid="parent", command="true", engine="claude")
+        spec = FanOutSpec(
+            children=[
+                FanOutItem(id="a", command="echo a"),
+                FanOutItem(
+                    id="b",
+                    prompt="do b",
+                    engine="claude",
+                    model="definitely-not-supported",
+                ),
+            ]
+        )
+        metrics = TaskMetrics(
+            uuid="parent",
+            engine="claude",
+            model=None,
+            wall_time_sec=1.0,
+            token_count=None,
+            status="success",
+            started_at=time.time(),
+            finished_at=time.time(),
+        )
+
+        with pytest.raises(FanoutError):
+            fm.spawn("parent", task, spec, metrics, queue_dir=tmp_path / "jobs")
+
+        assert appended == []
+        assert not fm.is_pending("parent")
+
     def test_check_completions_marks_parent_done_when_all_children_complete(self, tmp_path):
 
         from ghdag.dag.fanout_manager import FanOutManager

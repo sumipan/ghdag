@@ -10,7 +10,7 @@ import yaml
 
 from ghdag.core.capabilities import PRESETS
 from ghdag.core.engine_spec import ENGINE_SPECS
-from ghdag.core.reply_block import parse_reply_block
+from ghdag.core.reply_block import find_reply_block, parse_reply_block
 from ghdag.core.vocabulary import FANOUT_ANCHOR, FANOUT_KEY, FANOUT_SEPARATOR
 from ghdag.exceptions import ConfigError
 
@@ -295,12 +295,8 @@ def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
     except OSError:
         return None
 
-    try:
-        spec = _fanout_from_reply_block(content)
-        if spec is not None:
-            return spec
-    except FanoutError:
-        raise
+    if find_reply_block(content) is not None:
+        return _fanout_from_reply_block(content)
 
     return _fanout_from_legacy_yaml(content)
 

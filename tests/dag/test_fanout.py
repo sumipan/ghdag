@@ -320,6 +320,16 @@ class TestReplyBlockFanout:
             parse_fanout_spec(str(f))
         assert "zzz" in (exc_info.value.hint or "")
 
+    def test_reply_block_without_children_does_not_fall_back_to_legacy(self, tmp_path):
+        f = tmp_path / "result.md"
+        f.write_text(
+            "---\nghdag_fanout:\n  children:\n"
+            "    - id: legacy\n      command: echo legacy\n"
+            "```ghdag\nstatus: ok\n```\n",
+        )
+
+        assert parse_fanout_spec(str(f)) is None
+
 
 class TestBuildChildJsonlRecord:
     def test_format(self):

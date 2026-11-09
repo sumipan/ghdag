@@ -62,13 +62,12 @@ class FanOutManager:
     ) -> None:
         """Append child tasks to exec file and register parent as pending."""
         queue = queue_dir or Path(self._config.exec_jsonl_path).parent
-        child_uuids: set[str] = set()
         parent_engine = parent_task.engine or metrics.engine
         parent_model = parent_task.model or metrics.model
 
+        staged_children: list[tuple[str, str]] = []
         for child in spec.children:
             child_uuid = _sibling_uuid(parent_uuid, child.id)
-            child_uuids.add(child_uuid)
             if child.prompt is not None:
                 line = self._spawn_prompt_child(
                     parent_uuid=parent_uuid,
@@ -80,6 +79,13 @@ class FanOutManager:
                 )
             else:
                 line = build_child_jsonl_record(child_uuid, child.command or "")
+            staged_children.append((child_uuid, line))
+
+        # Validate/build every child before appending any record.  In particular,
+        # a bad model on a later prompt child must not leave earlier siblings queued
+        # when the parent enters a contract-repair turn.
+        child_uuids = {child_uuid for child_uuid, _ in staged_children}
+        for child_uuid, line in staged_children:
             try:
                 self._append_task_fn(line, parent_uuid)
             except DuplicateTaskError:

@@ -143,6 +143,38 @@ class TestAC1FanoutSpawnChildren:
         for cid in ("item-001", "item-002", "item-003"):
             assert f"{parent_uuid}--fo--{cid}" in engine._fanout_manager._pending[parent_uuid]
 
+    def test_reply_block_prompt_child_is_enqueued_as_llm_task(self, tmp_path):
+        engine, hooks, exec_file = _make_engine(tmp_path)
+        parent_uuid = "parent-block"
+        result_file = tmp_path / "result-block.md"
+        task = Task(
+            uuid=parent_uuid,
+            command="claude -p < order.md",
+            engine="claude",
+            result_path=str(result_file),
+        )
+        reply = b"""\
+```ghdag
+status: ok
+children:
+  - id: child
+    prompt: do child
+```
+"""
+        engine._launcher._running[parent_uuid] = _make_completed_running_task(
+            parent_uuid, task, stdout_content=reply
+        )
+
+        engine._launcher.check_completions()
+
+        records = [json.loads(line) for line in exec_file.read_text().splitlines()]
+        assert len(records) == 1
+        assert records[0]["uuid"] == f"{parent_uuid}--fo--child"
+        assert records[0]["engine"] == "claude"
+        assert records[0]["annotations"]["fanout_parent"] == parent_uuid
+        order_path = Path(records[0]["command"].rsplit(" < ", 1)[1])
+        assert order_path.read_text(encoding="utf-8") == "do child"
+
 
 class TestAC2ParentNotMarkedDone:
     def test_parent_not_done_after_spawn(self, tmp_path):
