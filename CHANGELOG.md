@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.120.0 - 2026-11-09
+
 ### Added
 
 - Reply-block fan-out: ``children`` with flat ``prompt`` / ``command`` items in the `` ```ghdag `` fence (schema ``reply-block``).
