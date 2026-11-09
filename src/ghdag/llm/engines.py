@@ -7,7 +7,6 @@ ghdag manages the allowed models per engine, reducing the burden on scripts.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import shutil
@@ -38,6 +37,7 @@ from ghdag.exceptions import ConfigError
 from ghdag.llm._config import load_engine_models
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.capabilities import TEXT_ONLY, LLMCapabilities, LLMParseError
+from ghdag.llm.json_extract import extract_json_text
 from ghdag.llm.spec import ENGINE_SPECS, InputMode
 
 __all__ = [
@@ -284,7 +284,7 @@ class LLMResult:
     (``call_managed`` does this through the engine's output adapter).
     """
     raw_stdout: str | None = None
-    """Subprocess stdout before claude/cursor stream extraction; ``None`` otherwise."""
+    """Subprocess stdout before stream or ``json_only`` body extraction; ``None`` otherwise."""
 
     @property
     def ok(self) -> bool:
@@ -307,8 +307,9 @@ class LLMResult:
         falling back to the legacy stream result if absent. For claude, the final result
         is extracted from the JSONL and replaces stdout. For codex, raw JSONL is kept.
         On successful claude/cursor stream calls, ``raw_stdout`` holds the pre-extraction
-        stdout (including trailing newlines); it stays ``None`` for non-stream, codex,
-        and failed calls.
+        stdout (including trailing newlines). For ``output_format == "json"``, it holds
+        the pre-body-extraction stdout (envelope or raw engine output). It stays ``None``
+        for codex and failed calls.
         Returns:
             self (allows chaining)
         Raises:
@@ -329,10 +330,25 @@ class LLMResult:
             else:
                 self.stdout = _extract_stream_result(self.stdout)
         if capabilities.output_format == "json":
+            stream_preprocessed = capabilities.stream and engine != "codex"
+            if stream_preprocessed:
+                body = self.stdout
+            elif engine in ("claude", "cursor"):
+                adapter = get_output_adapter(engine)
+                body = adapter.extract_result_text(
+                    self.stdout.encode("utf-8"),
+                    self.stderr.encode("utf-8"),
+                ).decode("utf-8")
+                if not body:
+                    body = self.stdout
+            else:
+                body = self.stdout
+            if not stream_preprocessed:
+                self.raw_stdout = self.stdout
             try:
-                json.loads(self.stdout)
-            except json.JSONDecodeError as e:
-                raise LLMParseError(raw=self.stdout, reason=str(e)) from e
+                self.stdout = extract_json_text(body)
+            except LLMParseError as e:
+                raise LLMParseError(raw=body, reason=e.reason) from e
         return self
 
 
