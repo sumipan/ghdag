@@ -15,7 +15,7 @@ from ghdag.core.vocabulary import (
     DONE_PIPELINE_FAILED_PREFIX,
     PIPELINE_WAIT_QUOTA_INVALID,
 )
-from ghdag.dag._util import parse_wait_quota_signal
+from ghdag.dag._util import WaitQuotaParseError, WaitQuotaSignal, parse_wait_quota_signal
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig, RunningTask, Task
 from ghdag.llm.engines import list_engines
@@ -42,6 +42,52 @@ def _read_pipeline_status(path: str) -> str | None:
     from ghdag.dag._util import check_pipeline_status
 
     return check_pipeline_status(path)
+
+
+def test_parse_wait_quota_signal_from_reply_block() -> None:
+    content = "```ghdag\nstatus: wait_quota\nengines: [claude, codex]\n```\n"
+    parsed = parse_wait_quota_signal(content, known_engines=frozenset(list_engines()))
+    assert isinstance(parsed, WaitQuotaSignal)
+    assert parsed.engines == ("claude", "codex")
+    assert parsed.after is None
+
+
+def test_parse_wait_quota_signal_unknown_engine_in_block() -> None:
+    content = "```ghdag\nstatus: wait_quota\nengines: [nope]\n```\n"
+    parsed = parse_wait_quota_signal(content, known_engines=frozenset(list_engines()))
+    assert isinstance(parsed, WaitQuotaParseError)
+
+
+@patch("ghdag.dag.task_launcher.state_mark_done")
+def test_wait_quota_reply_block_without_after_pauses_engine(
+    mock_mark_done, tmp_path: Path
+) -> None:
+    engine, _, _ = _make_engine(tmp_path)
+    result_file = tmp_path / "result.md"
+    result_file.write_text(
+        "```ghdag\nstatus: wait_quota\nengines: [claude]\n```\n",
+        encoding="utf-8",
+    )
+    task = Task(uuid="task-1", command="claude -p hi", engine="claude", result_path=str(result_file))
+    proc = MagicMock()
+    proc.poll.return_value = 0
+    proc.returncode = 0
+    engine._launcher._running[task.uuid] = RunningTask(
+        uuid=task.uuid,
+        task=task,
+        proc=proc,
+        started_at=time.time(),
+        started_at_mono=time.monotonic(),
+        stderr_buf=io.BytesIO(b""),
+        stdout_buf=io.BytesIO(b""),
+    )
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="claude")
+
+    engine._launcher.check_completions()
+
+    mock_mark_done.assert_not_called()
+    assert not result_file.exists()
+    assert engine._quota_gate.snapshot().engines["claude"].status == "paused"
 
 
 def test_parse_wait_quota_signal_accepts_companion() -> None:
