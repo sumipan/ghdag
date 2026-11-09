@@ -13,6 +13,7 @@ SCHEMA_NAMES: tuple[str, ...] = (
     "done-marker",
     "issue-status",
     "context-hook-output",
+    "reply-block",
 )
 
 __all__ = ["SCHEMA_NAMES", "load_schema"]

@@ -507,6 +507,8 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 | Dependency failure | Downstream tasks of a failed task get `DEP_FAILED` |
 | Timeout / cancel | SIGTERM to the process group, SIGKILL after `DagConfig.kill_grace`; done marker `TIMEOUT` / `CANCELLED` |
 | Quota wait | Tasks emit `PIPELINE_STATUS: WAIT_QUOTA` plus a `WAIT_QUOTA:` companion line; the engine records engine-level pause, deletes the attempt result, and leaves the task pending (no `done/` marker, no per-task ledger) |
+| Reply block | Engine results may end with a fenced YAML block (info string `ghdag`). `check_pipeline_status` prefers the block over legacy `PIPELINE_STATUS:` lines. `status: ok` with `children` declares fan-out (flat `prompt` / `command` items; schema `reply-block`). |
+| Repair turn | On `REPLY_BLOCK_FAILED` or invalid fan-out (`FANOUT_INVALID`), when the task has a stored session and `DagConfig.max_repair_turns` &gt; 0, the runner resumes once with a repair order (`llm.repair_turn` audit). Legacy `---` + `ghdag_fanout:` with command-only children still works when no block children are present. |
 | Engine quarantine | `EngineQuarantine` temporarily blocks launches for an engine whose environment is broken |
 | Circuit breaker | The runner stops after `max_consecutive_failures` consecutive failures; the counter resets when the gap since the previous failure exceeds `failure_window_sec` |
 | First SIGTERM / SIGINT | Writes `interrupted_at` into every `running/<uuid>.json`, stops launching, and drains running tasks until `task_timeout` elapses (no drain when `task_timeout` is `None`); the remaining tasks are then terminated and the runner exits |

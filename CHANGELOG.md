@@ -7,6 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.120.0 - 2026-11-09
+
+### Added
+
+- Reply-block fan-out: ``children`` with flat ``prompt`` / ``command`` items in the `` ```ghdag `` fence (schema ``reply-block``).
+- ``DagConfig.max_repair_turns`` (default ``1``): one resumable repair turn on ``REPLY_BLOCK_FAILED`` / ``FANOUT_INVALID`` when a session id exists.
+- ``write_repair_turn_audit`` (``event_type: llm.repair_turn``) and fan-out ``prompt`` children that enqueue full exec records with order files.
+
+### Changed
+
+- ``parse_fanout_spec`` prefers reply-block ``children``; legacy ``---`` + ``ghdag_fanout:`` remains for command-only children.
+- ``FanOutManager.spawn`` builds LLM child tasks from ``prompt`` (parent engine/model inheritance rules, sibling ``depends`` as uuids).
+
 ## 0.117.1 - 2026-11-09
 
 ### Fixed

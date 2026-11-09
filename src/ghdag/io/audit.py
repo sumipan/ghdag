@@ -33,6 +33,7 @@ __all__ = [
     "write_quarantine_audit",
     "write_task_exit_audit",
     "write_task_retry_audit",
+    "write_repair_turn_audit",
     "_MAX_AUDIT_BYTES",
     "_do_rotate",
     "_maybe_rotate",
@@ -297,6 +298,37 @@ def write_quarantine_audit(
         append_audit_record(audit_path, record)
     except OSError as e:
         print(f"[audit] warning: failed to write quarantine audit: {e}", file=sys.stderr)
+
+
+def write_repair_turn_audit(
+    audit_path: Path,
+    *,
+    uuid: str,
+    engine: str,
+    turn: int,
+    code: str,
+    message: str,
+    hint: str | None = None,
+    correlation_id: str | None = None,
+    tz_name: str = "UTC",
+) -> None:
+    """Append an LLM contract repair-turn audit record."""
+    record = {
+        "schema_version": 1,
+        "event_type": "llm.repair_turn",
+        "timestamp": now_ts(tz_name),
+        "uuid": uuid,
+        "engine": engine,
+        "turn": turn,
+        "code": code,
+        "message": message,
+        "hint": hint,
+        "correlation_id": correlation_id,
+    }
+    try:
+        append_audit_record(audit_path, record)
+    except OSError as e:
+        print(f"[audit] warning: failed to write repair turn audit: {e}", file=sys.stderr)
 
 
 def write_compaction_audit(

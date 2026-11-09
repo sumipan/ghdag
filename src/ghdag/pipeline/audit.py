@@ -15,6 +15,7 @@ from ghdag.io.audit import (
     write_llm_inference_audit,
     write_quarantine_audit,
     write_rate_limit_audit,
+    write_repair_turn_audit,
     write_task_exit_audit,
     write_task_retry_audit,
 )
@@ -29,6 +30,7 @@ __all__ = [
     "write_llm_inference_audit",
     "write_quarantine_audit",
     "write_rate_limit_audit",
+    "write_repair_turn_audit",
     "write_task_exit_audit",
     "write_task_retry_audit",
     "_MAX_AUDIT_BYTES",

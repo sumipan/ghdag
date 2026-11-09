@@ -245,6 +245,92 @@ class TestParseFanoutSpec:
             parse_fanout_spec(str(f))
 
 
+BLOCK_FANOUT_OK = """\
+Done.
+
+```ghdag
+status: ok
+children:
+  - id: a
+    prompt: do a
+  - id: b
+    prompt: do b
+    depends: [a]
+```
+"""
+
+
+class TestReplyBlockFanout:
+    """Fan-out via reply block children (#6249)."""
+
+    def test_block_children_parsed_with_depends(self, tmp_path):
+        f = tmp_path / "result.md"
+        f.write_text(BLOCK_FANOUT_OK)
+        spec = parse_fanout_spec(str(f))
+        assert spec is not None
+        assert len(spec.children) == 2
+        assert spec.children[1].depends == ("a",)
+
+    def test_missing_prompt_and_command_raises(self, tmp_path):
+        f = tmp_path / "result.md"
+        f.write_text(
+            "```ghdag\nstatus: ok\nchildren:\n  - id: a\n```\n",
+        )
+        with pytest.raises(FanoutError) as exc_info:
+            parse_fanout_spec(str(f))
+        assert exc_info.value.code == "FANOUT_INVALID"
+        hint = exc_info.value.hint or ""
+        assert "prompt" in hint and "command" in hint
+
+    def test_prompt_and_command_both_raises(self, tmp_path):
+        f = tmp_path / "result.md"
+        f.write_text(
+            "```ghdag\nstatus: ok\nchildren:\n"
+            "  - id: a\n    prompt: x\n    command: y\n```\n",
+        )
+        with pytest.raises(FanoutError):
+            parse_fanout_spec(str(f))
+
+    def test_unknown_engine_hint_lists_engines(self, tmp_path):
+        f = tmp_path / "result.md"
+        f.write_text(
+            "```ghdag\nstatus: ok\nchildren:\n"
+            "  - id: a\n    prompt: x\n    engine: nope\n```\n",
+        )
+        with pytest.raises(FanoutError) as exc_info:
+            parse_fanout_spec(str(f))
+        assert "claude" in (exc_info.value.hint or "")
+
+    def test_command_child_rejects_permission(self, tmp_path):
+        f = tmp_path / "result.md"
+        f.write_text(
+            "```ghdag\nstatus: ok\nchildren:\n"
+            "  - id: a\n    command: echo x\n    permission: text_only\n```\n",
+        )
+        with pytest.raises(FanoutError):
+            parse_fanout_spec(str(f))
+
+    def test_unknown_depends_id_in_hint(self, tmp_path):
+        f = tmp_path / "result.md"
+        f.write_text(
+            "```ghdag\nstatus: ok\nchildren:\n"
+            "  - id: a\n    prompt: x\n    depends: [zzz]\n```\n",
+        )
+        with pytest.raises(FanoutError) as exc_info:
+            parse_fanout_spec(str(f))
+        assert "zzz" in (exc_info.value.hint or "")
+
+    def test_reply_block_without_children_does_not_fall_back_to_legacy(self, tmp_path):
+        f = tmp_path / "result.md"
+        f.write_text(
+            "---\nghdag_fanout:\n  children:\n"
+            "    - id: legacy\n      command: echo legacy\n"
+            "```ghdag\nstatus: ok\n```\n",
+        )
+
+        assert parse_fanout_spec(str(f)) is None
+
+
 class TestBuildChildJsonlRecord:
     def test_format(self):
         line = build_child_jsonl_record("parent--fo--item-001", "bash -c 'process foo'")
