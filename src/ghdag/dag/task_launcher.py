@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import shlex
 import signal
 import subprocess
 import tempfile
@@ -31,6 +32,7 @@ from ghdag.config.env import (
 )
 from ghdag.core.command import inject_resume
 from ghdag.core.engine_spec import ENGINE_SPECS
+from ghdag.core.reply_block import ReplyBlockError, parse_reply_block
 from ghdag.core.stall_guard import StallTracker
 from ghdag.core.vocabulary import (
     DONE_CANCELLED,
@@ -49,6 +51,7 @@ from ghdag.core.vocabulary import (
     DONE_UNKNOWN_FAILURE,
     LEGACY_DONE_DEFERRED,
     PIPELINE_LEGACY_DEFERRED_UNSUPPORTED,
+    PIPELINE_REPLY_BLOCK_FAILED,
     PIPELINE_WAIT_QUOTA,
     PIPELINE_WAIT_QUOTA_INVALID,
 )
@@ -58,6 +61,7 @@ from ghdag.io.audit import (
     now_ts,
     write_compaction_audit,
     write_quarantine_audit,
+    write_repair_turn_audit,
     write_task_retry_audit,
 )
 from ghdag.io.redact import init_redact_patterns, redact_text
@@ -77,7 +81,7 @@ from ghdag.quota import QuotaGate
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .circuit_breaker import CircuitBreakerPolicy
 from .engine_quarantine import EngineQuarantine
-from .fanout import parse_fanout_spec
+from .fanout import FanoutError, parse_fanout_spec
 from .fanout_manager import FanOutManager
 from .hooks import DagHooks
 from .models import DagConfig, RunningTask, Task
@@ -96,6 +100,35 @@ _RESUME_ERROR_RE = re.compile(
     r"(resume|session|chat_id|not found|expired|invalid)",
     re.IGNORECASE,
 )
+
+_REPAIR_RESUME_ENGINES = frozenset({"claude", "cursor", "codex"})
+
+
+def _repair_turn_count(annotations: dict[str, str]) -> int:
+    raw = annotations.get("repair_turns")
+    if raw is None:
+        return 0
+    try:
+        return int(raw)
+    except ValueError:
+        return 0
+
+
+def _replace_stdin_order(command: str, order_path: str) -> str:
+    quoted = shlex.quote(order_path)
+    return _STDIN_REDIR_RE.sub(f"< {quoted}", command, count=1)
+
+
+def _repair_order_body(*, code: str, message: str, hint: str | None) -> str:
+    hint_line = f"hint: {hint}\n" if hint else ""
+    return (
+        "Your previous reply violated the ghdag result contract.\n\n"
+        f"code: {code}\n"
+        f"message: {message}\n"
+        f"{hint_line}\n"
+        "Reply again with only the corrected ```ghdag block; "
+        "do not repeat the previous answer.\n"
+    )
 
 
 _STREAM_EVENT_ENGINES = frozenset({"claude", "cursor", "codex"})
@@ -951,6 +984,44 @@ class TaskLauncher:
                                 metrics,
                             )
                             self._circuit_breaker.record_failure()
+                        elif pipeline_status == PIPELINE_REPLY_BLOCK_FAILED:
+                            block_err = self._reply_block_error_from_result(
+                                effective_result_path
+                            )
+                            if block_err is not None and self._try_contract_repair_turn(
+                                uuid,
+                                task,
+                                engine if isinstance(engine, str) else None,
+                                code=block_err.code,
+                                message=block_err.message,
+                                hint=block_err.hint,
+                                result_path=effective_result_path,
+                                cwd=cwd,
+                            ):
+                                continue
+                            pipeline_failed = (
+                                f"{DONE_PIPELINE_FAILED_PREFIX}{pipeline_status}"
+                            )
+                            state_mark_done(
+                                self._config.exec_done_dir, uuid,
+                                pipeline_failed,
+                            )
+                            metrics = TaskMetrics(
+                                uuid=uuid, engine=engine, model=model,
+                                wall_time_sec=round(finished_at - rt.started_at, 3),
+                                token_count=token_count, status="failure",
+                                started_at=rt.started_at, finished_at=finished_at,
+                                correlation_id=task.idempotency_key,
+                                failure_class=FailureClass.PIPELINE_FAILED,
+                                request_id=_task_request_id(task),
+                                cost_usd=cost_usd,
+                                cache_read_tokens=cache_read_tokens,
+                                cache_creation_tokens=cache_creation_tokens,
+                            )
+                            self._hooks.on_task_failure(
+                                uuid, task, 0, pipeline_failed, metrics
+                            )
+                            self._circuit_breaker.record_failure()
                         elif pipeline_status and pipeline_status.endswith("_FAILED"):
                             pipeline_failed = f"{DONE_PIPELINE_FAILED_PREFIX}{pipeline_status}"
                             state_mark_done(
@@ -1008,7 +1079,18 @@ class TaskLauncher:
                             )
                             try:
                                 fanout_spec = parse_fanout_spec(effective_result_path)
-                            except ValueError as exc:
+                            except FanoutError as exc:
+                                if self._try_contract_repair_turn(
+                                    uuid,
+                                    task,
+                                    engine if isinstance(engine, str) else None,
+                                    code=exc.code,
+                                    message=exc.message,
+                                    hint=exc.hint,
+                                    result_path=effective_result_path,
+                                    cwd=cwd,
+                                ):
+                                    continue
                                 logger.warning("FanOut parse error for [%s]: %s", uuid, exc)
                                 failure_metrics = TaskMetrics(
                                     uuid=uuid, engine=engine, model=model,
@@ -1028,7 +1110,48 @@ class TaskLauncher:
                                 self._hooks.on_task_failure(uuid, task, 0, str(exc), failure_metrics)
                                 continue
                             if fanout_spec:
-                                self._fanout_manager.spawn(uuid, task, fanout_spec, metrics)
+                                try:
+                                    self._fanout_manager.spawn(
+                                        uuid,
+                                        task,
+                                        fanout_spec,
+                                        metrics,
+                                        queue_dir=self._queue_dir(),
+                                    )
+                                except FanoutError as exc:
+                                    if self._try_contract_repair_turn(
+                                        uuid,
+                                        task,
+                                        engine if isinstance(engine, str) else None,
+                                        code=exc.code,
+                                        message=exc.message,
+                                        hint=exc.hint,
+                                        result_path=effective_result_path,
+                                        cwd=cwd,
+                                    ):
+                                        continue
+                                    logger.warning(
+                                        "FanOut spawn error for [%s]: %s", uuid, exc
+                                    )
+                                    failure_metrics = TaskMetrics(
+                                        uuid=uuid, engine=engine, model=model,
+                                        wall_time_sec=round(finished_at - rt.started_at, 3),
+                                        token_count=token_count, status="failure",
+                                        started_at=rt.started_at, finished_at=finished_at,
+                                        correlation_id=task.idempotency_key,
+                                        failure_class=FailureClass.FANOUT_PARSE_FAILED,
+                                        request_id=_task_request_id(task),
+                                        cost_usd=cost_usd,
+                                        cache_read_tokens=cache_read_tokens,
+                                        cache_creation_tokens=cache_creation_tokens,
+                                    )
+                                    state_mark_done(
+                                        self._config.exec_done_dir, uuid, DONE_FANOUT_PARSE_FAILED
+                                    )
+                                    self._hooks.on_task_failure(
+                                        uuid, task, 0, str(exc), failure_metrics
+                                    )
+                                    continue
                             else:
                                 state_mark_done(self._config.exec_done_dir, uuid, 0)
                                 self._run_success_postprocess(
@@ -1361,6 +1484,161 @@ class TaskLauncher:
     def _compaction_policy(self) -> CompactionPolicy:
         """Opt-in: enable via GHDAG_SESSION_COMPACTION=1 (default off)."""
         return CompactionPolicy(enabled=session_compaction_enabled())
+
+    def _engine_supports_repair_resume(self, engine: str | None) -> bool:
+        return isinstance(engine, str) and engine in _REPAIR_RESUME_ENGINES
+
+    def _reply_block_error_from_result(self, result_path: str | None) -> ReplyBlockError | None:
+        if not result_path:
+            return None
+        try:
+            content = Path(result_path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        try:
+            parse_reply_block(content)
+        except ReplyBlockError as exc:
+            return exc
+        return None
+
+    def _try_contract_repair_turn(
+        self,
+        uuid: str,
+        task: Task,
+        engine: str | None,
+        *,
+        code: str,
+        message: str,
+        hint: str | None,
+        result_path: str | None,
+        cwd: str | None,
+    ) -> bool:
+        if self._config.max_repair_turns <= 0:
+            return False
+        if _repair_turn_count(task.annotations) >= self._config.max_repair_turns:
+            return False
+        if not self._engine_supports_repair_resume(engine):
+            return False
+        resolved = self._session_store.lookup(uuid)
+        if resolved is None:
+            return False
+
+        turn = _repair_turn_count(task.annotations) + 1
+        base_command = task.annotations.get("_command_without_resume") or task.command
+        ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        engine_name = engine or resolved.engine
+        queue_dir = self._queue_dir()
+        order_name = f"{ts}-{engine_name}-order-{uuid}-repair{turn}.md"
+        order_path = queue_dir / order_name
+        order_path.write_text(
+            _repair_order_body(code=code, message=message, hint=hint),
+            encoding="utf-8",
+        )
+        relaunch_command = _replace_stdin_order(base_command, str(order_path))
+        relaunch_command = self._inject_resume_command(
+            relaunch_command, engine_name, resolved.session_id
+        )
+        if "_command_without_resume" not in task.annotations:
+            task.annotations["_command_without_resume"] = task.command
+
+        if result_path:
+            rp = Path(result_path)
+            if rp.exists():
+                archive = rp.with_name(f"{rp.name}.repair{turn}.md")
+                try:
+                    rp.replace(archive)
+                except OSError:
+                    logger.warning(
+                        "Failed to archive result for repair turn [%s]", uuid, exc_info=True
+                    )
+
+        task.annotations["repair_turns"] = str(turn)
+        task.command = relaunch_command
+        write_repair_turn_audit(
+            self._queue_audit_path(),
+            uuid=uuid,
+            engine=engine_name,
+            turn=turn,
+            code=code,
+            message=message,
+            hint=hint,
+            correlation_id=task.idempotency_key,
+            tz_name=self._config.timezone,
+        )
+        return self._relaunch_running_task(uuid, task, engine, relaunch_command, cwd)
+
+    def _relaunch_running_task(
+        self,
+        uuid: str,
+        task: Task,
+        engine: str | None,
+        command: str,
+        cwd: str | None,
+    ) -> bool:
+        try:
+            if task.result_path is not None:
+                proc = subprocess.Popen(
+                    ["bash", "-o", "pipefail", "-c", command],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    cwd=cwd,
+                    env=_task_env(uuid, task),
+                    start_new_session=True,
+                )
+                stdout_buf = io.BytesIO()
+                if _should_use_line_reader(engine, command, task.annotations):
+                    events_path = self._events_path(uuid)
+
+                    def _on_event(event: dict, _uuid: str = uuid) -> None:
+                        cb = getattr(self._hooks, "on_task_progress", None)
+                        if cb is not None:
+                            cb(_uuid, event)
+
+                    t_stdout = threading.Thread(
+                        target=_stdout_line_reader_redacting,
+                        args=(proc, stdout_buf, events_path, _on_event),
+                        daemon=True,
+                    )
+                else:
+                    t_stdout = threading.Thread(
+                        target=_stdout_reader,
+                        args=(proc, stdout_buf),
+                        daemon=True,
+                    )
+                t_stdout.start()
+            else:
+                proc = subprocess.Popen(
+                    ["bash", "-o", "pipefail", "-c", command],
+                    stderr=subprocess.PIPE,
+                    cwd=cwd,
+                    env=_task_env(uuid, task),
+                    start_new_session=True,
+                )
+                stdout_buf = None
+                t_stdout = None
+
+            stderr_buf = io.BytesIO()
+            t_stderr = threading.Thread(
+                target=_stderr_reader, args=(proc, stderr_buf), daemon=True
+            )
+            t_stderr.start()
+            self._running[uuid] = RunningTask(
+                uuid=uuid,
+                task=task,
+                proc=proc,
+                started_at=time.time(),
+                started_at_mono=time.monotonic(),
+                stderr_buf=stderr_buf,
+                retry_depth=task.retry,
+                stdout_buf=stdout_buf,
+                stderr_thread=t_stderr,
+                stdout_thread=t_stdout,
+            )
+            self._write_running_file(uuid, proc, task, engine)
+            return True
+        except OSError:
+            logger.warning("Failed to relaunch task [%s] for repair turn", uuid, exc_info=True)
+            return False
 
     def _apply_resume_if_available(self, uuid: str, task: Task) -> None:
         resume_from_uuid = task.annotations.get("resume_from_uuid")

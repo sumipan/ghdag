@@ -88,6 +88,31 @@ class TestCompatImports:
             assert hasattr(pa, name), name
 
 
+class TestWriteRepairTurnAudit:
+    def test_record_shape(self, tmp_path: Path) -> None:
+        from ghdag.io.audit import write_repair_turn_audit
+
+        audit_path = tmp_path / "audit.jsonl"
+        write_repair_turn_audit(
+            audit_path,
+            uuid="u",
+            engine="claude",
+            turn=1,
+            code="C",
+            message="m",
+            hint="h",
+        )
+        rec = json.loads(audit_path.read_text(encoding="utf-8").strip())
+        assert rec["event_type"] == "llm.repair_turn"
+        assert rec["schema_version"] == 1
+        assert rec["uuid"] == "u"
+        assert rec["engine"] == "claude"
+        assert rec["turn"] == 1
+        assert rec["code"] == "C"
+        assert rec["message"] == "m"
+        assert rec["hint"] == "h"
+
+
 class TestWritersUseAppendAuditRecord:
     def test_md_write_audit_uses_append(self, tmp_path: Path, monkeypatch) -> None:
         from ghdag.files import writer

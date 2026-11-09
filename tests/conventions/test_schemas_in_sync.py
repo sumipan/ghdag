@@ -21,6 +21,7 @@ from ghdag.core.models.workflow import (
     TRIGGER_KEYS,
     WORKFLOW_KEYS,
 )
+from ghdag.dag.fanout import FanOutItem
 from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import InlineOrderBuilder
@@ -74,6 +75,17 @@ def test_workflow_config_key_sets_match_loader() -> None:
 
     step_permission = schema["$defs"]["step"]["properties"]["permission"]["enum"]
     assert step_permission == sorted(PRESETS)
+
+
+def test_reply_block_status_enum_matches_vocabulary() -> None:
+    schema = load_schema("reply-block")
+    assert schema["properties"]["status"]["enum"] == list(vocab.REPLY_STATUS_VALUES)
+
+
+def test_reply_block_children_keys_match_fanout_item() -> None:
+    schema = load_schema("reply-block")
+    item_props = schema["properties"]["children"]["items"]["properties"]
+    assert set(item_props) == {f.name for f in fields(FanOutItem)}
 
 
 def test_done_marker_enum_matches_vocabulary() -> None:

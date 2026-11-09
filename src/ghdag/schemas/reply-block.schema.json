@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sumipan/ghdag/schemas/reply-block.schema.json",
+  "title": "Engine reply block (fenced YAML body)",
+  "description": "YAML mapping inside a top-level ```ghdag fence in result bodies.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["ok", "rejected", "wait_quota", "failed"],
+      "description": "Outcome of the engine turn."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Human reason when status is rejected."
+    },
+    "code": {
+      "type": "string",
+      "description": "Machine code when status is failed."
+    },
+    "engines": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Engines to pause when status is wait_quota."
+    },
+    "after": {
+      "type": "string",
+      "description": "Timezone-aware resume time for wait_quota."
+    },
+    "children": {
+      "type": "array",
+      "description": "Fan-out child declarations when status is ok.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Sibling id; becomes --fo--{id} under the parent uuid."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Order body for an LLM child."
+          },
+          "command": {
+            "type": "string",
+            "description": "Raw shell argv for a command child."
+          },
+          "engine": {
+            "type": "string",
+            "enum": ["claude", "codex", "cursor", "gemini", "shell"],
+            "description": "LLM engine override; defaults to the parent task."
+          },
+          "model": {
+            "type": ["string", "null"],
+            "description": "Model override for prompt children."
+          },
+          "depends": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Sibling ids this child depends on."
+          },
+          "permission": {
+            "type": "string",
+            "enum": [
+              "text_only",
+              "json_only",
+              "web_research",
+              "dangerous_full_access",
+              "readonly_observe"
+            ],
+            "description": "Permission preset for prompt children."
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "status": "ok"
+    },
+    {
+      "status": "ok",
+      "children": [
+        { "id": "a", "prompt": "do a" },
+        { "id": "b", "prompt": "do b", "depends": ["a"] }
+      ]
+    },
+    {
+      "status": "rejected",
+      "reason": "need more context"
+    },
+    {
+      "status": "wait_quota",
+      "engines": ["claude"],
+      "after": "2026-01-01T00:00:00+00:00"
+    },
+    {
+      "status": "failed",
+      "code": "SCHEMA"
+    }
+  ]
+}

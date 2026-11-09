@@ -47,6 +47,98 @@ class TestFanOutManagerUnit:
         assert all(parent == parent_uuid for _, parent in appended)
         assert fm.is_pending(parent_uuid)
 
+    def test_spawn_prompt_child_writes_order_and_exec_record(self, tmp_path):
+        import json
+
+        from ghdag.dag.fanout import FanOutItem, FanOutSpec
+        from ghdag.dag.fanout_manager import FanOutManager
+        from ghdag.dag.hooks import DagHooks
+        from ghdag.dag.models import Task
+
+        queue = tmp_path / "jobs"
+        queue.mkdir()
+        config = _make_config(tmp_path, "")
+        hooks = MagicMock(spec=DagHooks)
+        appended: list[str] = []
+        fm = FanOutManager(
+            config, hooks, lambda line, parent: appended.append(line), lambda _: None
+        )
+        parent_uuid = "parent"
+        task = Task(
+            uuid=parent_uuid,
+            command="claude -p < order.md",
+            engine="claude",
+            model="claude-sonnet-4-6",
+        )
+        spec = FanOutSpec(children=[FanOutItem(id="a", prompt="do a")])
+        t = time.time()
+        metrics = TaskMetrics(
+            uuid=parent_uuid,
+            engine="claude",
+            model="claude-sonnet-4-6",
+            wall_time_sec=1.0,
+            token_count=None,
+            status="success",
+            started_at=t,
+            finished_at=t,
+        )
+        fm.spawn(parent_uuid, task, spec, metrics, queue_dir=queue)
+
+        assert len(appended) == 1
+        record = json.loads(appended[0])
+        child_uuid = f"{parent_uuid}--fo--a"
+        assert record["uuid"] == child_uuid
+        assert record["engine"] == "claude"
+        assert record["model"] == "claude-sonnet-4-6"
+        assert record["result_path"].endswith(f"-result-{child_uuid}.md")
+        assert record["annotations"]["fanout_parent"] == parent_uuid
+        assert record["annotations"]["step_name"] == "a"
+        assert "--resume" not in record["command"]
+        order_files = list(queue.glob(f"*-claude-order-{child_uuid}.md"))
+        assert len(order_files) == 1
+        assert order_files[0].read_text(encoding="utf-8") == "do a"
+
+    def test_cursor_child_does_not_inherit_parent_model(self, tmp_path):
+        import json
+
+        from ghdag.dag.fanout import FanOutItem, FanOutSpec
+        from ghdag.dag.fanout_manager import FanOutManager
+        from ghdag.dag.hooks import DagHooks
+        from ghdag.dag.models import Task
+
+        queue = tmp_path / "jobs"
+        queue.mkdir()
+        config = _make_config(tmp_path, "")
+        parent_uuid = "parent"
+        task = Task(
+            uuid=parent_uuid,
+            command="true",
+            engine="claude",
+            model="claude-sonnet-4-6",
+        )
+        spec = FanOutSpec(children=[FanOutItem(id="a", prompt="x", engine="cursor")])
+        metrics = TaskMetrics(
+            uuid=parent_uuid,
+            engine="claude",
+            model="claude-sonnet-4-6",
+            wall_time_sec=1.0,
+            token_count=None,
+            status="success",
+            started_at=time.time(),
+            finished_at=time.time(),
+        )
+        lines: list[str] = []
+        fm2 = FanOutManager(
+            config,
+            MagicMock(spec=DagHooks),
+            lambda line, _p: lines.append(line),
+            lambda _: None,
+        )
+        fm2.spawn(parent_uuid, task, spec, metrics, queue_dir=queue)
+        record = json.loads(lines[0])
+        assert record["engine"] == "cursor"
+        assert record["model"] is None
+
     def test_check_completions_marks_parent_done_when_all_children_complete(self, tmp_path):
 
         from ghdag.dag.fanout_manager import FanOutManager
