@@ -29,6 +29,38 @@ def _make_metrics(status: str = "success") -> TaskMetrics:
     )
 
 
+class TestDefaultHooksCheckRejected:
+    def test_reply_block_rejected(self, tmp_path) -> None:
+        f = tmp_path / "result.md"
+        f.write_text(
+            "```ghdag\nstatus: rejected\nreason: retry\n```\n",
+            encoding="utf-8",
+        )
+        hooks = DefaultHooks()
+        assert hooks.check_rejected(str(f)) is True
+
+    def test_reply_block_ok_ignores_rejected_in_body(self, tmp_path) -> None:
+        lines = ["line"] * 10 + ["REJECTED: late"]
+        lines.append("```ghdag\nstatus: ok\n```")
+        f = tmp_path / "result.md"
+        f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        hooks = DefaultHooks()
+        assert hooks.check_rejected(str(f)) is False
+
+    def test_legacy_rejected_on_first_line(self, tmp_path) -> None:
+        f = tmp_path / "result.md"
+        f.write_text("REJECTED: x\n", encoding="utf-8")
+        hooks = DefaultHooks()
+        assert hooks.check_rejected(str(f)) is True
+
+    def test_legacy_rejected_after_tenth_line_ignored(self, tmp_path) -> None:
+        lines = ["line"] * 10 + ["REJECTED: x"]
+        f = tmp_path / "result.md"
+        f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        hooks = DefaultHooks()
+        assert hooks.check_rejected(str(f)) is False
+
+
 class TestDefaultHooksLoggingOnly:
     def test_no_args_init(self):
         """AC-2: DefaultHooks() can be instantiated with no arguments."""

@@ -60,6 +60,32 @@ class TestCheckPipelineStatus:
         f.write_text("PIPELINE_STATUS:   \n", encoding="utf-8")
         assert check_pipeline_status(str(f)) is None
 
+    def test_reply_block_failed_code(self, tmp_path) -> None:
+        f = tmp_path / "result.md"
+        f.write_text("```ghdag\nstatus: failed\ncode: SCHEMA\n```\n", encoding="utf-8")
+        assert check_pipeline_status(str(f)) == "SCHEMA_FAILED"
+
+    def test_invalid_reply_block_returns_reply_block_failed(self, tmp_path) -> None:
+        f = tmp_path / "result.md"
+        f.write_text("```ghdag\n: not yaml\n```\n", encoding="utf-8")
+        assert check_pipeline_status(str(f)) == "REPLY_BLOCK_FAILED"
+
+    def test_reply_block_ok_ignores_legacy_pipeline_status_line(self, tmp_path) -> None:
+        f = tmp_path / "result.md"
+        f.write_text(
+            "PIPELINE_STATUS: X_FAILED\n```ghdag\nstatus: ok\n```\n",
+            encoding="utf-8",
+        )
+        assert check_pipeline_status(str(f)) is None
+
+    def test_reply_block_wait_quota(self, tmp_path) -> None:
+        f = tmp_path / "result.md"
+        f.write_text(
+            "```ghdag\nstatus: wait_quota\nengines: [claude]\n```\n",
+            encoding="utf-8",
+        )
+        assert check_pipeline_status(str(f)) == "WAIT_QUOTA"
+
 
 import json as _json
 

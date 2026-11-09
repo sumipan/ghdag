@@ -20,8 +20,11 @@ from ghdag.core.vocabulary import (
     FANOUT_ANCHOR,
     FANOUT_KEY,
     FANOUT_SEPARATOR,
+    PIPELINE_REPLY_BLOCK_FAILED,
     PIPELINE_STATUS_RE,
     QUEUE_FILE_RE,
+    REPLY_BLOCK_INFO,
+    REPLY_STATUS_VALUES,
 )
 
 
@@ -101,6 +104,17 @@ class TestPipelineStatusRe:
 
     def test_no_match_without_prefix(self) -> None:
         assert PIPELINE_STATUS_RE.findall("STATUS: ACCEPTED") == []
+
+
+class TestReplyBlockVocabulary:
+    def test_reply_block_info(self) -> None:
+        assert REPLY_BLOCK_INFO == "ghdag"
+
+    def test_pipeline_reply_block_failed(self) -> None:
+        assert PIPELINE_REPLY_BLOCK_FAILED == "REPLY_BLOCK_FAILED"
+
+    def test_reply_status_values(self) -> None:
+        assert REPLY_STATUS_VALUES == ("ok", "rejected", "wait_quota", "failed")
 
 
 class TestFanoutVocabulary:

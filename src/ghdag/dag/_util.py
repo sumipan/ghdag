@@ -11,7 +11,18 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from ghdag.core.vocabulary import PIPELINE_STATUS_RE, WAIT_QUOTA_COMPANION_RE
+from ghdag.core.reply_block import (
+    ReplyBlock,
+    ReplyBlockError,
+    find_reply_block,
+    parse_reply_block,
+)
+from ghdag.core.vocabulary import (
+    PIPELINE_REPLY_BLOCK_FAILED,
+    PIPELINE_STATUS_RE,
+    PIPELINE_WAIT_QUOTA,
+    WAIT_QUOTA_COMPANION_RE,
+)
 
 # Matches: tee [-a] "quoted path" or tee [-a] unquoted-path (any extension)
 _TEE_RE = re.compile(r'\btee\s+(?:-a\s+)?(?:"([^"]+)"|(\S+))')
@@ -28,18 +39,61 @@ class WaitQuotaParseError:
     reason: str
 
 
-def check_pipeline_status(result_path: str) -> str | None:
-    """Find PIPELINE_STATUS lines in the result file and return the last matched value.
+def _parse_reply(content: str) -> ReplyBlock | ReplyBlockError | None:
+    """Parse a ```ghdag reply block when present."""
+    if find_reply_block(content) is None:
+        return None
+    try:
+        return parse_reply_block(content)
+    except ReplyBlockError as exc:
+        return exc
 
-    Returns:
-        The matched status string (e.g. "IMPL_FAILED"), or None if not found.
-    """
+
+def _pipeline_status_from_block(block: ReplyBlock) -> str | None:
+    if block.status in ("ok", "rejected"):
+        return None
+    if block.status == "wait_quota":
+        return PIPELINE_WAIT_QUOTA
+    code = block.code or "REPLY"
+    if code.endswith("_FAILED"):
+        return code
+    return f"{code}_FAILED"
+
+
+def check_pipeline_status(result_path: str) -> str | None:
+    """Read result file; prefer ```ghdag reply block, else legacy PIPELINE_STATUS line."""
     try:
         content = Path(result_path).read_text(encoding="utf-8", errors="replace")
     except (OSError, FileNotFoundError):
         return None
+    parsed = _parse_reply(content)
+    if isinstance(parsed, ReplyBlockError):
+        return PIPELINE_REPLY_BLOCK_FAILED
+    if isinstance(parsed, ReplyBlock):
+        return _pipeline_status_from_block(parsed)
     matches = PIPELINE_STATUS_RE.findall(content)
     return matches[-1] if matches else None
+
+
+def _wait_quota_from_block(
+    block: ReplyBlock,
+    *,
+    known_engines: frozenset[str],
+) -> WaitQuotaSignal | WaitQuotaParseError:
+    if block.status != "wait_quota":
+        return WaitQuotaParseError("reply block status is not wait_quota")
+    unknown = [name for name in block.engines if name not in known_engines]
+    if unknown:
+        return WaitQuotaParseError(f"unknown engine(s): {', '.join(unknown)}")
+    after = None
+    if block.after is not None:
+        try:
+            after = datetime.fromisoformat(block.after.replace("Z", "+00:00"))
+        except ValueError:
+            return WaitQuotaParseError(f"invalid after datetime: {block.after}")
+        if after.tzinfo is None or after.tzinfo.utcoffset(after) is None:
+            return WaitQuotaParseError("after must be timezone-aware")
+    return WaitQuotaSignal(after=after, engines=block.engines)
 
 
 def parse_wait_quota_signal(
@@ -48,6 +102,12 @@ def parse_wait_quota_signal(
     known_engines: frozenset[str],
 ) -> WaitQuotaSignal | WaitQuotaParseError:
     """Parse WAIT_QUOTA protocol from a result file body."""
+    parsed = _parse_reply(content)
+    if isinstance(parsed, ReplyBlock):
+        return _wait_quota_from_block(parsed, known_engines=known_engines)
+    if isinstance(parsed, ReplyBlockError):
+        return WaitQuotaParseError(parsed.message)
+
     if not PIPELINE_STATUS_RE.findall(content) or PIPELINE_STATUS_RE.findall(content)[-1] != "WAIT_QUOTA":
         return WaitQuotaParseError("missing PIPELINE_STATUS: WAIT_QUOTA")
 
@@ -204,18 +264,20 @@ def _extract_tee_target(command: str, result_path: str | None = None) -> str | N
 
 
 def default_check_rejected(result_path: str) -> bool:
-    """Check if result file contains PIPELINE_STATUS: REJECTED."""
+    """Return True when the result is rejected (reply block or legacy REJECTED: line)."""
     try:
-        with open(result_path, encoding="utf-8") as f:
-            for _ in range(10):
-                line = f.readline()
-                if line == "":
-                    break
-                stripped = line.strip()
-                if stripped.startswith("REJECTED:"):
-                    return True
-                if stripped.startswith("ACCEPTED"):
-                    return False
-        return False
+        content = Path(result_path).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return False
+    parsed = _parse_reply(content)
+    if isinstance(parsed, ReplyBlock):
+        return parsed.status == "rejected"
+    if isinstance(parsed, ReplyBlockError):
+        return False
+    for line in content.splitlines()[:10]:
+        stripped = line.strip()
+        if stripped.startswith("REJECTED:"):
+            return True
+        if stripped.startswith("ACCEPTED"):
+            return False
+    return False
