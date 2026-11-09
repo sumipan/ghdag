@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.117.1 - 2026-11-09
+
 ### Fixed
 
 - ``ghdag.core.stall_guard``: recognize cursor shell snap markers when GNU ``ps`` truncates the ``args`` column on Linux (sumipan/nexus#6181).
