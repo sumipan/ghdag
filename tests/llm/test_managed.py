@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -9,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ghdag.core.models.metrics import FailureClass, TokenUsage
+from ghdag.llm.capabilities import JSON_ONLY
 from ghdag.llm.engines import LLMResult
 from ghdag.llm.managed import ManagedResult, call_managed
 from ghdag.quota import QuotaGate
@@ -127,6 +129,34 @@ class TestCallManagedSuccess:
         ):
             result = call_managed("p", additional_tags={"tier": "heavy"})
         assert result.additional_tags == {"tier": "heavy"}
+
+    def test_json_only_claude_envelope_body_is_extracted_json_with_usage(self):
+        inner = json.dumps({"result": "done", "ok": True})
+        envelope = json.dumps(
+            {
+                "type": "result",
+                "result": f"```json\n{inner}\n```",
+                "session_id": "s1",
+                "usage": {"input_tokens": 3, "output_tokens": 7},
+            }
+        )
+        validated = LLMResult(stdout=envelope, stderr="", returncode=0).validate(
+            JSON_ONLY, engine="claude"
+        )
+        with (
+            patch("ghdag.llm.managed.call", return_value=validated),
+            patch(
+                "ghdag.llm.managed.validate_engine_model",
+                return_value="claude-sonnet-4-6",
+            ),
+        ):
+            result = call_managed("p", engine="claude", capabilities=JSON_ONLY)
+
+        assert json.loads(result.body) == {"result": "done", "ok": True}
+        assert result.body != "done"
+        assert result.usage is not None
+        assert result.usage.token_count == 10
+        assert result.returncode == 0
 
 
 class TestCallManagedClassification:
