@@ -92,6 +92,28 @@ class TestParseReplyBlock:
                 "```\n"
             )
 
+    def test_unquoted_tz_aware_after_is_accepted(self) -> None:
+        block = parse_reply_block(
+            "```ghdag\n"
+            "status: wait_quota\n"
+            "engines: [claude]\n"
+            "after: 2026-01-01T00:00:00+09:00\n"
+            "```\n"
+        )
+        assert block is not None
+        assert block.after == "2026-01-01T00:00:00+09:00"
+
+    def test_after_without_timezone_raises_with_tz_hint(self) -> None:
+        with pytest.raises(ReplyBlockError) as exc:
+            parse_reply_block(
+                "```ghdag\n"
+                "status: wait_quota\n"
+                "engines: [claude]\n"
+                "after: 2026-01-01T00:00:00\n"
+                "```\n"
+            )
+        assert "+00:00" in (exc.value.hint or "")
+
     def test_rejected_requires_nonempty_reason(self) -> None:
         with pytest.raises(ReplyBlockError):
             parse_reply_block("```ghdag\nstatus: rejected\n```\n")

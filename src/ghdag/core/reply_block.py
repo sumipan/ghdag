@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import yaml
@@ -118,7 +118,7 @@ def _parse_reply_body(body: str) -> ReplyBlock:
 
     reason = _optional_str(data.get("reason"))
     code = _optional_str(data.get("code"))
-    after = _optional_str(data.get("after"))
+    after = _after_str(data.get("after"))
     engines = _parse_engines(data.get("engines"))
     children = _parse_children(data.get("children"))
 
@@ -188,6 +188,13 @@ def _optional_str(value: object) -> str | None:
     if not isinstance(value, str):
         raise ReplyBlockError(f"expected string, got {type(value).__name__}")
     return value
+
+
+def _after_str(value: object) -> str | None:
+    # Unquoted ISO 8601 is loaded by yaml.safe_load as datetime/date; keep it as text.
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return _optional_str(value)
 
 
 def _parse_engines(value: object) -> tuple[str, ...]:
