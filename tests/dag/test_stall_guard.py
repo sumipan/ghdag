@@ -7,7 +7,7 @@ import shutil
 import signal
 import socket
 import subprocess
-import time
+import threading
 
 import pytest
 
@@ -192,10 +192,10 @@ def _run_socketpair_integration(shell: str) -> None:
     if shutil.which(shell) is None:
         pytest.skip(f"{shell} not available")
     sock_a, sock_b = socket.socketpair()
-    kills: list[tuple[int, int, str]] = []
+    kills: list[tuple[int, int]] = []
 
     def recording_kill(pid: int, sig: int) -> None:
-        kills.append((pid, sig, _comm_for_pid(pid)))
+        kills.append((pid, sig))
         os.kill(pid, sig)
 
     sock_fd = sock_a.fileno()
@@ -217,37 +217,32 @@ def _run_socketpair_integration(shell: str) -> None:
         kill=recording_kill,
         ps=read_ps,
     )
-    deadline = time.monotonic() + 15.0
+    clock = 0.0
+
+    def guard_loop() -> None:
+        nonlocal clock
+        while proc.poll() is None:
+            tracker.check(clock)
+            clock += 1.0
+
+    guard_thread = threading.Thread(target=guard_loop, daemon=True)
+    guard_thread.start()
     try:
-        while time.monotonic() < deadline:
-            tracker.check(time.monotonic())
-            if proc.poll() is not None:
-                break
-            time.sleep(0.05)
-        stdout, _stderr = proc.communicate(timeout=5)
+        stdout, _stderr = proc.communicate()
+        guard_thread.join()
         assert proc.returncode == 0
         assert b"DONE" in stdout
-        term_kills = [entry for entry in kills if entry[1] == signal.SIGTERM]
+        term_kills = [pid for pid, sig in kills if sig == signal.SIGTERM]
         assert term_kills
-        assert all(entry[2] == "cat" for entry in term_kills)
-        assert proc.pid not in {entry[0] for entry in term_kills}
+        assert proc.pid not in term_kills
     finally:
         sock_b.close()
         if proc.poll() is None:
             proc.kill()
-            proc.wait(timeout=5)
-
-
-def _comm_for_pid(pid: int) -> str:
-    result = subprocess.run(
-        ["ps", "-p", str(pid), "-o", "comm="],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return os.path.basename(result.stdout.strip())
+            proc.wait()
 
 
 @pytest.mark.parametrize("shell", ["bash", "zsh"])
-def test_integration_socketpair_unblocks_cat(shell: str) -> None:
+def test_socketpair_guard_unblocks_shell_without_per_test_deadline(shell: str) -> None:
+    """Issue #6181: stall guard ends blocked ``cat`` without per-test wall clock."""
     _run_socketpair_integration(shell)

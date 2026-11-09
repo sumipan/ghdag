@@ -7,6 +7,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.117.1 - 2026-11-09
+
+### Fixed
+
+- ``ghdag.core.stall_guard``: recognize cursor shell snap markers when GNU ``ps`` truncates the ``args`` column on Linux (sumipan/nexus#6181).
+
+### Added
+
+- ``tests/conventions/test_no_wallclock_in_tests.py``: T13 wall-clock ratchet and ``known_wallclock_tests.txt`` ledger (sumipan/nexus#6181).
+- ``tests/core/test_stall_guard_ps.py``: Linux/macOS ``ps`` snapshot contract tests for stall detection (sumipan/nexus#6181).
+
+### Changed
+
+- Socketpair stall-guard integration test uses synthetic clock and thread sync instead of per-test timeouts (sumipan/nexus#6181).
+- ``pytest-timeout`` dev dependency with suite-wide ``timeout = 300`` in ``pyproject.toml`` (sumipan/nexus#6181).
+
 ## 0.117.0 - 2026-11-08
 
 ### Added
