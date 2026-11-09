@@ -29,7 +29,7 @@ DONE_ORPHAN_ARCHIVED = "ORPHAN_ARCHIVED"
 DONE_ORPHANED_ON_RESTART = "ORPHANED_ON_RESTART"
 LEGACY_DONE_DEFERRED = "DEFERRED"
 
-# Reply block (```ghdag fenced YAML in result bodies)
+# Reply block (fenced YAML with REPLY_BLOCK_INFO in result bodies)
 REPLY_BLOCK_INFO = "ghdag"
 PIPELINE_REPLY_BLOCK_FAILED = "REPLY_BLOCK_FAILED"
 REPLY_STATUS_VALUES = ("ok", "rejected", "wait_quota", "failed")

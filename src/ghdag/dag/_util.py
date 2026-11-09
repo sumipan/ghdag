@@ -40,7 +40,7 @@ class WaitQuotaParseError:
 
 
 def _parse_reply(content: str) -> ReplyBlock | ReplyBlockError | None:
-    """Parse a ```ghdag reply block when present."""
+    """Parse a reply block when present in the result body."""
     if find_reply_block(content) is None:
         return None
     try:
@@ -61,7 +61,7 @@ def _pipeline_status_from_block(block: ReplyBlock) -> str | None:
 
 
 def check_pipeline_status(result_path: str) -> str | None:
-    """Read result file; prefer ```ghdag reply block, else legacy PIPELINE_STATUS line."""
+    """Read result file; prefer reply block, else legacy PIPELINE_STATUS line."""
     try:
         content = Path(result_path).read_text(encoding="utf-8", errors="replace")
     except (OSError, FileNotFoundError):

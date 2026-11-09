@@ -1,4 +1,4 @@
-"""Parse engine reply blocks from ```ghdag fenced YAML in result bodies."""
+"""Parse engine reply blocks from fenced YAML (info string REPLY_BLOCK_INFO) in result bodies."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ _ALLOWED_KEYS = frozenset({"status", "reason", "code", "engines", "after", "chil
 
 
 class ReplyBlockError(ConfigError):
-    """Invalid ```ghdag reply block YAML or field combination."""
+    """Invalid reply-block YAML or field combination inside an engine result fence."""
 
     code = "REPLY_BLOCK_INVALID"
 
@@ -37,7 +37,7 @@ class ReplyBlock:
 
 
 def find_reply_block(text: str) -> str | None:
-    """Return YAML body of the last top-level ```ghdag fence, or None."""
+    """Return YAML body of the last top-level REPLY_BLOCK_INFO fence, or None."""
     lines = text.splitlines()
     generic_depth = 0
     in_ghdag = False
