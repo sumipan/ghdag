@@ -1,7 +1,11 @@
 """ghdag.llm — one-shot LLM invocation interface"""
 
+from ghdag.core.capabilities import PRESETS
+from ghdag.core.container import container_prefix
+from ghdag.core.ports.output import EngineError
 from ghdag.llm import _config
 from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
+from ghdag.llm.adapters.failure_classification import classify_common_failure
 from ghdag.llm.capabilities import (
     DANGEROUS_FULL_ACCESS,
     JSON_ONLY,
@@ -21,6 +25,7 @@ from ghdag.llm.engines import (
     get_engine_models,
     list_engines,
     list_models,
+    supports_capability,
     validate_engine_model,
 )
 from ghdag.llm.managed import ManagedResult, call_managed
@@ -32,7 +37,12 @@ __all__ = [
     "DEFAULT_ENGINE_MODELS",
     "ENGINE_DEFAULTS",
     "ENGINE_SPECS",
+    "EngineError",
     "EngineModelError",
+    "PRESETS",
+    "classify_common_failure",
+    "container_prefix",
+    "supports_capability",
     "EngineSpec",
     "InputMode",
     "PromptFlag",
