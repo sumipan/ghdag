@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.123.1 - 2026-11-10
+
 ### Added
 
 - README and `llms.txt` document `ghdag mcp`, its two tools, and Claude Code registration (sumipan/nexus#6318).
