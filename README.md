@@ -233,7 +233,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 
 ## Public API
 
-Supported import paths are `ghdag` and one-segment `ghdag.<package>` only. Deeper paths (`ghdag.<package>.<module>`) and top-level shims remain importable for compatibility but are not part of the public contract until a later release. `python -m ghdag` and other module entry points are separate from this rule.
+Supported import paths are `ghdag` and one-segment `ghdag.<package>` only. Deeper paths (`ghdag.<package>.<module>`) and top-level shims are not part of the public contract; they remain importable for compatibility until a later release removes them. `python -m ghdag` and other module entry points are separate from this rule.
 
 Import from the paths below. Names starting with `_` are private, even when a module lists them in `__all__`.
 
@@ -395,7 +395,7 @@ Modules that declare their own `__all__` (private `_` names omitted). Modules ma
 | `ghdag.workflow.engine` (shim) | `EngineAdapter`, `AdapterNotFoundError`, `register_adapter`, `get_adapter` |
 | `ghdag.workflow.schema` (shim) | `StepConfig`, `OnTriggerConfig`, `HandlerConfig`, `TriggerConfig`, `DispatchResult`, `WorkflowConfig` |
 
-Modules without `__all__` that are meant for direct import:
+Modules without `__all__`, importable directly under the same compatibility status as above:
 
 | Module | Public functions / classes |
 |---|---|
