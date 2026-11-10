@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.123.0 - 2026-11-10
+
+### Added
+
+- Package-level exports for names used by downstream repos: ``ghdag.metrics`` (``FailureClass``, ``TokenUsage``), ``ghdag.pipeline`` (``AuditContext``, ``write_task_exit_audit``, ``TemplateVariableError``, ``build_idempotency_key``, ``get_adapter``), ``ghdag.workflow`` (``transition``, ``ConsumeEntry``, ``SkillIOSpec``, ``typecheck_dag``). Completes the seven-package one-segment import surface together with ``ghdag.dag``, ``ghdag.forge``, ``ghdag.io``, and ``ghdag.llm`` (sumipan/nexus#6319 / #6331).
+
 ## 0.120.2 - 2026-11-10
 
 ### Changed

@@ -15,18 +15,24 @@ from ghdag.workflow.schema import (
     TriggerConfig,
     WorkflowConfig,
 )
+from ghdag.workflow.state_machine import transition
+from ghdag.workflow.typecheck import ConsumeEntry, SkillIOSpec, typecheck_dag
 
 __all__ = [
-    "WorkflowConfig",
-    "TriggerConfig",
-    "HandlerConfig",
-    "StepConfig",
-    "OnTriggerConfig",
+    "ConsumeEntry",
     "DispatchResult",
+    "ForgePort",
+    "GitHubIssueClient",
+    "HandlerConfig",
+    "OnTriggerConfig",
+    "SkillIOSpec",
+    "StepConfig",
+    "TriggerConfig",
+    "WorkflowConfig",
     "load_workflows",
     "WorkflowDispatcher",
-    "GitHubIssueClient",
     "create_github_client",
-    "ForgePort",
     "get_forge",
+    "transition",
+    "typecheck_dag",
 ]
