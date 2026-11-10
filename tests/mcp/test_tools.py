@@ -62,9 +62,13 @@ def _call(server: McpServer, name: str, arguments: dict) -> dict:
 class TestToolCatalog:
     def test_tool_name_set(self, tmp_path):
         runtime = _runtime(tmp_path)
-        names = {t["name"] for t in McpToolRegistry(runtime).list_tools()}
+        tools = McpToolRegistry(runtime).list_tools()
+        names = {t["name"] for t in tools}
         assert names == set(TOOL_NAMES)
         assert names == {"ghdag_enqueue", "ghdag_status"}
+        for tool in tools:
+            assert tool["inputSchema"]["type"] == "object"
+            assert tool["inputSchema"]["additionalProperties"] is False
 
     def test_input_schemas_are_closed_objects(self, tmp_path):
         runtime = _runtime(tmp_path)
