@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import time
-
 import pytest
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 from ghdag_cleanup_conftest_helpers import (
+    FIXED_NOW_TS,
     UUID_A,
     UUID_D,
     _make_done_flag,
@@ -209,8 +208,8 @@ class TestPhase3MtimeSweep:
         override = queue_dir / "quota-gate-override.json"
         override.write_text("{}")
         # birthtime = 8 days ago, mtime = 1 hour ago
-        eight_days_ago = time.time() - 8 * 86400
-        one_hour_ago = time.time() - 3600
+        eight_days_ago = FIXED_NOW_TS - 8 * 86400
+        one_hour_ago = FIXED_NOW_TS - 3600
         os.utime(override, (eight_days_ago, eight_days_ago))
         os.utime(override, (one_hour_ago, one_hour_ago))
 
@@ -233,7 +232,7 @@ class TestPhase3MtimeSweep:
         _make_exec_jsonl(exec_md, [])
         artifact = queue_dir / "20260101120000-shell-result-abcd1234.md.prev-20260101T000000Z"
         artifact.write_text("prev")
-        eight_days_ago = time.time() - 8 * 86400
+        eight_days_ago = FIXED_NOW_TS - 8 * 86400
         os.utime(artifact, (eight_days_ago, eight_days_ago))
 
         res = cleanup_queue(
@@ -259,7 +258,7 @@ class TestPhase3MtimeSweep:
         lock2 = queue_dir / "issuesmith-brake.json.lock"
         lock1.write_text("")
         lock2.write_text("")
-        thirty_days_ago = time.time() - 30 * 86400
+        thirty_days_ago = FIXED_NOW_TS - 30 * 86400
         os.utime(lock1, (thirty_days_ago, thirty_days_ago))
         os.utime(lock2, (thirty_days_ago, thirty_days_ago))
 
@@ -283,8 +282,8 @@ class TestPhase3MtimeSweep:
         _make_exec_jsonl(exec_md, [])
         slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
         slack_file.write_text("{}")
-        eight_days_ago = time.time() - 8 * 86400
-        one_hour_ago = time.time() - 3600
+        eight_days_ago = FIXED_NOW_TS - 8 * 86400
+        one_hour_ago = FIXED_NOW_TS - 3600
         os.utime(slack_file, (eight_days_ago, eight_days_ago))
         os.utime(slack_file, (one_hour_ago, one_hour_ago))
 
@@ -340,3 +339,23 @@ class TestPhase3MtimeSweep:
         assert "token=" in out
         assert "age=" in out
         assert slack_file.exists()
+
+    def test_dry_run_sweep_age_is_measured_from_fixed_now(self, tmp_path, capsys):
+        """Sweep dry-run age reflects days elapsed from the frozen orchestrator clock."""
+        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
+        _make_exec_jsonl(exec_md, [])
+        slack_file = queue_dir / f"slack-pending-{UUID_D}.json"
+        slack_file.write_text("{}")
+        _set_mtime(slack_file, days_ago=8)
+
+        cleanup_queue(
+            queue_dir=queue_dir,
+            archive_dir=archive_dir,
+            done_dir=done_dir,
+            exec_md=exec_md,
+            orphan_days=7,
+            dry_run=True,
+        )
+
+        out = capsys.readouterr().out
+        assert "age=8d)" in out

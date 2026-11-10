@@ -4,15 +4,35 @@ from __future__ import annotations
 
 import json
 import sys
-import time
 import types
+from datetime import datetime, timezone
 from pathlib import Path
+
+import pytest
 
 UUID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 UUID_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 UUID_C = "cccccccc-cccc-cccc-cccc-cccccccccccc"
 UUID_D = "dddddddd-dddd-dddd-dddd-dddddddddddd"
 TS = "20260101120000"
+
+FIXED_NOW = datetime(2026, 1, 8, 12, 0, tzinfo=timezone.utc)
+FIXED_NOW_TS = FIXED_NOW.timestamp()
+
+
+class _FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None):  # noqa: ANN001
+        if tz is None:
+            return FIXED_NOW
+        return FIXED_NOW.astimezone(tz)
+
+
+@pytest.fixture(autouse=True)
+def frozen_cleanup_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    import ghdag.cleanup.orchestrator as orch
+
+    monkeypatch.setattr(orch, "datetime", _FrozenDatetime)
 
 
 def _make_queue_files(
@@ -36,7 +56,7 @@ def _make_queue_files(
 def _set_mtime(path: Path, days_ago: float) -> None:
     import os
 
-    t = time.time() - days_ago * 86400
+    t = FIXED_NOW_TS - days_ago * 86400
     os.utime(path, (t, t))
 
 
@@ -69,6 +89,8 @@ for _name in (
     "UUID_C",
     "UUID_D",
     "TS",
+    "FIXED_NOW",
+    "FIXED_NOW_TS",
     "_make_queue_files",
     "_set_mtime",
     "_make_exec_jsonl",
