@@ -180,7 +180,7 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "MCP は実行塔・workflow・ui・cli に依存しない"
+name = "MCP must not import dag, workflow, ui, or cli"
 type = "forbidden"
 source_modules = ["ghdag.mcp"]
 forbidden_modules = [
