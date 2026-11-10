@@ -7,6 +7,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- README and `llms.txt` document `ghdag mcp`, its two tools, and Claude Code registration (sumipan/nexus#6318).
+
+### Changed
+
+- MCP public tools are `ghdag_enqueue` and `ghdag_status` only; multi-step enqueue shares one `LLMPipelineAPI.submit` call; optional `steps[].id` defaults to `step-<n>`; engine and permission choices are JSON Schema enums on `tools/list` (sumipan/nexus#6318).
+
+### Removed
+
+- MCP tools `ghdag_enqueue_task`, `ghdag_enqueue_dag`, `ghdag_get_status`, and `ghdag_describe`, plus `DEPENDENCY_UUID_UNKNOWN` validation for exec UUID dependencies (sumipan/nexus#6318).
+
 ## 0.123.0 - 2026-11-10
 
 ### Added

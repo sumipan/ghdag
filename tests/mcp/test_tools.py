@@ -1,4 +1,4 @@
-"""MCP tool implementations (#6297)."""
+"""MCP tool implementations."""
 
 from __future__ import annotations
 
@@ -16,7 +16,6 @@ from ghdag.mcp.tools import TOOL_NAMES, McpRuntime, McpToolRegistry
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.pipeline.state import PipelineState
-from ghdag.schemas import SCHEMA_NAMES
 
 
 def _runtime(tmp_path: Path) -> McpRuntime:
@@ -65,6 +64,7 @@ class TestToolCatalog:
         runtime = _runtime(tmp_path)
         names = {t["name"] for t in McpToolRegistry(runtime).list_tools()}
         assert names == set(TOOL_NAMES)
+        assert names == {"ghdag_enqueue", "ghdag_status"}
 
     def test_input_schemas_are_closed_objects(self, tmp_path):
         runtime = _runtime(tmp_path)
@@ -73,31 +73,55 @@ class TestToolCatalog:
             assert schema["type"] == "object"
             assert schema["additionalProperties"] is False
 
+    def test_enqueue_schema_contract(self, tmp_path):
+        runtime = _runtime(tmp_path)
+        registry = McpToolRegistry(runtime)
+        enqueue = next(t for t in registry.list_tools() if t["name"] == "ghdag_enqueue")
+        step_items = enqueue["inputSchema"]["properties"]["steps"]["items"]
+        assert step_items["required"] == ["engine"]
+        assert step_items["properties"]["engine"]["enum"] == sorted(ENGINE_SPECS)
+        assert step_items["properties"]["permission"]["enum"] == sorted(PRESETS)
+        assert (
+            step_items["properties"]["model"]["description"]
+            == "Omit for the engine default; ghdag llm --list-models lists the allowed models."
+        )
 
-class TestEnqueueTask:
-    def test_shell_enqueue_writes_exec_jsonl(self, tmp_path):
+
+class TestEnqueue:
+    def test_single_step_without_id(self, tmp_path):
         runtime = _runtime(tmp_path)
         server = _server(runtime)
         result = _call(
             server,
-            "ghdag_enqueue_task",
-            {"engine": "shell", "command": "echo hi"},
+            "ghdag_enqueue",
+            {"steps": [{"engine": "shell", "command": "echo hi"}]},
         )
         assert result["isError"] is False
-        line = json.loads(runtime.state._exec_jsonl_path.read_text().strip())
-        assert line["uuid"] == result["structuredContent"]["uuid"]
-        assert line["engine"] == "shell"
+        uuids = result["structuredContent"]["uuids"]
+        assert "step-1" in uuids
+        lines = [
+            ln
+            for ln in runtime.state._exec_jsonl_path.read_text().splitlines()
+            if ln.strip()
+        ]
+        assert len(lines) == 1
+        line = json.loads(lines[0])
+        assert line["uuid"] == uuids["step-1"]
 
-    def test_claude_text_only_has_no_danger_flag(self, tmp_path):
+    def test_llm_safe_default(self, tmp_path):
         runtime = _runtime(tmp_path)
         server = _server(runtime)
         result = _call(
             server,
-            "ghdag_enqueue_task",
+            "ghdag_enqueue",
             {
-                "engine": "claude",
-                "prompt": "say hi",
-                "model": "claude-sonnet-4-6",
+                "steps": [
+                    {
+                        "engine": "claude",
+                        "prompt": "say hi",
+                        "model": "claude-sonnet-4-6",
+                    }
+                ],
             },
         )
         assert result["isError"] is False
@@ -106,57 +130,12 @@ class TestEnqueueTask:
         assert "--dangerously-skip-permissions" not in " ".join(cmd)
         assert line["annotations"]["safe_default_preset"] == "text_only"
 
-    def test_unknown_dependency_uuid(self, tmp_path):
+    def test_sibling_dependency_mapping(self, tmp_path):
         runtime = _runtime(tmp_path)
         server = _server(runtime)
         result = _call(
             server,
-            "ghdag_enqueue_task",
-            {
-                "engine": "claude",
-                "prompt": "x",
-                "depends": ["00000000-0000-0000-0000-000000000000"],
-            },
-        )
-        assert result["isError"] is True
-        assert result["structuredContent"]["code"] == "DEPENDENCY_UUID_UNKNOWN"
-        assert result["content"][0]["text"].startswith(
-            "error[DEPENDENCY_UUID_UNKNOWN]:"
-        )
-
-    def test_unknown_engine(self, tmp_path):
-        runtime = _runtime(tmp_path)
-        server = _server(runtime)
-        result = _call(
-            server,
-            "ghdag_enqueue_task",
-            {"engine": "nope", "prompt": "x"},
-        )
-        assert result["isError"] is True
-        assert result["structuredContent"]["code"] == "ENGINE_UNKNOWN"
-
-    @pytest.mark.parametrize(
-        "arguments",
-        [
-            {"engine": "shell", "prompt": "x", "command": "echo x"},
-            {"engine": "claude"},
-        ],
-    )
-    def test_invalid_argument_shapes(self, tmp_path, arguments):
-        runtime = _runtime(tmp_path)
-        server = _server(runtime)
-        result = _call(server, "ghdag_enqueue_task", arguments)
-        assert result["isError"] is True
-        assert result["structuredContent"]["code"] == "MCP_ARGUMENT_INVALID"
-
-
-class TestEnqueueDag:
-    def test_two_step_depends(self, tmp_path):
-        runtime = _runtime(tmp_path)
-        server = _server(runtime)
-        result = _call(
-            server,
-            "ghdag_enqueue_dag",
+            "ghdag_enqueue",
             {
                 "steps": [
                     {"id": "a", "engine": "shell", "command": "echo a"},
@@ -171,7 +150,6 @@ class TestEnqueueDag:
         )
         assert result["isError"] is False
         uuids = result["structuredContent"]["uuids"]
-        assert "a" in uuids and "b" in uuids
         lines = [
             json.loads(ln)
             for ln in runtime.state._exec_jsonl_path.read_text().splitlines()
@@ -179,6 +157,38 @@ class TestEnqueueDag:
         ]
         b_line = next(row for row in lines if row["uuid"] == uuids["b"])
         assert b_line["depends"] == [uuids["a"]]
+
+    def test_unknown_sibling_is_atomic(self, tmp_path):
+        runtime = _runtime(tmp_path)
+        server = _server(runtime)
+        result = _call(
+            server,
+            "ghdag_enqueue",
+            {
+                "steps": [
+                    {
+                        "id": "b",
+                        "engine": "shell",
+                        "command": "echo b",
+                        "depends": ["zzz"],
+                    },
+                ]
+            },
+        )
+        assert result["isError"] is True
+        assert result["structuredContent"]["code"] == "STEP_DEPENDENCY_UNKNOWN"
+        assert runtime.state._exec_jsonl_path.read_text() == ""
+
+    def test_unknown_engine(self, tmp_path):
+        runtime = _runtime(tmp_path)
+        server = _server(runtime)
+        result = _call(
+            server,
+            "ghdag_enqueue",
+            {"steps": [{"engine": "nope", "prompt": "x"}]},
+        )
+        assert result["isError"] is True
+        assert result["structuredContent"]["code"] == "ENGINE_UNKNOWN"
 
     @pytest.mark.parametrize(
         "step",
@@ -191,7 +201,7 @@ class TestEnqueueDag:
         runtime = _runtime(tmp_path)
         result = _call(
             _server(runtime),
-            "ghdag_enqueue_dag",
+            "ghdag_enqueue",
             {"steps": [step]},
         )
         assert result["isError"] is True
@@ -202,7 +212,7 @@ class TestEnqueueDag:
         runtime = _runtime(tmp_path)
         result = _call(
             _server(runtime),
-            "ghdag_enqueue_dag",
+            "ghdag_enqueue",
             {
                 "steps": [
                     {"id": "a", "engine": "shell", "command": "echo first"},
@@ -215,21 +225,31 @@ class TestEnqueueDag:
         assert runtime.state._exec_jsonl_path.read_text() == ""
 
 
-class TestGetStatus:
+class TestStatus:
+    def test_pending_status(self, tmp_path):
+        runtime = _runtime(tmp_path)
+        server = _server(runtime)
+        enq = _call(
+            server,
+            "ghdag_enqueue",
+            {"steps": [{"engine": "shell", "command": "echo x"}]},
+        )
+        uid = enq["structuredContent"]["uuids"]["step-1"]
+        st = _call(server, "ghdag_status", {"uuids": [uid]})
+        assert st["structuredContent"]["tasks"][0]["status"] == "pending"
+
     def test_pending_then_engine_error(self, tmp_path):
         runtime = _runtime(tmp_path)
         server = _server(runtime)
         enq = _call(
             server,
-            "ghdag_enqueue_task",
-            {"engine": "shell", "command": "echo x"},
+            "ghdag_enqueue",
+            {"steps": [{"engine": "shell", "command": "echo x"}]},
         )
-        uid = enq["structuredContent"]["uuid"]
-        st = _call(server, "ghdag_get_status", {"uuids": [uid]})
-        assert st["structuredContent"]["tasks"][0]["status"] == "pending"
+        uid = enq["structuredContent"]["uuids"]["step-1"]
         mark_done(runtime.done_dir, uid, DONE_ENGINE_ERROR)
-        st2 = _call(server, "ghdag_get_status", {"uuids": [uid]})
-        task = st2["structuredContent"]["tasks"][0]
+        st = _call(server, "ghdag_status", {"uuids": [uid]})
+        task = st["structuredContent"]["tasks"][0]
         assert task["status"] == "failed"
         assert task["failure_class"] == "ENGINE_ERROR"
         assert task["cause"] == "transient"
@@ -239,20 +259,8 @@ class TestGetStatus:
         server = _server(runtime)
         result = _call(
             server,
-            "ghdag_get_status",
+            "ghdag_status",
             {"uuids": ["x"], "issue": 1, "handler": "h", "workflow": "w"},
         )
         assert result["isError"] is True
         assert result["structuredContent"]["code"] == "MCP_ARGUMENT_INVALID"
-
-
-class TestDescribe:
-    def test_describe_payload(self, tmp_path):
-        runtime = _runtime(tmp_path)
-        server = _server(runtime)
-        result = _call(server, "ghdag_describe", {})
-        body = result["structuredContent"]
-        assert set(body["engines"]) == set(ENGINE_SPECS)
-        assert "claude-sonnet-4-6" in body["engines"]["claude"]["models"]
-        assert body["permissions"] == sorted(PRESETS)
-        assert body["schemas"] == list(SCHEMA_NAMES)

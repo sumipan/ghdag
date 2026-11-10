@@ -179,6 +179,7 @@ Every leaf subcommand accepts `--json` (`dest="output_json"`). With `--json`, su
 | `ghdag validate` | Validate every workflow YAML file in a directory |
 | `ghdag schema list` | List bundled JSON Schema names |
 | `ghdag schema show` | Print one bundled JSON Schema |
+| `ghdag mcp` | Run stdio MCP server (`ghdag_enqueue`, `ghdag_status` tools) |
 
 ### Arguments and defaults
 
@@ -204,6 +205,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 | `quota resume` | `engine`; `--state-path PATH` (as above) |
 | `quota status` | `--state-path PATH` (as above); `--exec-path PATH` (`jobs/exec.jsonl`); `--done-dir PATH` (`jobs/done`) |
 | `validate` | `workflows_dir` |
+| `mcp` | `--repo-root PATH` (`.`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--state-dir PATH` (same default pattern as `watch` when `exec-jsonl` lives under `jobs/`) |
 
 ### Behavior notes
 
@@ -486,6 +488,32 @@ GitHub Issues / labels   (or LocalForge when GHDAG_FORGE=local)
 ```
 
 Import-linter contracts in `pyproject.toml` enforce the layering: the intake and execution towers do not import each other, `ghdag.core` depends on no other ghdag package, `io` / `files` / `llm` do not import orchestration code, and the quota layer does not depend on orchestration.
+
+### MCP server (`ghdag mcp`)
+
+A third process can enqueue and inspect the same queue over newline-delimited JSON-RPC 2.0 on stdio (protocol version `2025-06-18`). It uses the intake tower only: every enqueue goes through `LLMPipelineAPI.submit`, not a parallel writer.
+
+| MCP tool | Input | Output (`structuredContent`) |
+|---|---|---|
+| `ghdag_enqueue` | `steps` (1–20 items; each needs `engine` and `command` or `prompt`; optional `id`, default `step-<n>`) | `{"uuids": {<step id>: <uuid>}}` |
+| `ghdag_status` | `uuids` (1–100) **or** `issue` + `handler` + `workflow` | `{"tasks": [...]}` with `pending` / `running` / `success` / `failed`, or Issue DAG snapshot |
+
+`tools/call` success sets `isError: false` and puts the payload in `structuredContent`. Domain failures (`ConfigError` and subclasses) return `isError: true` with `structuredContent` shaped like `GhdagError.to_dict()` and a one-line `content[].text` prefix `error[<CODE>]: …`. Unknown tool names return JSON-RPC `error.code == -32602`.
+
+Engine and permission choices appear in `tools/list` input schemas (`steps[].engine` / `steps[].permission` enums). Default models: omit `steps[].model` and run `ghdag llm --list-models` locally.
+
+Register in Claude Code (example):
+
+```json
+{
+  "mcpServers": {
+    "ghdag": {
+      "command": "ghdag",
+      "args": ["mcp", "--repo-root", "/path/to/repo"]
+    }
+  }
+}
+```
 
 | File | Written by | Read by | Contents |
 |---|---|---|---|
@@ -1021,6 +1049,7 @@ Additional error `code` values without a dedicated exception type:
 | Code | Exception class | Exit | Raised when |
 |---|---|---|---|
 | `SCHEMA_UNKNOWN` | `ConfigError` | 3 | `ghdag schema show` with an unknown schema name |
+| `MCP_ARGUMENT_INVALID` | `ConfigError` | 3 | MCP `tools/call` with unknown keys, invalid types, or conflicting shapes |
 | `WORKFLOWS_DIR_NOT_FOUND` | `CliUsageError` | 2 | `ghdag validate` when `workflows_dir` does not exist |
 
 | Exception | Parent(s) | Code | Exit | Defined in | Raised when |
@@ -1112,7 +1141,7 @@ Any other content is the task's non-zero exit code.
 ## Not in Scope
 
 - Not a hosted CI service: ghdag runs where you start it and does not use GitHub Actions runners.
-- Not an LLM SDK: engines are invoked through their CLIs (`claude`, `cursor-agent`, `codex`, `gemini`); ghdag does not call model HTTP APIs.
+- Not an LLM SDK: engines are invoked through their CLIs (`claude`, `cursor-agent`, `codex`, `gemini`); ghdag does not call model HTTP APIs. The MCP server is started by a host CLI but does not add an HTTP model API either.
 - Not a distributed scheduler: one runner per queue directory, coordinated through local files and `fcntl` locks.
 - Not a general git client: `ghdag.vcs` commits only owned path prefixes and never resolves conflicts for you.
 - No host-specific agents, personas or chat integrations; hosts compose ghdag's intake and DAG primitives.

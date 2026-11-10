@@ -1,4 +1,4 @@
-"""MCP server JSON-RPC behavior (#6297)."""
+"""MCP server JSON-RPC behavior."""
 
 from __future__ import annotations
 
@@ -14,12 +14,12 @@ def _tools_listing() -> MagicMock:
     tools = MagicMock()
     tools.list_tools.return_value = [
         {
-            "name": "ghdag_describe",
+            "name": "ghdag_enqueue",
             "description": "d",
             "inputSchema": {"type": "object", "additionalProperties": False},
         }
     ]
-    tools.call_tool.return_value = {"version": "0.0.0"}
+    tools.call_tool.return_value = {"uuids": {}}
     return tools
 
 
@@ -82,14 +82,14 @@ class TestNotificationsAndErrors:
         assert line["error"]["code"] == -32700
 
 
-class TestToolsCall:
+class TestTools:
     def test_ghdag_error_surfaces_as_is_error(self):
         tools = MagicMock()
         tools.list_tools.return_value = []
         tools.call_tool.side_effect = ConfigError(
             "bad",
-            code="DEPENDENCY_UUID_UNKNOWN",
-            hint="enqueue the dependency first or drop it",
+            code="STEP_DEPENDENCY_UNKNOWN",
+            hint="defined step ids: []",
         )
         server = McpServer(tools)
         resp = server.handle(
@@ -97,15 +97,15 @@ class TestToolsCall:
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "tools/call",
-                "params": {"name": "ghdag_enqueue_task", "arguments": {}},
+                "params": {"name": "ghdag_enqueue", "arguments": {}},
             }
         )
         assert resp is not None
         result = resp["result"]
         assert result["isError"] is True
-        assert result["structuredContent"]["code"] == "DEPENDENCY_UUID_UNKNOWN"
+        assert result["structuredContent"]["code"] == "STEP_DEPENDENCY_UNKNOWN"
         assert result["content"][0]["text"].startswith(
-            "error[DEPENDENCY_UUID_UNKNOWN]:"
+            "error[STEP_DEPENDENCY_UNKNOWN]:"
         )
 
     def test_tools_list_names(self):
@@ -114,4 +114,27 @@ class TestToolsCall:
         resp = server.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/list"})
         assert resp is not None
         names = {t["name"] for t in resp["result"]["tools"]}
-        assert names == {"ghdag_describe"}
+        assert names == {"ghdag_enqueue"}
+
+    def test_old_tool_names_are_invalid_params(self):
+        tools = MagicMock()
+        tools.list_tools.return_value = []
+        tools.call_tool.side_effect = KeyError("unknown")
+        server = McpServer(tools)
+        old_names = (
+            "ghdag_enqueue_task",
+            "ghdag_enqueue_dag",
+            "ghdag_get_status",
+            "ghdag_describe",
+        )
+        for name in old_names:
+            resp = server.handle(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "tools/call",
+                    "params": {"name": name, "arguments": {}},
+                }
+            )
+            assert resp is not None
+            assert resp["error"]["code"] == -32602, name
