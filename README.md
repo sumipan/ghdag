@@ -489,6 +489,20 @@ GitHub Issues / labels   (or LocalForge when GHDAG_FORGE=local)
 
 Import-linter contracts in `pyproject.toml` enforce the layering: the intake and execution towers do not import each other, `ghdag.core` depends on no other ghdag package, `io` / `files` / `llm` do not import orchestration code, and the quota layer does not depend on orchestration.
 
+| File | Written by | Read by | Contents |
+|---|---|---|---|
+| `jobs/exec.jsonl` | `LLMPipelineAPI.submit`, `submit_order`, `DagEngine.append_task` | `DagEngine` | One JSON task record per line (see [exec.jsonl task fields](#execjsonl-task-fields)) |
+| `done/<uuid>` | `DagEngine` / `TaskLauncher` | dispatcher, `ghdag status`, `ghdag dag recover`, Web UI | Done marker (see [Done markers](#done-markers)) |
+| `running/<uuid>.json` | `TaskLauncher` at launch | `ghdag dag cancel`, `ghdag status --running`, Web UI, restart adoption | `pgid`, `started_at`; optional `interrupted_at`, `interrupted_reruns`. Removed when the task exits |
+| `cancel/<uuid>` | `ghdag dag cancel`, Web UI `POST /api/stop` | `DagEngine` | Empty marker requesting cancellation |
+| `events/<uuid>.jsonl` | `TaskLauncher` stream drain | Web UI `progress` | Raw engine stream events (claude / cursor / codex tasks with `result_path`) |
+| `.sessions/` | `TaskLauncher` | `resume_from` steps | Per-task engine session IDs |
+| `quota-gate.json` | `QuotaGate`, `ghdag quota` | Launch admission | `engines`, `draining_engines`, `running_tasks` |
+| `jobs/audit.jsonl` | `AuditHooks`, `ghdag.io.audit`, `ghdag.vcs` sinks | `ghdag audit-query`, Web UI dashboard | Audit events (rotated by size) |
+| `jobs/latency_span.jsonl` | `ghdag.audit.emit_span` | External tracing tools | One latency span per line |
+
+`done/`, `running/`, `cancel/`, `events/`, `.sessions/` and `quota-gate.json` live under `jobs/` by default and under `$GHDAG_STATE_DIR` when it is set; `exec.jsonl` and `audit.jsonl` always stay in `jobs/`.
+
 ### MCP server (`ghdag mcp`)
 
 A third process can enqueue and inspect the same queue over newline-delimited JSON-RPC 2.0 on stdio (protocol version `2025-06-18`). It uses the intake tower only: every enqueue goes through `LLMPipelineAPI.submit`, not a parallel writer.
@@ -514,20 +528,6 @@ Register in Claude Code (example):
   }
 }
 ```
-
-| File | Written by | Read by | Contents |
-|---|---|---|---|
-| `jobs/exec.jsonl` | `LLMPipelineAPI.submit`, `submit_order`, `DagEngine.append_task` | `DagEngine` | One JSON task record per line (see [exec.jsonl task fields](#execjsonl-task-fields)) |
-| `done/<uuid>` | `DagEngine` / `TaskLauncher` | dispatcher, `ghdag status`, `ghdag dag recover`, Web UI | Done marker (see [Done markers](#done-markers)) |
-| `running/<uuid>.json` | `TaskLauncher` at launch | `ghdag dag cancel`, `ghdag status --running`, Web UI, restart adoption | `pgid`, `started_at`; optional `interrupted_at`, `interrupted_reruns`. Removed when the task exits |
-| `cancel/<uuid>` | `ghdag dag cancel`, Web UI `POST /api/stop` | `DagEngine` | Empty marker requesting cancellation |
-| `events/<uuid>.jsonl` | `TaskLauncher` stream drain | Web UI `progress` | Raw engine stream events (claude / cursor / codex tasks with `result_path`) |
-| `.sessions/` | `TaskLauncher` | `resume_from` steps | Per-task engine session IDs |
-| `quota-gate.json` | `QuotaGate`, `ghdag quota` | Launch admission | `engines`, `draining_engines`, `running_tasks` |
-| `jobs/audit.jsonl` | `AuditHooks`, `ghdag.io.audit`, `ghdag.vcs` sinks | `ghdag audit-query`, Web UI dashboard | Audit events (rotated by size) |
-| `jobs/latency_span.jsonl` | `ghdag.audit.emit_span` | External tracing tools | One latency span per line |
-
-`done/`, `running/`, `cancel/`, `events/`, `.sessions/` and `quota-gate.json` live under `jobs/` by default and under `$GHDAG_STATE_DIR` when it is set; `exec.jsonl` and `audit.jsonl` always stay in `jobs/`.
 
 ### DAG runner lifecycle
 

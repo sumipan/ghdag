@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 from ghdag.core.exceptions import ConfigError
 from ghdag.mcp.server import SUPPORTED_PROTOCOL_VERSION, McpServer
+from ghdag.mcp.tools import McpToolRegistry
 
 
 def _tools_listing() -> MagicMock:
@@ -117,10 +118,7 @@ class TestTools:
         assert names == {"ghdag_enqueue"}
 
     def test_old_tool_names_are_invalid_params(self):
-        tools = MagicMock()
-        tools.list_tools.return_value = []
-        tools.call_tool.side_effect = KeyError("unknown")
-        server = McpServer(tools)
+        server = McpServer(McpToolRegistry(MagicMock()))
         old_names = (
             "ghdag_enqueue_task",
             "ghdag_enqueue_dag",

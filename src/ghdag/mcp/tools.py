@@ -333,7 +333,9 @@ class McpToolRegistry:
                 raise self._mcp_invalid(f"step ids must be unique: {step_id!r}")
             step_ids.add(step_id)
             engine = raw.get("engine")
-            if not isinstance(engine, str) or engine not in ENGINE_SPECS:
+            if not isinstance(engine, str):
+                raise self._mcp_invalid("engine must be a string")
+            if engine not in ENGINE_SPECS:
                 available = sorted(ENGINE_SPECS)
                 raise ConfigError(
                     f"Unknown engine: {engine!r}",
@@ -359,7 +361,9 @@ class McpToolRegistry:
             if not isinstance(depends, list) or not all(isinstance(d, str) for d in depends):
                 raise self._mcp_invalid("depends must be an array of step id strings")
             permission = raw.get("permission")
-            if permission is not None and permission not in PRESETS:
+            if permission is not None and (
+                not isinstance(permission, str) or permission not in PRESETS
+            ):
                 raise self._mcp_invalid(f"permission must be one of {sorted(PRESETS)}")
             model = raw.get("model")
             if model is not None and not isinstance(model, str):

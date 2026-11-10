@@ -195,9 +195,11 @@ class TestEnqueue:
         [
             {"id": "a", "engine": "shell", "command": "echo a", "prompt": 1},
             {"id": "a", "engine": "claude", "prompt": "x", "command": []},
+            {"id": "a", "engine": 1, "command": "echo a"},
+            {"id": "a", "engine": "shell", "command": "echo a", "permission": []},
         ],
     )
-    def test_rejects_non_string_bodies(self, tmp_path, step):
+    def test_rejects_non_string_fields(self, tmp_path, step):
         runtime = _runtime(tmp_path)
         result = _call(
             _server(runtime),
