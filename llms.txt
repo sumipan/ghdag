@@ -27,6 +27,12 @@ Bundled JSON Schemas ship under `src/ghdag/schemas/`. Fetch any schema with `ghd
 - [CHANGELOG.md](CHANGELOG.md)
 - [TESTING.md](TESTING.md)
 
+## Tools
+
+- `ghdag_enqueue` — enqueue 1–20 steps atomically via `LLMPipelineAPI.submit` (optional step `id`, else `step-<n>`).
+- `ghdag_status` — task status by UUID list or Issue handler workflow (`pending` / `running` / `success` / `failed` vocabulary).
+- Start MCP stdio server: `ghdag mcp --repo-root <path>` (optional `--exec-jsonl jobs/exec.jsonl`, `--state-dir`).
+
 ## CLI
 
 - Validate every workflow YAML in a directory: `ghdag validate <workflows_dir>`
