@@ -1,6 +1,4 @@
 # One repo-relative path per line; shrink only when wall-clock usage is removed.
-tests/cleanup/conftest.py
-tests/cleanup/test_sweep.py
 tests/dag/conftest.py
 tests/dag/test_audit_hooks_tz.py
 tests/dag/test_dag_recover.py
