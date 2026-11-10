@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghdag"
-version = "0.120.2"
+version = "0.121.0"
 description = "Generic DAG execution engine extracted from graph-watcher"
 readme = "README.md"
 license = "MIT"
@@ -177,4 +177,15 @@ forbidden_modules = [
   "ghdag.workflow",
   "ghdag.cli",
   "ghdag.ui",
+]
+
+[[tool.importlinter.contracts]]
+name = "MCP must not import dag, workflow, ui, or cli"
+type = "forbidden"
+source_modules = ["ghdag.mcp"]
+forbidden_modules = [
+  "ghdag.dag",
+  "ghdag.workflow",
+  "ghdag.ui",
+  "ghdag.cli",
 ]
