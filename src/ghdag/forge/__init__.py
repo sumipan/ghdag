@@ -5,8 +5,19 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from ghdag.core.exceptions import GitHubApiError
 from ghdag.core.ports.forge import ForgePort
-from ghdag.github_client import GitHubClient
+from ghdag.forge.local import LocalForge
+from ghdag.github_client import DEFAULT_REPO, GitHubClient
+
+__all__ = [
+    "DEFAULT_REPO",
+    "ForgePort",
+    "GitHubApiError",
+    "GitHubClient",
+    "LocalForge",
+    "get_forge",
+]
 
 
 def get_forge(repo: str | None = None) -> ForgePort:
@@ -20,11 +31,7 @@ def get_forge(repo: str | None = None) -> ForgePort:
         root = os.environ.get("GHDAG_FORGE_ROOT")
         if not root:
             raise ValueError("GHDAG_FORGE=local requires GHDAG_FORGE_ROOT")
-        from ghdag.forge.local import LocalForge
-
         return LocalForge(Path(root))
     if kind != "github":
-        raise ValueError(
-            f"Unknown GHDAG_FORGE={kind!r}; expected 'github' or 'local'"
-        )
+        raise ValueError(f"Unknown GHDAG_FORGE={kind!r}; expected 'github' or 'local'")
     return GitHubClient(repo=repo)
