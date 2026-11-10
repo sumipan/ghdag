@@ -180,6 +180,40 @@ class TestEnqueueDag:
         b_line = next(row for row in lines if row["uuid"] == uuids["b"])
         assert b_line["depends"] == [uuids["a"]]
 
+    @pytest.mark.parametrize(
+        "step",
+        [
+            {"id": "a", "engine": "shell", "command": "echo a", "prompt": 1},
+            {"id": "a", "engine": "claude", "prompt": "x", "command": []},
+        ],
+    )
+    def test_rejects_non_string_bodies(self, tmp_path, step):
+        runtime = _runtime(tmp_path)
+        result = _call(
+            _server(runtime),
+            "ghdag_enqueue_dag",
+            {"steps": [step]},
+        )
+        assert result["isError"] is True
+        assert result["structuredContent"]["code"] == "MCP_ARGUMENT_INVALID"
+        assert runtime.state._exec_jsonl_path.read_text() == ""
+
+    def test_rejects_duplicate_step_ids(self, tmp_path):
+        runtime = _runtime(tmp_path)
+        result = _call(
+            _server(runtime),
+            "ghdag_enqueue_dag",
+            {
+                "steps": [
+                    {"id": "a", "engine": "shell", "command": "echo first"},
+                    {"id": "a", "engine": "shell", "command": "echo second"},
+                ]
+            },
+        )
+        assert result["isError"] is True
+        assert result["structuredContent"]["code"] == "MCP_ARGUMENT_INVALID"
+        assert runtime.state._exec_jsonl_path.read_text() == ""
+
 
 class TestGetStatus:
     def test_pending_then_engine_error(self, tmp_path):

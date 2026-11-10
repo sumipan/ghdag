@@ -484,6 +484,7 @@ class McpToolRegistry:
             raise self._mcp_invalid("steps must contain between 1 and 20 items")
 
         step_configs: list[StepConfig] = []
+        step_ids: set[str] = set()
         for raw in steps_raw:
             if not isinstance(raw, dict):
                 raise self._mcp_invalid("each step must be an object")
@@ -491,6 +492,9 @@ class McpToolRegistry:
             step_id = raw.get("id")
             if not isinstance(step_id, str) or not step_id:
                 raise self._mcp_invalid("each step needs a non-empty id string")
+            if step_id in step_ids:
+                raise self._mcp_invalid(f"step ids must be unique: {step_id!r}")
+            step_ids.add(step_id)
             engine = raw.get("engine")
             if not isinstance(engine, str) or engine not in ENGINE_SPECS:
                 available = sorted(ENGINE_SPECS)
@@ -501,10 +505,14 @@ class McpToolRegistry:
                 )
             prompt = raw.get("prompt")
             command = raw.get("command")
+            if prompt is not None and not isinstance(prompt, str):
+                raise self._mcp_invalid("prompt must be a string")
+            if command is not None and not isinstance(command, str):
+                raise self._mcp_invalid("command must be a string")
             body = self._validate_engine_body(
                 engine,
-                prompt=prompt if isinstance(prompt, str) else None,
-                command=command if isinstance(command, str) else None,
+                prompt=prompt,
+                command=command,
             )
             if engine != "shell":
                 body = body.replace("$", "$$")
