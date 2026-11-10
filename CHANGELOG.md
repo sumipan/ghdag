@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.120.2 - 2026-11-10
+
 ### Changed
 
 - ``tests/cleanup``: replace wall-clock ``time.time()`` with a fixed clock (sumipan/nexus#6190).
