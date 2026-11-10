@@ -68,6 +68,7 @@ def _build_parser() -> argparse.ArgumentParser:
     from ghdag.cli.commands.cancel import cmd_cancel
     from ghdag.cli.commands.cleanup import cmd_cleanup
     from ghdag.cli.commands.llm import cmd_llm
+    from ghdag.cli.commands.mcp import cmd_mcp
     from ghdag.cli.commands.quota import (
         cmd_quota_clear,
         cmd_quota_drain,
@@ -198,6 +199,32 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Maximum number of tasks to display (default: 30)",
     )
     ui_parser.set_defaults(func=cmd_ui)
+
+    # ghdag mcp
+    mcp_parser = subparsers.add_parser(
+        "mcp",
+        help="Run MCP JSON-RPC server on stdio",
+    )
+    mcp_parser.add_argument(
+        "--repo-root",
+        default=".",
+        metavar="PATH",
+        help="Repository root (default: .)",
+    )
+    mcp_parser.add_argument(
+        "--exec-jsonl",
+        default="jobs/exec.jsonl",
+        metavar="PATH",
+        help="Path to exec.jsonl (default: <repo-root>/jobs/exec.jsonl)",
+    )
+    mcp_parser.add_argument(
+        "--state-dir",
+        default=None,
+        metavar="PATH",
+        help="Pipeline state directory (default: derived like ghdag watch)",
+    )
+    mcp_parser.set_defaults(func=cmd_mcp)
+    _add_json_flag(mcp_parser)
 
     # ghdag llm
     from ghdag.llm.capabilities import PRESETS

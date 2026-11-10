@@ -178,3 +178,14 @@ forbidden_modules = [
   "ghdag.cli",
   "ghdag.ui",
 ]
+
+[[tool.importlinter.contracts]]
+name = "MCP は実行塔・workflow・ui・cli に依存しない"
+type = "forbidden"
+source_modules = ["ghdag.mcp"]
+forbidden_modules = [
+  "ghdag.dag",
+  "ghdag.workflow",
+  "ghdag.ui",
+  "ghdag.cli",
+]
