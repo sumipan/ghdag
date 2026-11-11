@@ -134,11 +134,11 @@ from tempfile import mkdtemp
 
 from ghdag.vcs import LocalGitSink
 
-sink = LocalGitSink.create(Path(mkdtemp()), owner="host", allow_prefixes=["diary/"])
-(sink.repo_root / "diary").mkdir()
-(sink.repo_root / "diary" / "2026-10-04.md").write_text("entry\n", encoding="utf-8")
+sink = LocalGitSink.create(Path(mkdtemp()), owner="host", allow_prefixes=["notes/"])
+(sink.repo_root / "notes").mkdir()
+(sink.repo_root / "notes" / "2026-10-04.md").write_text("entry\n", encoding="utf-8")
 
-result = sink.commit(["diary/2026-10-04.md"], "host(diary): 2026-10-04")
+result = sink.commit(["notes/2026-10-04.md"], "host(notes): 2026-10-04")
 print(result.committed, result.pushed, result.sha)
 ```
 
@@ -917,11 +917,11 @@ Read by `ghdag.vcs.get_sink(name)` when `ENABLE_GIT` is on. Each `sinks.<name>` 
 ```yaml
 audit_path: jobs/audit.jsonl        # optional; defaults to GHDAG_AUDIT_PATH
 sinks:
-  diary:
+  notes:
     repo_root: /path/to/repo
     branch: main
     owner: host
-    allow_prefixes: ["diary/"]
+    allow_prefixes: ["notes/"]
     push: "debounce:60"             # immediate | debounce:<sec> | manual
 ```
 

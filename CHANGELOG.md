@@ -683,143 +683,143 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `QuotaGate.defer(task_uuid, *, engine, after=None, role_engines=None, reason=None)` public API, `brake_state_path` secondary gate, `DONE_DEFERRED` (`PIPELINE_STATUS: DEFERRED`) handling in the task launcher and DAG engine requeue on release (sumipan/nexus#3515)
 
-- `ghdag.audit.span` 公開 API（`emit_span` / `make_span_id`）。`jobs/latency_span.jsonl` の 1 行 1 span 形式と `LATENCY_SPAN_PATH` を nexus `tools.measurement.latency_span` と同一のまま監査 envelope へ移設（nexus #3323 / #3301 サブ8）
+- `ghdag.audit.span` public API (`emit_span` / `make_span_id`). Moves the one-span-per-line `jobs/latency_span.jsonl` format and `LATENCY_SPAN_PATH` into the audit envelope unchanged from the host implementation (nexus #3323 / #3301 sub 8)
 
 ### Changed
 
-- cursor stream-json の result / `call_text` 本文を、v0.60.0（nexus #3255）の「最後の tool_call 以降の完結 assistant 本文だけ」から、各 assistant ターンを `"\n\n"` で連結するターン再構成へ変更（nexus #3260）。events JSONL は生のまま維持する
+- cursor stream-json result / `call_text` body: changed from "only the final complete assistant text after the last tool_call" (v0.60.0, nexus #3255) to turn reconstruction that joins each assistant turn with `"\n\n"` (nexus #3260). The events JSONL stays raw
 
 ### Fixed
 
-- DAG timeout / cancel がタスクごとの process group（`start_new_session=True`）へ SIGTERM→SIGKILL するよう変更し、shell leader 終了後に残る子孫プロセスの孤児化を防ぐ（nexus #3257）
+- DAG timeout / cancel now sends SIGTERM→SIGKILL to the per-task process group (`start_new_session=True`), preventing descendant processes from being orphaned after the shell leader exits (nexus #3257)
 
 ### Added
 
-- `ghdag.status` 公開 API（`issue_status` / `running_tasks` と `IssueStatus` / `StepStatus` / `RunningTask`）および CLI `ghdag status --issue N --json` / `ghdag status --running --json`（nexus #3084）
-- `FailureClass.INTERACTIVE_PROMPT`（cause `permanent` / retry_policy `forbidden`）を追加。claude / cursor / codex が質問で終了した出力を検出し、DAG は再試行せず done マーカー `INTERACTIVE_PROMPT` と質問文（先頭 200 文字）を audit に記録する（nexus #3046）
+- `ghdag.status` public API (`issue_status` / `running_tasks` with `IssueStatus` / `StepStatus` / `RunningTask`) and CLI `ghdag status --issue N --json` / `ghdag status --running --json` (nexus #3084)
+- Add `FailureClass.INTERACTIVE_PROMPT` (cause `permanent` / retry_policy `forbidden`). Detects output where claude / cursor / codex ended with a question; the DAG does not retry and records the done marker `INTERACTIVE_PROMPT` and the question text (first 200 characters) in audit (nexus #3046)
 
 ### Changed
 
-- `FailureClass.INTERACTIVE_PROMPT` の判定を exit ≠ 0 のときのみに限定し、成功応答末尾の `?` / `？` では permanent 失敗にしない。`looks_like_question` は全角 `？` も検出する。`TaskMetrics.failure_class_reason` に判定元末尾行を記録する（nexus #3175）
-- Engine isolation is opt-in via `GHDAG_ENGINE_ISOLATION=1`（nexus #3174）: claude gets `--disable-slash-commands` only when isolation is on; codex `call()` sets `CODEX_HOME=/var/tmp/ghdag-dag-codex/` only when isolation is on **and** `auth.json` exists there (otherwise skips with a stderr warning). Default (env unset) restores pre-v0.50.0 behavior so nexus skills / `~/.codex` auth work. cursor still reports `supports_capability(..., "isolation") == False`
-- `pipeline.status.task_status` / `dag.recover.plan_recover` の状態判定を `ghdag.status._step_status_core` / `_read_step_records` に一本化（nexus #3084）
+- Limit `FailureClass.INTERACTIVE_PROMPT` detection to exit ≠ 0, so a trailing `?` (ASCII or full-width) on a successful response is no longer a permanent failure. `looks_like_question` also detects the full-width question mark. `TaskMetrics.failure_class_reason` records the trailing line that triggered the detection (nexus #3175)
+- Engine isolation is opt-in via `GHDAG_ENGINE_ISOLATION=1` (nexus #3174): claude gets `--disable-slash-commands` only when isolation is on; codex `call()` sets `CODEX_HOME=/var/tmp/ghdag-dag-codex/` only when isolation is on **and** `auth.json` exists there (otherwise skips with a stderr warning). Default (env unset) restores pre-v0.50.0 behavior so host skills / `~/.codex` auth work. cursor still reports `supports_capability(..., "isolation") == False`
+- Unify state resolution in `pipeline.status.task_status` / `dag.recover.plan_recover` on `ghdag.status._step_status_core` / `_read_step_records` (nexus #3084)
 - Dead-code cleanup, mypy `ignore_errors` removal, env accessors consolidation, and CHANGELOG versioning for 0.35.0–0.48.0 (nexus #3039)
 
 ## 0.48.0 — 2026-09-10
 
 ### Added
 
-- `GitHubClient.list_all_issues(state)` / `get_last_rate_limit()` と `GitHubIssuePort` への同メソッド追加。dispatcher の一括ポーリングとヘッダベース rate limit 観測に使用（nexus #3070）
-- ETag / rate-limit retry / batch poll / rate observe のテストを追加（nexus #3070）
+- `GitHubClient.list_all_issues(state)` / `get_last_rate_limit()`, and the same methods on `GitHubIssuePort`. Used for dispatcher batch polling and header-based rate limit observation (nexus #3070)
+- Add tests for ETag / rate-limit retry / batch poll / rate observe (nexus #3070)
 
 ### Changed
 
-- `WorkflowDispatcher.poll_once` / `_poll_nonterminal_closed` を `list_all_issues` 一括取得 + ローカルラベルフィルタに変更。`_observe_rate_limit` は応答ヘッダ由来の `get_last_rate_limit()` を使い、remaining 低下時は `polling_interval` を一時的に 2 倍にする（nexus #3070）
-- `GitHubClient._request` に ETag 条件付きリクエストと rate limit 403 の待機→1 回リトライを追加。`RateLimitError` に `reset_at` を追加（nexus #3070）
+- `WorkflowDispatcher.poll_once` / `_poll_nonterminal_closed` now fetch in bulk via `list_all_issues` and filter labels locally. `_observe_rate_limit` uses `get_last_rate_limit()` from response headers and temporarily doubles `polling_interval` when remaining is low (nexus #3070)
+- `GitHubClient._request` gains ETag conditional requests and wait-then-retry-once on rate limit 403. `RateLimitError` gains `reset_at` (nexus #3070)
 
 ## 0.47.0 — 2026-09-10
 
 ### Changed
 
-- `workflow/loader.py` が `label_namespace` / `transitions` / `reset_label` / `roles` / `step.role` を読むようにし、`load_workflows()` で `validate_workflow_roles` を呼ぶ（nexus #3029）
-- `LLMPipelineAPI.submit()` に公開引数 `order_builder` / `workflow_roles` を追加。dispatcher の一時差し替えをやめ `submit(order_builder=...)` 経由に統一（nexus #3029）
-- `dag.audit_hooks` の import を `ghdag.io.audit` へ切替（nexus #3029）
+- `workflow/loader.py` now reads `label_namespace` / `transitions` / `reset_label` / `roles` / `step.role`, and `load_workflows()` calls `validate_workflow_roles` (nexus #3029)
+- Add public arguments `order_builder` / `workflow_roles` to `LLMPipelineAPI.submit()`. The dispatcher no longer swaps the builder temporarily and goes through `submit(order_builder=...)` (nexus #3029)
+- Switch the `dag.audit_hooks` import to `ghdag.io.audit` (nexus #3029)
 
 ## 0.46.0 — 2026-09-10
 
 ### Fixed
 
-- `ghdag dag recover` が `jobs/running/*.json` から実行中 uuid を集め `running_uuids` に渡し、実行中ステップの done を消さない（nexus #3035）
-- resume フォールバックを `Popen` 非同期再起動へ変更し、メインループをブロックしない（nexus #3035）
-- `PipelineState` が `QuotaGate` を生成時に 1 度だけ作り再利用する（nexus #3035）
-- `md_read` に write と同じパストラバーサル検査を追加（nexus #3035）
-- UI の running 判定を `jobs/running/<uuid>.json` 基準に変更（nexus #3035）
-- `llm_pipeline` の到達不能 `default_permission_applied` 分岐を削除（nexus #3035）
+- `ghdag dag recover` collects running uuids from `jobs/running/*.json` and passes them as `running_uuids`, so the done markers of running steps are not removed (nexus #3035)
+- Resume fallback now restarts asynchronously via `Popen` and no longer blocks the main loop (nexus #3035)
+- `PipelineState` creates `QuotaGate` once at construction and reuses it (nexus #3035)
+- `md_read` gains the same path traversal check as write (nexus #3035)
+- UI running detection is now based on `jobs/running/<uuid>.json` (nexus #3035)
+- Remove the unreachable `default_permission_applied` branch in `llm_pipeline` (nexus #3035)
 
 ## 0.45.0 — 2026-09-10
 
 ### Changed
 
-- **Breaking:** audit / metrics タイムスタンプの既定タイムゾーンを JST から UTC に変更。`now_ts()` / `epoch_ts()` に集約し、`DagConfig.timezone`（既定 `"UTC"`）を参照する（nexus #3028）
+- **Breaking:** the default time zone for audit / metrics timestamps changes from JST to UTC. Consolidated into `now_ts()` / `epoch_ts()`, which read `DagConfig.timezone` (default `"UTC"`) (nexus #3028)
 
 ### Added
 
-- `DagConfig.audit_path` を追加し、`ghdag run` の既定 audit パスを `config.audit_path` に統一（nexus #3028）
-- UI `aggregate_task_status` が `task_dep_failed` / `task_cancelled` を終了イベントとしてカウントする（nexus #3028）
+- Add `DagConfig.audit_path` and make `config.audit_path` the default audit path for `ghdag run` (nexus #3028)
+- UI `aggregate_task_status` counts `task_dep_failed` / `task_cancelled` as terminal events (nexus #3028)
 
 ## 0.44.0 — 2026-09-10
 
 ### Added
 
-- `ghdag.llm.engines.supports_capability(engine, capability)` を公開（nexus #3034）
+- Publish `ghdag.llm.engines.supports_capability(engine, capability)` (nexus #3034)
 
 ### Fixed
 
-- `GitHubClient._paginate` が `Link: rel="next"` を辿るよう修正（nexus #3034）
-- `GitHubClient()` / `_resolve_repo(None)` が `GITHUB_REPOSITORIES` 未設定時に `GhdagError` を送出する（nexus #3034）
-- codex usage limit を `QUOTA_EXHAUSTED` として分類し `resume_at` を抽出（nexus #2959 / #2961）
+- `GitHubClient._paginate` now follows `Link: rel="next"` (nexus #3034)
+- `GitHubClient()` / `_resolve_repo(None)` raise `GhdagError` when `GITHUB_REPOSITORIES` is unset (nexus #3034)
+- Classify the codex usage limit as `QUOTA_EXHAUSTED` and extract `resume_at` (nexus #2959 / #2961)
 
 ## 0.43.0 — 2026-09-09
 
 ### Added
 
-- DAG cursor / codex 進捗イベント: `stream` capability 解禁、`CursorStreamAdapter` / `CodexJsonlAdapter`、`stream_fallback` 注釈（#2967）
+- DAG cursor / codex progress events: enable the `stream` capability, `CursorStreamAdapter` / `CodexJsonlAdapter`, `stream_fallback` annotation (#2967)
 
 ## 0.42.0 — 2026-09-09
 
 ### Added
 
-- DAG claude 進捗イベント: `--output-format stream-json --verbose`、`jobs/events/<uuid>.jsonl`、`on_task_progress`、UI SSE `progress`（#2966）
+- DAG claude progress events: `--output-format stream-json --verbose`, `jobs/events/<uuid>.jsonl`, `on_task_progress`, UI SSE `progress` (#2966)
 
 ## 0.41.0 — 2026-09-09
 
 ### Fixed
 
-- cursor / codex の resume セッション記録を実 CLI 出力に合わせて修正。DAG 経路の cursor に `--output-format json` を付与（#2968）
+- Fix cursor / codex resume session recording to match actual CLI output. Add `--output-format json` to cursor on the DAG path (#2968)
 
 ## 0.40.0 — 2026-09-09
 
 ### Added
 
-- DAG タスクキャンセル: `jobs/running/` / `jobs/cancel/`、`DONE_CANCELLED`、`on_task_cancelled`、`ghdag dag cancel`。UI `/api/stop` を制御ファイル経路へ置換
-- `pr_get` に `headRefName` を追加
+- DAG task cancellation: `jobs/running/` / `jobs/cancel/`, `DONE_CANCELLED`, `on_task_cancelled`, `ghdag dag cancel`. UI `/api/stop` now goes through the control-file path
+- Add `headRefName` to `pr_get`
 
 ## 0.39.1 — 2026-09-06
 
 ### Added
 
 - `pr edit` / `pr_update`
-- `nonterminal_closed`（`reopen_issue` Port）
+- `nonterminal_closed` (`reopen_issue` Port)
 - `annotations.timeout_sec`
 
 ## 0.39.0 — 2026-09-05
 
 ### Added
 
-- recover / redispatch（`dag/recover.py`、`ghdag dag recover`、`trigger --redispatch`、世代付き冪等キー）
+- recover / redispatch (`dag/recover.py`, `ghdag dag recover`, `trigger --redispatch`, generation-tagged idempotency keys)
 
 ## 0.38.0 — 2026-09-05
 
 ### Added
 
-- role-based admission（`StepConfig.role`、`QuotaGate.admit/begin_run(role, role_engines)`、`clear(ttl_seconds)`）
+- role-based admission (`StepConfig.role`, `QuotaGate.admit/begin_run(role, role_engines)`, `clear(ttl_seconds)`)
 
 ## 0.37.0 — 2026-09-05
 
 ### Added
 
-- `ghdag.gates` entry-point によるゲート登録（`load_entry_point_gates` / `get_gate`）
-- `StepConfig.render`（`"frozen"` | `"live"`）と `python -m ghdag.workflow.render`
+- Gate registration via the `ghdag.gates` entry point (`load_entry_point_gates` / `get_gate`)
+- `StepConfig.render` (`"frozen"` | `"live"`) and `python -m ghdag.workflow.render`
 
 ## 0.36.0 — 2026-09-04
 
 ### Changed
 
-- **EngineSpec 正規化**（`InputMode.STDIN/ARGV`、`cat_pipe` 廃止、全 STDIN エンジンが `< order`）
+- **EngineSpec normalization** (`InputMode.STDIN/ARGV`, `cat_pipe` removed, all STDIN engines use `< order`)
 
 ### Added
 
-- セッション圧縮（`llm/compaction.py`、`GHDAG_SESSION_COMPACTION`）
+- Session compaction (`llm/compaction.py`, `GHDAG_SESSION_COMPACTION`)
 - `issue edit --title`
 
 ## 0.35.0 — 2026-09-03
@@ -833,447 +833,447 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- 失敗分類ロジックを `llm/adapters/failure_classification.py` に共通化
+- Consolidate failure classification logic in `llm/adapters/failure_classification.py`
 
 ## 0.34.5 — 2026-09-02
 
 ### Added
 
-- stderr 失敗分類（`classify_failure`）、`FailureClass.AUTH / ENGINE_ENVIRONMENT_ERROR`、`EngineQuarantine`（300 秒）
+- stderr failure classification (`classify_failure`), `FailureClass.AUTH / ENGINE_ENVIRONMENT_ERROR`, `EngineQuarantine` (300 seconds)
 
 ## 0.34.4 — 2026-09-02
 
 ### Added
 
-- quota drain / resume、running registry（`begin_run` / `finish_run` / `wait_idle`）、`ghdag quota drain/resume`
+- quota drain / resume, running registry (`begin_run` / `finish_run` / `wait_idle`), `ghdag quota drain/resume`
 
 ## 0.34.3 — 2026-09-02
 
 ### Added
 
-- `ghdag.quota.QuotaGate` を追加し、`jobs/quota-gate.json` に engine 単位の paused/available 状態と deferred task を排他・atomic write で永続化できるようにした
-- `ghdag quota report|clear|status` を追加し、host 側から quota 状態を JSON 入出力で通知・参照できるようにした
-- `tests/test_quota.py` / `tests/dag/test_engine_quota.py` を追加し、stale 通知無視・release・runtime defer・enqueue defer を固定化した
-- `QuotaGate` に `drain/resume/begin_run/finish_run/wait_idle` を追加し、draining と running registry を公開 API として扱えるようにした
+- Add `ghdag.quota.QuotaGate`, which persists per-engine paused/available state and deferred tasks to `jobs/quota-gate.json` with exclusive, atomic writes
+- Add `ghdag quota report|clear|status` so the host can report and read quota state as JSON
+- Add `tests/test_quota.py` / `tests/dag/test_engine_quota.py`, pinning stale-notification ignore, release, runtime defer, and enqueue defer
+- Add `drain/resume/begin_run/finish_run/wait_idle` to `QuotaGate`, exposing draining and the running registry as public API
 
 ### Changed
 
-- `dag/engine.py` / `dag/task_launcher.py` / `io/exec_jsonl.py` に quota admission を接続し、paused engine の launch 抑止と runtime quota exhausted の deferred 化（failure hook 非発火）を実装した
-- `core/ports/output.py` / `llm/adapters/{claude_json,codex}.py` を拡張し、`EngineErrorKind.QUOTA_EXHAUSTED` と timezone-aware `resume_at` 抽出を追加した
-- `pipeline/status.py` / `ui/monitor.py` で `DEFERRED` 表示を追加し、状態優先順位を done → running → deferred → pending deps → runnable に更新した
-- `TaskLauncher` の launch admission を `begin_run()` へ置換し、`Popen` 失敗時の running reservation rollback と subprocess 終了直後の `finish_run()` を保証した
-- `ghdag quota drain|resume|status` を拡張し、engine ごとの `queued/deferred/running/idle` と `unresolved` を JSON 集計できるようにした
+- Wire quota admission into `dag/engine.py` / `dag/task_launcher.py` / `io/exec_jsonl.py`: paused engines are not launched, and runtime quota exhaustion is deferred (the failure hook does not fire)
+- Extend `core/ports/output.py` / `llm/adapters/{claude_json,codex}.py` with `EngineErrorKind.QUOTA_EXHAUSTED` and timezone-aware `resume_at` extraction
+- Add `DEFERRED` display to `pipeline/status.py` / `ui/monitor.py` and update state precedence to done → running → deferred → pending deps → runnable
+- Replace launch admission in `TaskLauncher` with `begin_run()`, guaranteeing rollback of the running reservation on `Popen` failure and `finish_run()` right after the subprocess exits
+- Extend `ghdag quota drain|resume|status` to aggregate per-engine `queued/deferred/running/idle` and `unresolved` as JSON
 
 
 ## 0.34.2 — 2026-09-02
 
 ### Added
 
-- `ghdag.llm.session` を追加し、`SessionStore`（record/lookup/invalidate/gc）と `SessionRecord` を公開。`.sessions/{key}.json` の新形式（`created_at` 付き）と旧形式（`created_at` なし・mtime フォールバック）の双方を読めるようにした
-- `tests/llm/test_session.py` を追加し、record/lookup、有効期限判定、invalidate、gc、旧形式互換を固定化した
+- Add `ghdag.llm.session`, publishing `SessionStore` (record/lookup/invalidate/gc) and `SessionRecord`. Reads both the new `.sessions/{key}.json` format (with `created_at`) and the old format (no `created_at`, mtime fallback)
+- Add `tests/llm/test_session.py`, pinning record/lookup, expiry checks, invalidate, gc, and old-format compatibility
 
 ### Changed
 
-- `llm/engines.py`: `call()`/`call_text()` に `resume_session_id` を追加し、対応エンジン（claude/cursor/codex）へ `--resume` 相当を注入。成功時に adapter で抽出した `session_id` を `LLMResult.session_id` として保持し、`TextResult.session_id` から参照可能にした
-- `core/command.py`: `build_llm_cmd()` に `resume_session_id` を追加。codex は `exec -` から `exec resume <session_id>` へ切り替える
-- `dag/task_launcher.py`: `ghdag.io.sessions` 直呼びを廃止し、`SessionStore` 経由で `resume_from` 解決と session 記録を行うように統一した
+- `llm/engines.py`: add `resume_session_id` to `call()`/`call_text()` and inject the `--resume` equivalent for supported engines (claude/cursor/codex). On success, the `session_id` extracted by the adapter is kept as `LLMResult.session_id` and is available via `TextResult.session_id`
+- `core/command.py`: add `resume_session_id` to `build_llm_cmd()`. codex switches from `exec -` to `exec resume <session_id>`
+- `dag/task_launcher.py`: stop calling `ghdag.io.sessions` directly; `resume_from` resolution and session recording now go through `SessionStore`
 
 
 ## 0.34.1 — 2026-09-02
 
 ### Added
 
-- `EngineOutputAdapter` に `extract_error()` を追加し、`EngineError`（`kind`/`message`/`retryable`）を標準化。`CodexAdapter`/`ClaudeJsonAdapter` で capacity・rate-limit 等のエラーイベント抽出を実装し、`CursorAdapter`/passthrough は no-op で後方互換を維持
-- `tests/llm/adapters/test_error_extraction.py` を追加し、codex/claude/cursor/passthrough のエラー抽出仕様を固定化
+- Add `extract_error()` to `EngineOutputAdapter`, standardizing `EngineError` (`kind`/`message`/`retryable`). `CodexAdapter`/`ClaudeJsonAdapter` extract error events such as capacity and rate-limit; `CursorAdapter`/passthrough are no-ops for backward compatibility
+- Add `tests/llm/adapters/test_error_extraction.py`, pinning error extraction for codex/claude/cursor/passthrough
 
 ### Changed
 
-- `llm/engines.py`: `TextResult.error` を追加し、`call_text()` が `extract_error()` 検出時に `success=False`・`body=""` で即返却するよう変更。エラー JSONL の本文混入を防止
-- `dag/task_launcher.py`: adapter のエラー検出を統合し、`retryable=True` は `ENGINE_ERROR`、それ以外は `ENGINE_ERROR_FINAL` を done に記録。`result_path` には生 JSONL ではなく `ENGINE_ERROR (...)` 要約を書き込むよう変更
-- `pipeline/status.py` / `pipeline/wait.py` / `ui/monitor.py`: `ENGINE_ERROR` / `ENGINE_ERROR_FINAL` の状態解釈と表示ラベルを追加
-- `core/models/metrics.py`: `FailureClass.ENGINE_ERROR` を追加し、エンジンエラー失敗の分類を明示化
+- `llm/engines.py`: add `TextResult.error`; `call_text()` returns immediately with `success=False` and `body=""` when `extract_error()` detects an error, so error JSONL no longer leaks into the body
+- `dag/task_launcher.py`: integrate adapter error detection; `retryable=True` records `ENGINE_ERROR` in done, anything else records `ENGINE_ERROR_FINAL`. `result_path` now receives an `ENGINE_ERROR (...)` summary instead of raw JSONL
+- `pipeline/status.py` / `pipeline/wait.py` / `ui/monitor.py`: add state interpretation and display labels for `ENGINE_ERROR` / `ENGINE_ERROR_FINAL`
+- `core/models/metrics.py`: add `FailureClass.ENGINE_ERROR` to classify engine-error failures explicitly
 
 
 ## 0.34.0 — 2026-09-02
 
 ### Added
 
-- `ghdag watch --pause-file PATH` を追加。指定ファイルが存在する間は `WorkflowDispatcher` が `poll_once` / `dispatch` と GitHub API 呼び出しを停止し、ファイル削除後に次ループから自動再開する
-- pause 開始/解除時に `jobs/audit.jsonl` へ `dispatcher_pause` / `dispatcher_resume` イベントを記録し、pause 理由（ファイル本文）は 500 文字で切り捨てる
-- `tests/workflow/test_dispatcher_pause.py` を追加し、pause 中スキップ・解除後再開・audit の重複抑止・reason 文字数上限を固定化
+- Add `ghdag watch --pause-file PATH`. While the file exists, `WorkflowDispatcher` stops `poll_once` / `dispatch` and GitHub API calls, and resumes automatically from the next loop once the file is removed
+- Record `dispatcher_pause` / `dispatcher_resume` events in `jobs/audit.jsonl` when a pause starts or ends; the pause reason (file contents) is truncated to 500 characters
+- Add `tests/workflow/test_dispatcher_pause.py`, pinning skip while paused, resume after release, audit de-duplication, and the reason length limit
 
 
 ## 0.33.0 — 2026-09-01
 
 ### Added
 
-- `StepConfig.resume_from` と `io/sessions.py` を追加し、`resume_from_uuid` で指定した親タスクの session を `.sessions/<uuid>.json` に保存・参照できるようにした
-- `EngineOutputAdapter.extract_session_id()` を追加し、`ClaudeJsonAdapter`/`CursorAdapter`/`CodexAdapter` が engine 固有の session ID（`session_id` / `chat_id`）を抽出できるようにした
-- `tests/workflow/test_resume_from.py` / `tests/io/test_sessions.py` / `tests/llm/adapters/test_session_id_extraction.py` を追加し、`resume_from` 検証・コマンド生成・session 保存/抽出を固定化した
+- Add `StepConfig.resume_from` and `io/sessions.py`, so the session of the parent task given by `resume_from_uuid` is saved to and read from `.sessions/<uuid>.json`
+- Add `EngineOutputAdapter.extract_session_id()`, so `ClaudeJsonAdapter`/`CursorAdapter`/`CodexAdapter` extract the engine-specific session ID (`session_id` / `chat_id`)
+- Add `tests/workflow/test_resume_from.py` / `tests/io/test_sessions.py` / `tests/llm/adapters/test_session_id_extraction.py`, pinning `resume_from` validation, command generation, and session save/extraction
 
 ### Changed
 
-- `pipeline/llm_pipeline.py`: `resume_from` が推移的祖先を指すことを検証し、submit 時に `annotations.resume_from_uuid` を記録するようにした
-- `core/command.py`: `render_exec_command(..., resume_session_id=...)` を追加し、`claude`/`cursor` は `--resume` 注入、`codex` は `exec resume <session_id>` に切り替えるようにした（`gemini`/`shell` は従来どおり）
-- `dag/task_launcher.py`: launch 時に session ストアを参照して resume 注入し、session エラー時は自動で非 resume コマンドへフォールバックするようにした
+- `pipeline/llm_pipeline.py`: validate that `resume_from` points to a transitive ancestor and record `annotations.resume_from_uuid` at submit
+- `core/command.py`: add `render_exec_command(..., resume_session_id=...)`; `claude`/`cursor` get `--resume` injected and `codex` switches to `exec resume <session_id>` (`gemini`/`shell` are unchanged)
+- `dag/task_launcher.py`: look up the session store at launch to inject resume, and fall back automatically to the non-resume command on a session error
 
 
 ## 0.32.1 — 2026-09-01
 
 ### Changed
 
-- done マーカー / queue 走査 I/O を `ghdag.io.done` / `ghdag.io.queue` に一元化。`dag.state` / `pipeline.result` は re-export shim、`pipeline.status` / `wait` / `ui.monitor` / `maintenance` は委譲（公開 API は互換維持）(nexus Issue #2675)
+- Centralize done marker / queue scanning I/O in `ghdag.io.done` / `ghdag.io.queue`. `dag.state` / `pipeline.result` are re-export shims; `pipeline.status` / `wait` / `ui.monitor` / `maintenance` delegate (public API stays compatible) (nexus #2675)
 
 ### Added
 
-- `tests/io/test_done.py` / `tests/io/test_queue.py`: done/queue I/O 一元化・shim 互換の固定テスト
+- `tests/io/test_done.py` / `tests/io/test_queue.py`: tests pinning the done/queue I/O centralization and shim compatibility
 
 
 ## 0.32.0 — 2026-08-31
 
 ### Changed
 
-- exec.jsonl の読み書きを `ghdag.io.exec_jsonl` に一元化。`dag` / `pipeline` / `cleanup` / `maintenance` / `ui` は委譲ファサード化（公開 API は互換維持、`parse_jsonl` は shim）(nexus Issue #2674)
-- `ExecJsonlPruner.prune` 相当の rewrite に `fcntl.LOCK_EX` を追加（従来はロック未取得）
-- `FanOutManager.append_task_fn` シグネチャを `(line, parent_uuid)` に拡張（**breaking** for direct FanOutManager constructors）
+- Centralize exec.jsonl reads and writes in `ghdag.io.exec_jsonl`. `dag` / `pipeline` / `cleanup` / `maintenance` / `ui` become delegating facades (public API stays compatible, `parse_jsonl` is a shim) (nexus #2674)
+- Add `fcntl.LOCK_EX` to the rewrite equivalent to `ExecJsonlPruner.prune` (previously no lock was taken)
+- Extend the `FanOutManager.append_task_fn` signature to `(line, parent_uuid)` (**breaking** for direct FanOutManager constructors)
 
 ### Added
 
-- fan-out 子タスク追記時に `audit.jsonl` へ `source="fanout"`, `correlation_id=親uuid` の enqueue レコードを書く（全 enqueue 経路の監査漏れ是正）
-- `tests/io/test_exec_jsonl.py` / `tests/test_fanout_audit.py`: 一元化・ロック・fan-out 監査の固定テスト
+- When appending fan-out child tasks, write an enqueue record with `source="fanout"`, `correlation_id=<parent uuid>` to `audit.jsonl` (closes the audit gap so every enqueue path is recorded)
+- `tests/io/test_exec_jsonl.py` / `tests/test_fanout_audit.py`: tests pinning the centralization, locking, and fan-out audit
 
 
 ## 0.31.1 — 2026-08-31
 
 ### Changed
 
-- audit I/O を `ghdag.io.audit` / `ghdag.io.audit_query` / `ghdag.io._rotate` に一元化。`pipeline.audit`・`pipeline.audit_query`・`files._rotate` は re-export shim で互換維持 (nexus Issue #2673)
-- `files/writer.py` / `files/promote.py` / `tool/audit.py` の JSON append + rotate を `io.audit.append_audit_record` 経由に統一
-- `ui/dashboard.py` / `ui/server.py` / `pipeline/__init__.py` の read API import を `io.audit_query` に移行
+- Centralize audit I/O in `ghdag.io.audit` / `ghdag.io.audit_query` / `ghdag.io._rotate`. `pipeline.audit`, `pipeline.audit_query`, and `files._rotate` stay compatible as re-export shims (nexus #2673)
+- Route JSON append + rotate in `files/writer.py` / `files/promote.py` / `tool/audit.py` through `io.audit.append_audit_record`
+- Move read API imports in `ui/dashboard.py` / `ui/server.py` / `pipeline/__init__.py` to `io.audit_query`
 
 ### Added
 
-- `tests/io/test_audit.py` / `tests/io/test_audit_query.py`: 一元化・互換 import・rotate 正規配置の固定テスト
+- `tests/io/test_audit.py` / `tests/io/test_audit_query.py`: tests pinning the centralization, compatible imports, and canonical rotate location
 
 
 ## 0.31.0 — 2026-08-31
 
 ### Changed
 
-- `core/command.py` 新設: `render_exec_command` / flag builders / `build_llm_cmd` / `EngineAdapter` / `get_adapter` を集約。`pipeline ⇄ workflow` と `llm.spec ⇄ llm.engines` の循環を解消。旧パスは re-export shim で互換維持 (nexus Issue #2656)
-- `dag/audit_hooks.py`: `AuditHooks` の正規配置先へ移動。`pipeline/hooks.py` は shim（import-linter で許容）(nexus Issue #2656)
-- `llm/engines.py`: モジュールレベル `ENGINE_MODELS = load_engine_models()` を廃止し `get_engine_models()` 遅延初期化へ移行（**breaking**: `ENGINE_MODELS` 変数は公開しない）(nexus Issue #2656)
-- `tool/audit.py`: `_maybe_rotate` の import 先を `files._rotate` に変更（`tool → pipeline` 逆流解消）(nexus Issue #2656)
-- `pyproject.toml`: import-linter 契約 5 本を追加（core 独立・二塔分離・io/ops 隔離）(nexus Issue #2656)
-- `maintenance.py`: ops 契約のため `dag.state` 依存をローカルヘルパーに置換（挙動不変）(nexus Issue #2656)
+- New `core/command.py`: consolidates `render_exec_command` / flag builders / `build_llm_cmd` / `EngineAdapter` / `get_adapter`. Removes the `pipeline ⇄ workflow` and `llm.spec ⇄ llm.engines` cycles. Old paths stay compatible as re-export shims (nexus #2656)
+- `dag/audit_hooks.py`: `AuditHooks` moves to its canonical location. `pipeline/hooks.py` is a shim (allowed by import-linter) (nexus #2656)
+- `llm/engines.py`: remove module-level `ENGINE_MODELS = load_engine_models()` in favor of lazy initialization via `get_engine_models()` (**breaking**: the `ENGINE_MODELS` variable is no longer public) (nexus #2656)
+- `tool/audit.py`: import `_maybe_rotate` from `files._rotate` (removes the `tool → pipeline` reverse dependency) (nexus #2656)
+- `pyproject.toml`: add five import-linter contracts (core independence, two-tower separation, io/ops isolation) (nexus #2656)
+- `maintenance.py`: replace the `dag.state` dependency with a local helper for the ops contract (no behavior change) (nexus #2656)
 
 ### Added
 
-- `tests/core/test_purity.py` / `test_no_import_side_effects.py`: core 純度ガードと import 副作用固定テスト (nexus Issue #2656)
-- `ghdag.io`: Step 2 用プレースホルダパッケージ（import-linter 契約参照用）(nexus Issue #2656)
+- `tests/core/test_purity.py` / `test_no_import_side_effects.py`: core purity guard and tests pinning the absence of import side effects (nexus #2656)
+- `ghdag.io`: placeholder package for Step 2 (referenced by import-linter contracts) (nexus #2656)
 
 ## 0.30.16 — 2026-08-31
 
 ### Changed
 
-- `core/` パッケージ新設: 型・Protocol・エンジン宣言データ（exceptions, models, ports, capabilities, engine_spec, parsers）を集約し、`llm ⇄ metrics` の循環依存を解消。旧 import パスは re-export shim で完全互換を維持 (nexus Issue #2655)
-- `metrics/parsers.py`: `parse_token_count` / `parse_token_usage_json` を `core/parsers.py` に移動（shim 経由で旧パスも維持）
-- `llm/adapters/*`: `TokenUsage` / parser 関数の import を `core` 経由に変更
+- New `core/` package: consolidates types, Protocols, and engine declaration data (exceptions, models, ports, capabilities, engine_spec, parsers) and removes the `llm ⇄ metrics` circular dependency. Old import paths stay fully compatible as re-export shims (nexus #2655)
+- `metrics/parsers.py`: move `parse_token_count` / `parse_token_usage_json` to `core/parsers.py` (the old path still works through a shim)
+- `llm/adapters/*`: import `TokenUsage` / parser functions via `core`
 
 ## 0.30.15 — 2026-08-31
 
 ### Changed
 
-- `core/vocabulary.py`: done マーカー・`QUEUE_FILE_RE`・`PIPELINE_STATUS_RE`・fan-out 規約を共有語彙として集約。cleanup / pipeline / dag の直書き文字列を定数参照に置換（挙動不変）。mypy overrides から `ghdag.workflow.github` を削除 (nexus Issue #2654)
+- `core/vocabulary.py`: consolidates done markers, `QUEUE_FILE_RE`, `PIPELINE_STATUS_RE`, and fan-out conventions as shared vocabulary. Hard-coded strings in cleanup / pipeline / dag are replaced with constant references (no behavior change). Remove `ghdag.workflow.github` from mypy overrides (nexus #2654)
 
 ## 0.30.14 — 2026-08-30
 
 ### Added
 
-- `llm/capabilities.py`: `LLMCapabilities.sandbox` フィールド（`"off"` / `"readonly"`、既定 `"off"`）と `READONLY_OBSERVE` プリセット（`sandbox="readonly"` + 編集系 `disallowed_tools`）を追加。観測系 Bash を許可しつつ非破壊をサンドボックスで担保する (nexus Issue #2640)
-- `llm/engines.py`: claude / codex / cursor のフラグビルダーが `sandbox="readonly"` をそれぞれ `--permission-mode plan` / `-s read-only` / `--sandbox enabled` にマッピング。bypass 系との同時指定は `ValueError`。gemini / shell は未対応として `NotImplementedError` (nexus Issue #2640)
+- `llm/capabilities.py`: add the `LLMCapabilities.sandbox` field (`"off"` / `"readonly"`, default `"off"`) and the `READONLY_OBSERVE` preset (`sandbox="readonly"` + `disallowed_tools` for editing tools). Allows observational Bash while the sandbox guarantees non-destructiveness (nexus #2640)
+- `llm/engines.py`: the claude / codex / cursor flag builders map `sandbox="readonly"` to `--permission-mode plan` / `-s read-only` / `--sandbox enabled` respectively. Combining it with a bypass mode raises `ValueError`. gemini / shell are unsupported and raise `NotImplementedError` (nexus #2640)
 
 ### Fixed
 
-- `llm/engines.py`: cursor の `disallowed_tools` を `_IGNORED_CAPABILITIES` に宣言し、CLI フラグが無いのに黙って無視されていた挙動を文書化された noop にした (nexus Issue #2640)
+- `llm/engines.py`: declare cursor's `disallowed_tools` in `_IGNORED_CAPABILITIES`, turning a silent ignore (there is no CLI flag) into a documented noop (nexus #2640)
 
 ## 0.30.13 — 2026-08-30
 
 ### Fixed
 
-- `llm/engines.py`: `_build_codex_flags` が `capabilities.permission_mode` を見ておらず、`permission="dangerous_full_access"` を指定しても codex の exec.jsonl コマンドに `--dangerously-bypass-approvals-and-sandbox` が付かなかった問題を修正。`render_exec_command` は builder を `dangerously_skip_permissions=False` 固定で呼ぶため、permission_mode を見ないとフラグが落ち、codex が workspace-write サンドボックス（writable = cwd + /tmp のみ、network 制限）のまま起動して cwd 外へ書き込めなかった。`_build_cursor_flags` と同じ判定に揃えた (nexus Issue #2627, PR #223)
-- `github_client.py`: `_request` に一過性障害（RemoteDisconnected / BadStatusLine / ConnectionReset 系 / URLError / 502-504）の限定再試行を追加（上限3回・exponential backoff + jitter・Retry-After 尊重）。401/403/404 等の恒久エラーは再試行しない (nexus Issue #2563, PR #222)
-- `github_client.py`: `issue_update` のラベル操作を DELETE+POST から `_converge_labels` に置換。応答喪失時は現在ラベルを再取得して残作業のみ再実行し目標状態へ収束する。DELETE 404（既に無い）は成功扱い (nexus Issue #2563, PR #222)
+- `llm/engines.py`: fix `_build_codex_flags` ignoring `capabilities.permission_mode`, so `permission="dangerous_full_access"` did not add `--dangerously-bypass-approvals-and-sandbox` to the codex exec.jsonl command. `render_exec_command` always calls the builder with `dangerously_skip_permissions=False`, so without checking permission_mode the flag was dropped and codex started in the workspace-write sandbox (writable = cwd + /tmp only, network restricted) and could not write outside cwd. Now uses the same check as `_build_cursor_flags` (nexus #2627, PR #223)
+- `github_client.py`: add bounded retries to `_request` for transient failures (RemoteDisconnected / BadStatusLine / ConnectionReset family / URLError / 502-504): at most 3 attempts, exponential backoff + jitter, Retry-After honored. Permanent errors such as 401/403/404 are not retried (nexus #2563, PR #222)
+- `github_client.py`: replace DELETE+POST label handling in `issue_update` with `_converge_labels`. When a response is lost, it re-fetches the current labels and redoes only the remaining work to converge on the target state. DELETE 404 (already absent) counts as success (nexus #2563, PR #222)
 
 ### Notes
 
-- 0.30.13 は sumipan/nexus の秘書ペルソナを codex エンジンで動かす前提の修正を含む。nexus 側は `/var/tmp/ghdag` を本バージョンに更新し、常駐プロセス（ghdag_ui / ghdag_runner / mltgnt_daemon）を再起動する必要がある
+- 0.30.13 includes a fix required to run host workflows on the codex engine. Hosts need to update their ghdag install to this version and restart long-running processes that import ghdag
 
 ## 0.30.12 — 2026-08-14
 
 ### Changed
 
-- `CHANGELOG.md`: `## 0.30.10` エントリに `### Notes` セクションを追記。`call_text` / `TextResult` が sumipan/nexus#2459 の前提 API である旨を明記 (nexus Issue #2464)
+- `CHANGELOG.md`: add a `### Notes` section to the `## 0.30.10` entry, stating that `call_text` / `TextResult` are the prerequisite API for sumipan/nexus#2459 (nexus #2464)
 
 ## 0.30.11 — 2026-08-14
 
 ### Added
 
-- `tests/llm/`: `call_text()` / `TextResult` のアダプタ固有テストを追加 (Issue #2463, PR #219)
+- `tests/llm/`: add adapter-specific tests for `call_text()` / `TextResult` (Issue #2463, PR #219)
 
 ## 0.30.10 — 2026-08-13
 
 ### Added
 
-- `llm/engines.py`: `TextResult` frozen dataclass を追加。`body`（抽出テキスト）、`success`（returncode == 0）、`raw`（LLMResult）フィールドと `stderr` / `returncode` 委譲プロパティを持つ (Issue #2462)
-- `llm/engines.py`: `call_text()` 関数を追加。`call()` と同一シグネチャで呼び出し可能な上位互換 API。engine アダプタ経由でテキスト抽出し、空の場合は `raw.stdout` にフォールバックして `TextResult` を返す (Issue #2462)
-- `llm/__init__.py`: `call_text`、`TextResult` を export 追加
-- `tests/llm/test_call_text.py`: `TextResult` と `call_text()` のユニットテスト 11 件を新規追加
+- `llm/engines.py`: add the `TextResult` frozen dataclass with `body` (extracted text), `success` (returncode == 0), and `raw` (LLMResult) fields, plus delegating `stderr` / `returncode` properties (Issue #2462)
+- `llm/engines.py`: add `call_text()`, a superset API with the same signature as `call()`. It extracts text through the engine adapter, falls back to `raw.stdout` when empty, and returns `TextResult` (Issue #2462)
+- `llm/__init__.py`: export `call_text` and `TextResult`
+- `tests/llm/test_call_text.py`: add 11 unit tests for `TextResult` and `call_text()`
 
 ### Notes
 
-- `call_text` / `TextResult` は sumipan/nexus#2459（nexus 側 call_llm 縮退）の前提 API。nexus 側は本リリース以降の ghdag を editable install した状態で `call_text` への移行を開始する。
+- `call_text` / `TextResult` are the prerequisite API for sumipan/nexus#2459. Hosts can start migrating to `call_text` from this release onward.
 
 ## 0.30.9 — 2026-08-11
 
 ### Added
 
-- `llm/spec.py`: `_dedupe_extra_args()` ヘルパを追加。`_CAPABILITY_FLAG_BUILDERS` が出力するフラグと `EngineSpec.extra_args` が重複する場合に後者を除去する。codex エンジンで `--json --skip-git-repo-check` が argv に二重展開されエラー終了する問題を修正 (PR #215)
+- `llm/spec.py`: add the `_dedupe_extra_args()` helper, which drops entries of `EngineSpec.extra_args` that duplicate flags emitted by `_CAPABILITY_FLAG_BUILDERS`. Fixes the codex engine exiting with an error because `--json --skip-git-repo-check` was expanded twice in argv (PR #215)
 
 ### Fixed
 
-- `llm/engines.py`: codex エンジンの `allowed_tools` / `disallowed_tools` capability を `_UNSUPPORTED_CAPABILITIES` に登録し、`NotImplementedError` で即死していた挙動を noop 化 (PR #215)
+- `llm/engines.py`: register the codex engine's `allowed_tools` / `disallowed_tools` capabilities in `_UNSUPPORTED_CAPABILITIES`, turning an immediate `NotImplementedError` into a noop (PR #215)
 
 ## 0.30.7 — 2026-06-24
 
 ### Fixed
 
-- `dag/task_launcher.py`: `get_output_adapter()` 配線を復旧。PR #2243 のリファクタで消失した adapter 呼び出しを再接続し、claude エンジンの stdout JSON を `adapter.extract_result_text()` 経由で変換して `result_path` に書き込む。`parse_token_count`（stderr grep）を廃止し adapter ベースの usage 抽出に統一 (Issue #2287)
-- `dag/task_launcher.py`: `TaskMetrics` 全 8 経路（TIMEOUT / REJECTED / PIPELINE_FAILED / EMPTY_RESULT / SUCCESS / FANOUT_PARSE_FAILED / PROCESS_ERROR / UNKNOWN_FAILURE）に `cost_usd` / `cache_read_tokens` / `cache_creation_tokens` を追加 (Issue #2287)
+- `dag/task_launcher.py`: restore the `get_output_adapter()` wiring. Reconnects the adapter call lost in the PR #2243 refactor, converting the claude engine's stdout JSON via `adapter.extract_result_text()` before writing it to `result_path`. Removes `parse_token_count` (stderr grep) in favor of adapter-based usage extraction (Issue #2287)
+- `dag/task_launcher.py`: add `cost_usd` / `cache_read_tokens` / `cache_creation_tokens` to all eight `TaskMetrics` paths (TIMEOUT / REJECTED / PIPELINE_FAILED / EMPTY_RESULT / SUCCESS / FANOUT_PARSE_FAILED / PROCESS_ERROR / UNKNOWN_FAILURE) (Issue #2287)
 
 ### Added
 
-- `tests/dag/test_task_launcher_adapter_wiring.py`: adapter 配線の退行検査テスト。claude JSON stdout が `result_path` に漏れないこと・メトリクスが非 null になることを契約として固定 (Issue #2287)
+- `tests/dag/test_task_launcher_adapter_wiring.py`: regression test for the adapter wiring. Pins as a contract that claude JSON stdout does not leak into `result_path` and that metrics are non-null (Issue #2287)
 
 ## 0.30.6 — 2026-06-23
 
 ### Fixed
 
-- `dag/parser.py`, `pipeline/llm_pipeline.py`, `pipeline/state.py`: コード内コメント・docstring の `exec.md` 参照を `exec.jsonl` に修正 (Issue #2245)
+- `dag/parser.py`, `pipeline/llm_pipeline.py`, `pipeline/state.py`: fix `exec.md` references in code comments and docstrings to `exec.jsonl` (Issue #2245)
 
 ## 0.30.5 — 2026-06-23
 
 ### Changed
 
-- `cleanup/`: `cleanup.py` を `cleanup/` パッケージに変換。モジュール分割で保守性向上 (Issue #2244)
-- `dag/`: `TaskLauncher`・`FanOutManager`・`CircuitBreakerPolicy` を `DagEngine` から分離抽出 (Issue #2243)
+- `cleanup/`: convert `cleanup.py` into the `cleanup/` package, split into modules for maintainability (Issue #2244)
+- `dag/`: extract `TaskLauncher`, `FanOutManager`, and `CircuitBreakerPolicy` from `DagEngine` (Issue #2243)
 
 ### Fixed
 
-- `dag/task_launcher.py`: `fanout_manager` の型アノテーションを `FanOutManager` に修正 (mypy)
-- `dag/task_launcher.py`: dead code `_persist_fail_stdout` を除去
-- 複数モジュール: unused imports 除去 (ruff lint)
+- `dag/task_launcher.py`: fix the type annotation of `fanout_manager` to `FanOutManager` (mypy)
+- `dag/task_launcher.py`: remove dead code `_persist_fail_stdout`
+- Multiple modules: remove unused imports (ruff lint)
 
 ## 0.30.4 — 2026-06-23
 
 ### Added
 
-- `llm/adapters/`: `EngineOutputAdapter` Protocol と `get_output_adapter()` レジストリを新設。claude エンジンの `--output-format json` stdout から `result` テキストと `TokenUsage`（`token_count` / `cost_usd` / `cache_read_tokens` / `cache_creation_tokens`）を抽出するアダプタ層を実装 (Issue #2266)
-- `metrics/models.py`: `TaskMetrics` に `cost_usd`・`cache_read_tokens`・`cache_creation_tokens` フィールドを追加 (Issue #2266)
+- `llm/adapters/`: new `EngineOutputAdapter` Protocol and `get_output_adapter()` registry. Implements an adapter layer that extracts the `result` text and `TokenUsage` (`token_count` / `cost_usd` / `cache_read_tokens` / `cache_creation_tokens`) from the claude engine's `--output-format json` stdout (Issue #2266)
+- `metrics/models.py`: add `cost_usd`, `cache_read_tokens`, and `cache_creation_tokens` fields to `TaskMetrics` (Issue #2266)
 
 ### Fixed
 
-- `dag/_state.py`: `_remove_by_predicate` で LOCK_SH/LOCK_EX を分離していた競合（TOCTOU）を単一 LOCK_EX で修正 (Issue #2266)
-- `metrics/parsers.py`: `parse_token_usage_json` を追加し、claude JSON stdout から usage を正確に取得。従来の stderr 経路はフォールバックとして温存 (Issue #2266)
+- `dag/_state.py`: fix a race (TOCTOU) in `_remove_by_predicate` caused by separate LOCK_SH/LOCK_EX sections by using a single LOCK_EX (Issue #2266)
+- `metrics/parsers.py`: add `parse_token_usage_json` to read usage accurately from claude JSON stdout. The previous stderr path is kept as a fallback (Issue #2266)
 
 ## 0.30.3 — 2026-06-21
 
 ### Added
 
-- `dispatcher.py`: `_READY_LABEL_RE` 正規表現でハイフン・コロン両対応のラベル区切り文字を受け入れる（`research:ready` / `research-ready` 両形式を正しく `*:running` / `*-running` に遷移）(Issue #2258)
-- `state.py`: `_remove_by_predicate` ヘルパーと `remove_idempotency_for_handler(workflow, handler, issue)` — ハンドラ単位の冪等キー削除（他ハンドラの冪等記録を保持しつつ特定ハンドラのみリトライ可能）(Issue #2258)
-- `LLMPipelineAPI`: `remove_idempotency_for_handler` の委譲メソッドを追加 (Issue #2258)
+- `dispatcher.py`: the `_READY_LABEL_RE` regex accepts both hyphen and colon label separators (both `research:ready` and `research-ready` transition correctly to `*:running` / `*-running`) (Issue #2258)
+- `state.py`: `_remove_by_predicate` helper and `remove_idempotency_for_handler(workflow, handler, issue)` — per-handler idempotency key removal (retry one handler while keeping the idempotency records of the others) (Issue #2258)
+- `LLMPipelineAPI`: add a delegating method for `remove_idempotency_for_handler` (Issue #2258)
 
 ## 0.30.2 — 2026-06-14
 
 ### Changed
 
-- `README.md`: v0.30.0 実装に合わせた OSS_QUALITY §4.1 準拠の全面書き直し（state_machine / tool/ / dashboard 追加、label_state_machine 削除、Error Reference 17+7 型）(Issue #2154)
+- `README.md`: full rewrite for the v0.30.0 implementation, following OSS_QUALITY §4.1 (adds state_machine / tool/ / dashboard, removes label_state_machine, Error Reference with 17+7 types) (Issue #2154)
 
 ## 0.30.1 — 2026-06-14
 
 ### Changed
 
-- `README.md`: OSS_QUALITY.md 第4章の必須9セクション構成で全面書き直し（CLI Reference・Public API・Architecture・Configuration・Error Reference を現行実装に同期）(Issue #2144)
+- `README.md`: full rewrite using the nine required sections of OSS_QUALITY.md chapter 4 (CLI Reference, Public API, Architecture, Configuration, and Error Reference synced with the current implementation) (Issue #2144)
 
 ## 0.28.16 — 2026-06-13
 
 ### Added
 
-- `TOOL_EXIT_CODES` 定数と `ToolDef.exit_codes` フィールド: Phase D exit_code 語彙（`success` / `failure` / `retry` / `skip`）のバリデーション (Issue #2091)
-- `write_tool_fallback_audit()`: fallback chain 発動時の audit.jsonl 出力 (`event: tool.fallback`) (Issue #2091)
+- `TOOL_EXIT_CODES` constant and `ToolDef.exit_codes` field: validation of the Phase D exit_code vocabulary (`success` / `failure` / `retry` / `skip`) (Issue #2091)
+- `write_tool_fallback_audit()`: writes to audit.jsonl when a fallback chain fires (`event: tool.fallback`) (Issue #2091)
 
 ## 0.28.15 — 2026-06-13
 
 ### Added
 
-- `LLMCapabilities.stream`: `stream=True` 時に claude エンジンで `--output-format stream-json --verbose` を生成し、JSONL ストリーム出力を `_extract_stream_result()` でパース (Issue #2084)
+- `LLMCapabilities.stream`: with `stream=True`, the claude engine gets `--output-format stream-json --verbose` and the JSONL stream output is parsed by `_extract_stream_result()` (Issue #2084)
 
 ## 0.28.14 — 2026-06-13
 
 ### Added
 
-- `DagConfig.serialize_mutating`: `annotations._mutates == "true"` のタスク同士を直列化する排他制御。`max_concurrency` とは独立して機能 (issuesmith #2079)
+- `DagConfig.serialize_mutating`: mutual exclusion that serializes tasks with `annotations._mutates == "true"`. Works independently of `max_concurrency` (issuesmith #2079)
 
 ## 0.28.13 — 2026-06-13
 
 ### Added
 
-- `dashboard.py`: audit.jsonl のダッシュボード集計（タスク状態・correlation_id 別トークン消費・CB 発火頻度） (issuesmith #2083)
-- `/api/dashboard/status`, `/api/dashboard/tokens`, `/api/dashboard/cb-firing` エンドポイントを `server.py` に追加 (issuesmith #2083)
+- `dashboard.py`: dashboard aggregation over audit.jsonl (task status, token usage per correlation_id, circuit breaker firing frequency) (issuesmith #2083)
+- Add `/api/dashboard/status`, `/api/dashboard/tokens`, `/api/dashboard/cb-firing` endpoints to `server.py` (issuesmith #2083)
 
 ## 0.28.11 — 2026-06-13
 
 ### Added
 
-- `DagEngine` サーキットブレーカー: 連続タスク失敗が `max_consecutive_failures` に達するとエンジンをシャットダウン。`DagConfig` に `max_consecutive_failures` / `failure_window_sec` を追加 (issuesmith #2082)
-- `ToolDef` / `FallbackEntry` dataclass と `ToolRegistry.discover()`: ディレクトリ walk による Tool 定義の discovery、ファイル名規約 lint、多重定義検出 (issuesmith #2087)
+- `DagEngine` circuit breaker: shuts the engine down when consecutive task failures reach `max_consecutive_failures`. Adds `max_consecutive_failures` / `failure_window_sec` to `DagConfig` (issuesmith #2082)
+- `ToolDef` / `FallbackEntry` dataclasses and `ToolRegistry.discover()`: Tool definition discovery by directory walk, file naming convention lint, and duplicate definition detection (issuesmith #2087)
 
 ## 0.28.10 — 2026-06-13
 
 ### Added
 
-- `conditional_step.run_with_template()`: LLM CLI 実行の診断ログ（開始・完了・経過時間）を stderr に出力 (issuesmith #2070)
-- `engine._check_completions()`: PROCESS_ERROR / TIMEOUT 時に stdout を `{result_path}.fail` へ永続化 (issuesmith #2070)
+- `conditional_step.run_with_template()`: write diagnostic logs for LLM CLI runs (start, completion, elapsed time) to stderr (issuesmith #2070)
+- `engine._check_completions()`: persist stdout to `{result_path}.fail` on PROCESS_ERROR / TIMEOUT (issuesmith #2070)
 
 ## 0.28.7 — 2026-06-08
 
 ### Added
 
-- `detect_correlation_bursts()` / `get_correlation_top_n()`: audit.jsonl の correlation_id バースト検出ヘルパー (issuesmith #2007)
-- `WorkflowDispatcher._observe_correlation_burst()`: ポーリングループ内で correlation バーストを検出し warning ログを出力。cooldown 機構で重複抑制 (issuesmith #2007)
+- `detect_correlation_bursts()` / `get_correlation_top_n()`: helpers for detecting correlation_id bursts in audit.jsonl (issuesmith #2007)
+- `WorkflowDispatcher._observe_correlation_burst()`: detects correlation bursts inside the polling loop and logs a warning. A cooldown suppresses duplicates (issuesmith #2007)
 
 ## 0.28.2 — 2026-05-30
 
 ### Added
 
-- `StepConfig.skill_name`: ワークフローステップが呼び出すスキル名を宣言するオプションフィールド（後方互換、デフォルト `None`）
-- `typecheck_dag()`: スキル I/O 契約（`SkillIOSpec`）に基づく DAG 型検査。スキル存在・`content_type` 整合・`consumes` 充足警告を検出 (diary #1406)
+- `StepConfig.skill_name`: optional field declaring the skill a workflow step invokes (backward compatible, default `None`)
+- `typecheck_dag()`: DAG type checking based on the skill I/O contract (`SkillIOSpec`). Detects missing skills, `content_type` mismatches, and unsatisfied `consumes` warnings (#1406)
 
 ## 0.28.0 — 2026-05-29
 
 ### BREAKING
 
-- `watch` のリポジトリ解決を単数 `GITHUB_REPOSITORY` から複数 `GITHUB_REPOSITORIES`（カンマ区切り `owner/repo` リスト）へ移行。`GITHUB_REPOSITORY` は廃止 (diary #1322 関連)
+- `watch` repository resolution moves from the singular `GITHUB_REPOSITORY` to the plural `GITHUB_REPOSITORIES` (comma-separated `owner/repo` list). `GITHUB_REPOSITORY` is removed (#1322)
 
 ### Added
 
-- `create_github_clients()`: `GITHUB_REPOSITORIES` の各リポジトリに対するトークンクライアントのリストを生成（全クライアントで同一 PAT を共有）
-- `WorkflowDispatcher` が複数クライアントを受け付け、`poll_once` が全リポを横断して Issue を収集。`dispatch`・ラベル遷移・エラーコメント・rate limit 観測を Issue 取得元クライアントへルーティング
-- `WorkflowDispatcher(github_client=...)` は単一クライアントとクライアントのリストの両方を受け付ける（後方互換）
+- `create_github_clients()`: builds a list of token clients, one per repository in `GITHUB_REPOSITORIES` (all clients share the same PAT)
+- `WorkflowDispatcher` accepts multiple clients, and `poll_once` collects Issues across all repositories. `dispatch`, label transitions, error comments, and rate limit observation are routed to the client the Issue came from
+- `WorkflowDispatcher(github_client=...)` accepts both a single client and a list of clients (backward compatible)
 
 ### Notes
 
-- `gh` CLI には依存しない（トークン運用を維持）。`gh` フォールバックは追加しない
-- ワークフローのラベルは実質的に単一リポにスコープされる運用のため、複数リポで同一 Issue 番号かつ同一ワークフローの衝突（design.md ファイル名・冪等キー）は本変更の対象外
+- No dependency on the `gh` CLI (token-based operation is kept). No `gh` fallback is added
+- Workflow labels are in practice scoped to a single repository, so collisions between the same Issue number and the same workflow across repositories (design.md file name, idempotency key) are out of scope for this change
 
 ## 0.26.0 — 2026-05-28
 
 ### BREAKING
 
-- 非推奨エンジンアダプタ alias（`ClaudeAdapter` 等）を物理削除 (diary #1267)
+- Physically remove the deprecated engine adapter aliases (`ClaudeAdapter` etc.) (#1267)
 
 ### Added
 
-- CI: ruff lint、coverage 70% 閾値、import-linter レイヤ検証を追加 (diary #1266)
-- `GhdagError` 例外基底クラス導入。全カスタム例外を再親化。README に Error Reference セクション追加 (diary #1271)
-- mypy `ignore_errors = true` を 6 モジュールで解消 (diary #1272)
-- `llm.inference` audit イベント追加（`prompt_hash`・`latency_ms` フィールド） (diary #1275)
+- CI: add ruff lint, a 70% coverage threshold, and import-linter layer checks (#1266)
+- Introduce the `GhdagError` exception base class and re-parent all custom exceptions. Add an Error Reference section to the README (#1271)
+- Remove mypy `ignore_errors = true` from six modules (#1272)
+- Add the `llm.inference` audit event (`prompt_hash` and `latency_ms` fields) (#1275)
 
 ## 0.25.4 — 2026-05-26
 
 ### Fixed
 
-- `ui`: `exec.jsonl` の `idempotency_key` が null のとき `_ISSUESMITH_KEY_RE.match(None)` で TypeError がクラッシュしていた問題を修正。`_parse_exec_jsonl` で `or ""` による入り口正規化と `cmd_preview` の None ガードで二重防御 (#141)
+- `ui`: fix a TypeError crash in `_ISSUESMITH_KEY_RE.match(None)` when `idempotency_key` in `exec.jsonl` is null. Double protection: normalization at the entry with `or ""` in `_parse_exec_jsonl`, and a None guard in `cmd_preview` (#141)
 
 ## 0.25.3 — 2026-05-26
 
 ### Added
 
-- `fanout`: fanout アンカーを `---` セパレータ依存から `ghdag_fanout:` startswith 検出に変更。セパレータなしのファイルでも正しくパース可能 (diary #1214)
-- `ui`: `MonitorTask` と `cmd_preview` に `idempotency_key` サポートを追加 (diary #1203)
-- `pipeline/order`: `_check_missing_vars` が不足変数を全列挙する KeyError メッセージに改善 (diary #1193)
+- `fanout`: detect the fanout anchor by `ghdag_fanout:` startswith instead of relying on the `---` separator. Files without a separator now parse correctly (#1214)
+- `ui`: add `idempotency_key` support to `MonitorTask` and `cmd_preview` (#1203)
+- `pipeline/order`: `_check_missing_vars` now lists every missing variable in its KeyError message (#1193)
 
 ### Fixed
 
-- `order`: `_check_missing_vars` の例外型を `KeyError` → `ValueError` に変更 (#137)
-- `test`: gemini モデル検証テストを `GHDAG_LLM_MODELS` 環境変数から独立させる (#138)
+- `order`: change the exception type of `_check_missing_vars` from `KeyError` → `ValueError` (#137)
+- `test`: make the gemini model validation test independent of the `GHDAG_LLM_MODELS` environment variable (#138)
 
 ## 0.25.2 — 2026-05-25
 
 ### Added
 
-- `result_finalize` ポリシー分岐とリトライ時 result_path クリア追加 (diary #1140)
+- Add `result_finalize` policy branching and clear result_path on retry (#1140)
 
 ### Fixed
 
-- `parser`: result_path の空文字列を `None` に正規化し `IsADirectoryError` を防ぐ
-- ruff 指摘の未使用変数・import を除去
+- `parser`: normalize an empty result_path string to `None` to prevent `IsADirectoryError`
+- Remove unused variables and imports flagged by ruff
 
 ## 0.25.1 — 2026-05-25
 
 ### Added
 
-- `ghdag.dag.check_pipeline_status` を `ghdag.dag.__all__` に追加し public API として公開 (diary #1126)
+- Add `ghdag.dag.check_pipeline_status` to `ghdag.dag.__all__`, publishing it as public API (#1126)
 
 ### Docs
 
-- README を v0.25.0 向けに更新: `--permission-mode`、`--max-concurrency`、`AuditHooks`、`StepConfig.permission` フィールドの記述を追加
+- Update the README for v0.25.0: document `--permission-mode`, `--max-concurrency`, `AuditHooks`, and the `StepConfig.permission` field
 
 ## 0.24.0 — 2026-05-24
 
 ### BREAKING
 
-- `cleanup_queue()` のデフォルト動作変更: Case D（orphan）・Case F（dead entry）の自動修復を廃止。デフォルトは検出レポートのみ（stderr 出力 + `detected_orphan` / `detected_dead` カウント）。自動修復には `auto_repair=True` / `--auto-repair` フラグが必要 (diary #1057)
-- `md_append()` のデフォルト動作変更: 部分書き込み（start marker 検出）時に `AppendRecoverError` を raise。従来の RECOVERED 動作には `allow_recover=True` が必要 (diary #1057)
+- `cleanup_queue()` default behavior change: automatic repair of Case D (orphan) and Case F (dead entry) is removed. The default is a detection report only (stderr output + `detected_orphan` / `detected_dead` counts). Automatic repair requires `auto_repair=True` / the `--auto-repair` flag (#1057)
+- `md_append()` default behavior change: raises `AppendRecoverError` on a partial write (start marker detected). The previous RECOVERED behavior requires `allow_recover=True` (#1057)
 
 ### Changed
 
-- `pipeline/audit.py`: 日次ローテーション（`_should_rotate_daily`）を廃止。サイズベース（64MB 超）ローテーションのみ維持。`cat jobs/audit.jsonl` で全ログが参照可能になる (diary #1057)
-- `cleanup.py`: `CleanupResult` に `detected_orphan` / `detected_dead` フィールドを追加
-- `cli.py`: `ghdag cleanup` に `--auto-repair` フラグを追加。出力フォーマットを `auto_repair` 有無で分岐
+- `pipeline/audit.py`: remove daily rotation (`_should_rotate_daily`). Only size-based rotation (over 64MB) remains, so `cat jobs/audit.jsonl` shows the full log (#1057)
+- `cleanup.py`: add `detected_orphan` / `detected_dead` fields to `CleanupResult`
+- `cli.py`: add the `--auto-repair` flag to `ghdag cleanup`. The output format depends on whether `auto_repair` is set
 
 ## [0.22.0] - 2026-05-24 — BREAKING
 
 ### Changed
 
-- `workflow/engine.py`: 4 Adapter クラス（`ClaudeAdapter` / `GeminiAdapter` / `CursorAdapter` / `ShellAdapter`）を `_GenericAdapter(spec: EngineSpec)` に統合。`get_adapter()` は `ENGINE_SPECS` からオンデマンド生成するよう変更（diary #1056）
-- `llm/engines.py`: `_validate_capabilities_for_engine()` を `_UNSUPPORTED_CAPABILITIES` 辞書駆動に置換、`build_llm_cmd()` を `EngineSpec` フィールド + `_CAPABILITY_FLAG_BUILDERS` マップに分割（engine 文字列ハードコード分岐を解消）
-- `pipeline/llm_pipeline.py`: `_build_exec_record()` の `workflow.engine.get_adapter()` への import を `llm.spec` 直接参照に置換し、Layer 1 → Layer 2 逆依存を解消
+- `workflow/engine.py`: merge the four Adapter classes (`ClaudeAdapter` / `GeminiAdapter` / `CursorAdapter` / `ShellAdapter`) into `_GenericAdapter(spec: EngineSpec)`. `get_adapter()` now builds adapters on demand from `ENGINE_SPECS` (#1056)
+- `llm/engines.py`: replace `_validate_capabilities_for_engine()` with a lookup driven by the `_UNSUPPORTED_CAPABILITIES` dict, and split `build_llm_cmd()` into `EngineSpec` fields + the `_CAPABILITY_FLAG_BUILDERS` map (removes hard-coded engine string branches)
+- `pipeline/llm_pipeline.py`: `_build_exec_record()` references `llm.spec` directly instead of importing `workflow.engine.get_adapter()`, removing the Layer 1 → Layer 2 reverse dependency
 
 ### Removed
 
-- **exec.md テキスト形式サポートを完全削除（破壊的変更）**
-  - `dag/parser.py`: `parse_exec_md()` 関数を削除
-  - `dag/__init__.py`: `parse_exec_md` エクスポートを削除
-  - `pipeline/state.py`: `append_exec()` メソッド・`_is_jsonl_mode` プロパティ・テキスト形式パーサーを削除。`from_repo_root()` のデフォルトパスを `queue/exec.md` → `jobs/exec.jsonl` に変更
-  - `pipeline/llm_pipeline.py`: `_submit_text()` / `_build_exec_line()` / `_jsonl_mode` プロパティを削除。`submit()` は常に exec.jsonl JSONL 形式で書き込む
-  - `llm/spec.py`: `render_exec_line()` 関数を削除
-  - `workflow/engine.py`: `EngineAdapter` Protocol および全 Adapter から `build_exec_line()` を削除
-  - `ui/monitor.py`: `parse_exec_md()` / テキスト形式 exec.md 検出パスを削除
-  - `cleanup.py`: `EXEC_LINE_RE` 正規表現・テキスト形式 UUID 抽出ブランチを削除
-  - `dag/engine.py`: exec.md テキスト形式読み込みブランチを削除（常に JSONL パーサー使用）
+- **Remove exec.md text format support entirely (breaking change)**
+  - `dag/parser.py`: remove the `parse_exec_md()` function
+  - `dag/__init__.py`: remove the `parse_exec_md` export
+  - `pipeline/state.py`: remove the `append_exec()` method, the `_is_jsonl_mode` property, and the text format parser. The default path of `from_repo_root()` changes from `queue/exec.md` → `jobs/exec.jsonl`
+  - `pipeline/llm_pipeline.py`: remove `_submit_text()` / `_build_exec_line()` / the `_jsonl_mode` property. `submit()` always writes exec.jsonl in JSONL format
+  - `llm/spec.py`: remove the `render_exec_line()` function
+  - `workflow/engine.py`: remove `build_exec_line()` from the `EngineAdapter` Protocol and all Adapters
+  - `ui/monitor.py`: remove `parse_exec_md()` / the text format exec.md detection path
+  - `cleanup.py`: remove the `EXEC_LINE_RE` regex and the text format UUID extraction branch
+  - `dag/engine.py`: remove the exec.md text format reading branch (the JSONL parser is always used)
 
 ### Deprecated
 
-- `ClaudeAdapter` / `GeminiAdapter` / `CursorAdapter` / `ShellAdapter`: deprecated alias 化（0.24.0 で削除予定）。`get_adapter(name)` または `_GenericAdapter(ENGINE_SPECS[name])` を使用すること
+- `ClaudeAdapter` / `GeminiAdapter` / `CursorAdapter` / `ShellAdapter`: now deprecated aliases (to be removed in 0.24.0). Use `get_adapter(name)` or `_GenericAdapter(ENGINE_SPECS[name])` instead
 
 ### Migration
 
-exec.md テキスト形式を exec.jsonl JSONL 形式に変換する:
+Convert the exec.md text format to the exec.jsonl JSONL format:
 
 ```sh
-# 変換例: uuid: command → {"uuid": "uuid", "command": "command", "depends": []}
+# Example: uuid: command → {"uuid": "uuid", "command": "command", "depends": []}
 python3 -c "
 import json, sys, re
 for line in sys.stdin:
@@ -1290,152 +1290,152 @@ for line in sys.stdin:
 
 ### Removed
 - `ghdag shr` subcommand and `ghdag.shr` package (self-hosted runner management).
-  SHR functionality has been superseded by polling-based execution (diary #986).
+  SHR functionality has been superseded by polling-based execution (#986).
 
 ## [0.17.1] - 2026-05-22
 
 ### Added
 
-- `pipeline/audit.py`: `write_task_exit_audit()` を追加。タスク完了・失敗・拒否・依存失敗・空結果の出口イベントを audit.jsonl に JSONL 形式で記録
-- `dag/hooks.py`: `DefaultHooks.__init__(audit_path)` を追加。各フックメソッド (`on_task_success`, `on_task_failure`, `on_task_rejected`, `on_task_dep_failed`, `on_task_empty_result`) で `write_task_exit_audit()` を呼び出し
-- `dag/engine.py`: `hooks is None` の場合に `exec_md_path` 親ディレクトリの `audit.jsonl` を `audit_path` として `DefaultHooks` に渡す
+- `pipeline/audit.py`: add `write_task_exit_audit()`. Records task exit events (completion, failure, rejection, dependency failure, empty result) to audit.jsonl in JSONL format
+- `dag/hooks.py`: add `DefaultHooks.__init__(audit_path)`. Each hook method (`on_task_success`, `on_task_failure`, `on_task_rejected`, `on_task_dep_failed`, `on_task_empty_result`) calls `write_task_exit_audit()`
+- `dag/engine.py`: when `hooks is None`, pass `audit.jsonl` in the parent directory of `exec_md_path` to `DefaultHooks` as `audit_path`
 
 ### Fixed
 
-- `tests/`: 未使用 pytest import を削除 (ruff F401)
+- `tests/`: remove unused pytest imports (ruff F401)
 
 ## [0.16.0] - 2026-05-16
 
 ### Added
 
-- `workflow/engine.py`: `ShellAdapter` を追加。`engine: shell` で order ファイルを bash スクリプトとして直接実行する。`prompt` / `model` パラメーターは無視され、command は `bash -o pipefail {order_path}` 固定
-- `llm/_constants.py`, `llm/engines.py`: `shell` エンジンを `DEFAULT_ENGINE_MODELS` / `ENGINE_CLI` / `ENGINE_DEFAULTS` に追加（model は `bash` のみ）
+- `workflow/engine.py`: add `ShellAdapter`. With `engine: shell`, the order file is executed directly as a bash script. The `prompt` / `model` parameters are ignored and the command is fixed to `bash -o pipefail {order_path}`
+- `llm/_constants.py`, `llm/engines.py`: add the `shell` engine to `DEFAULT_ENGINE_MODELS` / `ENGINE_CLI` / `ENGINE_DEFAULTS` (the only model is `bash`)
 
 ## [0.15.1] - 2026-05-11
 
 ### Added
 
-- `pipeline/`: `QueueTaskStore` と `QueueTask` を追加。result ファイルへのアクセス API を提供 (#76)
-- `pipeline/audit.py`: JSON 形式 exec 行からの UUID 抽出に対応 (#78)
+- `pipeline/`: add `QueueTaskStore` and `QueueTask`, providing an access API for result files (#76)
+- `pipeline/audit.py`: support UUID extraction from JSON-format exec lines (#78)
 
 ### Fixed
 
-- `pipeline/maintenance.py`: JSONL prune 対応・orphan done マーカー付与・done 削除順序修正 (#77)
-- `pipeline/maintenance.py`: `QUEUE_FILE_RE` を複合ツール名・stderr に対応 (#75)
+- `pipeline/maintenance.py`: support JSONL prune, add done markers for orphans, and fix the done deletion order (#77)
+- `pipeline/maintenance.py`: make `QUEUE_FILE_RE` handle compound tool names and stderr (#75)
 
 ## [0.15.0] - 2026-05-09
 
 ### Changed (BREAKING)
 
-- `pipeline/`: exec.md サポートコードを全削除。exec ファイルは JSONL 形式（`jobs/exec.jsonl`）のみ対応。後方互換なし (#825)
-- `pipeline/maintenance.py`: `remove_idempotency_matching` の text-mode idempotency 互換を削除し JSONL 形式に一本化
+- `pipeline/`: remove all exec.md support code. Only the JSONL exec file format (`jobs/exec.jsonl`) is supported. No backward compatibility (#825)
+- `pipeline/maintenance.py`: remove text-mode idempotency compatibility from `remove_idempotency_matching`, leaving JSONL only
 
 ### Added
 
-- `pipeline/maintenance.py`: キュー検査・修復 API (`validate_exec_jsonl`, `list_queue_tasks`, `inspect_exec_jsonl`, `repair_exec_jsonl`, `check_idempotency_key`) を追加 (#829)
+- `pipeline/maintenance.py`: add the queue inspection and repair API (`validate_exec_jsonl`, `list_queue_tasks`, `inspect_exec_jsonl`, `repair_exec_jsonl`, `check_idempotency_key`) (#829)
 
 ### Fixed
 
-- `pipeline/maintenance.py`: `remove_idempotency_matching` / `_submit_text` の text-mode 冪等性互換を部分復元（JSONL 主体、md フォールバック）
+- `pipeline/maintenance.py`: partially restore text-mode idempotency compatibility in `remove_idempotency_matching` / `_submit_text` (JSONL first, md fallback)
 
 ## [0.14.9] - 2026-05-08
 
 ### Added
 
-- `dag/engine.py`: stdin リダイレクト先ファイルが不在の場合に `WARNING` ログを出して `SKIPPED_MISSING_INPUT` でタスクをスキップする。bash プロセスを起動しないため終了コード 1 の誤検知を防止
+- `dag/engine.py`: when the stdin redirect source file is missing, log a `WARNING` and skip the task with `SKIPPED_MISSING_INPUT`. No bash process is started, which avoids a false exit code 1 failure
 
 ## [0.14.8] - 2026-05-08
 
 ### Added
 
-- `pipeline/`: exec.jsonl に JSON レコードを書き込む JSONL モード対応
-- `llm/cursor.py`: `dangerously_skip_permissions=True` 時に `--force` フラグを付与
+- `pipeline/`: JSONL mode that writes JSON records to exec.jsonl
+- `llm/cursor.py`: add the `--force` flag when `dangerously_skip_permissions=True`
 
 ## [0.14.7] - 2026-05-07
 
 ### Fixed
 
-- `ui/monitor.py`: `result_path` を JSONL フィールドから直接取得するよう変更。claude 実行ジョブのようにコマンド文字列に result パスが含まれないケースで UI にリンクが表示されない問題を修正
+- `ui/monitor.py`: read `result_path` directly from the JSONL field. Fixes the UI not showing a link when the command string does not contain the result path, as with claude jobs
 
 ## [0.14.6] - 2026-05-07
 
 ### Changed (BREAKING)
 
-- `DagConfig.exec_done_dir` のデフォルト値を `"exec-done"` から `"jobs/done"` に変更
-- `cleanup_queue()` の引数 `queue_done_dir` → `archive_dir`、`exec_done_dir` → `done_dir` に改名
-- `ghdag cleanup` CLI のデフォルトパスを `queue-done/` → `jobs/archive/`、`exec-done/` → `jobs/done/` に変更
-- `ui/monitor.py`: `_detect_exec_done_dir()` の `exec-done/` フォールバックを削除。常に `jobs/done/` を返す
-- `ui/server.py`: retry ハンドラの done ファイルパスを `exec-done/` → `jobs/done/` に変更
-- コメント・docstring 内の `exec-done` / `queue-done` 表記を `jobs/done/` / `jobs/archive/` に統一
+- Change the default of `DagConfig.exec_done_dir` from `"exec-done"` to `"jobs/done"`
+- Rename `cleanup_queue()` arguments `queue_done_dir` → `archive_dir` and `exec_done_dir` → `done_dir`
+- Change the `ghdag cleanup` CLI default paths from `queue-done/` → `jobs/archive/` and `exec-done/` → `jobs/done/`
+- `ui/monitor.py`: remove the `exec-done/` fallback from `_detect_exec_done_dir()`. It always returns `jobs/done/`
+- `ui/server.py`: change the done file path in the retry handler from `exec-done/` → `jobs/done/`
+- Replace `exec-done` / `queue-done` in comments and docstrings with `jobs/done/` / `jobs/archive/`
 
 ## [0.14.5] - 2026-05-07
 
 ### Fixed
 
-- `ui/monitor.py`: `build_rows` の `exec_done_dir` を `repo_root / "exec-done"` ハードコードから `_detect_exec_done_dir()` による自動検出に変更。`jobs/done/` が存在する場合はそちらを優先し、存在しない場合は `exec-done/` にフォールバック。`jobs/` ディレクトリ統合移行後に UI のタスクステータスが全て pending になっていた問題を修正
+- `ui/monitor.py`: `build_rows` now auto-detects `exec_done_dir` via `_detect_exec_done_dir()` instead of hard-coding `repo_root / "exec-done"`. `jobs/done/` is preferred when it exists, otherwise it falls back to `exec-done/`. Fixes every task showing as pending in the UI after the migration to the unified `jobs/` directory
 
 ## [0.14.4] - 2026-05-07
 
 ### Fixed
 
-- `ui/server.py`: `_STATIC_DIR` を `Path(__file__).parent` から `importlib.resources.files()` に変更。editable インストール時でも `static/index.html` が正しく解決されるように修正（再発防止）
-- `ghdag/__init__.py`: `__version__` をハードコード値から `importlib.metadata.version("ghdag")` に変更。`pyproject.toml` と自動同期
+- `ui/server.py`: change `_STATIC_DIR` from `Path(__file__).parent` to `importlib.resources.files()`, so `static/index.html` resolves correctly even with an editable install (regression prevention)
+- `ghdag/__init__.py`: change `__version__` from a hard-coded value to `importlib.metadata.version("ghdag")`, keeping it in sync with `pyproject.toml`
 
 ### Added
 
-- `tests/test_version.py`: `__version__` と `pyproject.toml` のバージョン一致を確認するテストを追加
-- `tests/test_ghdag_ui.py`: static アセット（`_STATIC_DIR` / `index.html`）の存在確認テスト `TestStaticAssets` を追加
+- `tests/test_version.py`: add a test that `__version__` matches the version in `pyproject.toml`
+- `tests/test_ghdag_ui.py`: add `TestStaticAssets`, which checks that static assets (`_STATIC_DIR` / `index.html`) exist
 
 ## [0.14.3] - 2026-05-07
 
 ### Fixed
 
-- `ui/monitor.py`: `QUEUE_TS` 正規表現を `(?:queue|jobs)/` に変更し、`jobs/` パスのタスクで日時列が空になっていたバグを修正 (#57)
+- `ui/monitor.py`: change the `QUEUE_TS` regex to `(?:queue|jobs)/`, fixing an empty date-time column for tasks under `jobs/` paths (#57)
 
 ## [0.14.2] - 2026-05-07
 
 ### Added
 
-- `ui`: Web UI が `jobs/exec.jsonl`（JSONL 形式）を自動検出して表示できるよう対応。`queue/exec.md` はフォールバック (#55)
-- `ui`: `/api/rows` と `/api/stream` に `?max_visible=N` クエリパラメータを追加し、表示件数をリクエスト単位で変更可能に (#55)
-- `ui`: ダッシュボードに表示件数プルダウン（20/40/60/80/100件）を追加 (#55)
+- `ui`: the Web UI auto-detects and displays `jobs/exec.jsonl` (JSONL format). `queue/exec.md` is the fallback (#55)
+- `ui`: add the `?max_visible=N` query parameter to `/api/rows` and `/api/stream`, so the number of visible rows can be changed per request (#55)
+- `ui`: add a row-count dropdown (20/40/60/80/100 rows) to the dashboard (#55)
 
 ### Fixed
 
-- `ui/monitor.py`: `_ORDER_PATH_RE` / `_RESULT_PATH_RE` を `jobs/` パスにも対応 (#55)
-- `ui/cli.py`: `queue/exec.md` が存在しない場合に `exit(1)` していた動作を撤廃 (#55)
+- `ui/monitor.py`: make `_ORDER_PATH_RE` / `_RESULT_PATH_RE` also match `jobs/` paths (#55)
+- `ui/cli.py`: no longer `exit(1)` when `queue/exec.md` does not exist (#55)
 
 ## [0.14.1] - 2026-05-07
 
 ### Added
 
-- `ghdag.dag`: JSONL 形式の exec ファイル向けパーサー `parse_jsonl` を追加し、公開 API へエクスポート (#762, #763)
-- `ghdag.pipeline.audit`: LLM 呼び出しの監査ログを書き出す `write_llm_audit_log()` と `ghdag llm --audit-path` を追加 (#756)
+- `ghdag.dag`: add `parse_jsonl`, a parser for JSONL-format exec files, and export it in the public API (#762, #763)
+- `ghdag.pipeline.audit`: add `write_llm_audit_log()`, which writes an audit log of LLM calls, and `ghdag llm --audit-path` (#756)
 
 ### Changed
 
-- `workflow/schema.py` / `workflow/loader.py` / `llm/engines.py`: `agent` エンジンの後方互換分岐を整理し、`depends` 検証と権限フラグの扱いを明確化 (#766)
-- `workflow/engine.py`: JSONL タスク向けに `build_exec_record()` と stdout 直接書き込み経路を追加 (#764)
+- `workflow/schema.py` / `workflow/loader.py` / `llm/engines.py`: clean up the backward-compatibility branches for the `agent` engine and clarify `depends` validation and permission flag handling (#766)
+- `workflow/engine.py`: add `build_exec_record()` and a direct stdout write path for JSONL tasks (#764)
 
 ### Fixed
 
-- `dag`: Layer 0 実行のロバストネスを改善し、依存解決・状態遷移時の異常系を安定化 (#760)
-- `dag/parser.py`: `parse_exec_md` を `__all__` に公開し、import 時の F401 lint エラーを解消 (#763)
+- `dag`: improve the robustness of Layer 0 execution, stabilizing error paths in dependency resolution and state transitions (#760)
+- `dag/parser.py`: publish `parse_exec_md` in `__all__`, fixing the F401 lint error on import (#763)
 
 ## [0.14.0] - 2026-05-06
 
 ### Added
 
-- `ghdag.metrics` パッケージ（`TaskMetrics` データクラス・`MetricsRecorder`・`parse_engine_model` / `parse_token_count` パーサー）を追加 (#599)
+- Add the `ghdag.metrics` package (`TaskMetrics` dataclass, `MetricsRecorder`, and the `parse_engine_model` / `parse_token_count` parsers) (#599)
 
 ### Changed (BREAKING)
 
-- `DagHooks` Protocol の `on_task_success` / `on_task_failure` / `on_task_rejected` / `on_task_empty_result` に `metrics: TaskMetrics` 引数を追加 (#599)
-- `DagEngine._check_completions()` で `TaskMetrics` を構築し、各フックに渡すよう変更 (#599)
+- Add a `metrics: TaskMetrics` argument to `on_task_success` / `on_task_failure` / `on_task_rejected` / `on_task_empty_result` of the `DagHooks` Protocol (#599)
+- `DagEngine._check_completions()` now builds `TaskMetrics` and passes it to each hook (#599)
 
 #### Migration
 
-既存の `DagHooks` 実装は各メソッドのシグネチャに `metrics: TaskMetrics` 引数を追加する必要があります（`on_task_dep_failed` は変更なし）。
+Existing `DagHooks` implementations must add a `metrics: TaskMetrics` argument to each method signature (`on_task_dep_failed` is unchanged).
 
 ```python
 # Before
@@ -1450,58 +1450,58 @@ def on_task_success(self, uuid: str, task: Task, metrics: TaskMetrics) -> None: 
 
 ### Fixed
 
-- `workflow/engine.py`: `CursorAdapter.build_exec_line()` の exec line を `cat ... | agent -p 'string'` 形式から `agent -p --force < order_path` 形式（stdin リダイレクト）に変更。`agent` CLI は `-p 'string'` に文字列を渡すと stdin を無視する仕様のため、order ファイルの内容がプロンプトとして読まれなかったバグを修正 (#43)
+- `workflow/engine.py`: change the exec line of `CursorAdapter.build_exec_line()` from the `cat ... | agent -p 'string'` form to the `agent -p --force < order_path` form (stdin redirect). The `agent` CLI ignores stdin when a string is passed to `-p 'string'`, so the order file contents were not read as the prompt (#43)
 
 ## [0.11.5] - 2026-05-03
 
 ### Fixed
 
-- `workflow/dispatcher.py`: `WorkflowDispatcher.poll_once()` に per-trigger 例外隔離を追加。ある trigger の `list_issues` 失敗（過渡的な GitHub API エラー等）が他 trigger / 他 workflow の評価を巻き添えで停止させる SPOF を解消。失敗した trigger は warning ログを出してスキップし、後続 trigger の評価を続行する
+- `workflow/dispatcher.py`: add per-trigger exception isolation to `WorkflowDispatcher.poll_once()`. Removes the SPOF where a `list_issues` failure for one trigger (e.g. a transient GitHub API error) stopped evaluation of other triggers / workflows. A failed trigger logs a warning and is skipped, and evaluation continues with the following triggers
 
 ## [0.11.4] - 2026-05-03
 
 ### Fixed
 
-- `pipeline/llm_pipeline.py`: `LLMPipelineAPI` に per-workflow `order_builders` 辞書を追加。`cli.py:_cmd_watch` が複数ワークフローを持つとき、先頭ワークフローの `template_dir` だけが全ワークフローに使われていた設計バグを修正 (#37)
+- `pipeline/llm_pipeline.py`: add a per-workflow `order_builders` dict to `LLMPipelineAPI`. Fixes a design bug where, with multiple workflows in `cli.py:_cmd_watch`, only the first workflow's `template_dir` was used for all workflows (#37)
 
 ## [0.11.3] - 2026-04-30
 
 ### Added
 
-- `workflow/engine.py`: `CursorAdapter` を追加。`engine: cursor, model: gemini-3-flash` の exec line を生成できるように。`agent -p '<prompt>' --model '<model>' --force` 形式で呼び出す (#35)
+- `workflow/engine.py`: add `CursorAdapter`, which generates the exec line for `engine: cursor, model: gemini-3-flash`. It is invoked as `agent -p '<prompt>' --model '<model>' --force` (#35)
 
 ## [0.11.2] - 2026-04-29
 
 ### Added
 
-- `dag.py`: `PIPELINE_STATUS` パーサを追加。exit code に依存しない failure detection を実装 (#33)
+- `dag.py`: add a `PIPELINE_STATUS` parser, implementing failure detection that does not depend on the exit code (#33)
 
 ## [0.11.1] - 2026-04-27
 
 ### Fixed
 
-- `engines.py`: cursor engine の `_validate_capabilities_for_engine` から `disallowed_tools` 過剰検証を削除 (#438)
+- `engines.py`: remove the excessive `disallowed_tools` validation from `_validate_capabilities_for_engine` for the cursor engine (#438)
 
 ## [0.11.0] - 2026-04-27
 
 ### Changed (BREAKING)
 
-- `ghdag.llm.call()` の API を能力ベースに作り直し。`dangerously_skip_permissions` / `action` 引数を廃止し、`capabilities: LLMCapabilities` 引数に置換 (#432)
-- プリセット定数 `TEXT_ONLY` / `JSON_ONLY` / `WEB_RESEARCH` / `DANGEROUS_FULL_ACCESS` を追加
-- `output_format="json"` 指定時、JSON parse 失敗で `LLMParseError` を送出
-- gemini/cursor engine で非対応の capabilities を要求した場合 `NotImplementedError` を送出（サイレント無視を禁止）
+- Rebuild the `ghdag.llm.call()` API around capabilities. The `dangerously_skip_permissions` / `action` arguments are removed and replaced by the `capabilities: LLMCapabilities` argument (#432)
+- Add the preset constants `TEXT_ONLY` / `JSON_ONLY` / `WEB_RESEARCH` / `DANGEROUS_FULL_ACCESS`
+- With `output_format="json"`, a JSON parse failure raises `LLMParseError`
+- Requesting capabilities unsupported by the gemini/cursor engines raises `NotImplementedError` (silent ignore is no longer allowed)
 
 ### Fixed
 
-- `_config.py`: `GHDAG_LLM_MODELS` 環境変数のファイルが存在しない場合にデフォルトへフォールバックするよう修正
-- `dispatcher`: サイレント失敗をエラーコメントと詳細な例外メッセージで可視化
-- 重複メソッド `post_comment` を削除し既存の `add_comment` を使用
+- `_config.py`: fall back to the defaults when the file named by the `GHDAG_LLM_MODELS` environment variable does not exist
+- `dispatcher`: surface silent failures through error comments and detailed exception messages
+- Remove the duplicate `post_comment` method and use the existing `add_comment`
 
 ## [0.10.3] - 2026-04-25
 
 ### Added
 
-- `claude-opus-4-7` を `DEFAULT_ENGINE_MODELS` の claude エンジン許可リストに追加。
+- Add `claude-opus-4-7` to the claude engine allow list in `DEFAULT_ENGINE_MODELS`.
 
 ## [0.10.2] - 2026-04-22
 
@@ -1553,7 +1553,7 @@ def on_task_success(self, uuid: str, task: Task, metrics: TaskMetrics) -> None: 
 
 ### Added
 
-- Layer 2: CLI (`ghdag run`, `ghdag watch`) and watcher module migrated from diary repo
+- Layer 2: CLI (`ghdag run`, `ghdag watch`) and watcher module migrated from the host repository
 - Extended workflow schema: multi-step DAG, `--model` flag, issue context injection, backward guard, reset handler
 - Trigger entry validation for `label` and `handler` fields in the loader
 - `--hooks` option for `ghdag run` to inject DagHooks from external modules
@@ -1565,7 +1565,7 @@ def on_task_success(self, uuid: str, task: Task, metrics: TaskMetrics) -> None: 
 ### Fixed
 
 - `TemplateOrderBuilder` now uses `safe_substitute()` to avoid `KeyError` on template variables intended as AI instructions (e.g. `$base_branch`)
-- `_load_hooks()` inserts `cwd` into `sys.path` so `--hooks scripts.diary_hooks` resolves correctly
+- `_load_hooks()` inserts `cwd` into `sys.path` so a hooks module under the working directory (e.g. `--hooks scripts.my_hooks`) resolves correctly
 
 ## [0.2.0] - 2026-03-01
 
@@ -1578,6 +1578,6 @@ def on_task_success(self, uuid: str, task: Task, metrics: TaskMetrics) -> None: 
 
 ### Added
 
-- Initial package setup with DAG engine extracted from diary repo
+- Initial package setup with DAG engine extracted from the host repository
 - Layer 0: Core DAG engine, state machine, and workflow schema parser
 - `pyproject.toml` with `setuptools` build backend and `pytest` dev dependency

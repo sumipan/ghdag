@@ -92,7 +92,7 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "core は ghdag の他パッケージに依存しない"
+name = "core must not import other ghdag packages"
 type = "forbidden"
 source_modules = ["ghdag.core"]
 forbidden_modules = [
@@ -113,7 +113,7 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "投入塔は実行塔を import しない（通信は exec.jsonl / done のみ）"
+name = "Intake tower must not import the runner tower (they share exec.jsonl / done only)"
 type = "forbidden"
 source_modules = ["ghdag.pipeline", "ghdag.workflow"]
 forbidden_modules = ["ghdag.dag"]
@@ -125,13 +125,13 @@ ignore_imports = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "実行塔は投入塔を import しない"
+name = "Runner tower must not import the intake tower"
 type = "forbidden"
 source_modules = ["ghdag.dag"]
 forbidden_modules = ["ghdag.pipeline", "ghdag.workflow"]
 
 [[tool.importlinter.contracts]]
-name = "io / effects は塔と入口を知らない"
+name = "io / effects must not import the towers or entry points"
 type = "forbidden"
 source_modules = [
   "ghdag.io",
@@ -150,7 +150,7 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "ops は実行系に依存しない"
+name = "ops must not import the execution packages"
 type = "forbidden"
 source_modules = [
   "ghdag.cleanup",
@@ -166,7 +166,7 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-name = "quota 層はオーケストレーション層に依存しない"
+name = "quota must not import the orchestration packages"
 type = "forbidden"
 source_modules = ["ghdag.quota"]
 forbidden_modules = [
