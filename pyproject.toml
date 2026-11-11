@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghdag"
-version = "0.124.0"
+version = "0.125.0"
 description = "Generic DAG execution engine extracted from graph-watcher"
 readme = "README.md"
 license = "MIT"
@@ -110,7 +110,6 @@ forbidden_modules = [
   "ghdag.cleanup",
   "ghdag.maintenance",
   "ghdag.tool",
-  "ghdag.markdown",
 ]
 
 [[tool.importlinter.contracts]]
@@ -157,7 +156,6 @@ source_modules = [
   "ghdag.cleanup",
   "ghdag.maintenance",
   "ghdag.tool",
-  "ghdag.markdown",
 ]
 forbidden_modules = [
   "ghdag.dag",

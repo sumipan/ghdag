@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.125.0 - 2026-11-11
+
+### Removed
+
+- ``ghdag.workflow.gates`` (including ``python -m ghdag.workflow.gates``), ``ghdag.markdown.body_editor``, ``ghdag.core.ports.gate`` (``GateRule`` / ``Violation``), and entry-point group ``ghdag.gates`` loading. Migrate gate rules and Issue body section editing to [issuesmith](https://github.com/sumipan/issuesmith) (sumipan/nexus#6317).
+
 ## 0.124.0 - 2026-11-11
 
 ### Added
