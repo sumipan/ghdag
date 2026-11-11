@@ -9,12 +9,12 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from ghdag.core.models.workflow import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
 from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
 from ghdag.pipeline.order import TemplateOrderBuilder
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.loader import load_workflows
-from ghdag.workflow.schema import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
 
 
 def _make_github_mock():
@@ -304,7 +304,7 @@ class TestAC5ConsecutiveFailures:
             queue_dir=str(tmp_path),
         )
 
-        from ghdag.workflow.schema import DispatchResult
+        from ghdag.core.models.workflow import DispatchResult
 
         call_count = 0
 

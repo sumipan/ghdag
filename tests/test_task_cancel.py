@@ -13,7 +13,7 @@ from ghdag.core.vocabulary import DONE_CANCELLED, DONE_DEP_FAILED
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import DagConfig
-from ghdag.dag.state import is_done
+from ghdag.io.done import is_done
 
 
 def _make_config(tmp_path: Path, records: list[dict], **overrides) -> DagConfig:

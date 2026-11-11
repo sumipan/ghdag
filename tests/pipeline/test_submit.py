@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ghdag.pipeline.audit import AuditContext
+from ghdag.io.audit import AuditContext
 from ghdag.pipeline.submit import make_order_record, submit_order
 
 

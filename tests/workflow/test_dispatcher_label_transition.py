@@ -4,15 +4,15 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from ghdag.github_client import GitHubIssuePort
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.workflow.schema import (
+from ghdag.core.models.workflow import (
     HandlerConfig,
     StepConfig,
     TriggerConfig,
     WorkflowConfig,
 )
+from ghdag.github_client import GitHubIssuePort
+from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.workflow.dispatcher import WorkflowDispatcher
 
 
 def _make_workflow(trigger_labels: list[str]) -> WorkflowConfig:

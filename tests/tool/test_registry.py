@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ghdag.exceptions import GhdagError
+from ghdag.core.exceptions import GhdagError
 from ghdag.tool.exceptions import ToolRegistryError
 from ghdag.tool.registry import ToolRegistry
 

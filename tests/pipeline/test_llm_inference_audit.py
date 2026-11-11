@@ -8,7 +8,7 @@ import re
 
 import pytest
 
-from ghdag.pipeline.audit import compute_prompt_hash, write_llm_inference_audit
+from ghdag.io.audit import compute_prompt_hash, write_llm_inference_audit
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"

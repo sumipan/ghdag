@@ -1,13 +1,6 @@
 """ghdag.workflow — Layer 2 workflow engine public API"""
 
-from ghdag.core.ports.forge import ForgePort
-from ghdag.forge import get_forge
-from ghdag.github_client import GitHubClient as GitHubIssueClient
-from ghdag.github_client import create_github_client
-from ghdag.workflow import engine as engine  # noqa: F401 — triggers adapter registration
-from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.workflow.loader import load_workflows
-from ghdag.workflow.schema import (
+from ghdag.core.models.workflow import (
     DispatchResult,
     HandlerConfig,
     OnTriggerConfig,
@@ -15,6 +8,13 @@ from ghdag.workflow.schema import (
     TriggerConfig,
     WorkflowConfig,
 )
+from ghdag.core.ports.forge import ForgePort
+from ghdag.forge import get_forge
+from ghdag.github_client import GitHubClient as GitHubIssueClient
+from ghdag.github_client import create_github_client
+from ghdag.workflow import engine as engine  # noqa: F401 — triggers adapter registration
+from ghdag.workflow.dispatcher import WorkflowDispatcher
+from ghdag.workflow.loader import load_workflows
 from ghdag.workflow.state_machine import transition
 from ghdag.workflow.typecheck import ConsumeEntry, SkillIOSpec, typecheck_dag
 

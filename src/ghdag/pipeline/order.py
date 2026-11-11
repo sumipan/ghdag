@@ -10,8 +10,8 @@ import hashlib
 import string
 from pathlib import Path
 
+from ghdag.core.exceptions import ConfigError
 from ghdag.core.ports.order import OrderBuilder
-from ghdag.exceptions import ConfigError
 
 __all__ = ["OrderBuilder", "InlineOrderBuilder", "TemplateOrderBuilder", "TemplateVariableError"]
 

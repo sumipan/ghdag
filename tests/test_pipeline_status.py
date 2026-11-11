@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 from ghdag.dag import check_pipeline_status
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig
-from ghdag.dag.state import load_done_from_dir, load_succeeded_from_dir
+from ghdag.io.done import load_done_from_dir, load_succeeded_from_dir
 
 
 class TestCheckPipelineStatus:

@@ -11,15 +11,15 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from ghdag.github_client import GitHubIssuePort
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-from ghdag.workflow.dispatcher import _RATE_LIMIT_THRESHOLD, WorkflowDispatcher
-from ghdag.workflow.schema import (
+from ghdag.core.models.workflow import (
     HandlerConfig,
     StepConfig,
     TriggerConfig,
     WorkflowConfig,
 )
+from ghdag.github_client import GitHubIssuePort
+from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.workflow.dispatcher import _RATE_LIMIT_THRESHOLD, WorkflowDispatcher
 
 
 def _make_workflow(polling_interval: int = 30) -> WorkflowConfig:

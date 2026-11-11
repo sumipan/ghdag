@@ -9,17 +9,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ghdag.core.models.workflow import NonterminalClosedConfig
-from ghdag.github_client import GitHubClient, GitHubIssuePort
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.workflow.loader import _parse
-from ghdag.workflow.schema import (
+from ghdag.core.models.workflow import (
     HandlerConfig,
+    NonterminalClosedConfig,
     StepConfig,
     TriggerConfig,
     WorkflowConfig,
 )
+from ghdag.github_client import GitHubClient, GitHubIssuePort
+from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.workflow.dispatcher import WorkflowDispatcher
+from ghdag.workflow.loader import _parse
 
 
 def _make_issue(number: int, labels: list[str], *, state: str = "open") -> dict:

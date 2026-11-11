@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from ghdag_pipeline_conftest_helpers import _TEST_AUDIT_CTX, _make_api
 
-from ghdag.workflow.schema import StepConfig
+from ghdag.core.models.workflow import StepConfig
 
 
 class TestStepConfigPermission:
@@ -53,7 +53,7 @@ class TestStepConfigPermission:
 
     def test_submit_unknown_permission_preset_raises(self):
         """AC12: permission='unknown_preset' → ConfigError(STEP_PERMISSION_UNKNOWN)"""
-        from ghdag.exceptions import ConfigError
+        from ghdag.core.exceptions import ConfigError
 
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="unknown_preset")]

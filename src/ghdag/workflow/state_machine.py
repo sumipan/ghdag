@@ -9,10 +9,10 @@ import argparse
 import sys
 from pathlib import Path
 
+from ghdag.core.models.workflow import WorkflowConfig
 from ghdag.core.ports.forge import ForgePort
 from ghdag.forge import get_forge
 from ghdag.workflow.loader import load_workflow_file
-from ghdag.workflow.schema import WorkflowConfig
 
 
 def get_current_phase(

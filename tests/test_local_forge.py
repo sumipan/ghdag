@@ -10,11 +10,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from ghdag.core.exceptions import GitHubApiError
+from ghdag.core.models.workflow import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
 from ghdag.core.ports.forge import ForgePort
 from ghdag.forge.local import LocalForge
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.workflow.schema import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
 
 
 def _git(cwd: Path, *args: str) -> str:

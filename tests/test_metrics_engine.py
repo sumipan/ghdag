@@ -7,10 +7,10 @@ from unittest.mock import patch
 
 import pytest
 
+from ghdag.core.models.metrics import FailureClass, TaskMetrics
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import DagConfig, RunningTask, Task
-from ghdag.metrics.models import FailureClass, TaskMetrics
 
 FIXED_WALL = 1_700_000_000.0
 FIXED_MONO = 1_000.0

@@ -3,8 +3,8 @@
 import pytest
 
 from ghdag import GhdagError
-from ghdag.dag.fanout import FanoutError
-from ghdag.exceptions import (
+from ghdag.core.command import AdapterNotFoundError
+from ghdag.core.exceptions import (
     AuthError,
     CliUsageError,
     ConfigError,
@@ -13,11 +13,12 @@ from ghdag.exceptions import (
     PermissionDeniedError,
     RateLimitError,
 )
-from ghdag.exceptions import (
+from ghdag.core.exceptions import (
     GhdagError as GhdagErrorFromModule,
 )
+from ghdag.core.models.files import PathTraversalError
+from ghdag.dag.fanout import FanoutError
 from ghdag.files.append import AppendRecoverError
-from ghdag.files.models import PathTraversalError
 from ghdag.llm._config import ConfigLoadError
 from ghdag.llm.capabilities import LLMParseError
 from ghdag.llm.engines import EngineModelError
@@ -25,7 +26,6 @@ from ghdag.pipeline.config import ModelValidationError
 from ghdag.pipeline.llm_pipeline import DependencyError
 from ghdag.tool.exceptions import ToolRegistryError
 from ghdag.workflow.dispatcher import ContextHookError
-from ghdag.workflow.engine import AdapterNotFoundError
 from ghdag.workflow.loader import ValidationError
 
 _CUSTOM_EXCEPTIONS = [

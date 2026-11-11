@@ -1,10 +1,10 @@
-"""Tests for ghdag.workflow.schema StepConfig."""
+"""Tests for ghdag.core.models.workflow StepConfig."""
 
 from __future__ import annotations
 
 import pytest
 
-from ghdag.workflow.schema import StepConfig
+from ghdag.core.models.workflow import StepConfig
 
 
 class TestAC1AgentFieldRemoved:

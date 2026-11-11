@@ -6,11 +6,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ghdag.exceptions import GhdagError
-from ghdag.pipeline.audit import AuditContext
+from ghdag.core.exceptions import GhdagError
+from ghdag.core.models.workflow import StepConfig
+from ghdag.io.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import InlineOrderBuilder, TemplateOrderBuilder, TemplateVariableError
-from ghdag.workflow.schema import StepConfig
 
 _TEST_AUDIT_CTX = AuditContext(source="test")
 

@@ -40,7 +40,7 @@ def test_user_agent_header() -> None:
 
 
 def test_resolve_token_missing() -> None:
-    from ghdag.exceptions import AuthError
+    from ghdag.core.exceptions import AuthError
 
     with mock.patch.dict(os.environ, {}, clear=True):
         with pytest.raises(AuthError, match="GITHUB_TOKEN is not set"):
@@ -56,7 +56,7 @@ def test_resolve_repo_invalid_format() -> None:
 
 def test_resolve_repo_missing_env_raises_ghdag_error() -> None:
     """GITHUB_REPOSITORIES unset and repo=None → GhdagError (no silent fallback to DEFAULT_REPO)."""
-    from ghdag.exceptions import GhdagError
+    from ghdag.core.exceptions import GhdagError
 
     with mock.patch.dict(os.environ, {}, clear=True):
         with pytest.raises(
@@ -364,7 +364,7 @@ def test_api_request_expands_owner_repo_placeholder(
 
 
 def test_http_error_raises_github_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.exceptions import GitHubApiError
+    from ghdag.core.exceptions import GitHubApiError
 
     client = GitHubClient(token="tok", repo="o/r")
 
@@ -384,7 +384,7 @@ def test_http_error_raises_github_api_error(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 def test_http_401_raises_auth_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.exceptions import AuthError, GhdagError
+    from ghdag.core.exceptions import AuthError, GhdagError
 
     client = GitHubClient(token="tok", repo="o/r")
 
@@ -406,7 +406,7 @@ def test_http_401_raises_auth_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_http_403_rate_limit_raises_rate_limit_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.exceptions import GhdagError, RateLimitError
+    from ghdag.core.exceptions import GhdagError, RateLimitError
 
     client = GitHubClient(token="tok", repo="o/r")
 
@@ -430,7 +430,7 @@ def test_http_403_rate_limit_raises_rate_limit_error(monkeypatch: pytest.MonkeyP
 
 
 def test_http_403_permission_raises_permission_denied_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.exceptions import GhdagError, PermissionDeniedError
+    from ghdag.core.exceptions import GhdagError, PermissionDeniedError
 
     client = GitHubClient(token="tok", repo="o/r")
 
@@ -454,7 +454,7 @@ def test_http_403_permission_raises_permission_denied_error(monkeypatch: pytest.
 
 
 def test_url_error_raises_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.exceptions import GhdagError, NetworkError
+    from ghdag.core.exceptions import GhdagError, NetworkError
 
     client = GitHubClient(token="tok", repo="o/r")
 
@@ -507,7 +507,7 @@ def test_transient_remote_disconnected_retried(monkeypatch: pytest.MonkeyPatch) 
 def test_transient_exhausted_raises_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
     import http.client
 
-    from ghdag.exceptions import NetworkError
+    from ghdag.core.exceptions import NetworkError
 
     _no_sleep(monkeypatch)
     client = GitHubClient(token="tok", repo="o/r")
@@ -556,7 +556,7 @@ def test_http_502_retried_then_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_http_401_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.exceptions import AuthError
+    from ghdag.core.exceptions import AuthError
 
     _no_sleep(monkeypatch)
     client = GitHubClient(token="tok", repo="o/r")
@@ -579,7 +579,7 @@ def test_http_401_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_issue_update_tolerates_delete_404(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.exceptions import GitHubApiError
+    from ghdag.core.exceptions import GitHubApiError
 
     client = GitHubClient(token="tok", repo="o/r")
     seen: list[tuple[str, str]] = []
@@ -600,7 +600,7 @@ def test_issue_update_converges_after_lost_delete_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """DELETE applied on server but response lost → refetch and run only remaining work (POST)"""
-    from ghdag.exceptions import NetworkError
+    from ghdag.core.exceptions import NetworkError
 
     client = GitHubClient(token="tok", repo="o/r")
     seen: list[tuple[str, str]] = []
@@ -627,7 +627,7 @@ def test_issue_update_converges_when_target_already_applied(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """POST already applied and only response lost → refetch confirms target state as success"""
-    from ghdag.exceptions import NetworkError
+    from ghdag.core.exceptions import NetworkError
 
     client = GitHubClient(token="tok", repo="o/r")
 
@@ -644,7 +644,7 @@ def test_issue_update_converges_when_target_already_applied(
 
 
 def test_issue_update_reraises_when_not_converged(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.exceptions import NetworkError
+    from ghdag.core.exceptions import NetworkError
 
     client = GitHubClient(token="tok", repo="o/r")
 
@@ -704,7 +704,7 @@ def test_rate_limit_over_max_wait_raises_without_sleep(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """AC-1: reset beyond the limit -> RateLimitError immediately, with no sleep."""
-    from ghdag.exceptions import RateLimitError
+    from ghdag.core.exceptions import RateLimitError
 
     class _FakeClientTime:
         def __init__(self) -> None:
@@ -762,7 +762,7 @@ def test_rate_limit_max_wait_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """AC-4: GHDAG_RATE_LIMIT_MAX_WAIT_SEC=5 is used as the limit."""
     import time
 
-    from ghdag.exceptions import RateLimitError
+    from ghdag.core.exceptions import RateLimitError
 
     monkeypatch.setenv("GHDAG_RATE_LIMIT_MAX_WAIT_SEC", "5")
     now = 1_700_000_000
@@ -865,7 +865,7 @@ def test_graphql_passes_variables(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_graphql_errors_raise_github_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.exceptions import GitHubApiError
+    from ghdag.core.exceptions import GitHubApiError
 
     client = GitHubClient(token="tok", repo="o/r")
     monkeypatch.setattr(
@@ -907,7 +907,7 @@ def test_graphql_rate_limit_retries_once_within_wait(monkeypatch: pytest.MonkeyP
 def test_graphql_rate_limit_beyond_wait_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     import time as _time
 
-    from ghdag.exceptions import RateLimitError
+    from ghdag.core.exceptions import RateLimitError
 
     client = GitHubClient(token="tok", repo="o/r", rate_limit_max_wait_sec=1)
     reset = str(int(_time.time()) + 3600)

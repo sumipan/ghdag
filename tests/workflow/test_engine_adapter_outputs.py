@@ -1,6 +1,6 @@
-"""Tests for ghdag.workflow.engine adapter exec records."""
+"""Tests for ghdag.core.command adapter exec records."""
 
-from ghdag.workflow.engine import get_adapter
+from ghdag.core.command import get_adapter
 
 
 class TestAdapterOutputs:

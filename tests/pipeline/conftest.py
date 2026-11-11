@@ -6,7 +6,7 @@ import sys
 import types
 from unittest.mock import MagicMock
 
-from ghdag.pipeline.audit import AuditContext
+from ghdag.io.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 
 _TEST_AUDIT_CTX = AuditContext(source="test")

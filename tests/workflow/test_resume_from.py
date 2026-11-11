@@ -8,10 +8,10 @@ import pytest
 from ghdag.core.capabilities import TEXT_ONLY
 from ghdag.core.command import render_exec_command
 from ghdag.core.engine_spec import ENGINE_SPECS
-from ghdag.pipeline.audit import AuditContext
+from ghdag.core.models.workflow import StepConfig
+from ghdag.io.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import DependencyError, LLMPipelineAPI
 from ghdag.workflow.loader import ValidationError, load_workflows
-from ghdag.workflow.schema import StepConfig
 
 _TEST_AUDIT_CTX = AuditContext(source="test")
 

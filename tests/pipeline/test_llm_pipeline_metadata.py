@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ghdag_pipeline_conftest_helpers import _TEST_AUDIT_CTX, _make_api
 
-from ghdag.workflow.schema import StepConfig
+from ghdag.core.models.workflow import StepConfig
 
 
 class TestMetadataInAnnotations:
