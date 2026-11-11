@@ -14,7 +14,6 @@ from ghdag.core.models.dag import Task
 from ghdag.core.ports.quota import QuotaAdmissionPort
 from ghdag.io.audit import AuditContext, write_audit_log
 from ghdag.io.done import is_done
-from ghdag.quota import QuotaGate
 
 logger = logging.getLogger(__name__)
 
