@@ -44,13 +44,6 @@ def _read_done(config: DagConfig, uuid: str) -> str:
     return (Path(config.exec_done_dir) / uuid).read_text(encoding="utf-8").strip()
 
 
-def _read_done_if_present(config: DagConfig, uuid: str) -> str | None:
-    path = Path(config.exec_done_dir) / uuid
-    if not path.is_file():
-        return None
-    return path.read_text(encoding="utf-8").strip()
-
-
 class _FakeClock:
     def __init__(self, mono: float = 10_000.0, wall: float = 1_700_000_000.0) -> None:
         self._mono = mono
@@ -63,11 +56,6 @@ class _FakeClock:
 
     def time(self) -> float:
         return self._wall
-
-
-def _spin_until(predicate) -> None:
-    while not predicate():
-        pass
 
 
 def _run_engine_in_thread(engine: DagEngine) -> threading.Thread:
@@ -149,7 +137,9 @@ class TestTaskCancel:
         assert call_uuid == "uuid-a"
         assert call_task.uuid == "uuid-a"
 
-    def test_cancel_supports_legacy_hooks_without_cancel_callback(self, tmp_path):
+    def test_cancel_supports_legacy_hooks_without_cancel_callback(
+        self, tmp_path, monkeypatch,
+    ):
         """Cancel still works when legacy hooks omit on_task_cancelled."""
 
         class LegacyHooks:
@@ -175,6 +165,17 @@ class TestTaskCancel:
                     started.set()
 
         engine = DagEngine(config, StartedLegacyHooks())
+        cancelled = threading.Event()
+        from ghdag.dag import task_launcher
+
+        real_mark_done = task_launcher.state_mark_done
+
+        def mark_done_and_notify(exec_done_dir, uuid, status):
+            real_mark_done(exec_done_dir, uuid, status)
+            if uuid == "uuid-a" and status == DONE_CANCELLED:
+                cancelled.set()
+
+        monkeypatch.setattr(task_launcher, "state_mark_done", mark_done_and_notify)
 
         t = _run_engine_in_thread(engine)
         started.wait()
@@ -183,7 +184,7 @@ class TestTaskCancel:
         cancel_path = _queue_dir(config) / "cancel" / "uuid-a"
         cancel_path.parent.mkdir(parents=True, exist_ok=True)
         cancel_path.write_text("", encoding="utf-8")
-        _spin_until(lambda: _read_done_if_present(config, "uuid-a") == DONE_CANCELLED)
+        cancelled.wait()
 
         assert _read_done(config, "uuid-a") == DONE_CANCELLED
         _stop_engine(engine, t)
