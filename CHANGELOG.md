@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.125.7 - 2026-11-11
+
 ### Changed
 
 - Tests only: remove wall-clock dependencies from nine test modules (`tests/io`, `tests/llm`, `tests/metrics`, `tests/pipeline`) per docs/TEST.md T13 (sumipan/nexus#6193).
