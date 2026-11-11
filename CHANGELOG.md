@@ -33,14 +33,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 | `from ghdag.dag import RunningTask` | internal `_RunningProcess` (not public) |
 | `from ghdag.workflow import get_forge` | `from ghdag.forge import get_forge` |
 
-### Host consumer migration (sumipan/nexus#6465)
-
-1. Merge this ghdag release (`v0.129.0`) first; do not add compatibility shims for removed CLI flags or re-exports.
-2. Keep host pins below `0.129.0` until a follow-up nexus Issue updates every consumer (`scripts/`, `tools/`, Procfile, skills) to the new CLI flags and definition-package imports listed above.
-3. In one host PR, land consumer updates and bump the ghdag pin to `0.129.0`; verify with host CI before merge.
-
-Until step 3 completes, old `from ghdag import QueueTaskStore` call sites and `--exec-md` / `--interval` flags in nexus are expected and are not blockers for this ghdag PR.
-
 ## 0.127.0 - 2026-11-11
 
 ### Removed
