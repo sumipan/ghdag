@@ -88,6 +88,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ghdag",
         description="Generic DAG execution engine",
+        allow_abbrev=False,
     )
     parser.add_argument(
         "--verbose", "-v",
@@ -103,12 +104,13 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(title="subcommands")
 
     # ghdag run
-    run_parser = subparsers.add_parser("run", help="Run exec.jsonl via DagEngine")
+    run_parser = subparsers.add_parser("run", allow_abbrev=False, help="Run exec.jsonl via DagEngine")
     run_parser.add_argument("exec_jsonl", help="Path to exec.jsonl file")
     run_parser.add_argument(
-        "--interval",
+        "--interval-sec",
         type=float,
         default=1.0,
+        dest="interval",
         metavar="SEC",
         help="Poll interval in seconds (default: 1.0)",
     )
@@ -129,18 +131,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
     # ghdag watch
     watch_parser = subparsers.add_parser(
-        "watch", help="Watch workflows directory via WorkflowDispatcher"
+        "watch",
+        allow_abbrev=False,
+        help="Watch workflows directory via WorkflowDispatcher",
     )
     watch_parser.add_argument("workflows_dir", help="Path to workflows YAML directory")
     watch_parser.add_argument(
-        "--interval",
+        "--interval-sec",
         type=float,
         default=30.0,
+        dest="interval",
         metavar="SEC",
         help="GitHub polling interval in seconds (default: 30)",
     )
     watch_parser.add_argument(
-        "--exec-md",
+        "--exec-jsonl",
         default="jobs/exec.jsonl",
         dest="exec_jsonl",
         metavar="PATH",
@@ -161,12 +166,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--state-dir",
         default=None,
         metavar="PATH",
-        help="Pipeline state directory (default: derived from --exec-md parent's parent / .pipeline-state)",
+        help="Pipeline state directory (default: derived from --exec-jsonl parent's parent / .pipeline-state)",
     )
     watch_parser.set_defaults(func=cmd_watch)
 
     # ghdag ui
-    ui_parser = subparsers.add_parser("ui", help="Launch Web UI dashboard")
+    ui_parser = subparsers.add_parser("ui", allow_abbrev=False, help="Launch Web UI dashboard")
     ui_parser.add_argument(
         "--repo-root",
         default=".",
@@ -185,9 +190,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Bind port (default: 8080)",
     )
     ui_parser.add_argument(
-        "--interval",
+        "--interval-sec",
         type=float,
         default=3.0,
+        dest="interval",
         metavar="SEC",
         help="SSE poll interval in seconds (default: 3.0)",
     )
@@ -203,6 +209,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # ghdag mcp
     mcp_parser = subparsers.add_parser(
         "mcp",
+        allow_abbrev=False,
         help="Run MCP JSON-RPC server on stdio",
     )
     mcp_parser.add_argument(
@@ -231,6 +238,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     llm_parser = subparsers.add_parser(
         "llm",
+        allow_abbrev=False,
         help="One-shot LLM call without workflow",
     )
     llm_parser.add_argument(
@@ -250,31 +258,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Model ID (default: engine default)",
     )
     llm_parser.add_argument(
-        "--timeout",
+        "--timeout-sec",
         type=int,
         default=None,
+        dest="timeout",
         metavar="SEC",
         help="Timeout in seconds (default: no limit)",
     )
     llm_parser.add_argument(
-        "--dangerously-skip-permissions",
-        action="store_true",
-        dest="dangerously_skip_permissions",
-        help="Pass --dangerously-skip-permissions to claude CLI",
-    )
-    llm_parser.add_argument(
-        "--permission-mode",
+        "--permission",
         default=None,
-        dest="permission_mode",
-        choices=["default", "plan", "bypassPermissions"],
-        help="Permission mode for Claude engine",
-    )
-    llm_parser.add_argument(
-        "--capabilities-preset",
-        default=None,
-        dest="capabilities_preset",
+        dest="permission",
         choices=sorted(PRESETS),
-        help="Capabilities preset name",
+        help="Capabilities preset (permission profile)",
     )
     llm_parser.add_argument(
         "--stdin",
@@ -315,11 +311,11 @@ def _build_parser() -> argparse.ArgumentParser:
     llm_parser.set_defaults(func=cmd_llm)
 
     # ghdag version
-    version_parser = subparsers.add_parser("version", help="Show version and exit")
+    version_parser = subparsers.add_parser("version", allow_abbrev=False, help="Show version and exit")
     version_parser.set_defaults(func=_cmd_version)
 
     # ghdag cleanup
-    cleanup_parser = subparsers.add_parser("cleanup", help="Archive completed/orphaned queue tasks")
+    cleanup_parser = subparsers.add_parser("cleanup", allow_abbrev=False, help="Archive completed/orphaned queue tasks")
     cleanup_parser.add_argument("repo_root", help="Path to repository root")
     cleanup_parser.add_argument("--dry-run", action="store_true", help="Show targets without making changes")
     cleanup_parser.add_argument("--cutoff-days", type=int, default=1, help="Days before archiving completed tasks (default: 1)")
@@ -330,6 +326,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # ghdag trigger
     trigger_parser = subparsers.add_parser(
         "trigger",
+        allow_abbrev=False,
         help="Trigger a workflow handler for a specific issue (one-shot dispatch)",
     )
     trigger_parser.add_argument("issue_number", type=int, help="GitHub Issue number")
@@ -346,7 +343,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to workflows YAML directory (default: workflows)",
     )
     trigger_parser.add_argument(
-        "--exec-md",
+        "--exec-jsonl",
         default="jobs/exec.jsonl",
         dest="exec_jsonl",
         metavar="PATH",
@@ -372,13 +369,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--state-dir",
         default=None,
         metavar="PATH",
-        help="Pipeline state directory (default: derived from --exec-md parent's parent / .pipeline-state)",
+        help="Pipeline state directory (default: derived from --exec-jsonl parent's parent / .pipeline-state)",
     )
     trigger_parser.set_defaults(func=cmd_trigger)
 
     # ghdag status
     status_parser = subparsers.add_parser(
         "status",
+        allow_abbrev=False,
         help="Show Issue DAG status or running tasks (JSON-friendly)",
     )
     status_parser.add_argument(
@@ -438,11 +436,12 @@ def _build_parser() -> argparse.ArgumentParser:
     status_parser.set_defaults(func=cmd_status)
 
     # ghdag dag recover
-    dag_parser = subparsers.add_parser("dag", help="DAG utilities")
+    dag_parser = subparsers.add_parser("dag", allow_abbrev=False, help="DAG utilities")
     dag_subparsers = dag_parser.add_subparsers(title="dag subcommands")
 
     recover_parser = dag_subparsers.add_parser(
         "recover",
+        allow_abbrev=False,
         help="Recover failed or pending steps from an existing handler run",
     )
     recover_parser.add_argument("--issue", type=int, required=True, dest="issue_number")
@@ -467,7 +466,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to workflows YAML directory (default: workflows)",
     )
     recover_parser.add_argument(
-        "--exec-md",
+        "--exec-jsonl",
         default="jobs/exec.jsonl",
         dest="exec_jsonl",
         metavar="PATH",
@@ -494,6 +493,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     cancel_parser = dag_subparsers.add_parser(
         "cancel",
+        allow_abbrev=False,
         help="Request cancellation of a running DAG task via jobs/cancel/<uuid>",
     )
     cancel_parser.add_argument("uuid", help="Task UUID to cancel")
@@ -509,6 +509,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # ghdag audit-query
     audit_query_parser = subparsers.add_parser(
         "audit-query",
+        allow_abbrev=False,
         help="Query audit.jsonl for correlation events or burst detection",
     )
     audit_query_parser.add_argument(
@@ -552,10 +553,10 @@ def _build_parser() -> argparse.ArgumentParser:
     # ghdag tools
     from ghdag.tool.cli import cmd_tools_list
 
-    tools_parser = subparsers.add_parser("tools", help="Tool definition management")
+    tools_parser = subparsers.add_parser("tools", allow_abbrev=False, help="Tool definition management")
     tools_subparsers = tools_parser.add_subparsers(title="tools subcommands")
 
-    list_parser = tools_subparsers.add_parser("list", help="List tool definitions")
+    list_parser = tools_subparsers.add_parser("list", allow_abbrev=False, help="List tool definitions")
     list_parser.add_argument(
         "--path",
         required=True,
@@ -570,10 +571,10 @@ def _build_parser() -> argparse.ArgumentParser:
     list_parser.set_defaults(func=cmd_tools_list)
 
     # ghdag quota
-    quota_parser = subparsers.add_parser("quota", help="Manage quota gate state")
+    quota_parser = subparsers.add_parser("quota", allow_abbrev=False, help="Manage quota gate state")
     quota_subparsers = quota_parser.add_subparsers(title="quota subcommands")
 
-    quota_report = quota_subparsers.add_parser("report", help="Report engine quota state")
+    quota_report = quota_subparsers.add_parser("report", allow_abbrev=False, help="Report engine quota state")
     quota_report.add_argument("engine", help="Engine name (e.g. claude)")
     quota_report.add_argument(
         "--status",
@@ -606,7 +607,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     quota_report.set_defaults(func=cmd_quota_report)
 
-    quota_clear = quota_subparsers.add_parser("clear", help="Clear engine quota state")
+    quota_clear = quota_subparsers.add_parser("clear", allow_abbrev=False, help="Clear engine quota state")
     quota_clear.add_argument("engine", help="Engine name")
     quota_clear.add_argument(
         "--observed-at",
@@ -622,7 +623,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     quota_clear.set_defaults(func=cmd_quota_clear)
 
-    quota_drain = quota_subparsers.add_parser("drain", help="Start engine drain mode")
+    quota_drain = quota_subparsers.add_parser("drain", allow_abbrev=False, help="Start engine drain mode")
     quota_drain.add_argument("engine", help="Engine name")
     quota_drain.add_argument(
         "--reason",
@@ -637,7 +638,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     quota_drain.set_defaults(func=cmd_quota_drain)
 
-    quota_resume = quota_subparsers.add_parser("resume", help="Resume engine from drain mode")
+    quota_resume = quota_subparsers.add_parser("resume", allow_abbrev=False, help="Resume engine from drain mode")
     quota_resume.add_argument("engine", help="Engine name")
     quota_resume.add_argument(
         "--state-path",
@@ -647,7 +648,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     quota_resume.set_defaults(func=cmd_quota_resume)
 
-    quota_status = quota_subparsers.add_parser("status", help="Show quota state snapshot")
+    quota_status = quota_subparsers.add_parser("status", allow_abbrev=False, help="Show quota state snapshot")
     quota_status.add_argument(
         "--state-path",
         default=None,
@@ -655,9 +656,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
     )
     quota_status.add_argument(
-        "--exec-path",
+        "--exec-jsonl",
         default="jobs/exec.jsonl",
         dest="exec_path",
+        metavar="PATH",
         help="Path to exec.jsonl",
     )
     quota_status.add_argument(
@@ -671,6 +673,7 @@ def _build_parser() -> argparse.ArgumentParser:
     # ghdag validate
     validate_parser = subparsers.add_parser(
         "validate",
+        allow_abbrev=False,
         help="Validate workflow YAML files in a directory",
     )
     validate_parser.add_argument(
@@ -682,18 +685,21 @@ def _build_parser() -> argparse.ArgumentParser:
     # ghdag schema
     schema_parser = subparsers.add_parser(
         "schema",
+        allow_abbrev=False,
         help="Bundled JSON Schema utilities",
     )
     schema_subparsers = schema_parser.add_subparsers(title="schema subcommands")
 
     schema_list_parser = schema_subparsers.add_parser(
         "list",
+        allow_abbrev=False,
         help="List bundled schema names",
     )
     schema_list_parser.set_defaults(func=cmd_schema_list)
 
     schema_show_parser = schema_subparsers.add_parser(
         "show",
+        allow_abbrev=False,
         help="Print one bundled schema as JSON",
     )
     schema_show_parser.add_argument(

@@ -215,8 +215,31 @@ class TestStateLabel:
     def test_unknown_identifier_returned_as_is(self):
         assert state_label("no_such_state") == "no_such_state"
 
-    def test_exported_from_pipeline_package(self):
-        import ghdag.pipeline
+def test_status_helpers_are_not_reexported(tmp_path):
+    import ghdag.pipeline
+    from ghdag.ui.monitor import task_state
 
-        assert ghdag.pipeline.state_label is state_label
-        assert "state_label" in ghdag.pipeline.__all__
+    blocked = {
+        "STATE_EMPTY",
+        "STATE_DEFERRED",
+        "STATE_ENGINE_ERROR",
+        "STATE_FAIL",
+        "STATE_OK",
+        "STATE_PENDING_DEPS",
+        "STATE_PENDING_RUN",
+        "STATE_REJECTED",
+        "STATE_RUNNING",
+        "STATE_UNKNOWN_DONE",
+        "task_status",
+        "state_label",
+        "status_rank",
+    }
+    for name in blocked:
+        assert name not in ghdag.pipeline.__all__
+        assert not hasattr(ghdag.pipeline, name)
+
+    done_dir = tmp_path / "done"
+    done_dir.mkdir()
+    (done_dir / "u1").write_text("0\n", encoding="utf-8")
+    assert task_state("u1", set(), done_dir) == STATE_OK
+    assert task_state("u2", set(), done_dir, running_uuids={"u2"}) == STATE_RUNNING

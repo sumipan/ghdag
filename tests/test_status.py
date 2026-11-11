@@ -315,19 +315,14 @@ class TestIssueStatusFixtures:
         assert tasks[0].started_at == "2026-09-10T14:39:20+00:00"
 
 
-class TestPublicExports:
-    def test_ghdag_package_exports(self) -> None:
-        import ghdag
+def test_status_running_task_remains_public() -> None:
+    from ghdag.status import RunningTask
 
-        for name in (
-            "IssueStatus",
-            "StepStatus",
-            "RunningTask",
-            "issue_status",
-            "running_tasks",
-        ):
-            assert name in ghdag.__all__
-            assert hasattr(ghdag, name)
+    assert RunningTask.__name__ == "RunningTask"
+    import ghdag
+
+    assert "RunningTask" not in ghdag.__all__
+    assert not hasattr(ghdag, "RunningTask")
 
 
 class TestStepStatusCoreSharedWithPipeline:

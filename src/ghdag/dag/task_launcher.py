@@ -85,7 +85,7 @@ from .engine_quarantine import EngineQuarantine
 from .fanout import FanoutError, parse_fanout_spec
 from .fanout_manager import FanOutManager
 from .hooks import DagHooks
-from .models import DagConfig, RunningTask, Task
+from .models import DagConfig, Task, _RunningProcess
 
 logger = logging.getLogger(__name__)
 
@@ -416,7 +416,7 @@ class TaskLauncher:
         self._circuit_breaker = circuit_breaker
         self._fanout_manager = fanout_manager
         self._promote_fn = promote_fn
-        self._running: dict[str, RunningTask] = {}
+        self._running: dict[str, _RunningProcess] = {}
         self._adopted: dict[str, AdoptedTask] = {}
         self._cancelled: set[str] = set()
         self._interrupting: set[str] = set()
@@ -551,7 +551,7 @@ class TaskLauncher:
                 interval_sec=stall_guard_interval_sec(),
                 ps=read_ps,
             )
-        self._running[uuid] = RunningTask(
+        self._running[uuid] = _RunningProcess(
             uuid=uuid,
             task=task,
             proc=proc,
@@ -737,7 +737,7 @@ class TaskLauncher:
                             daemon=True,
                         )
                         t_stderr.start()
-                        self._running[uuid] = RunningTask(
+                        self._running[uuid] = _RunningProcess(
                             uuid=uuid,
                             task=task,
                             proc=fallback_proc,
@@ -1625,7 +1625,7 @@ class TaskLauncher:
                 target=_stderr_reader, args=(proc, stderr_buf), daemon=True
             )
             t_stderr.start()
-            self._running[uuid] = RunningTask(
+            self._running[uuid] = _RunningProcess(
                 uuid=uuid,
                 task=task,
                 proc=proc,
@@ -1754,7 +1754,7 @@ class TaskLauncher:
         """Number of currently running and adopted tasks."""
         return len(self._running) + len(self._adopted)
 
-    def _join_reader_threads(self, rt: RunningTask) -> None:
+    def _join_reader_threads(self, rt: _RunningProcess) -> None:
         for name, th in [("stderr", rt.stderr_thread), ("stdout", rt.stdout_thread)]:
             if th is None:
                 continue

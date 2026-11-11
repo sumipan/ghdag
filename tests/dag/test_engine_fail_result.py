@@ -16,7 +16,7 @@ from ghdag.core.vocabulary import (
 )
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DefaultHooks
-from ghdag.dag.models import DagConfig, RunningTask, Task
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
 
 
 def _make_config(tmp_path):
@@ -59,7 +59,7 @@ def _make_running_task(uuid="fail-uuid", returncode=1, stderr=b"some error"):
     proc.poll.return_value = returncode
     proc.returncode = returncode
     task = Task(uuid=uuid, command="echo test")
-    return RunningTask(
+    return _RunningProcess(
         uuid=uuid,
         task=task,
         proc=proc,
@@ -135,7 +135,7 @@ def test_retryable_engine_error_marks_done_for_retry(tmp_path):
     proc.poll.return_value = 0
     proc.returncode = 0
     task = Task(uuid="err-retry", command="codex exec", engine="codex", result_path=str(result_file), retry=0)
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid=task.uuid,
         task=task,
         proc=proc,
@@ -165,7 +165,7 @@ def test_non_retryable_engine_error_marks_done_final(tmp_path):
     proc.poll.return_value = 0
     proc.returncode = 0
     task = Task(uuid="err-final", command="codex exec", engine="codex", retry=0)
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid=task.uuid,
         task=task,
         proc=proc,
@@ -195,7 +195,7 @@ def test_pipeline_status_legacy_deferred_is_unsupported_failure(tmp_path):
     proc.poll.return_value = 0
     proc.returncode = 0
     task = Task(uuid="deferred-1", command="claude -p hi", engine="claude", result_path=str(result_file))
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid=task.uuid,
         task=task,
         proc=proc,
@@ -225,7 +225,7 @@ def test_pipeline_status_legacy_deferred_records_failure(tmp_path):
     proc.poll.return_value = 0
     proc.returncode = 0
     task = Task(uuid="deferred-2", command="claude -p hi", engine="claude", result_path=str(result_file))
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid=task.uuid,
         task=task,
         proc=proc,
@@ -301,7 +301,7 @@ def _make_shell_running_task(uuid, returncode, stdout, result_path, stderr=b""):
     proc.poll.return_value = returncode
     proc.returncode = returncode
     task = Task(uuid=uuid, command="echo boom; exit 1", engine="shell", result_path=str(result_path))
-    return RunningTask(
+    return _RunningProcess(
         uuid=uuid,
         task=task,
         proc=proc,
@@ -368,7 +368,7 @@ def test_non_shell_failure_does_not_write_result(tmp_path):
     proc.poll.return_value = 1
     proc.returncode = 1
     task = Task(uuid="claude-fail", command="claude -p hi", engine="claude", result_path=str(result_file))
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid=task.uuid,
         task=task,
         proc=proc,

@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ghdag.core.vocabulary import PIPELINE_REPLY_BLOCK_FAILED
-from ghdag.dag.models import DagConfig, RunningTask, Task
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
 from ghdag.dag.task_launcher import TaskLauncher
 
 
@@ -52,7 +52,7 @@ def _make_launcher(tmp_path: Path, *, max_repair_turns: int = 1) -> TaskLauncher
 
 def _seed_running(launcher: TaskLauncher, uuid: str, task: Task) -> None:
     proc = _Proc(returncode=0)
-    launcher._running[uuid] = RunningTask(
+    launcher._running[uuid] = _RunningProcess(
         uuid=uuid,
         task=task,
         proc=proc,  # type: ignore[arg-type]
@@ -141,7 +141,7 @@ class TestRepairTurn:
             engine="claude",
             result_path=str(result),
         )
-        launcher._running[uuid] = RunningTask(
+        launcher._running[uuid] = _RunningProcess(
             uuid=uuid,
             task=task,
             proc=_Proc(returncode=0),  # type: ignore[arg-type]

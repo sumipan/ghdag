@@ -13,7 +13,7 @@ from .audit_hooks import AuditHooks
 from .engine import DagEngine
 from .fanout import FanOutSpec, build_child_jsonl_record, parse_fanout_spec
 from .hooks import DagHooks, DefaultHooks
-from .models import DagConfig, RunningTask, Task
+from .models import DagConfig, Task
 from .parser import parse_jsonl
 from .recover import execute_recover, plan_recover, running_uuids_from_queue_dir
 
@@ -27,7 +27,6 @@ __all__ = [
     "FanOutSpec",
     "LEGACY_DONE_DEFERRED",
     "PIPELINE_WAIT_QUOTA",
-    "RunningTask",
     "Task",
     "WAIT_QUOTA_COMPANION_RE",
     "WaitQuotaSignal",

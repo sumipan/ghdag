@@ -9,43 +9,33 @@ def test_py_typed_marker_exists():
     assert p.exists(), "py.typed marker missing — PEP 561 compliance required"
 
 
-def test_llm_pipeline_api_importable():
-    from ghdag import LLMPipelineAPI
+def test_top_level_exports_only_ghdag_error():
+    import ghdag
+
+    assert ghdag.__all__ == ["GhdagError"]
+    assert hasattr(ghdag, "GhdagError")
+
+
+def test_definition_packages_importable():
+    from ghdag.dag import DagEngine
+    from ghdag.io.queue import QueueTask, QueueTaskStore
+    from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+    from ghdag.pipeline.state import PipelineState
+    from ghdag.quota import QuotaGate
+    from ghdag.status import IssueStatus, RunningTask, issue_status, running_tasks
+    from ghdag.workflow import WorkflowDispatcher
+
     assert LLMPipelineAPI is not None
-
-
-def test_pipeline_state_importable():
-    from ghdag import PipelineState
     assert PipelineState is not None
-
-
-def test_dag_engine_importable():
-    from ghdag import DagEngine
     assert DagEngine is not None
-
-
-def test_workflow_dispatcher_importable():
-    from ghdag import WorkflowDispatcher
     assert WorkflowDispatcher is not None
-
-
-def test_quota_gate_importable():
-    from ghdag import QuotaGate
     assert QuotaGate is not None
-
-
-def test_all_new_symbols_in_dunder_all():
-    import ghdag
-    expected = {"LLMPipelineAPI", "PipelineState", "DagEngine", "WorkflowDispatcher", "QuotaGate"}
-    missing = expected - set(ghdag.__all__)
-    assert not missing, f"Missing from __all__: {missing}"
-
-
-def test_existing_symbols_still_in_dunder_all():
-    import ghdag
-    existing = {"QueueTask", "QueueTaskStore"}
-    missing = existing - set(ghdag.__all__)
-    assert not missing, f"Existing symbols removed from __all__: {missing}"
+    assert QueueTask is not None
+    assert QueueTaskStore is not None
+    assert IssueStatus is not None
+    assert RunningTask is not None
+    assert callable(issue_status)
+    assert callable(running_tasks)
 
 
 def test_check_pipeline_status_importable():

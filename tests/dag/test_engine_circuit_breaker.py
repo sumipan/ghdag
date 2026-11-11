@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DagHooks
-from ghdag.dag.models import DagConfig, RunningTask, Task
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
 
 
 def _make_config(tmp_path):
@@ -24,7 +24,7 @@ def _make_running_task(uuid="cb-uuid", returncode=1, stderr=b""):
     proc.poll.return_value = returncode
     proc.returncode = returncode
     task = Task(uuid=uuid, command="echo test")
-    return RunningTask(
+    return _RunningProcess(
         uuid=uuid,
         task=task,
         proc=proc,

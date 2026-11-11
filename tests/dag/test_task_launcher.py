@@ -55,7 +55,7 @@ class TestTaskLauncherUnit:
         import subprocess
 
         from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
-        from ghdag.dag.models import RunningTask, Task
+        from ghdag.dag.models import Task, _RunningProcess
         from ghdag.dag.task_launcher import TaskLauncher
 
         config = _make_config(tmp_path, "")
@@ -68,7 +68,7 @@ class TestTaskLauncherUnit:
         proc = subprocess.Popen(["true"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         proc.wait()
         task = Task(uuid="done-test", command="true")
-        rt = RunningTask(
+        rt = _RunningProcess(
             uuid="done-test", task=task, proc=proc,
             started_at=1_700_000_000.0, started_at_mono=10_000.0,
             stderr_buf=io.BytesIO(b""), retry_depth=0,

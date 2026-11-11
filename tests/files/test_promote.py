@@ -216,7 +216,7 @@ class TestDagHooksIntegration:
 
         from ghdag.dag.engine import DagEngine
         from ghdag.dag.hooks import DagHooks
-        from ghdag.dag.models import DagConfig, RunningTask, Task
+        from ghdag.dag.models import DagConfig, Task, _RunningProcess
 
         result_file = repo_root / "result" / "r1.md"
         target_file = repo_root / "notes" / "summary.md"
@@ -242,7 +242,7 @@ class TestDagHooksIntegration:
         task = Task(uuid="t1", command="true", result_path=str(result_file))
         proc = subprocess.Popen(["true"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         proc.wait()
-        rt = RunningTask(
+        rt = _RunningProcess(
             uuid="t1", task=task, proc=proc,
             started_at=1_700_000_000.0, started_at_mono=10_000.0,
             stderr_buf=io.BytesIO(b""), retry_depth=0,
@@ -270,7 +270,7 @@ class TestDagHooksIntegration:
 
         from ghdag.dag.engine import DagEngine
         from ghdag.dag.hooks import DagHooks
-        from ghdag.dag.models import DagConfig, RunningTask, Task
+        from ghdag.dag.models import DagConfig, Task, _RunningProcess
 
         result_file = repo_root / "result" / "r1.md"
         exec_file = repo_root / "exec.jsonl"
@@ -293,7 +293,7 @@ class TestDagHooksIntegration:
         task = Task(uuid="t2", command="true", result_path=str(result_file))
         proc = subprocess.Popen(["true"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         proc.wait()
-        rt = RunningTask(
+        rt = _RunningProcess(
             uuid="t2", task=task, proc=proc,
             started_at=1_700_000_000.0, started_at_mono=10_000.0,
             stderr_buf=io.BytesIO(b""), retry_depth=0,
@@ -315,7 +315,7 @@ class TestDagHooksIntegration:
 
         from ghdag.dag.engine import DagEngine
         from ghdag.dag.hooks import DagHooks
-        from ghdag.dag.models import DagConfig, RunningTask, Task
+        from ghdag.dag.models import DagConfig, Task, _RunningProcess
 
         result_file = repo_root / "result" / "r1.md"
         exec_file = repo_root / "exec.jsonl"
@@ -338,7 +338,7 @@ class TestDagHooksIntegration:
         task = Task(uuid="t3", command="true", result_path=str(result_file))
         proc = subprocess.Popen(["true"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         proc.wait()
-        rt = RunningTask(
+        rt = _RunningProcess(
             uuid="t3", task=task, proc=proc,
             started_at=1_700_000_000.0, started_at_mono=10_000.0,
             stderr_buf=io.BytesIO(b""), retry_depth=0,

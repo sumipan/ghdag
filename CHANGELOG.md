@@ -7,6 +7,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.129.0 - 2026-11-12
+
+### Changed
+
+- CLI flags: `--exec-jsonl` (replaces `--exec-md` / `quota status` `--exec-path`), `--interval-sec` (replaces `--interval`), `--timeout-sec` (replaces `--timeout`), and `ghdag llm --permission PRESET` (replaces `--capabilities-preset`, `--permission-mode`, `--dangerously-skip-permissions`). Handler `argparse` attribute names are unchanged (`exec_jsonl`, `interval`, `timeout`, and related fields) (sumipan/nexus#6475).
+- `ghdag.__all__` exports only `GhdagError`; import `QueueTask` / `QueueTaskStore`, pipeline, DAG, workflow, quota, and status symbols from their definition packages (sumipan/nexus#6475).
+- `ghdag.pipeline` no longer re-exports `STATE_*`, `task_status`, `state_label`, or `status_rank`; import from `ghdag.pipeline.status` / `ghdag.pipeline.state` (sumipan/nexus#6475).
+- Internal DAG process record renamed to `_RunningProcess` in `ghdag.dag.models`; it is not exported from `ghdag.dag`. Snapshot type `ghdag.status.RunningTask` is unchanged (sumipan/nexus#6475).
+
+### Removed
+
+- `ForgePort`, `get_forge`, `GitHubIssueClient`, and `create_github_client` from `ghdag.workflow.__all__`; import from `ghdag.core.ports.forge`, `ghdag.forge`, and `ghdag.github_client` (sumipan/nexus#6475).
+
+| Before | After |
+| --- | --- |
+| `ghdag watch … --exec-md PATH` | `ghdag watch … --exec-jsonl PATH` |
+| `ghdag trigger … --exec-md PATH` | `ghdag trigger … --exec-jsonl PATH` |
+| `ghdag dag recover … --exec-md PATH` | `ghdag dag recover … --exec-jsonl PATH` |
+| `ghdag quota status --exec-path PATH` | `ghdag quota status --exec-jsonl PATH` |
+| `ghdag run|watch|ui … --interval SEC` | `… --interval-sec SEC` |
+| `ghdag llm … --timeout SEC` | `ghdag llm … --timeout-sec SEC` |
+| `ghdag llm --capabilities-preset P` | `ghdag llm --permission P` |
+| `from ghdag import DagEngine` | `from ghdag.dag import DagEngine` |
+| `from ghdag.dag import RunningTask` | internal `_RunningProcess` (not public) |
+| `from ghdag.workflow import get_forge` | `from ghdag.forge import get_forge` |
+
 ## 0.127.0 - 2026-11-11
 
 ### Removed

@@ -163,7 +163,7 @@ class TestRecoverCliStructuredOutput:
             "--issue", str(ISSUE_NUMBER),
             "--handler", "impl",
             "--workflows-dir", str(workflows_dir),
-            "--exec-md", str(exec_jsonl),
+            "--exec-jsonl", str(exec_jsonl),
             "--state-dir", str(state_dir),
             "--from", "p2",
             "--dry-run",
@@ -197,7 +197,7 @@ class TestRecoverCliStructuredOutput:
                 "--issue", str(ISSUE_NUMBER),
                 "--handler", "impl",
                 "--workflows-dir", str(workflows_dir),
-                "--exec-md", str(exec_jsonl),
+                "--exec-jsonl", str(exec_jsonl),
                 "--state-dir", str(state_dir),
             ])
         assert exc.value.code == 1

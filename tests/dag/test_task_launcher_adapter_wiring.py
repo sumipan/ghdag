@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DagHooks
-from ghdag.dag.models import DagConfig, RunningTask, Task
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
 
 
 def _make_config(tmp_path):
@@ -59,7 +59,7 @@ def test_claude_json_result_path_contains_text_only(mock_mark_done, tmp_path):
         engine="claude",
         result_path=str(result_file),
     )
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid="test-claude-text",
         task=task,
         proc=_make_proc(0),
@@ -90,7 +90,7 @@ def test_claude_json_metrics_are_non_null(mock_mark_done, tmp_path):
         engine="claude",
         result_path=str(result_file),
     )
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid="test-claude-metrics",
         task=task,
         proc=_make_proc(0),
@@ -123,7 +123,7 @@ def test_cursor_plain_text_result_path_unchanged(mock_mark_done, tmp_path):
         engine="cursor",
         result_path=str(result_file),
     )
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid="test-cursor-text",
         task=task,
         proc=_make_proc(0),
@@ -150,7 +150,7 @@ def test_cursor_token_count_is_none(mock_mark_done, tmp_path):
         engine="cursor",
         result_path=str(result_file),
     )
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid="test-cursor-none",
         task=task,
         proc=_make_proc(0),
@@ -195,7 +195,7 @@ def test_cursor_json_writes_result_text_and_session(mock_mark_done, tmp_path):
         engine="cursor",
         result_path=str(result_file),
     )
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid=parent_uuid,
         task=task,
         proc=_make_proc(0),
@@ -245,7 +245,7 @@ def test_codex_jsonl_writes_result_text_and_session(mock_mark_done, tmp_path):
         engine="codex",
         result_path=str(result_file),
     )
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid=parent_uuid,
         task=task,
         proc=_make_proc(0),

@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from ghdag.dag.engine import DagEngine
-from ghdag.dag.models import DagConfig, RunningTask, Task
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
 from ghdag.io.done import load_done_from_dir, load_succeeded_from_dir
 
 
@@ -285,7 +285,7 @@ class TestSerializeMutatingUnitCheck:
         )
         proc_mock = MagicMock()
         proc_mock.poll.return_value = None
-        engine._running["running"] = RunningTask(
+        engine._running["running"] = _RunningProcess(
             uuid="running",
             task=running_task,
             proc=proc_mock,
@@ -323,7 +323,7 @@ class TestSerializeMutatingUnitCheck:
         )
         proc_mock = MagicMock()
         proc_mock.poll.return_value = None
-        engine._running["running"] = RunningTask(
+        engine._running["running"] = _RunningProcess(
             uuid="running",
             task=running_task,
             proc=proc_mock,

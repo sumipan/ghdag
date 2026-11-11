@@ -42,12 +42,30 @@ def test_get_forge_github_explicit(monkeypatch: pytest.MonkeyPatch) -> None:
     assert forge.repo == "acme/widgets"
 
 
-def test_workflow_reexports_forge_port_and_get_forge() -> None:
-    from ghdag.workflow import ForgePort as ExportedForgePort
-    from ghdag.workflow import get_forge as exported_get_forge
+def test_workflow_does_not_reexport_forge_clients(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import ghdag.workflow
 
-    assert ExportedForgePort is ForgePort
-    assert exported_get_forge is get_forge
+    for name in (
+        "ForgePort",
+        "get_forge",
+        "GitHubIssueClient",
+        "create_github_client",
+    ):
+        assert name not in ghdag.workflow.__all__
+        assert not hasattr(ghdag.workflow, name)
+
+    from ghdag.core.ports.forge import ForgePort as CanonicalForgePort
+    from ghdag.forge import get_forge as canonical_get_forge
+    from ghdag.github_client import GitHubClient, create_github_client
+
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    assert isinstance(get_forge(repo="owner/repo"), ForgePort)
+    assert GitHubClient is not None
+    assert callable(create_github_client)
+    assert CanonicalForgePort is ForgePort
+    assert canonical_get_forge is get_forge
 
 
 def test_core_ports_reexports_forge_port() -> None:

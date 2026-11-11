@@ -6,14 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ghdag import QueueTask as QueueTaskTop
-from ghdag import QueueTaskStore as QueueTaskStoreTop
-from ghdag.io.queue import QueueTask, QueueTaskStore
-
-
-def test_top_level_exports_are_same_classes() -> None:
-    assert QueueTaskTop is QueueTask
-    assert QueueTaskStoreTop is QueueTaskStore
+from ghdag.io.queue import QueueTaskStore
 
 UUID1 = "14036ae7-f47f-4669-8a80-679a5e87c147"
 UUID2 = "75d11b22-75ca-4754-8768-765857d3ac9d"

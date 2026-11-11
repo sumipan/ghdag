@@ -36,7 +36,7 @@ class TestHelp:
         assert exc.value.code == 0
         captured = capsys.readouterr()
         assert "exec_jsonl" in captured.out
-        assert "--interval" in captured.out
+        assert "--interval-sec" in captured.out
 
     def test_watch_help_exits_0(self, capsys):
         from ghdag.cli import main
@@ -46,8 +46,8 @@ class TestHelp:
         assert exc.value.code == 0
         captured = capsys.readouterr()
         assert "workflows_dir" in captured.out
-        assert "--interval" in captured.out
-        assert "--exec-md" in captured.out
+        assert "--interval-sec" in captured.out
+        assert "--exec-jsonl" in captured.out
         assert "--pause-file" in captured.out
 
 
@@ -117,6 +117,98 @@ class TestLlmCapabilitiesPreset:
         assert exc.value.code == 0
         captured = capsys.readouterr()
         assert "readonly_observe" in captured.out
+        assert "--permission" in captured.out
+
+
+def test_exec_jsonl_flag_is_consistent(tmp_path):
+    from ghdag.cli import main
+    from ghdag.cli.main import _build_parser
+
+    wf = tmp_path / "wf"
+    wf.mkdir()
+    exec_path = str(tmp_path / "jobs" / "exec.jsonl")
+    parser = _build_parser()
+
+    watch_args = parser.parse_args(
+        ["watch", str(wf), "--exec-jsonl", exec_path, "--once"],
+    )
+    assert watch_args.exec_jsonl == exec_path
+
+    trigger_args = parser.parse_args(
+        [
+            "trigger",
+            "1",
+            "--handler",
+            "impl",
+            "--exec-jsonl",
+            exec_path,
+        ],
+    )
+    assert trigger_args.exec_jsonl == exec_path
+
+    recover_args = parser.parse_args(
+        [
+            "dag",
+            "recover",
+            "--issue",
+            "1",
+            "--handler",
+            "impl",
+            "--exec-jsonl",
+            exec_path,
+        ],
+    )
+    assert recover_args.exec_jsonl == exec_path
+
+    quota_args = parser.parse_args(
+        ["quota", "status", "--exec-jsonl", exec_path],
+    )
+    assert quota_args.exec_path == exec_path
+
+    for argv in (
+        ["watch", str(wf), "--exec-md", exec_path],
+        ["trigger", "1", "--handler", "impl", "--exec-md", exec_path],
+        ["dag", "recover", "--issue", "1", "--handler", "impl", "--exec-md", exec_path],
+        ["quota", "status", "--exec-path", exec_path],
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main(argv)
+        assert exc.value.code == 2
+
+
+def test_duration_flags_use_sec_suffix(tmp_path):
+    from ghdag.cli import main
+    from ghdag.cli.main import _build_parser
+
+    exec_md = tmp_path / "exec.jsonl"
+    exec_md.write_text("")
+    wf = tmp_path / "wf"
+    wf.mkdir()
+    parser = _build_parser()
+
+    run_args = parser.parse_args(["run", str(exec_md), "--interval-sec", "10"])
+    assert run_args.interval == 10.0
+
+    watch_args = parser.parse_args(
+        ["watch", str(wf), "--interval-sec", "5", "--once"],
+    )
+    assert watch_args.interval == 5.0
+
+    ui_args = parser.parse_args(["ui", "--interval-sec", "4"])
+    assert ui_args.interval == 4.0
+
+    llm_args = parser.parse_args(["llm", "hello", "--timeout-sec", "120"])
+    assert llm_args.timeout == 120
+
+    for argv in (
+        ["run", str(exec_md), "--interval", "10"],
+        ["watch", str(wf), "--interval", "5", "--once"],
+        ["ui", "--interval", "4"],
+        ["llm", "hello", "--timeout", "120"],
+    ):
+        with pytest.raises(SystemExit) as exc:
+            main(argv)
+        assert exc.value.code == 2
 
 
 class TestStatusJson:

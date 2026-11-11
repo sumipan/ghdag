@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
-from ghdag.dag.models import DagConfig, RunningTask, Task
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
 from ghdag.dag.task_launcher import TaskLauncher, _resolve_task_timeout
 
 
@@ -59,7 +59,7 @@ def _make_running_task(
     elapsed_sec: float,
     annotations: dict[str, str] | None = None,
     term_sent_at: float | None = None,
-) -> RunningTask:
+) -> _RunningProcess:
     proc = MagicMock()
     proc.poll.return_value = None
     task = Task(
@@ -67,7 +67,7 @@ def _make_running_task(
         command="sleep 60",
         annotations=annotations or {},
     )
-    return RunningTask(
+    return _RunningProcess(
         uuid="test-uuid",
         task=task,
         proc=proc,

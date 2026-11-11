@@ -91,8 +91,8 @@ class TestWatchNormal:
             from ghdag.cli import main
             main([
                 "watch", str(workflows_dir),
-                "--interval", "60",
-                "--exec-md", exec_jsonl_path,
+                "--interval-sec", "60",
+                "--exec-jsonl", exec_jsonl_path,
                 "--pause-file", pause_file_path,
             ])
 
