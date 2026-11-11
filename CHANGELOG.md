@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.124.0 - 2026-11-11
+
+### Added
+
+- ``ghdag.core.stall_guard``: detect recursive ``grep`` children under cursor shell state snapshots and SIGTERM them when CPU time stops advancing for ``stall_guard_stall_sec()`` (sumipan/nexus#6350).
+
 ## 0.123.1 - 2026-11-10
 
 ### Added
