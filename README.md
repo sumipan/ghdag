@@ -228,7 +228,6 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 | Command | Purpose |
 |---|---|
 | `python -m ghdag.github_cli <command> ...` | `gh`-style client over `get_forge()`: `issue {view,edit,comment,close,create}`, `pr {list,view,edit,diff,create,merge,checks,ready}`, `run {view,rerun}`, `repo view`, `api` |
-| `python -m ghdag.workflow.gates --gate NAME --body-file PATH [--labels-file PATH]` | Run one gate rule against an Issue body and print the violations as JSON |
 | `python -m ghdag.workflow.state_machine transition --workflow YAML ISSUE TARGET_LABEL` | Check a label transition against `transitions` / `reset_label` and apply it |
 | `python -m ghdag.workflow.render TEMPLATE [key=value ...]` | Expand a `render: live` template at run time and run it with `bash -o pipefail` (exit `2` on template errors) |
 | `python -m ghdag.workflow.conditional_step [--engine {claude,cursor}] [--model M] TEMPLATE [KEY=VALUE ...]` | Substitute template variables and invoke claude or cursor |
@@ -351,7 +350,6 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.tool` | `FallbackEntry`, `TOOL_EXIT_CODES`, `ToolDef`, `ToolRegistry`, `write_tool_fallback_audit` |
 | `ghdag.vcs` | `CommitResult`, `ConflictError`, `GitSink`, `LocalGitSink`, `NullSink`, `OwnershipError`, `get_sink`, `git_enabled` |
 | `ghdag.workflow` | `ConsumeEntry`, `DispatchResult`, `ForgePort`, `GitHubIssueClient`, `HandlerConfig`, `OnTriggerConfig`, `SkillIOSpec`, `StepConfig`, `TriggerConfig`, `WorkflowConfig`, `load_workflows`, `WorkflowDispatcher`, `create_github_client`, `get_forge`, `transition`, `typecheck_dag` |
-| `ghdag.workflow.gates` | `Violation`, `GateRule`, `GATE_REGISTRY`, `get_gate` |
 
 The `STATE_*` constants are language-neutral identifiers: `pending_deps`, `pending_run`, `running`, `deferred`, `ok`, `fail`, `rejected`, `empty`, `engine_error`, `unknown`. `task_status()` returns one of them; use `state_label()` for the display text.
 
@@ -404,7 +402,6 @@ Modules without `__all__`, importable directly under the same compatibility stat
 | `ghdag.github_client` | `GitHubClient`, `create_github_client`, `create_github_clients`, `GitHubIssueClient` (alias of `GitHubClient`) |
 | `ghdag.forge.local` | `LocalForge`: file-backed `ForgePort` and `GitHubIssuePort` (usable with `WorkflowDispatcher`); Issues and PRs under `<root>/.forge/`; Issue `id` equals `number`; parent sub-issue links in each issue JSON as `sub_issues` (child numbers) |
 | `ghdag.maintenance` | `validate_exec_jsonl`, `repair_exec_jsonl`, `repair_jobs_done` |
-| `ghdag.markdown.body_editor` | `split_h2_sections`, `count_heading`, `get_section`, `upsert_section`, `filter_section_by_paths`, `get_subsections` |
 | `ghdag.core.vocabulary` | Done-marker constants (`DONE_*`), `QUEUE_FILE_RE`, `PIPELINE_STATUS_RE`, `FANOUT_SEPARATOR`, `FANOUT_ANCHOR`, `FANOUT_KEY` |
 | `ghdag.llm.adapters.failure_classification` | `classify_common_failure`, `looks_like_question` |
 
@@ -463,7 +460,6 @@ claude, cursor, gemini and codex receive the prompt on stdin (`InputMode.STDIN`)
 | `GitHubIssuePort` | `ghdag.core.ports.github` | Minimal Issue client used by `WorkflowDispatcher` (`get_issue`, `reopen_issue`, `list_issues`, `list_all_issues`, ...) |
 | `OrderBuilder` | `ghdag.core.ports.order` | Build order text: `build_order(step_id, context) -> str` |
 | `EngineOutputAdapter` | `ghdag.core.ports.output` | Parse engine output: `extract_result_text`, `extract_token_usage`, `extract_session_id`, `extract_error`, `classify_failure` |
-| `GateRule` | `ghdag.core.ports.gate` | Check an Issue body: `check(body, labels) -> list[Violation]`; register in `GATE_REGISTRY` or through the `ghdag.gates` entry-point group |
 | `EngineAdapter` | `ghdag.core.command` | Custom engine command builder registered with `register_adapter` |
 
 ## Architecture
@@ -655,7 +651,6 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `core/ports/__init__.py` | Exports `ForgePort` |
 | `core/ports/dag_hooks.py` | `DagHooks` Protocol |
 | `core/ports/forge.py` | `ForgePort` Protocol |
-| `core/ports/gate.py` | `GateRule` Protocol, `Violation` |
 | `core/ports/github.py` | `GitHubIssuePort` Protocol |
 | `core/ports/order.py` | `OrderBuilder` Protocol |
 | `core/ports/output.py` | `EngineOutputAdapter` Protocol, `EngineError`, `EngineErrorKind` |
@@ -710,8 +705,6 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `llm/adapters/cursor.py` | cursor JSON / text output adapter |
 | `llm/adapters/cursor_stream.py` | cursor stream-json adapter and `RetriableError:` classification |
 | `llm/adapters/failure_classification.py` | Shared failure classification (`looks_like_question`, missing binary, auth, quota pause) |
-| `markdown/__init__.py` | Package marker |
-| `markdown/body_editor.py` | Deterministic H2 section editing of Issue bodies |
 | `metrics/__init__.py` | `MetricsRecorder`, `TaskMetrics` |
 | `metrics/models.py` | Shim for `TaskMetrics`, `TokenUsage`, `FailureClass` |
 | `metrics/parsers.py` | Engine / model detection and token count parsing |
@@ -751,10 +744,6 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `workflow/schema.py` | Shim for workflow dataclasses |
 | `workflow/state_machine.py` | Label transition state machine (`python -m`) |
 | `workflow/typecheck.py` | Static skill I/O type check across steps (`TypeCheckError`) |
-| `workflow/gates/__init__.py` | `GATE_REGISTRY`, `get_gate` |
-| `workflow/gates/__main__.py` | `python -m ghdag.workflow.gates` |
-| `workflow/gates/common.py` | `strip_code_regions` helper |
-| `workflow/gates/loader.py` | `ghdag.gates` entry-point loading |
 
 ## Configuration
 

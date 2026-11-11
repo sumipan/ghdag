@@ -147,14 +147,6 @@ def test_llm_adapters_import_compat() -> None:
     assert get_output_adapter("claude") is not None
 
 
-def test_workflow_gates_import_compat() -> None:
-    from ghdag.workflow.gates import GATE_REGISTRY, GateRule, Violation
-
-    assert GateRule.__name__ == "GateRule"
-    assert Violation.__name__ == "Violation"
-    assert isinstance(GATE_REGISTRY, dict)
-
-
 def test_workflow_import_side_effect_get_output_adapter() -> None:
     """get_output_adapter resolves immediately after importing ghdag.workflow."""
     import ghdag.workflow  # noqa: F401

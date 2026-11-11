@@ -110,7 +110,6 @@ forbidden_modules = [
   "ghdag.cleanup",
   "ghdag.maintenance",
   "ghdag.tool",
-  "ghdag.markdown",
 ]
 
 [[tool.importlinter.contracts]]
@@ -157,7 +156,6 @@ source_modules = [
   "ghdag.cleanup",
   "ghdag.maintenance",
   "ghdag.tool",
-  "ghdag.markdown",
 ]
 forbidden_modules = [
   "ghdag.dag",

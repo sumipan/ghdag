@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - ``ghdag.core.stall_guard``: detect recursive ``grep`` children under cursor shell state snapshots and SIGTERM them when CPU time stops advancing for ``stall_guard_stall_sec()`` (sumipan/nexus#6350).
 
+### Removed
+
+- ``ghdag.workflow.gates`` (including ``python -m ghdag.workflow.gates``), ``ghdag.markdown.body_editor``, ``ghdag.core.ports.gate`` (``GateRule`` / ``Violation``), and entry-point group ``ghdag.gates`` loading. Migrate gate rules and Issue body section editing to [issuesmith](https://github.com/sumipan/issuesmith) (sumipan/nexus#6317).
+
 ## 0.123.1 - 2026-11-10
 
 ### Added
