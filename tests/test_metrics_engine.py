@@ -3,13 +3,36 @@
 from __future__ import annotations
 
 import io
-import time
 from unittest.mock import patch
+
+import pytest
 
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import DagConfig, RunningTask, Task
 from ghdag.metrics.models import FailureClass, TaskMetrics
+
+FIXED_WALL = 1_700_000_000.0
+FIXED_MONO = 1_000.0
+
+
+class _FakeTaskClock:
+    def __init__(self) -> None:
+        self._mono = FIXED_MONO
+        self._wall = FIXED_WALL
+
+    def monotonic(self) -> float:
+        return self._mono
+
+    def time(self) -> float:
+        return self._wall
+
+
+@pytest.fixture
+def fake_task_clock(monkeypatch: pytest.MonkeyPatch) -> _FakeTaskClock:
+    clock = _FakeTaskClock()
+    monkeypatch.setattr("ghdag.dag.task_launcher.time", clock)
+    return clock
 
 
 def make_config(tmp_path):
@@ -60,8 +83,8 @@ def make_running_task(uuid="test-uuid", command="echo hello", returncode=0, stde
         uuid=uuid,
         task=task,
         proc=proc,
-        started_at=time.time() - 0.1,
-        started_at_mono=time.monotonic() - 0.1,
+        started_at=FIXED_WALL - 0.1,
+        started_at_mono=FIXED_MONO - 0.1,
         stderr_buf=io.BytesIO(stderr),
         retry_depth=retry,
     )
@@ -74,7 +97,7 @@ def make_engine(tmp_path):
 
 
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-def test_success_path(mock_tee, tmp_path):
+def test_success_path(mock_tee, tmp_path, fake_task_clock):
     engine, hooks = make_engine(tmp_path)
     rt = make_running_task()
     engine._launcher._running[rt.uuid] = rt
@@ -92,7 +115,7 @@ def test_success_path(mock_tee, tmp_path):
 
 
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-def test_failure_path(mock_tee, tmp_path):
+def test_failure_path(mock_tee, tmp_path, fake_task_clock):
     engine, hooks = make_engine(tmp_path)
     rt = make_running_task(returncode=1)
     engine._launcher._running[rt.uuid] = rt
@@ -107,7 +130,7 @@ def test_failure_path(mock_tee, tmp_path):
 
 
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value="result.md")
-def test_rejected_path(mock_tee, tmp_path):
+def test_rejected_path(mock_tee, tmp_path, fake_task_clock):
     engine, hooks = make_engine(tmp_path)
     hooks.rejected = True
     rt = make_running_task()
@@ -122,7 +145,7 @@ def test_rejected_path(mock_tee, tmp_path):
     assert metrics.failure_class == FailureClass.REJECTED
 
 
-def test_empty_result_path(tmp_path):
+def test_empty_result_path(tmp_path, fake_task_clock):
     engine, hooks = make_engine(tmp_path)
     result_file = tmp_path / "result.md"
     result_file.write_text("")
@@ -141,7 +164,7 @@ def test_empty_result_path(tmp_path):
 
 
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-def test_engine_model_in_metrics(mock_tee, tmp_path):
+def test_engine_model_in_metrics(mock_tee, tmp_path, fake_task_clock):
     engine, hooks = make_engine(tmp_path)
     rt = make_running_task(command='claude -p "hello" --model claude-opus-4-6')
     engine._launcher._running[rt.uuid] = rt
@@ -155,11 +178,11 @@ def test_engine_model_in_metrics(mock_tee, tmp_path):
 
 
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-def test_timeout_failure_class(mock_tee, tmp_path):
+def test_timeout_failure_class(mock_tee, tmp_path, fake_task_clock):
     """Timeout path → metrics.failure_class == \"TIMEOUT\"."""
     engine, hooks = make_engine(tmp_path)
     rt = make_running_task()
-    rt.term_sent_at = time.monotonic() - 1.0
+    rt.term_sent_at = FIXED_MONO - 1.0
     engine._launcher._running[rt.uuid] = rt
 
     engine._launcher.check_completions()
@@ -169,7 +192,7 @@ def test_timeout_failure_class(mock_tee, tmp_path):
 
 
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value="result.md")
-def test_pipeline_failed_failure_class(mock_tee, tmp_path):
+def test_pipeline_failed_failure_class(mock_tee, tmp_path, fake_task_clock):
     """PIPELINE_STATUS: *_FAILED path → metrics.failure_class == \"PIPELINE_FAILED\"."""
     engine, hooks = make_engine(tmp_path)
     hooks.pipeline_status = "IMPL_FAILED"

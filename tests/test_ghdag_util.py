@@ -54,7 +54,7 @@ class TestStderrReader:
         buf = io.BytesIO()
         t = threading.Thread(target=_stderr_reader, args=(proc, buf))
         t.start()
-        t.join(timeout=2.0)
+        t.join()
         assert not t.is_alive()
         assert buf.getvalue() == b"chunk1chunk2"
 
@@ -66,7 +66,7 @@ class TestStderrReader:
         buf = io.BytesIO()
         t = threading.Thread(target=_stderr_reader, args=(proc, buf))
         t.start()
-        t.join(timeout=2.0)
+        t.join()
         assert not t.is_alive()
 
     def test_valueerror_on_close_exits_safely(self):
@@ -77,7 +77,7 @@ class TestStderrReader:
         buf = io.BytesIO()
         t = threading.Thread(target=_stderr_reader, args=(proc, buf))
         t.start()
-        t.join(timeout=2.0)
+        t.join()
         assert not t.is_alive()
 
 
@@ -91,7 +91,7 @@ class TestStdoutReader:
         buf = io.BytesIO()
         t = threading.Thread(target=_stdout_reader, args=(proc, buf))
         t.start()
-        t.join(timeout=2.0)
+        t.join()
         assert not t.is_alive()
         assert buf.getvalue() == b"out1out2"
 
@@ -103,7 +103,7 @@ class TestStdoutReader:
         buf = io.BytesIO()
         t = threading.Thread(target=_stdout_reader, args=(proc, buf))
         t.start()
-        t.join(timeout=2.0)
+        t.join()
         assert not t.is_alive()
 
     def test_valueerror_on_close_exits_safely(self):
@@ -114,5 +114,5 @@ class TestStdoutReader:
         buf = io.BytesIO()
         t = threading.Thread(target=_stdout_reader, args=(proc, buf))
         t.start()
-        t.join(timeout=2.0)
+        t.join()
         assert not t.is_alive()

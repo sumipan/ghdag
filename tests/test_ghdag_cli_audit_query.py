@@ -3,12 +3,23 @@
 from __future__ import annotations
 
 import json
-import time
+import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+
+FIXED_NOW = 1_762_600_000.0
+_JST = timezone(timedelta(hours=9))
+
+
+@pytest.fixture(autouse=True)
+def _fixed_audit_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "ghdag.io.audit_query.time",
+        types.SimpleNamespace(time=lambda: FIXED_NOW),
+    )
 
 
 def _write_events(path: Path, events: list[dict]) -> None:
@@ -18,7 +29,7 @@ def _write_events(path: Path, events: list[dict]) -> None:
 
 
 def _ts(offset_sec: float = 0.0) -> str:
-    dt = datetime.fromtimestamp(time.time() - offset_sec, tz=timezone(timedelta(hours=9)))
+    dt = datetime.fromtimestamp(FIXED_NOW - offset_sec, tz=_JST)
     return dt.isoformat()
 
 

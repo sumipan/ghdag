@@ -703,26 +703,36 @@ def _fake_rate_limited_then_ok(reset_at: int, calls: list[int]):
 def test_rate_limit_over_max_wait_raises_without_sleep(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """AC-1: reset beyond the limit -> RateLimitError immediately (< 1 s, no sleep)."""
-    import time
-
+    """AC-1: reset beyond the limit -> RateLimitError immediately, with no sleep."""
     from ghdag.exceptions import RateLimitError
 
+    class _FakeClientTime:
+        def __init__(self) -> None:
+            self._wall = 1_700_000_000.0
+            self.sleep_calls: list[float] = []
+
+        def time(self) -> float:
+            return self._wall
+
+        def sleep(self, sec: float) -> None:
+            self.sleep_calls.append(sec)
+
+    fake_time = _FakeClientTime()
+    monkeypatch.setattr("ghdag.github_client.time", fake_time)
     monkeypatch.delenv("GHDAG_RATE_LIMIT_MAX_WAIT_SEC", raising=False)
     client = GitHubClient(token="tok", repo="o/r", rate_limit_max_wait_sec=5)
-    reset_at = int(time.time()) + 60
+    reset_at = int(fake_time.time()) + 60
     calls: list[int] = []
     monkeypatch.setattr(
         "ghdag.github_client.urllib.request.urlopen",
         _fake_rate_limited_then_ok(reset_at, calls),
     )
 
-    start = time.monotonic()
     with pytest.raises(RateLimitError) as exc_info:
         client._request("GET", "/repos/o/r/issues/1")
-    assert time.monotonic() - start < 1.0
     assert exc_info.value.reset_at == reset_at
     assert len(calls) == 1
+    assert fake_time.sleep_calls == []
 
 
 def test_rate_limit_within_max_wait_sleeps_and_retries(

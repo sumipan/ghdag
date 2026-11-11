@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import logging
-import time
+import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
@@ -22,6 +24,16 @@ from ghdag.workflow.schema import (
     TriggerConfig,
     WorkflowConfig,
 )
+
+FIXED_NOW = 1_762_600_000.0
+_JST = timezone(timedelta(hours=9))
+
+
+@pytest.fixture(autouse=True)
+def _fixed_audit_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = types.SimpleNamespace(time=lambda: FIXED_NOW)
+    monkeypatch.setattr("ghdag.workflow.dispatcher.time", fake)
+    monkeypatch.setattr("ghdag.io.audit_query.time", fake)
 
 
 def _make_workflow(name: str = "wf") -> WorkflowConfig:
@@ -53,7 +65,7 @@ def _make_dispatcher(tmp_path: Path) -> tuple[WorkflowDispatcher, MagicMock]:
 
 
 def _ts(offset_sec: float = 0.0) -> str:
-    dt = datetime.fromtimestamp(time.time() - offset_sec, tz=timezone(timedelta(hours=9)))
+    dt = datetime.fromtimestamp(FIXED_NOW - offset_sec, tz=_JST)
     return dt.isoformat()
 
 
@@ -98,8 +110,7 @@ class TestObserveCorrelationBurst:
         cid = "issuesmith:B1:cooldown"
         _write_burst_events(tmp_path / "audit.jsonl", cid, _BURST_THRESHOLD + 1)
 
-        now = time.time()
-        dispatcher._burst_warned[cid] = now - 100  # within cooldown
+        dispatcher._burst_warned[cid] = FIXED_NOW - 100  # within cooldown
 
         with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
             dispatcher._observe_correlation_burst()
@@ -112,7 +123,7 @@ class TestObserveCorrelationBurst:
         cid = "issuesmith:B1:expired"
         _write_burst_events(tmp_path / "audit.jsonl", cid, _BURST_THRESHOLD + 1)
 
-        dispatcher._burst_warned[cid] = time.time() - _BURST_COOLDOWN_SEC - 1
+        dispatcher._burst_warned[cid] = FIXED_NOW - _BURST_COOLDOWN_SEC - 1
 
         with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
             dispatcher._observe_correlation_burst()

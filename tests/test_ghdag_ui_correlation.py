@@ -4,15 +4,26 @@ from __future__ import annotations
 
 import json
 import threading
-import time
+import types
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
+FIXED_NOW = 1_762_600_000.0
+_JST = timezone(timedelta(hours=9))
+
+
+@pytest.fixture(autouse=True)
+def _fixed_audit_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = types.SimpleNamespace(time=lambda: FIXED_NOW)
+    monkeypatch.setattr("ghdag.io.audit_query.time", fake)
+
 
 def _ts(offset_sec: float = 0.0) -> str:
-    dt = datetime.fromtimestamp(time.time() - offset_sec, tz=timezone(timedelta(hours=9)))
+    dt = datetime.fromtimestamp(FIXED_NOW - offset_sec, tz=_JST)
     return dt.isoformat()
 
 

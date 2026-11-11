@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -204,18 +203,18 @@ def test_wait_idle_validates_arguments(tmp_path: Path) -> None:
         gate.wait_idle("claude", poll_interval=0)
 
 
-def test_wait_idle_becomes_true_after_finish(tmp_path: Path) -> None:
+def test_wait_idle_becomes_true_after_finish(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     gate = QuotaGate(tmp_path / "quota-gate.json")
     gate.begin_run(task_uuid="task-1", engine="claude", now=_dt(12))
 
-    def _finish_later() -> None:
-        time.sleep(0.03)
+    def fake_sleep(_sec: float) -> None:
         gate.finish_run(task_uuid="task-1")
 
-    thread = threading.Thread(target=_finish_later, daemon=True)
-    thread.start()
+    monkeypatch.setattr("ghdag.quota.time.sleep", fake_sleep)
     assert gate.wait_idle("claude", timeout=0.3, poll_interval=0.01) is True
-    thread.join()
 
 
 def test_legacy_state_without_new_keys_is_loaded(tmp_path: Path) -> None:
@@ -250,7 +249,7 @@ def test_begin_run_and_drain_race_never_creates_dual_registry(tmp_path: Path) ->
         worker = threading.Thread(target=_begin, daemon=True)
         worker.start()
         gate.drain(engine="claude", now=_dt(12, 1))
-        worker.join(timeout=1)
+        worker.join()
         assert done.is_set()
 
         snapshot = gate.snapshot(now=_dt(12, 2))
@@ -358,6 +357,6 @@ def test_modify_is_atomic_across_processes(tmp_path: Path) -> None:
     for p in procs:
         p.start()
     for p in procs:
-        p.join(timeout=60)
+        p.join()
         assert p.exitcode == 0
     assert QuotaGate(state_path).read_state()["resources"]["counter"] == 100

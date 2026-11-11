@@ -31,7 +31,7 @@ def _record(
     return SessionRecord(
         engine=engine,
         session_id=session_id,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
 
 

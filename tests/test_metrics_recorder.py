@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
-import time
 
 import pytest
 
 from ghdag.metrics.models import TaskMetrics
 from ghdag.metrics.recorder import MetricsRecorder
 
+FIXED_NOW = 1_700_000_000.0
+
 
 def make_metrics(**kwargs) -> TaskMetrics:
-    now = time.time()
+    now = FIXED_NOW
     defaults = {
         "uuid": "test-uuid",
         "engine": "claude",
