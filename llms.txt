@@ -10,7 +10,6 @@
 - [README — Error Reference](README.md#error-reference): exceptions, exit codes, error codes
 - [README — Done markers](README.md#done-markers)
 - [README — Capability presets](README.md#capability-presets)
-- [docs/GHDAG.md](docs/GHDAG.md): design guide for hosts embedding ghdag
 
 ## Schemas
 
