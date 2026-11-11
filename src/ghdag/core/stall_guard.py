@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import signal
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -26,6 +27,7 @@ class ProcInfo:
     cpu_time_zero: bool
     comm: str
     args: str
+    cpu_time: str = ""
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,23 @@ class StallEvent:
     pid: int
     stalled_sec: float
     parent_args_head: str
+
+
+_RECURSIVE_SHORT_OPT = re.compile(r"^-[A-Za-z0-9]*[rR][A-Za-z0-9]*$")
+
+
+def _has_recursive_flag(args: str) -> bool:
+    tokens = args.split()
+    if not tokens:
+        return False
+    for token in tokens[1:]:
+        if token == "--":
+            break
+        if token in ("--recursive", "--dereference-recursive"):
+            return True
+        if _RECURSIVE_SHORT_OPT.match(token):
+            return True
+    return False
 
 
 def _shell_has_state_snap_marker(args: str) -> bool:
@@ -79,6 +98,7 @@ def parse_ps_output(text: str) -> list[ProcInfo]:
                 cpu_time_zero=_cpu_time_is_zero(time_col),
                 comm=comm,
                 args=args,
+                cpu_time=parts[2].strip(),
             )
         )
     return out
@@ -122,8 +142,30 @@ def find_stalled_state_readers(
     return stalled
 
 
+def find_stalled_recursive_greps(
+    procs: list[ProcInfo],
+    *,
+    all_procs: list[ProcInfo] | None = None,
+) -> list[int]:
+    """Return PIDs of recursive ``grep`` children under cursor state-snapshot shells."""
+    by_pid = {p.pid: p for p in (all_procs if all_procs is not None else procs)}
+    stalled: list[int] = []
+    for proc in procs:
+        if proc.comm != "grep" or not _has_recursive_flag(proc.args):
+            continue
+        parent = by_pid.get(proc.ppid)
+        if parent is None:
+            continue
+        if parent.comm not in ("zsh", "bash"):
+            continue
+        if not _shell_has_state_snap_marker(parent.args):
+            continue
+        stalled.append(proc.pid)
+    return stalled
+
+
 class StallTracker:
-    """Track stalled ``cat`` children under a process root and SIGTERM them once."""
+    """Track stalled ``cat`` / recursive ``grep`` children and SIGTERM them once."""
 
     def __init__(
         self,
@@ -141,6 +183,7 @@ class StallTracker:
         self._ps = ps
         self._last_check_mono: float | None = None
         self._first_seen: dict[int, float] = {}
+        self._last_cpu: dict[int, str] = {}
         self._killed: set[int] = set()
         self.events: list[StallEvent] = []
 
@@ -158,10 +201,26 @@ class StallTracker:
 
         all_procs = parse_ps_output(ps_text)
         tree = scan_process_tree(self._root_pid, ps_text)
-        stalled_pids = set(find_stalled_state_readers(tree, all_procs=all_procs))
+        stalled_cat_pids = set(find_stalled_state_readers(tree, all_procs=all_procs))
+        stalled_grep_pids = set(find_stalled_recursive_greps(tree, all_procs=all_procs))
+        stalled_pids = stalled_cat_pids | stalled_grep_pids
         for pid in list(self._first_seen):
             if pid not in stalled_pids:
                 del self._first_seen[pid]
+        for pid in list(self._last_cpu):
+            if pid not in stalled_grep_pids:
+                del self._last_cpu[pid]
+
+        for pid in stalled_grep_pids:
+            grep_proc = next((p for p in tree if p.pid == pid), None)
+            if grep_proc is None:
+                continue
+            cpu = grep_proc.cpu_time
+            if pid not in self._last_cpu:
+                self._last_cpu[pid] = cpu
+            elif self._last_cpu[pid] != cpu:
+                self._last_cpu[pid] = cpu
+                self._first_seen[pid] = now
 
         by_pid = {p.pid: p for p in tree}
         new_events: list[StallEvent] = []
