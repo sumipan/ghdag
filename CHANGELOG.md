@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.125.6 - 2026-11-11
+
 ### Changed
 
 - Internal import paths: `mcp`, `pipeline` (except `pipeline.__init__`), `schemas`, `tool`, `workflow`, and related tests import canonical modules directly instead of re-export shims (public behavior unchanged) (sumipan/nexus#6405).
