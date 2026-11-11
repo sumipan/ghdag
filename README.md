@@ -104,7 +104,7 @@ Each step `template` must exist as `workflows/templates/<template>.md`; that fil
 ```bash
 export GITHUB_TOKEN="<token>"            # or GH_TOKEN
 export GITHUB_REPOSITORIES="owner/repo"
-ghdag watch workflows --exec-md jobs/exec.jsonl --once
+ghdag watch workflows --exec-jsonl jobs/exec.jsonl --once
 ```
 
 Steps for Issues labelled `pipeline:develop-ready` are appended to `jobs/exec.jsonl`, and a running `ghdag run jobs/exec.jsonl` executes them. Follow one run with `ghdag status --issue <N> --handler impl --workflow sample-pipeline`.
@@ -121,7 +121,7 @@ print(result.body if result.success else result.stderr)
 The same call from the shell:
 
 ```bash
-ghdag llm --engine claude --capabilities-preset text_only "Summarize this repo in one line."
+ghdag llm --engine claude --permission text_only "Summarize this repo in one line."
 ```
 
 ### 4. Commit owned paths through a git sink
@@ -187,23 +187,23 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 
 | Command | Arguments (defaults) |
 |---|---|
-| `run` | `exec_jsonl`; `--interval SEC` (`1.0`); `--hooks MODULE` (module with a `DagHooks` implementation; default `AuditHooks`); `--max-concurrency N` (unlimited) |
-| `watch` | `workflows_dir`; `--interval SEC` (`30`); `--exec-md PATH` (`jobs/exec.jsonl`); `--once`; `--pause-file PATH` (disabled); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `<exec-md parent's parent>/.pipeline-state`) |
-| `trigger` | `issue_number`; `--handler NAME` (required); `--workflows-dir PATH` (`workflows`); `--exec-md PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto-detected when there is only one workflow); `--redispatch`; `--reason TEXT`; `--state-dir PATH` (same default as `watch`) |
+| `run` | `exec_jsonl`; `--interval-sec SEC` (`1.0`); `--hooks MODULE` (module with a `DagHooks` implementation; default `AuditHooks`); `--max-concurrency N` (unlimited) |
+| `watch` | `workflows_dir`; `--interval-sec SEC` (`30`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--once`; `--pause-file PATH` (disabled); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `<exec-jsonl parent's parent>/.pipeline-state`) |
+| `trigger` | `issue_number`; `--handler NAME` (required); `--workflows-dir PATH` (`workflows`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto-detected when there is only one workflow); `--redispatch`; `--reason TEXT`; `--state-dir PATH` (same default as `watch`) |
 | `status` | `--issue N` and/or `--running` (at least one); `--handler` and `--workflow` (required with `--issue`); `--json`; `--exec-jsonl PATH` (`$GHDAG_EXEC_JSONL` or `jobs/exec.jsonl`); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `.pipeline-state`); `--done-dir PATH` / `--running-dir PATH` (`$GHDAG_STATE_DIR/done` / `running` or `<exec.jsonl parent>/done` / `running`); `--audit-path PATH` (optional; adds `started_at` / `elapsed_sec` to completed steps) |
-| `ui` | `--repo-root PATH` (`.`); `--host HOST` (`127.0.0.1`); `--port PORT` (`8080`); `--interval SEC` (SSE poll, `3.0`); `--max-visible N` (`30`) |
-| `llm` | `[prompt]` (read from stdin when omitted); `--engine` / `-e` (`claude`); `--model` / `-m` (engine default); `--timeout SEC` (no limit); `--dangerously-skip-permissions`; `--permission-mode {default,plan,bypassPermissions}`; `--capabilities-preset {text_only,json_only,web_research,dangerous_full_access}`; `--stdin` (also pipe stdin to the engine); `--list-engines`; `--list-models`; `--audit-path PATH` (`GHDAG_AUDIT_PATH`); `--correlation-id ID`; `--request-id ID` |
+| `ui` | `--repo-root PATH` (`.`); `--host HOST` (`127.0.0.1`); `--port PORT` (`8080`); `--interval-sec SEC` (SSE poll, `3.0`); `--max-visible N` (`30`) |
+| `llm` | `[prompt]` (read from stdin when omitted); `--engine` / `-e` (`claude`); `--model` / `-m` (engine default); `--timeout-sec SEC` (no limit); `--permission {text_only,json_only,web_research,dangerous_full_access,readonly_observe}`; `--stdin` (also pipe stdin to the engine); `--list-engines`; `--list-models`; `--audit-path PATH` (`GHDAG_AUDIT_PATH`); `--correlation-id ID`; `--request-id ID` |
 | `cleanup` | `repo_root`; `--dry-run`; `--cutoff-days N` (`1`); `--orphan-days N` (`7`); `--auto-repair` (fix orphan and dead entries; detect-only by default) |
 | `audit-query` | `--correlation-id ID`; `--burst-detect` (exit `1` when a burst is found); `--since ISO8601` (correlation-ID mode only); `--audit-path PATH` (`jobs/audit.jsonl`); `--window-sec SEC` (`600`); `--threshold N` (`10`) |
 | `version` | none |
-| `dag recover` | `--issue N` (required); `--handler NAME` (required); `--from STEP` (only this step and its downstream steps); `--dry-run`; `--workflows-dir PATH` (`workflows`); `--exec-md PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto-detected); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `.pipeline-state`); `--keep-results` |
+| `dag recover` | `--issue N` (required); `--handler NAME` (required); `--from STEP` (only this step and its downstream steps); `--dry-run`; `--workflows-dir PATH` (`workflows`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto-detected); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `.pipeline-state`); `--keep-results` |
 | `dag cancel` | `uuid`; `--queue-dir PATH` (`$GHDAG_STATE_DIR` or `jobs`) |
 | `tools list` | `--path PATH` (required); `--json` |
 | `quota report` | `engine`; `--status {available,paused}` (required); `--observed-at ISO8601` (required, with timezone); `--resume-at ISO8601`; `--reason TEXT`; `--state-path PATH` (`$GHDAG_STATE_DIR/quota-gate.json` or `jobs/quota-gate.json`) |
 | `quota clear` | `engine`; `--observed-at ISO8601` (required); `--state-path PATH` (as above) |
 | `quota drain` | `engine`; `--reason TEXT`; `--state-path PATH` (as above) |
 | `quota resume` | `engine`; `--state-path PATH` (as above) |
-| `quota status` | `--state-path PATH` (as above); `--exec-path PATH` (`jobs/exec.jsonl`); `--done-dir PATH` (`jobs/done`) |
+| `quota status` | `--state-path PATH` (as above); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--done-dir PATH` (`jobs/done`) |
 | `validate` | `workflows_dir` |
 | `mcp` | `--repo-root PATH` (`.`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--state-dir PATH` (same default pattern as `watch` when `exec-jsonl` lives under `jobs/`) |
 
@@ -243,18 +243,8 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | Symbol | Kind | Defined in | Role |
 |---|---|---|---|
 | `GhdagError` | exception | `ghdag.core.exceptions` | Base class of ghdag domain errors |
-| `QueueTask` | dataclass | `ghdag.io.queue` | One queue task (`uuid`, `timestamp`, `engine`, `order_path`, `result_path`, `stderr_path`, `is_done`) |
-| `QueueTaskStore` | class | `ghdag.io.queue` | Scans a queue directory and its done markers |
-| `LLMPipelineAPI` | class | `ghdag.pipeline.llm_pipeline` | Intake API: turns workflow steps into order files and `exec.jsonl` records |
-| `PipelineState` | class | `ghdag.pipeline.state` | Pipeline state directory, handler generations, `exec.jsonl` appends |
-| `DagEngine` | class | `ghdag.dag.engine` | Local DAG runner: `.run()`, `.append_task(...)`, `.mark_done(...)` |
-| `WorkflowDispatcher` | class | `ghdag.workflow.dispatcher` | Label-driven dispatch: `.poll_once()`, `.run()`, `.dispatch(...)` |
-| `QuotaGate` | class | `ghdag.quota` | Engine quota, pause sources (`budget` / `failure` / `manual` / `drain`), drain mode, and role admission |
-| `IssueStatus` | dataclass | `ghdag.status` | Aggregated status of one Issue x handler run |
-| `StepStatus` | dataclass | `ghdag.status` | Status of one step (`status` plus optional `done_value`, `failure_class`, `cause`, `retry_policy` from the done marker) |
-| `RunningTask` | dataclass | `ghdag.status` | Snapshot of one `running/<uuid>.json` |
-| `issue_status` | function | `ghdag.status` | Build an `IssueStatus` from the queue, state and done directories |
-| `running_tasks` | function | `ghdag.status` | List the `RunningTask` entries of a running directory |
+
+Import other supported types from their definition packages (for example `ghdag.dag.DagEngine`, `ghdag.io.queue.QueueTaskStore`, `ghdag.status.RunningTask`).
 
 `ghdag.__version__` is the installed distribution version (`"unknown"` when the package is not installed).
 
@@ -281,7 +271,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.core.command.inject_resume` | `(spec, command, session_id) -> str` — insert resume into a command string produced by `render_exec_command` (no resume) |
 | `ghdag.core.container.container_prefix` | `(capabilities, *, workdir='"$PWD"') -> list[str]` |
 | `ghdag.workflow.load_workflows` | `(directory) -> list[WorkflowConfig]` |
-| `ghdag.workflow.get_forge` | `(repo=None) -> ForgePort` |
+| `ghdag.forge.get_forge` | `(repo=None) -> ForgePort` |
 | `ghdag.pipeline.wait_for_result` | `(exec_done_dir, uuid, *, timeout, poll_interval=0.5) -> tuple[str, str]` |
 | `ghdag.pipeline.state_label` | `(state_id, pack=None) -> str`; label from `pack` (default: the active language pack); unknown identifiers are returned unchanged |
 | `ghdag.dag.recover.plan_recover` | `(*, state_dir, exec_jsonl_path, workflow_name, handler_name, issue_number, queue_dir, done_dir, from_step=None, running_uuids=None) -> RecoverPlan` |
@@ -337,7 +327,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.config` | `env` (accessors listed under [Environment variables](#environment-variables)) |
 | `ghdag.core` | `command` |
 | `ghdag.core.ports` | `ForgePort` |
-| `ghdag.dag` | `AuditHooks`, `DagConfig`, `DagEngine`, `DagHooks`, `DefaultHooks`, `DONE_SUCCESS`, `FanOutSpec`, `LEGACY_DONE_DEFERRED`, `PIPELINE_WAIT_QUOTA`, `RunningTask`, `Task`, `WAIT_QUOTA_COMPANION_RE`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_jsonl`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
+| `ghdag.dag` | `AuditHooks`, `DagConfig`, `DagEngine`, `DagHooks`, `DefaultHooks`, `DONE_SUCCESS`, `FanOutSpec`, `LEGACY_DONE_DEFERRED`, `PIPELINE_WAIT_QUOTA`, `Task`, `WAIT_QUOTA_COMPANION_RE`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_jsonl`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
 | `ghdag.files` | `AppendResult`, `AppendStatus`, `MdFile`, `PathTraversalError`, `PromoteResult`, `PromoteStatus`, `WriteResult`, `md_append`, `md_promote`, `md_read`, `md_write` |
 | `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
 | `ghdag.forge` | `DEFAULT_REPO`, `ForgePort`, `GitHubApiError`, `GitHubClient`, `LocalForge`, `get_forge` |
@@ -345,10 +335,10 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.llm` | `_config`, `DEFAULT_ENGINE_MODELS`, `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PRESETS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `EngineSpec`, `InputMode`, `PromptFlag`, `LLMCapabilities`, `LLMParseError`, `LLMResult`, `ManagedResult`, `TextResult`, `SessionRecord`, `SessionStore`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `build_llm_cmd`, `call`, `call_managed`, `call_text`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model` |
 | `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
 | `ghdag.metrics` | `FailureClass`, `MetricsRecorder`, `TaskMetrics`, `TokenUsage` |
-| `ghdag.pipeline` | `AuditContext`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_adapter`, `resolve_models`, `status_rank`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `task_status`, `state_label`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `STATE_EMPTY`, `STATE_DEFERRED`, `STATE_ENGINE_ERROR`, `STATE_FAIL`, `STATE_OK`, `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_REJECTED`, `STATE_RUNNING`, `STATE_UNKNOWN_DONE`, `write_task_exit_audit` |
+| `ghdag.pipeline` | `AuditContext`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_adapter`, `resolve_models`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `write_task_exit_audit` |
 | `ghdag.tool` | `FallbackEntry`, `TOOL_EXIT_CODES`, `ToolDef`, `ToolRegistry`, `write_tool_fallback_audit` |
 | `ghdag.vcs` | `CommitResult`, `ConflictError`, `GitSink`, `LocalGitSink`, `NullSink`, `OwnershipError`, `get_sink`, `git_enabled` |
-| `ghdag.workflow` | `ConsumeEntry`, `DispatchResult`, `ForgePort`, `GitHubIssueClient`, `HandlerConfig`, `OnTriggerConfig`, `SkillIOSpec`, `StepConfig`, `TriggerConfig`, `WorkflowConfig`, `load_workflows`, `WorkflowDispatcher`, `create_github_client`, `get_forge`, `transition`, `typecheck_dag` |
+| `ghdag.workflow` | `ConsumeEntry`, `DispatchResult`, `HandlerConfig`, `OnTriggerConfig`, `SkillIOSpec`, `StepConfig`, `TriggerConfig`, `WorkflowConfig`, `load_workflows`, `WorkflowDispatcher`, `transition`, `typecheck_dag` |
 
 The `STATE_*` constants are language-neutral identifiers: `pending_deps`, `pending_run`, `running`, `deferred`, `ok`, `fail`, `rejected`, `empty`, `engine_error`, `unknown`. `task_status()` returns one of them; use `state_label()` for the display text.
 
@@ -378,7 +368,7 @@ Presets live in `PRESETS`. Workflow steps pick one with `StepConfig.permission`,
 | `dangerous_full_access` | `DANGEROUS_FULL_ACCESS` | `permission_mode="bypassPermissions"` |
 | `readonly_observe` | `READONLY_OBSERVE` | `sandbox="readonly"` (claude: `--permission-mode plan`; cursor: `--sandbox enabled`); `disallowed_tools=("Edit", "NotebookEdit")` |
 
-`readonly_observe` is available to workflow steps, `ghdag llm --capabilities-preset`, and the Python API. Engine support is reported by `ghdag.llm.engines.supports_capability`: codex and cursor ignore `disallowed_tools`, codex also ignores `allowed_tools`, cursor ignores `web_search` (accepted, no argv change), and gemini supports none of `allowed_tools`, `disallowed_tools`, `permission_mode`, `stream`, `sandbox`, `resume`, and `web_search` (`call()` raises `NotImplementedError` for non-default values it cannot honour). `supports_capability(engine, "web_search")` is `True` for claude, cursor, and codex, and `False` for gemini and shell.
+`readonly_observe` is available to workflow steps, `ghdag llm --permission`, and the Python API. Engine support is reported by `ghdag.llm.engines.supports_capability`: codex and cursor ignore `disallowed_tools`, codex also ignores `allowed_tools`, cursor ignores `web_search` (accepted, no argv change), and gemini supports none of `allowed_tools`, `disallowed_tools`, `permission_mode`, `stream`, `sandbox`, `resume`, and `web_search` (`call()` raises `NotImplementedError` for non-default values it cannot honour). `supports_capability(engine, "web_search")` is `True` for claude, cursor, and codex, and `False` for gemini and shell.
 
 `EngineSpec.pre_subcommand_args` holds static CLI tokens placed after `cli` and before `subcommand` (for example codex `--search` from `web_search=True` is assembled at command-build time, not stored on the frozen spec).
 
@@ -619,7 +609,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `dag/fanout.py` | Fan-out spec parsing and child record building (`FanoutError`) |
 | `dag/fanout_manager.py` | `FanOutManager`: child generation and join |
 | `dag/hooks.py` | `DagHooks` re-export and `DefaultHooks` |
-| `dag/models.py` | `Task` / `DagConfig` re-export and the runner-side `RunningTask` |
+| `dag/models.py` | `Task` / `DagConfig` re-export and the internal `_RunningProcess` process record |
 | `dag/parser.py` | `parse_jsonl` for `exec.jsonl` |
 | `dag/recover.py` | `plan_recover` / `execute_recover` (`RecoverError`) |
 | `dag/task_launcher.py` | `TaskLauncher`: subprocess launch, streaming, completion, orphan adoption, stall-guard scans |

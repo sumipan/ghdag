@@ -13,11 +13,11 @@ from ghdag.core.models.dag import DagConfig, Task
 if TYPE_CHECKING:
     from ghdag.core.stall_guard import StallTracker
 
-__all__ = ["Task", "DagConfig", "RunningTask"]
+__all__ = ["Task", "DagConfig"]
 
 
 @dataclass
-class RunningTask:
+class _RunningProcess:
     uuid: str
     task: Task
     proc: subprocess.Popen

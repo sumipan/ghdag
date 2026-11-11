@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ghdag.dag.engine import DagEngine
-from ghdag.dag.models import DagConfig, RunningTask, Task
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
 
 JST = timezone(timedelta(hours=9))
 
@@ -193,7 +193,7 @@ def test_resume_fallback_relaunches_async_without_blocking(tmp_path: Path) -> No
     proc = MagicMock()
     proc.poll.return_value = 1
     proc.returncode = 1
-    engine._launcher._running[task.uuid] = RunningTask(
+    engine._launcher._running[task.uuid] = _RunningProcess(
         uuid=task.uuid,
         task=task,
         proc=proc,
@@ -263,7 +263,7 @@ def test_resume_fallback_command_forms_unchanged_across_engines(
     proc = MagicMock()
     proc.poll.return_value = 1
     proc.returncode = 1
-    engine._launcher._running[task.uuid] = RunningTask(
+    engine._launcher._running[task.uuid] = _RunningProcess(
         uuid=task.uuid,
         task=task,
         proc=proc,
@@ -332,7 +332,7 @@ def test_runtime_quota_error_pauses_engine_without_task_ledger(mock_mark_done, t
     proc.poll.return_value = 0
     proc.returncode = 0
     task = Task(uuid="runtime-1", command="claude -p hi", engine="claude", result_path=str(result_file))
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid=task.uuid,
         task=task,
         proc=proc,

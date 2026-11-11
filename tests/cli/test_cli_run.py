@@ -64,7 +64,7 @@ class TestRunNormal:
         with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
              patch("ghdag.dag.models.DagConfig", _capture_config):
             from ghdag.cli import main
-            main(["run", str(exec_md), "--interval", "10"])
+            main(["run", str(exec_md), "--interval-sec", "10"])
 
         kwargs = _capture_config.last_kwargs
         assert kwargs["exec_jsonl_path"] == str(exec_md)

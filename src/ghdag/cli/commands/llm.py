@@ -62,22 +62,15 @@ def cmd_llm(args) -> None:
         stdin_text = sys.stdin.read()
 
     capabilities = None
-    if args.capabilities_preset is not None or args.permission_mode is not None:
-        from ghdag.core.capabilities import PRESETS, LLMCapabilities
-        if args.capabilities_preset is not None:
-            capabilities = PRESETS[args.capabilities_preset]
-        else:
-            capabilities = LLMCapabilities()
-        if args.permission_mode is not None:
-            import dataclasses
-            capabilities = dataclasses.replace(capabilities, permission_mode=args.permission_mode)
+    if args.permission is not None:
+        from ghdag.core.capabilities import PRESETS
+        capabilities = PRESETS[args.permission]
 
     call_kwargs: dict = dict(
         engine=args.engine,
         model=args.model,
         timeout=args.timeout,
         stdin_text=stdin_text,
-        dangerously_skip_permissions=args.dangerously_skip_permissions,
     )
     if capabilities is not None:
         call_kwargs["capabilities"] = capabilities

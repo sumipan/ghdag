@@ -105,7 +105,7 @@ class TestTriggerStateDirDerivation:
         )
 
     def test_trigger_explicit_state_dir_overrides_derived_path(self, tmp_path, monkeypatch):
-        """Explicit --state-dir takes priority over derivation from --exec-md."""
+        """Explicit --state-dir takes priority over derivation from --exec-jsonl."""
         from ghdag.cli.commands.trigger import cmd_trigger
 
         monkeypatch.chdir(tmp_path)
@@ -133,7 +133,7 @@ class TestTriggerStateDirDerivation:
         )
 
     def test_trigger_relative_exec_jsonl_uses_cwd_pipeline_state(self, tmp_path, monkeypatch):
-        """cwd=repo-root, relative --exec-md jobs/exec.jsonl → cwd/.pipeline-state."""
+        """cwd=repo-root, relative --exec-jsonl jobs/exec.jsonl → cwd/.pipeline-state."""
         from ghdag.cli.commands.trigger import cmd_trigger
 
         monkeypatch.chdir(tmp_path)
@@ -223,7 +223,7 @@ class TestWatchStateDirDerivation:
         )
 
     def test_watch_relative_exec_jsonl_uses_cwd_pipeline_state(self, tmp_path, monkeypatch):
-        """watch: relative --exec-md from repo root yields cwd/.pipeline-state."""
+        """watch: relative --exec-jsonl from repo root yields cwd/.pipeline-state."""
         from ghdag.cli.commands.watch import cmd_watch
 
         monkeypatch.chdir(tmp_path)
@@ -260,7 +260,7 @@ class TestStateDirArgParsing:
         args = parser.parse_args([
             "trigger", "1",
             "--handler", "impl",
-            "--exec-md", "/abs/jobs/exec.jsonl",
+            "--exec-jsonl", "/abs/jobs/exec.jsonl",
             "--state-dir", "/custom/state",
         ])
         assert args.state_dir == "/custom/state"
@@ -279,7 +279,7 @@ class TestStateDirArgParsing:
         parser = _build_parser()
         args = parser.parse_args([
             "watch", "workflows/",
-            "--exec-md", "/abs/jobs/exec.jsonl",
+            "--exec-jsonl", "/abs/jobs/exec.jsonl",
             "--state-dir", "/custom/state",
         ])
         assert args.state_dir == "/custom/state"

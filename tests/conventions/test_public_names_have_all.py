@@ -12,18 +12,6 @@ _SRC = _REPO_ROOT / "src" / "ghdag"
 
 _PUBLIC_API_SNAPSHOT: frozenset[str] = frozenset({
     "GhdagError",
-    "QueueTask",
-    "QueueTaskStore",
-    "LLMPipelineAPI",
-    "PipelineState",
-    "DagEngine",
-    "WorkflowDispatcher",
-    "QuotaGate",
-    "IssueStatus",
-    "StepStatus",
-    "RunningTask",
-    "issue_status",
-    "running_tasks",
 })
 
 _KNOWN_PRIVATE_IMPORT_VIOLATIONS: frozenset[str] = frozenset({
@@ -136,7 +124,51 @@ def test_no_private_cross_package_imports(path: Path) -> None:
 def test_snapshot_mismatch_is_detected() -> None:
     import ghdag
     actual = frozenset(ghdag.__all__)
-    truncated = _PUBLIC_API_SNAPSHOT - {"QuotaGate"}
+    truncated = _PUBLIC_API_SNAPSHOT - {"GhdagError"}
     added = actual - truncated
     removed = truncated - actual
-    assert added or removed, "Expected a diff when snapshot is missing QuotaGate"
+    assert added or removed, "Expected a diff when snapshot is missing GhdagError"
+
+
+def _first_level_package_all_names() -> dict[str, list[str]]:
+    packages: dict[str, list[str]] = {}
+    top_init = _SRC / "__init__.py"
+    if top_init.exists():
+        import ghdag
+
+        packages["ghdag"] = list(ghdag.__all__)
+    for init_path in sorted(_SRC.iterdir()):
+        if not init_path.is_dir():
+            continue
+        child_init = init_path / "__init__.py"
+        if not child_init.exists():
+            continue
+        mod_name = "ghdag." + init_path.name
+        import importlib
+
+        mod = importlib.import_module(mod_name)
+        if hasattr(mod, "__all__"):
+            packages[mod_name] = list(mod.__all__)
+    return packages
+
+
+def _duplicate_export_names(packages: dict[str, list[str]]) -> dict[str, list[str]]:
+    index: dict[str, list[str]] = {}
+    for pkg, names in packages.items():
+        for name in names:
+            index.setdefault(name, []).append(pkg)
+    return {name: pkgs for name, pkgs in index.items() if len(pkgs) > 1}
+
+
+def test_first_level_package_exports_are_unique() -> None:
+    duplicates = _duplicate_export_names(_first_level_package_all_names())
+    assert duplicates == {}, f"Duplicate __all__ exports across packages: {duplicates}"
+
+
+def test_first_level_package_export_duplicate_fixture_is_detected() -> None:
+    fixture = {
+        "ghdag.pipeline": ["SharedName"],
+        "ghdag.workflow": ["SharedName", "Other"],
+    }
+    dupes = _duplicate_export_names(fixture)
+    assert dupes == {"SharedName": ["ghdag.pipeline", "ghdag.workflow"]}

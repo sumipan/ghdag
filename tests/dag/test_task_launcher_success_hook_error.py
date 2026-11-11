@@ -10,7 +10,7 @@ from ghdag.core.vocabulary import DONE_UNKNOWN_FAILURE
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DagHooks
-from ghdag.dag.models import DagConfig, RunningTask, Task
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
 
 
 def _make_config(tmp_path) -> DagConfig:
@@ -26,7 +26,7 @@ def _make_running_task(
     uuid: str = "task-uuid",
     *,
     returncode: int = 0,
-) -> RunningTask:
+) -> _RunningProcess:
     result_file = tmp_path / "result.md"
     result_file.write_text("ok\n", encoding="utf-8")
     proc = MagicMock()
@@ -39,7 +39,7 @@ def _make_running_task(
         idempotency_key="corr-1",
         annotations={"_request_id": "req-1"},
     )
-    return RunningTask(
+    return _RunningProcess(
         uuid=uuid,
         task=task,
         proc=proc,

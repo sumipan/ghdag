@@ -31,11 +31,11 @@ def test_removed_core_shim_module_is_not_importable(module_name: str) -> None:
 
 
 def test_dag_models_import_compat() -> None:
-    from ghdag.dag.models import DagConfig, RunningTask, Task
+    from ghdag.dag.models import DagConfig, Task, _RunningProcess
 
     assert Task.__name__ == "Task"
     assert DagConfig.__name__ == "DagConfig"
-    assert RunningTask.__name__ == "RunningTask"
+    assert _RunningProcess.__name__ == "_RunningProcess"
 
 
 def test_workflow_schema_import_compat() -> None:
@@ -123,8 +123,25 @@ def test_residual_definitions_stay_in_domain_modules() -> None:
     import ghdag.dag.hooks as hooks_mod
     import ghdag.dag.models as dag_models_mod
 
-    assert "RunningTask" in dag_models_mod.__dict__
+    assert "_RunningProcess" in dag_models_mod.__dict__
     assert "DefaultHooks" in hooks_mod.__dict__
+
+
+def test_running_process_model_is_internal() -> None:
+    from typing import get_type_hints
+
+    import ghdag.dag
+    import ghdag.dag.models as dag_models_mod
+    import ghdag.dag.task_launcher as task_launcher
+    from ghdag.dag.models import _RunningProcess
+    from ghdag.dag.task_launcher import TaskLauncher
+
+    assert "RunningTask" not in dag_models_mod.__all__
+    assert "RunningTask" not in ghdag.dag.__all__
+    assert not hasattr(ghdag.dag, "RunningTask")
+    assert dag_models_mod._RunningProcess is _RunningProcess
+    hints = get_type_hints(TaskLauncher._join_reader_threads, localns=vars(task_launcher))
+    assert hints["rt"] is _RunningProcess
 
 
 def test_no_llm_to_metrics_direct_import() -> None:

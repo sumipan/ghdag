@@ -11,7 +11,7 @@ from pathlib import Path
 from ghdag.core.models.metrics import FailureClass, TaskMetrics
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.fanout import FanOutItem, FanOutSpec
-from ghdag.dag.models import DagConfig, RunningTask, Task
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
 
 
 class _CapturingHooks:
@@ -76,13 +76,13 @@ def _base_metrics(uuid: str) -> TaskMetrics:
 
 
 def _make_completed_running_task(uuid: str, task: Task, returncode: int = 0,
-                                  stdout_content: bytes = b"") -> RunningTask:
+                                  stdout_content: bytes = b"") -> _RunningProcess:
     proc = subprocess.Popen(["true"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     proc.wait()
     stdout_buf = io.BytesIO(stdout_content) if stdout_content else None
     if task.result_path is not None and stdout_buf is None:
         stdout_buf = io.BytesIO(b"")
-    return RunningTask(
+    return _RunningProcess(
         uuid=uuid,
         task=task,
         proc=proc,

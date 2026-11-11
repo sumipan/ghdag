@@ -21,7 +21,7 @@ from ghdag.core.vocabulary import (
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.engine_quarantine import EngineQuarantine
 from ghdag.dag.hooks import DefaultHooks
-from ghdag.dag.models import DagConfig, RunningTask, Task
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.adapters.codex import CodexAdapter
@@ -102,11 +102,11 @@ def _make_engine(tmp_path):
     return DagEngine(_make_config(tmp_path), hooks), hooks
 
 
-def _make_running_task(task: Task, stdout: bytes = b"", stderr: bytes = b"", returncode: int = 1) -> RunningTask:
+def _make_running_task(task: Task, stdout: bytes = b"", stderr: bytes = b"", returncode: int = 1) -> _RunningProcess:
     proc = MagicMock()
     proc.poll.return_value = returncode
     proc.returncode = returncode
-    return RunningTask(
+    return _RunningProcess(
         uuid=task.uuid,
         task=task,
         proc=proc,

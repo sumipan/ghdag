@@ -10,7 +10,7 @@ import pytest
 from ghdag.core.models.metrics import FailureClass, TaskMetrics
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DefaultHooks
-from ghdag.dag.models import DagConfig, RunningTask, Task
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
 
 FIXED_WALL = 1_700_000_000.0
 FIXED_MONO = 1_000.0
@@ -79,7 +79,7 @@ def make_running_task(uuid="test-uuid", command="echo hello", returncode=0, stde
     proc.poll.return_value = returncode
     proc.returncode = returncode
     task = Task(uuid=uuid, command=command, retry=retry)
-    return RunningTask(
+    return _RunningProcess(
         uuid=uuid,
         task=task,
         proc=proc,

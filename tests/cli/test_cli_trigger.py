@@ -81,7 +81,7 @@ handlers:
                 "trigger", "42",
                 "--handler", "brushup",
                 "--workflows-dir", str(workflows_dir),
-                "--exec-md", str(exec_md),
+                "--exec-jsonl", str(exec_md),
             ])
 
         assert trigger_state["dispatch_issue"]["number"] == 42
@@ -120,7 +120,7 @@ handlers:
                 "trigger", "7",
                 "--handler", "brushup",
                 "--workflows-dir", str(workflows_dir),
-                "--exec-md", str(exec_md),
+                "--exec-jsonl", str(exec_md),
             ])
 
         out = capsys.readouterr().out
@@ -163,7 +163,7 @@ handlers:
                 "--handler", "impl",
                 "--workflow", "test-pipeline",
                 "--workflows-dir", str(workflows_dir),
-                "--exec-md", str(exec_md),
+                "--exec-jsonl", str(exec_md),
             ])
 
         assert trigger_state["dispatched"] is True
@@ -279,7 +279,7 @@ handlers:
                     "trigger", "42",
                     "--handler", "brushup",
                     "--workflows-dir", str(workflows_dir),
-                    "--exec-md", str(exec_md),
+                    "--exec-jsonl", str(exec_md),
                 ])
             assert exc.value.code == 1
 
@@ -334,7 +334,7 @@ class TestTriggerStructuredErrors:
                 "trigger", "1",
                 "--handler", "brushup",
                 "--workflows-dir", str(workflows_dir),
-                "--exec-md", str(exec_md),
+                "--exec-jsonl", str(exec_md),
                 "--json",
             ])
 

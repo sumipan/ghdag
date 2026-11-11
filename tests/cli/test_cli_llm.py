@@ -122,7 +122,7 @@ class TestLlmAuditPath:
              patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
             from ghdag.cli import main
             with pytest.raises(SystemExit):
-                main(["llm", "hello", "--audit-path", str(audit_path), "--timeout", "120"])
+                main(["llm", "hello", "--audit-path", str(audit_path), "--timeout-sec", "120"])
 
         r = json.loads(audit_path.read_text().strip())
         assert r["timeout_sec"] == 120
@@ -169,89 +169,38 @@ class TestLlmAuditPath:
         assert exc.value.code == 0
 
 
-class TestLLMCapabilitiesArgs:
-    @staticmethod
-    def _make_result(returncode=0):
-        from ghdag.llm.engines import LLMResult
-        return LLMResult(stdout="ok", stderr="", returncode=returncode)
+def test_permission_preset_is_forwarded():
+    from ghdag.core.capabilities import TEXT_ONLY
+    from ghdag.llm.engines import LLMResult
 
-    def test_llm_capabilities_preset_text_only(self):
-        """--capabilities-preset text_only → TEXT_ONLY capabilities passed to call()"""
-        from ghdag.core.capabilities import TEXT_ONLY
-        mock_result = self._make_result()
-        captured: dict = {}
+    captured: dict = {}
 
-        def capture_call(*_args, **kwargs):
-            captured.update(kwargs)
-            return mock_result
+    def capture_call(*_args, **kwargs):
+        captured.update(kwargs)
+        return LLMResult(stdout="ok", stderr="", returncode=0)
 
-        with patch("ghdag.llm.engines.call", side_effect=capture_call):
-            from ghdag.cli import main
-            with pytest.raises(SystemExit):
-                main(["llm", "hello", "--capabilities-preset", "text_only"])
-        assert captured["capabilities"] == TEXT_ONLY
+    from ghdag.cli import main
 
-    def test_llm_permission_mode_plan(self):
-        """--permission-mode plan → LLMCapabilities(permission_mode='plan') passed to call()"""
-        mock_result = self._make_result()
-        captured: dict = {}
+    main(["llm", "--permission", "text_only", "--list-engines"])
+    with patch("ghdag.llm.engines.call", side_effect=capture_call):
+        with patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
+            with pytest.raises(SystemExit) as exc:
+                main(["llm", "hello", "--permission", "text_only"])
+            assert exc.value.code == 0
+    assert captured["capabilities"] == TEXT_ONLY
 
-        def capture_call(*_args, **kwargs):
-            captured.update(kwargs)
-            return mock_result
 
-        with patch("ghdag.llm.engines.call", side_effect=capture_call):
-            from ghdag.cli import main
-            with pytest.raises(SystemExit):
-                main(["llm", "hello", "--permission-mode", "plan"])
-        assert captured["capabilities"].permission_mode == "plan"
+def test_removed_permission_flags_are_rejected():
+    from ghdag.cli import main
 
-    def test_llm_dangerously_skip_permissions_flag(self):
-        """--dangerously-skip-permissions → dangerously_skip_permissions=True as before"""
-        mock_result = self._make_result()
-        captured: dict = {}
-
-        def capture_call(*_args, **kwargs):
-            captured.update(kwargs)
-            return mock_result
-
-        with patch("ghdag.llm.engines.call", side_effect=capture_call):
-            from ghdag.cli import main
-            with pytest.raises(SystemExit):
-                main(["llm", "hello", "--dangerously-skip-permissions"])
-        assert captured["dangerously_skip_permissions"] is True
-
-    def test_llm_invalid_capabilities_preset_exits_2(self, capsys):
-        """--capabilities-preset invalid → exit via argparse error"""
-        from ghdag.cli import main
+    for flag in (
+        ["--capabilities-preset", "text_only"],
+        ["--permission-mode", "plan"],
+        ["--dangerously-skip-permissions"],
+    ):
         with pytest.raises(SystemExit) as exc:
-            main(["llm", "hello", "--capabilities-preset", "invalid_preset"])
+            main(["llm", "hello", *flag])
         assert exc.value.code == 2
-
-    def test_permission_mode_invalid_exits_2(self, capsys):
-        """--permission-mode invalid → exit via argparse error"""
-        from ghdag.cli import main
-        with pytest.raises(SystemExit) as exc:
-            main(["llm", "hello", "--permission-mode", "invalid_mode"])
-        assert exc.value.code == 2
-
-    def test_llm_preset_and_permission_mode_override(self):
-        """--capabilities-preset text_only + --permission-mode plan → override permission_mode on preset"""
-        from ghdag.core.capabilities import TEXT_ONLY
-        mock_result = self._make_result()
-        captured: dict = {}
-
-        def capture_call(*_args, **kwargs):
-            captured.update(kwargs)
-            return mock_result
-
-        with patch("ghdag.llm.engines.call", side_effect=capture_call):
-            from ghdag.cli import main
-            with pytest.raises(SystemExit):
-                main(["llm", "hello", "--capabilities-preset", "text_only", "--permission-mode", "plan"])
-        caps = captured["capabilities"]
-        assert caps.permission_mode == "plan"
-        assert caps.disallowed_tools == TEXT_ONLY.disallowed_tools
 
 
 class TestCLI:

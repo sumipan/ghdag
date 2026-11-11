@@ -17,7 +17,7 @@ from ghdag.core.vocabulary import (
 )
 from ghdag.dag._util import WaitQuotaParseError, WaitQuotaSignal, parse_wait_quota_signal
 from ghdag.dag.engine import DagEngine
-from ghdag.dag.models import DagConfig, RunningTask, Task
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
 from ghdag.llm.engines import list_engines
 
 JST = timezone(timedelta(hours=9))
@@ -72,7 +72,7 @@ def test_wait_quota_reply_block_without_after_pauses_engine(
     proc = MagicMock()
     proc.poll.return_value = 0
     proc.returncode = 0
-    engine._launcher._running[task.uuid] = RunningTask(
+    engine._launcher._running[task.uuid] = _RunningProcess(
         uuid=task.uuid,
         task=task,
         proc=proc,
@@ -113,7 +113,7 @@ def test_wait_quota_deletes_result_and_records_engine_pause(mock_mark_done, tmp_
     proc = MagicMock()
     proc.poll.return_value = 0
     proc.returncode = 0
-    engine._launcher._running[task.uuid] = RunningTask(
+    engine._launcher._running[task.uuid] = _RunningProcess(
         uuid=task.uuid,
         task=task,
         proc=proc,
@@ -154,7 +154,7 @@ def test_invalid_wait_quota_marks_pipeline_failed(
     proc = MagicMock()
     proc.poll.return_value = 0
     proc.returncode = 0
-    engine._launcher._running[task.uuid] = RunningTask(
+    engine._launcher._running[task.uuid] = _RunningProcess(
         uuid=task.uuid,
         task=task,
         proc=proc,

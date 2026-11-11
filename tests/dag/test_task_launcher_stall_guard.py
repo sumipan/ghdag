@@ -11,7 +11,7 @@ import pytest
 
 from ghdag.core.stall_guard import StallEvent, StallTracker
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
-from ghdag.dag.models import DagConfig, RunningTask, Task
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
 from ghdag.dag.task_launcher import TaskLauncher
 
 
@@ -104,7 +104,7 @@ def test_check_completions_invokes_tracker_and_writes_audit(
     mock_tracker.check.return_value = [
         StallEvent(pid=99, stalled_sec=180.0, parent_args_head="zsh -c snap"),
     ]
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid="stall-uuid",
         task=task,
         proc=proc,
@@ -137,7 +137,7 @@ def test_timeout_still_signals_process_tree(mock_signal, tmp_path, monkeypatch) 
     proc = MagicMock()
     proc.poll.return_value = None
     task = Task(uuid="t1", command="sleep", engine="cursor")
-    rt = RunningTask(
+    rt = _RunningProcess(
         uuid="t1",
         task=task,
         proc=proc,
