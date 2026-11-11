@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -15,6 +14,12 @@ from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
 from ghdag.pipeline.order import TemplateOrderBuilder
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.loader import load_workflows
+
+
+def _bump_mtime_ahead(path: Path) -> None:
+    stat = path.stat()
+    bumped = stat.st_mtime_ns + 1_000_000_000
+    os.utime(path, ns=(bumped, bumped))
 
 
 def _make_github_mock():
@@ -465,8 +470,7 @@ class TestHotReloadOrderBuilders:
 
         yaml_path.write_text(_UPDATED_YAML)
         (tdir / "impl.md").write_text("# impl\n")
-        bump = time.time() + 60
-        os.utime(yaml_path, (bump, bump))
+        _bump_mtime_ahead(yaml_path)
 
         dispatcher.run(max_iterations=1)
 
@@ -491,8 +495,7 @@ class TestHotReloadOrderBuilders:
             wf_yaml=_WF_TPL_A,
             wf2_yaml=_WF2_TPL_B,
         )
-        bump = time.time() + 60
-        os.utime(workflows_dir / "wf2.yml", (bump, bump))
+        _bump_mtime_ahead(workflows_dir / "wf2.yml")
 
         dispatcher._maybe_reload_workflows()
 
@@ -515,8 +518,7 @@ class TestHotReloadOrderBuilders:
         assert pipeline._resolve_order_builder("wf").build_order("step", {}) == "from tpl_a"
 
         (workflows_dir / "wf.yml").write_text(_WF_TPL_B)
-        bump = time.time() + 60
-        os.utime(workflows_dir / "wf.yml", (bump, bump))
+        _bump_mtime_ahead(workflows_dir / "wf.yml")
         dispatcher._maybe_reload_workflows()
 
         assert pipeline._resolve_order_builder("wf").build_order("step", {}) == "from tpl_b"
@@ -536,8 +538,7 @@ class TestHotReloadOrderBuilders:
             queue_dir=str(tmp_path),
         )
         (workflows_dir / "wf.yml").write_text("invalid: yaml: {broken")
-        bump = time.time() + 60
-        os.utime(workflows_dir / "wf.yml", (bump, bump))
+        _bump_mtime_ahead(workflows_dir / "wf.yml")
         dispatcher._maybe_reload_workflows()
 
         after = pipeline._resolve_order_builder("wf")

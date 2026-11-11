@@ -11,7 +11,6 @@ import io
 import json
 import subprocess
 import threading
-import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -208,6 +207,20 @@ def _make_config(tmp_path: Path, records: list[dict], **overrides) -> DagConfig:
     return DagConfig(**defaults)
 
 
+def _run_engine_until_success(engine: DagEngine, hooks: MagicMock) -> None:
+    finished = threading.Event()
+
+    def on_success(*_args, **_kwargs) -> None:
+        finished.set()
+
+    hooks.on_task_success.side_effect = on_success
+    t = threading.Thread(target=engine.run, daemon=True)
+    t.start()
+    finished.wait()
+    engine._shutdown = True
+    t.join()
+
+
 class TestExtractStreamResultShared:
     def test_extract_stream_result_matches_engines_alias(self):
         assert extract_stream_result(_STREAM_SUCCESS) == "pong"
@@ -247,25 +260,28 @@ class TestExtractStreamResultShared:
 class TestStdoutLineReader:
     def test_line_reader_appends_events_and_fills_buf(self, tmp_path):
         events = tmp_path / "events" / "u1.jsonl"
-        # Slow-ish line producer so the reader can observe growth
         script = (
-            "import sys, time\n"
+            "import sys\n"
             f"data = {_STREAM_TOOLS!r}\n"
             "for line in data.splitlines(True):\n"
+            "    sys.stdin.readline()\n"
             "    sys.stdout.write(line)\n"
             "    sys.stdout.flush()\n"
-            "    time.sleep(0.02)\n"
         )
         proc = subprocess.Popen(
             ["python3", "-c", script],
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
         buf = io.BytesIO()
         seen: list[dict] = []
+        first_line = threading.Event()
 
         def on_line(event: dict) -> None:
             seen.append(event)
+            if not first_line.is_set():
+                first_line.set()
 
         t = threading.Thread(
             target=_stdout_line_reader,
@@ -273,17 +289,19 @@ class TestStdoutLineReader:
             daemon=True,
         )
         t.start()
-        # While still running, events file should grow
-        deadline = time.time() + 3.0
-        grew = False
-        while time.time() < deadline:
-            if events.is_file() and events.stat().st_size > 0:
-                grew = True
-                break
-            time.sleep(0.01)
+        assert proc.stdin is not None
+        line_count = len(_STREAM_TOOLS.strip().splitlines())
+        proc.stdin.write(b"go\n")
+        proc.stdin.flush()
+        first_line.wait()
+        grew = events.is_file() and events.stat().st_size > 0
         assert grew
-        proc.wait(timeout=5)
-        t.join(timeout=2)
+        for _ in range(line_count - 1):
+            proc.stdin.write(b"go\n")
+            proc.stdin.flush()
+        proc.stdin.close()
+        proc.wait()
+        t.join()
         assert events.read_text(encoding="utf-8") == _STREAM_TOOLS
         assert buf.getvalue().decode("utf-8") == _STREAM_TOOLS
         assert any(e.get("type") == "assistant" for e in seen)
@@ -326,13 +344,7 @@ class TestClaudeDagEvents:
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = None
         engine = DagEngine(config, hooks)
-        t = threading.Thread(target=engine.run, daemon=True)
-        t.start()
-        deadline = time.time() + 5.0
-        while time.time() < deadline and not result_file.exists():
-            time.sleep(0.05)
-        engine._shutdown = True
-        t.join(timeout=3.0)
+        _run_engine_until_success(engine, hooks)
 
         events_path = tmp_path / "jobs" / "events" / "evt-claude.jsonl"
         assert events_path.is_file()
@@ -362,13 +374,7 @@ class TestClaudeDagEvents:
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = None
         engine = DagEngine(config, hooks)
-        t = threading.Thread(target=engine.run, daemon=True)
-        t.start()
-        deadline = time.time() + 5.0
-        while time.time() < deadline and not (tmp_path / "jobs" / "done" / "evt-shell").exists():
-            time.sleep(0.05)
-        engine._shutdown = True
-        t.join(timeout=3.0)
+        _run_engine_until_success(engine, hooks)
 
         events_path = tmp_path / "jobs" / "events" / "evt-shell.jsonl"
         assert not events_path.exists()
@@ -422,14 +428,18 @@ class TestClaudeDagEvents:
                 }
             ],
         )
-        engine = DagEngine(config, LegacyHooks())
+        finished = threading.Event()
+
+        class LegacyHooksWithDone(LegacyHooks):
+            def on_task_success(self, uuid, task, metrics):
+                finished.set()
+
+        engine = DagEngine(config, LegacyHooksWithDone())
         t = threading.Thread(target=engine.run, daemon=True)
         t.start()
-        deadline = time.time() + 5.0
-        while time.time() < deadline and not result_file.exists():
-            time.sleep(0.05)
+        finished.wait()
         engine._shutdown = True
-        t.join(timeout=3.0)
+        t.join()
         assert result_file.read_text(encoding="utf-8") == "pong"
 
     def test_default_hooks_on_task_progress_is_noop(self):

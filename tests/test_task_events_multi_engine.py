@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -43,6 +42,20 @@ def _make_config(tmp_path: Path, records: list[dict], **overrides) -> DagConfig:
     )
     defaults.update(overrides)
     return DagConfig(**defaults)
+
+
+def _run_engine_until_success(engine: DagEngine, hooks: MagicMock) -> None:
+    finished = threading.Event()
+
+    def on_success(*_args, **_kwargs) -> None:
+        finished.set()
+
+    hooks.on_task_success.side_effect = on_success
+    t = threading.Thread(target=engine.run, daemon=True)
+    t.start()
+    finished.wait()
+    engine._shutdown = True
+    t.join()
 
 
 class TestCursorCodexExtraArgs:
@@ -98,13 +111,7 @@ class TestMultiEngineDagEvents:
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = None
         engine = DagEngine(config, hooks)
-        t = threading.Thread(target=engine.run, daemon=True)
-        t.start()
-        deadline = time.time() + 5.0
-        while time.time() < deadline and not result_file.exists():
-            time.sleep(0.05)
-        engine._shutdown = True
-        t.join(timeout=3.0)
+        _run_engine_until_success(engine, hooks)
 
         events_path = tmp_path / "jobs" / "events" / "evt-cursor.jsonl"
         assert events_path.is_file()
@@ -135,13 +142,7 @@ class TestMultiEngineDagEvents:
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = None
         engine = DagEngine(config, hooks)
-        t = threading.Thread(target=engine.run, daemon=True)
-        t.start()
-        deadline = time.time() + 5.0
-        while time.time() < deadline and not result_file.exists():
-            time.sleep(0.05)
-        engine._shutdown = True
-        t.join(timeout=3.0)
+        _run_engine_until_success(engine, hooks)
 
         events_path = tmp_path / "jobs" / "events" / "evt-codex.jsonl"
         assert events_path.is_file()
@@ -177,14 +178,7 @@ class TestStreamFallback:
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = None
         engine = DagEngine(config, hooks)
-        t = threading.Thread(target=engine.run, daemon=True)
-        t.start()
-        deadline = time.time() + 5.0
-        done = tmp_path / "jobs" / "done" / "evt-fallback"
-        while time.time() < deadline and not done.exists():
-            time.sleep(0.05)
-        engine._shutdown = True
-        t.join(timeout=3.0)
+        _run_engine_until_success(engine, hooks)
 
         events_path = tmp_path / "jobs" / "events" / "evt-fallback.jsonl"
         assert not events_path.exists()
@@ -222,14 +216,7 @@ class TestStreamFallback:
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = None
         engine = DagEngine(config, hooks)
-        t = threading.Thread(target=engine.run, daemon=True)
-        t.start()
-        deadline = time.time() + 5.0
-        done = tmp_path / "jobs" / "done" / "evt-codex-fb"
-        while time.time() < deadline and not done.exists():
-            time.sleep(0.05)
-        engine._shutdown = True
-        t.join(timeout=3.0)
+        _run_engine_until_success(engine, hooks)
 
         events_path = tmp_path / "jobs" / "events" / "evt-codex-fb.jsonl"
         assert not events_path.exists()
