@@ -12,7 +12,7 @@ import threading
 import pytest
 
 from ghdag.config import env as env_mod
-from ghdag.dag.stall_guard import (
+from ghdag.core.stall_guard import (
     StallTracker,
     find_stalled_state_readers,
     parse_ps_output,
@@ -208,7 +208,7 @@ def _run_socketpair_integration(shell: str) -> None:
         start_new_session=True,
     )
     sock_a.close()
-    from ghdag.dag.stall_guard import read_ps
+    from ghdag.llm.engines import read_ps
 
     tracker = StallTracker(
         proc.pid,

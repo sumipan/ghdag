@@ -5,10 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from ghdag.core.models.metrics import TaskMetrics
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.fanout import FanOutItem, FanOutSpec
 from ghdag.dag.models import DagConfig, Task
-from ghdag.metrics.models import TaskMetrics
 
 
 def _base_metrics(uuid: str) -> TaskMetrics:

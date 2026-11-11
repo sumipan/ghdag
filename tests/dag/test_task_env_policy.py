@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 from ghdag.dag.models import Task
 from ghdag.dag.parser import parse_jsonl
 from ghdag.dag.task_launcher import _task_env
-from ghdag.pipeline.audit import AuditContext
+from ghdag.io.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import TemplateOrderBuilder
 from ghdag.workflow.loader import load_workflows

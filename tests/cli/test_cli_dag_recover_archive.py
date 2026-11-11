@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from ghdag.core.models.workflow import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
 from ghdag.io.exec_jsonl import build_idempotency_key
-from ghdag.workflow.schema import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
 
 UUID_P2 = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 ISSUE_NUMBER = 2876

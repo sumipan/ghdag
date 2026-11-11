@@ -12,8 +12,8 @@ from unittest.mock import MagicMock
 from ghdag.core.vocabulary import DONE_ORPHANED_ON_RESTART
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.models import DagConfig, Task
-from ghdag.dag.state import is_done
 from ghdag.dag.task_launcher import TaskLauncher, _process_group_exists
+from ghdag.io.done import is_done
 
 
 def _make_launcher(tmp_path: Path) -> TaskLauncher:

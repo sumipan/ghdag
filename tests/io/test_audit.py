@@ -47,17 +47,17 @@ class TestAppendAuditRecord:
 
 
 class TestCompatImports:
-    """Legacy import path resolves via the shim."""
+    """Canonical audit helpers resolve from ghdag.io.audit."""
 
     def test_pipeline_audit_context(self) -> None:
-        from ghdag.pipeline.audit import AuditContext
+        from ghdag.io.audit import AuditContext
 
         ctx = AuditContext(source="issuesmith", correlation_id="c1")
         assert ctx.source == "issuesmith"
         assert ctx.correlation_id == "c1"
 
     def test_pipeline_write_task_exit_audit(self, tmp_path: Path) -> None:
-        from ghdag.pipeline.audit import write_task_exit_audit
+        from ghdag.io.audit import write_task_exit_audit
 
         audit_path = tmp_path / "audit.jsonl"
         write_task_exit_audit(

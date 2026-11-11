@@ -8,10 +8,10 @@ import subprocess
 import time
 from pathlib import Path
 
+from ghdag.core.models.metrics import FailureClass, TaskMetrics
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.fanout import FanOutItem, FanOutSpec
 from ghdag.dag.models import DagConfig, RunningTask, Task
-from ghdag.metrics.models import FailureClass, TaskMetrics
 
 
 class _CapturingHooks:

@@ -6,7 +6,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from ghdag.files.models import PathTraversalError, WriteResult
+from ghdag.core.models.files import PathTraversalError, WriteResult
 from ghdag.io.audit import append_audit_record, now_ts
 
 

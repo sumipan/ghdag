@@ -32,6 +32,7 @@ from ghdag.config.env import (
 )
 from ghdag.core.command import inject_resume
 from ghdag.core.engine_spec import ENGINE_SPECS
+from ghdag.core.models.metrics import FailureClass, TaskMetrics
 from ghdag.core.reply_block import ReplyBlockError, parse_reply_block
 from ghdag.core.stall_guard import StallTracker
 from ghdag.core.vocabulary import (
@@ -64,6 +65,7 @@ from ghdag.io.audit import (
     write_repair_turn_audit,
     write_task_retry_audit,
 )
+from ghdag.io.done import mark_done as state_mark_done
 from ghdag.io.redact import init_redact_patterns, redact_text
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.failure_classification import last_nonempty_line
@@ -74,7 +76,6 @@ from ghdag.llm.compaction import (
 )
 from ghdag.llm.engines import list_engines, read_ps
 from ghdag.llm.session import SessionStore
-from ghdag.metrics.models import FailureClass, TaskMetrics
 from ghdag.metrics.parsers import parse_engine_model
 from ghdag.quota import QuotaGate
 
@@ -85,7 +86,6 @@ from .fanout import FanoutError, parse_fanout_spec
 from .fanout_manager import FanOutManager
 from .hooks import DagHooks
 from .models import DagConfig, RunningTask, Task
-from .state import mark_done as state_mark_done
 
 logger = logging.getLogger(__name__)
 

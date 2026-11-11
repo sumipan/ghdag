@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 from ghdag.config.language import STATE_IDS, UI_KEYS, get_language_pack
+from ghdag.core.models.metrics import FailureClass
 from ghdag.core.vocabulary import (
     DONE_ENGINE_ENV_ERROR,
     DONE_ENGINE_ERROR,
@@ -28,7 +29,6 @@ from ghdag.llm.adapters.codex_jsonl import CodexJsonlAdapter
 from ghdag.llm.adapters.cursor import CursorAdapter
 from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
 from ghdag.llm.adapters.failure_classification import looks_like_question
-from ghdag.metrics.models import FailureClass
 
 _FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 

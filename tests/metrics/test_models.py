@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-from ghdag.metrics.models import FailureClass, TaskMetrics
+from ghdag.core.models.metrics import FailureClass, TaskMetrics
 
 UUID = "test-uuid-0000-0000-0000-000000000001"
 

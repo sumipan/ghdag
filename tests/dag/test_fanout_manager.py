@@ -7,7 +7,7 @@ from ghdag_dag_conftest_helpers import (
     _make_config,
 )
 
-from ghdag.metrics.models import TaskMetrics
+from ghdag.core.models.metrics import TaskMetrics
 
 
 class TestFanOutManagerUnit:
@@ -15,11 +15,11 @@ class TestFanOutManagerUnit:
 
     def test_spawn_calls_append_task_fn_and_registers_pending(self, tmp_path):
 
+        from ghdag.core.models.metrics import TaskMetrics
         from ghdag.dag.fanout import FanOutItem, FanOutSpec
         from ghdag.dag.fanout_manager import FanOutManager
         from ghdag.dag.hooks import DagHooks
         from ghdag.dag.models import Task
-        from ghdag.metrics.models import TaskMetrics
 
         config = _make_config(tmp_path, "")
         hooks = MagicMock(spec=DagHooks)

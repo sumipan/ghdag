@@ -9,9 +9,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ghdag.core.stall_guard import StallEvent, StallTracker
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.models import DagConfig, RunningTask, Task
-from ghdag.dag.stall_guard import StallEvent, StallTracker
 from ghdag.dag.task_launcher import TaskLauncher
 
 

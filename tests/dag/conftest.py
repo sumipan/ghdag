@@ -7,10 +7,10 @@ import threading
 import types
 from pathlib import Path
 
+from ghdag.core.models.metrics import TaskMetrics
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import DagConfig
-from ghdag.metrics.models import TaskMetrics
 
 
 class MemoryHooks(DefaultHooks):

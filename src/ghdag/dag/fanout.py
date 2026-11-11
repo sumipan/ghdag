@@ -10,9 +10,9 @@ import yaml
 
 from ghdag.core.capabilities import PRESETS
 from ghdag.core.engine_spec import ENGINE_SPECS
+from ghdag.core.exceptions import ConfigError
 from ghdag.core.reply_block import find_reply_block, parse_reply_block
 from ghdag.core.vocabulary import FANOUT_ANCHOR, FANOUT_KEY, FANOUT_SEPARATOR
-from ghdag.exceptions import ConfigError
 
 _FANOUT_CHILDREN_HINT = "children must be a list of {id, command} mappings"
 

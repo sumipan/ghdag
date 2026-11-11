@@ -10,15 +10,15 @@ from zoneinfo import ZoneInfo
 
 from ghdag.core.capabilities import PRESETS
 from ghdag.core.command import get_adapter
+from ghdag.core.models.metrics import FailureClass, TaskMetrics
 from ghdag.core.vocabulary import DONE_FANOUT_CHILD_FAILED, FANOUT_SEPARATOR
+from ghdag.io.done import mark_done as state_mark_done
 from ghdag.io.exec_jsonl import DuplicateTaskError
 from ghdag.llm.engines import EngineModelError, validate_engine_model
-from ghdag.metrics.models import FailureClass, TaskMetrics
 
 from .fanout import FanoutError, FanOutSpec, build_child_jsonl_record, build_child_record_json
 from .hooks import DagHooks
 from .models import DagConfig, Task
-from .state import mark_done as state_mark_done
 
 logger = logging.getLogger(__name__)
 

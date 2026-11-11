@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from ghdag.core.models.dag import DagConfig, Task
 
 if TYPE_CHECKING:
-    from ghdag.dag.stall_guard import StallTracker
+    from ghdag.core.stall_guard import StallTracker
 
 __all__ = ["Task", "DagConfig", "RunningTask"]
 

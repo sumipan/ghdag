@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ghdag.exceptions import GhdagError
+from ghdag.core.exceptions import GhdagError
 from ghdag.status import _read_step_records, _to_recover_status
 
 logger = logging.getLogger(__name__)

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 
+from ghdag.core.models.metrics import TaskMetrics
 from ghdag.core.ports.dag_hooks import DagHooks
-from ghdag.metrics.models import TaskMetrics
 
 from .models import Task
 
