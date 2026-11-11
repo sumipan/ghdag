@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from ghdag.config.env import ghdag_audit_path
-from ghdag.exceptions import CliUsageError
+from ghdag.core.exceptions import CliUsageError
 
 
 def _llm_result_envelope(result, *, engine: str, model: str | None) -> dict[str, object]:
@@ -63,7 +63,7 @@ def cmd_llm(args) -> None:
 
     capabilities = None
     if args.capabilities_preset is not None or args.permission_mode is not None:
-        from ghdag.llm.capabilities import PRESETS, LLMCapabilities
+        from ghdag.core.capabilities import PRESETS, LLMCapabilities
         if args.capabilities_preset is not None:
             capabilities = PRESETS[args.capabilities_preset]
         else:
@@ -95,7 +95,7 @@ def cmd_llm(args) -> None:
 
     audit_path = args.audit_path or ghdag_audit_path()
     if audit_path and result.ok:
-        from ghdag.pipeline.audit import (
+        from ghdag.io.audit import (
             compute_prompt_hash,
             write_llm_audit_log,
             write_llm_inference_audit,

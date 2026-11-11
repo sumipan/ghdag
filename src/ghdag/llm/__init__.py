@@ -1,19 +1,20 @@
 """ghdag.llm — one-shot LLM invocation interface"""
 
-from ghdag.core.capabilities import PRESETS
+from ghdag.core.capabilities import (
+    DANGEROUS_FULL_ACCESS,
+    JSON_ONLY,
+    PRESETS,
+    TEXT_ONLY,
+    WEB_RESEARCH,
+    LLMCapabilities,
+)
 from ghdag.core.container import container_prefix
+from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
 from ghdag.core.ports.output import EngineError
 from ghdag.llm import _config
 from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
 from ghdag.llm.adapters.failure_classification import classify_common_failure
-from ghdag.llm.capabilities import (
-    DANGEROUS_FULL_ACCESS,
-    JSON_ONLY,
-    TEXT_ONLY,
-    WEB_RESEARCH,
-    LLMCapabilities,
-    LLMParseError,
-)
+from ghdag.llm.capabilities import LLMParseError
 from ghdag.llm.engines import (
     ENGINE_DEFAULTS,
     EngineModelError,
@@ -30,7 +31,6 @@ from ghdag.llm.engines import (
 )
 from ghdag.llm.managed import ManagedResult, call_managed
 from ghdag.llm.session import SessionRecord, SessionStore
-from ghdag.llm.spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
 
 __all__ = [
     "_config",

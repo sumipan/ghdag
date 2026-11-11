@@ -227,7 +227,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_json_flag(mcp_parser)
 
     # ghdag llm
-    from ghdag.llm.capabilities import PRESETS
+    from ghdag.core.capabilities import PRESETS
 
     llm_parser = subparsers.add_parser(
         "llm",

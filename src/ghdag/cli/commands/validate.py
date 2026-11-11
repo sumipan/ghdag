@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ghdag.exceptions import CliUsageError
+from ghdag.core.exceptions import CliUsageError
 from ghdag.workflow.loader import ValidationError, load_workflow_file
 
 

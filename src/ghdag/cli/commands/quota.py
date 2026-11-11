@@ -9,8 +9,8 @@ from pathlib import Path
 from typing import Any
 
 from ghdag.config.env import state_dir as resolve_state_dir
-from ghdag.dag.state import load_done_from_dir
 from ghdag.io import exec_jsonl
+from ghdag.io.done import load_done_from_dir
 from ghdag.metrics.parsers import parse_engine_model
 from ghdag.quota import QuotaGate
 

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from ghdag.core.command import render_exec_command
 from ghdag.llm import (
     ENGINE_SPECS,
     EngineSpec,
     LLMCapabilities,
 )
-from ghdag.llm.spec import render_exec_command
 
 
 class TestEngineSpec:
@@ -120,7 +120,7 @@ class TestRenderExecCommand:
 class TestRenderExecCommandCapabilities:
     def test_render_exec_claude_text_only_adds_permission_and_disallowed_tools(self):
         """AC1: capabilities=TEXT_ONLY → --permission-mode default --disallowed-tools ...; no --dangerously-skip-permissions"""
-        from ghdag.llm.capabilities import TEXT_ONLY
+        from ghdag.core.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
             spec, order_path="queue/order.md", model="claude-opus-4-6",
@@ -135,7 +135,7 @@ class TestRenderExecCommandCapabilities:
 
     def test_render_exec_claude_dangerous_uses_bypass_permissions(self):
         """AC2: capabilities=DANGEROUS_FULL_ACCESS → --permission-mode bypassPermissions"""
-        from ghdag.llm.capabilities import DANGEROUS_FULL_ACCESS
+        from ghdag.core.capabilities import DANGEROUS_FULL_ACCESS
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
             spec, order_path="queue/order.md", model=None,
@@ -147,7 +147,7 @@ class TestRenderExecCommandCapabilities:
 
     def test_render_exec_cursor_text_only_omits_force(self):
         """AC3: cursor + capabilities=TEXT_ONLY → does not include --force"""
-        from ghdag.llm.capabilities import TEXT_ONLY
+        from ghdag.core.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(
             spec, order_path="queue/order.md", model="auto",
@@ -167,7 +167,7 @@ class TestRenderExecCommandCapabilities:
 
     def test_gemini_capabilities_fallback_to_no_flags(self):
         """gemini + capabilities → fall back to no flags (extra_args kept)"""
-        from ghdag.llm.capabilities import TEXT_ONLY
+        from ghdag.core.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["gemini"]
         cmd = render_exec_command(
             spec, order_path="queue/order.md", model="gemini-2.5-flash",
@@ -178,7 +178,7 @@ class TestRenderExecCommandCapabilities:
 
     def test_shell_capabilities_no_change(self):
         """shell + capabilities → command unchanged"""
-        from ghdag.llm.capabilities import TEXT_ONLY
+        from ghdag.core.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["shell"]
         cmd_no_caps = render_exec_command(spec, order_path="queue/order.sh", model=None)
         cmd_with_caps = render_exec_command(spec, order_path="queue/order.sh", model=None, capabilities=TEXT_ONLY)

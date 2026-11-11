@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ghdag.llm.capabilities import JSON_ONLY
+from ghdag.core.capabilities import JSON_ONLY
 from ghdag.llm.engines import TextResult, call_text
 from ghdag.llm.session import SessionRecord, SessionStore
 

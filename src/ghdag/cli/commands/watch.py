@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ghdag.config.env import state_dir as resolve_state_dir
-from ghdag.exceptions import CliUsageError
+from ghdag.core.exceptions import CliUsageError
 
 
 def cmd_watch(args) -> None:

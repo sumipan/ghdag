@@ -136,7 +136,7 @@ class TestAuditQueryBurstDetect:
 
         audit = tmp_path / "audit.jsonl"
         with patch(
-            "ghdag.pipeline.audit_query.detect_correlation_bursts",
+            "ghdag.io.audit_query.detect_correlation_bursts",
             return_value=[],
         ) as mock_detect:
             main([

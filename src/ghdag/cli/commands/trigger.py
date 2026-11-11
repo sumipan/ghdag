@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from ghdag.config.env import state_dir as resolve_state_dir
-from ghdag.exceptions import CliUsageError, ConfigError
+from ghdag.core.exceptions import CliUsageError, ConfigError
 
 
 def _load_workflow_for_cli(args, *, workflows_path: Path):
