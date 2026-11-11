@@ -1,8 +1,7 @@
 """ghdag.metrics — public API."""
 
-from ghdag.core.models.metrics import FailureClass, TokenUsage
+from ghdag.core.models.metrics import FailureClass, TaskMetrics, TokenUsage
 
-from .models import TaskMetrics
 from .recorder import MetricsRecorder
 
 __all__ = ["FailureClass", "MetricsRecorder", "TaskMetrics", "TokenUsage"]

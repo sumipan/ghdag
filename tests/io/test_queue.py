@@ -9,8 +9,6 @@ import pytest
 from ghdag import QueueTask as QueueTaskTop
 from ghdag import QueueTaskStore as QueueTaskStoreTop
 from ghdag.io.queue import QueueTask, QueueTaskStore
-from ghdag.pipeline.result import QueueTask as QueueTaskShim
-from ghdag.pipeline.result import QueueTaskStore as QueueTaskStoreShim
 
 UUID1 = "14036ae7-f47f-4669-8a80-679a5e87c147"
 UUID2 = "75d11b22-75ca-4754-8768-765857d3ac9d"
@@ -40,11 +38,9 @@ def dirs(tmp_path: Path) -> tuple[Path, Path]:
 
 
 class TestExports:
-    def test_top_level_and_shim_are_same_classes(self) -> None:
+    def test_top_level_matches_io_queue_classes(self) -> None:
         assert QueueTaskTop is QueueTask
         assert QueueTaskStoreTop is QueueTaskStore
-        assert QueueTaskShim is QueueTask
-        assert QueueTaskStoreShim is QueueTaskStore
 
 
 class TestQueueTaskStore:

@@ -8,9 +8,8 @@ import traceback
 import warnings
 from pathlib import Path
 
+from ghdag.core.models.metrics import TaskMetrics
 from ghdag.io.audit import epoch_ts
-
-from .models import TaskMetrics
 
 
 class MetricsRecorder:

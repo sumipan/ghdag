@@ -15,7 +15,14 @@ from typing import IO
 from ghdag.core.vocabulary import DONE_DEP_FAILED, LEGACY_DONE_DEFERRED
 from ghdag.io import exec_jsonl
 from ghdag.io.audit import AuditContext, append_audit_record
-from ghdag.io.done import read_done_content
+from ghdag.io.done import (
+    load_done_from_dir,
+    load_succeeded_from_dir,
+    read_done_content,
+)
+from ghdag.io.done import (
+    mark_done as state_mark_done,
+)
 from ghdag.quota import QuotaGate
 
 from .circuit_breaker import CircuitBreakerPolicy
@@ -23,13 +30,6 @@ from .fanout_manager import FanOutManager
 from .hooks import DagHooks, DefaultHooks
 from .models import DagConfig, Task
 from .parser import validate_dependencies
-from .state import (
-    load_done_from_dir,
-    load_succeeded_from_dir,
-)
-from .state import (
-    mark_done as state_mark_done,
-)
 from .task_launcher import TaskLauncher
 
 logger = logging.getLogger(__name__)

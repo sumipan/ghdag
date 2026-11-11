@@ -75,7 +75,7 @@ class TestParseFanoutSpec:
         )
         with pytest.raises(FanoutError, match="[Dd]uplicate") as exc_info:
             parse_fanout_spec(str(f))
-        from ghdag.exceptions import ConfigError
+        from ghdag.core.exceptions import ConfigError
 
         err = exc_info.value
         assert isinstance(err, ConfigError)

@@ -178,7 +178,7 @@ class TestExecuteRecover:
         with pytest.raises(RecoverError) as exc_info:
             execute_recover(plan, queue_dir=jobs, done_dir=done)
         err = exc_info.value
-        from ghdag.exceptions import GhdagError
+        from ghdag.core.exceptions import GhdagError
 
         assert isinstance(err, GhdagError)
         assert err.code == "RECOVER_NOT_POSSIBLE"

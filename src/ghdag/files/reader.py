@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from ghdag.files.models import MdFile, PathTraversalError
+from ghdag.core.models.files import MdFile, PathTraversalError
 
 _FRONTMATTER_RE = re.compile(r"^---\n(.*?)^---\n?", re.DOTALL | re.MULTILINE)
 _WIKILINK_RE = re.compile(r"^\[\[(.+?)\]\]$")

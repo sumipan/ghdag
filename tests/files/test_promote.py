@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ghdag.files.models import PathTraversalError, PromoteResult, PromoteStatus
+from ghdag.core.models.files import PathTraversalError, PromoteResult, PromoteStatus
 
 
 @pytest.fixture
@@ -252,7 +252,7 @@ class TestDagHooksIntegration:
 
         with patch("ghdag.dag.task_launcher.state_mark_done"):
             with patch("ghdag.files.promote.md_append") as mock_append:
-                from ghdag.files.models import AppendResult, AppendStatus
+                from ghdag.core.models.files import AppendResult, AppendStatus
                 mock_append.return_value = AppendResult(
                     status=AppendStatus.APPENDED, path=str(target_file),
                     section="Promoted", body_hash="abc123",

@@ -5,8 +5,8 @@ import hashlib
 import re
 from pathlib import Path
 
-from ghdag.exceptions import GhdagError
-from ghdag.files.models import AppendResult, AppendStatus, PathTraversalError
+from ghdag.core.exceptions import GhdagError
+from ghdag.core.models.files import AppendResult, AppendStatus, PathTraversalError
 
 _NEXT_HEADING_RE = re.compile(r"^#{1,6}\s+")
 

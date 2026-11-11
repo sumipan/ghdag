@@ -14,12 +14,12 @@ import pytest
 from ghdag.core.vocabulary import DONE_CANCELLED, DONE_TIMEOUT
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.models import DagConfig, Task
-from ghdag.dag.state import is_done
 from ghdag.dag.task_launcher import (
     TaskLauncher,
     _process_group_exists,
     _signal_process_tree,
 )
+from ghdag.io.done import is_done
 
 # 3-level tree: bash → python (dies on SIGTERM) → grandchild (ignores SIGTERM).
 # Grandchild writes "<pid> <pgid>" to ready_path when alive.

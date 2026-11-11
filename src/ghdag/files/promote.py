@@ -3,8 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from ghdag.core.models.files import AppendStatus, PathTraversalError, PromoteResult, PromoteStatus
 from ghdag.files.append import md_append
-from ghdag.files.models import AppendStatus, PathTraversalError, PromoteResult, PromoteStatus
 from ghdag.files.reader import md_read
 from ghdag.io.audit import append_audit_record, now_ts
 

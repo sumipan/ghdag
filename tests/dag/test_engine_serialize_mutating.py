@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig, RunningTask, Task
-from ghdag.dag.state import load_done_from_dir, load_succeeded_from_dir
+from ghdag.io.done import load_done_from_dir, load_succeeded_from_dir
 
 
 def _write_jsonl(path: Path, records: list[dict]) -> None:

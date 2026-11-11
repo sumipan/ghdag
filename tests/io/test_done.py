@@ -155,15 +155,6 @@ class TestDoneFailureClass:
 
 
 class TestShimCompat:
-    def test_dag_state_reexports_same_objects(self) -> None:
-        import ghdag.dag.state as dag_state
-        import ghdag.io.done as io_done
-
-        assert dag_state.is_done is io_done.is_done
-        assert dag_state.mark_done is io_done.mark_done
-        assert dag_state.load_done_from_dir is io_done.load_done_from_dir
-        assert dag_state.load_succeeded_from_dir is io_done.load_succeeded_from_dir
-
     def test_pipeline_status_reexports_io_functions(self) -> None:
         import ghdag.io.done as io_done
         import ghdag.pipeline.status as pipeline_status

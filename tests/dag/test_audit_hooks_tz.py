@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import time
 
+from ghdag.core.models.metrics import TaskMetrics
 from ghdag.dag.audit_hooks import AuditHooks
 from ghdag.dag.models import Task
-from ghdag.metrics.models import TaskMetrics
 
 UUID = "tz-test-uuid-0000-0000-0000-000000000001"
 

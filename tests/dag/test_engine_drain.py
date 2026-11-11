@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig
-from ghdag.dag.state import is_done
+from ghdag.io.done import is_done
 
 
 def _make_engine(tmp_path: Path, task_timeout: float | None = 30.0) -> DagEngine:

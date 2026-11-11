@@ -1,7 +1,6 @@
 """ghdag.files — repository .md file operations."""
 
-from ghdag.files.append import md_append
-from ghdag.files.models import (
+from ghdag.core.models.files import (
     AppendResult,
     AppendStatus,
     MdFile,
@@ -10,6 +9,7 @@ from ghdag.files.models import (
     PromoteStatus,
     WriteResult,
 )
+from ghdag.files.append import md_append
 from ghdag.files.promote import md_promote
 from ghdag.files.reader import md_read
 from ghdag.files.writer import md_write

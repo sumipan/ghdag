@@ -6,6 +6,7 @@ import io
 import time
 from unittest.mock import MagicMock, patch
 
+from ghdag.core.models.metrics import FailureClass
 from ghdag.core.vocabulary import (
     DONE_ENGINE_ERROR,
     DONE_ENGINE_ERROR_FINAL,
@@ -16,7 +17,6 @@ from ghdag.core.vocabulary import (
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import DagConfig, RunningTask, Task
-from ghdag.metrics.models import FailureClass
 
 
 def _make_config(tmp_path):
