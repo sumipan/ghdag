@@ -12,11 +12,3 @@ tests/dag/test_engine_quota.py
 tests/dag/test_engine_reader_threads.py
 tests/dag/test_engine_serialize_mutating.py
 tests/dag/test_engine_wait_state.py
-tests/test_result_finalize.py
-tests/test_session_lineage.py
-tests/test_status.py
-tests/test_task_cancel.py
-tests/test_task_events.py
-tests/test_task_events_multi_engine.py
-tests/workflow/test_dispatcher.py
-tests/workflow/test_dispatcher_reload.py

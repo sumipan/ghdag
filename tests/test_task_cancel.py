@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import threading
-import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -45,6 +44,54 @@ def _read_done(config: DagConfig, uuid: str) -> str:
     return (Path(config.exec_done_dir) / uuid).read_text(encoding="utf-8").strip()
 
 
+def _read_done_if_present(config: DagConfig, uuid: str) -> str | None:
+    path = Path(config.exec_done_dir) / uuid
+    if not path.is_file():
+        return None
+    return path.read_text(encoding="utf-8").strip()
+
+
+class _FakeClock:
+    def __init__(self, mono: float = 10_000.0, wall: float = 1_700_000_000.0) -> None:
+        self._mono = mono
+        self._wall = wall
+
+    def monotonic(self) -> float:
+        val = self._mono
+        self._mono += 0.6
+        return val
+
+    def time(self) -> float:
+        return self._wall
+
+
+def _spin_until(predicate) -> None:
+    while not predicate():
+        pass
+
+
+def _run_engine_in_thread(engine: DagEngine) -> threading.Thread:
+    t = threading.Thread(target=engine.run, daemon=True)
+    t.start()
+    return t
+
+
+def _stop_engine(engine: DagEngine, thread: threading.Thread) -> None:
+    engine._shutdown = True
+    thread.join()
+
+
+def _wait_task_start(hooks: MagicMock, uuid: str = "uuid-a") -> threading.Event:
+    started = threading.Event()
+
+    def on_start(task_uuid, task):
+        if task_uuid == uuid:
+            started.set()
+
+    hooks.on_task_start.side_effect = on_start
+    return started
+
+
 class TestTaskCancel:
     def test_cancel_running_sleep_marks_cancelled(self, tmp_path, monkeypatch):
         """Cancel an in-flight sleep → CANCELLED done marker within kill_grace."""
@@ -56,6 +103,13 @@ class TestTaskCancel:
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = None
+        cancelled = threading.Event()
+
+        def on_cancelled(task_uuid, task):
+            cancelled.set()
+
+        hooks.on_task_cancelled.side_effect = on_cancelled
+        started = _wait_task_start(hooks)
         engine = DagEngine(config, hooks)
         real_replace = os.replace
         replace_targets = []
@@ -66,11 +120,8 @@ class TestTaskCancel:
 
         monkeypatch.setattr("ghdag.dag.task_launcher.os.replace", recording_replace)
 
-        t = threading.Thread(target=engine.run, daemon=True)
-        t.start()
-        deadline = time.time() + 5.0
-        while time.time() < deadline and "uuid-a" not in engine._launcher._running:
-            time.sleep(0.05)
+        t = _run_engine_in_thread(engine)
+        started.wait()
         assert "uuid-a" in engine._launcher._running
 
         running_path = _queue_dir(config) / "running" / "uuid-a.json"
@@ -86,12 +137,8 @@ class TestTaskCancel:
         cancel_path.parent.mkdir(parents=True, exist_ok=True)
         cancel_path.write_text("", encoding="utf-8")
 
-        done_deadline = time.time() + 5.0
-        while time.time() < done_deadline and not is_done(config.exec_done_dir, "uuid-a"):
-            time.sleep(0.05)
-
-        engine._shutdown = True
-        t.join(timeout=3.0)
+        cancelled.wait()
+        _stop_engine(engine, t)
 
         assert is_done(config.exec_done_dir, "uuid-a")
         assert _read_done(config, "uuid-a") == DONE_CANCELLED
@@ -120,26 +167,26 @@ class TestTaskCancel:
             [{"uuid": "uuid-a", "command": "sleep 60", "depends": []}],
             kill_grace=1.0,
         )
-        engine = DagEngine(config, LegacyHooks())
+        started = threading.Event()
 
-        t = threading.Thread(target=engine.run, daemon=True)
-        t.start()
-        deadline = time.time() + 5.0
-        while time.time() < deadline and "uuid-a" not in engine._launcher._running:
-            time.sleep(0.05)
+        class StartedLegacyHooks(LegacyHooks):
+            def on_task_start(self, uuid, task):
+                if uuid == "uuid-a":
+                    started.set()
+
+        engine = DagEngine(config, StartedLegacyHooks())
+
+        t = _run_engine_in_thread(engine)
+        started.wait()
         assert "uuid-a" in engine._launcher._running
 
         cancel_path = _queue_dir(config) / "cancel" / "uuid-a"
         cancel_path.parent.mkdir(parents=True, exist_ok=True)
         cancel_path.write_text("", encoding="utf-8")
-        done_deadline = time.time() + 5.0
-        while time.time() < done_deadline and not is_done(config.exec_done_dir, "uuid-a"):
-            time.sleep(0.05)
+        _spin_until(lambda: _read_done_if_present(config, "uuid-a") == DONE_CANCELLED)
 
         assert _read_done(config, "uuid-a") == DONE_CANCELLED
-        assert t.is_alive()
-        engine._shutdown = True
-        t.join(timeout=3.0)
+        _stop_engine(engine, t)
 
     def test_cancel_propagates_dep_failed(self, tmp_path):
         """Child depending on a cancelled parent becomes DEP_FAILED."""
@@ -154,27 +201,33 @@ class TestTaskCancel:
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = None
+        parent_done = threading.Event()
+        child_dep_failed = threading.Event()
+
+        def on_cancelled(task_uuid, task):
+            if task_uuid == "uuid-a":
+                parent_done.set()
+
+        def on_dep_failed(task_uuid, task, failed_dep):
+            if task_uuid == "uuid-b":
+                child_dep_failed.set()
+
+        hooks.on_task_cancelled.side_effect = on_cancelled
+        hooks.on_task_dep_failed.side_effect = on_dep_failed
+        started = _wait_task_start(hooks)
         engine = DagEngine(config, hooks)
 
-        t = threading.Thread(target=engine.run, daemon=True)
-        t.start()
-        deadline = time.time() + 5.0
-        while time.time() < deadline and "uuid-a" not in engine._launcher._running:
-            time.sleep(0.05)
+        t = _run_engine_in_thread(engine)
+        started.wait()
         assert "uuid-a" in engine._launcher._running
 
         cancel_path = _queue_dir(config) / "cancel" / "uuid-a"
         cancel_path.parent.mkdir(parents=True, exist_ok=True)
         cancel_path.write_text("", encoding="utf-8")
 
-        done_deadline = time.time() + 8.0
-        while time.time() < done_deadline:
-            if is_done(config.exec_done_dir, "uuid-a") and is_done(config.exec_done_dir, "uuid-b"):
-                break
-            time.sleep(0.05)
-
-        engine._shutdown = True
-        t.join(timeout=3.0)
+        parent_done.wait()
+        child_dep_failed.wait()
+        _stop_engine(engine, t)
 
         assert _read_done(config, "uuid-a") == DONE_CANCELLED
         assert _read_done(config, "uuid-b") == DONE_DEP_FAILED
@@ -189,30 +242,36 @@ class TestTaskCancel:
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = None
-        engine = DagEngine(config, hooks)
-
-        t = threading.Thread(target=engine.run, daemon=True)
-        t.start()
-        deadline = time.time() + 5.0
         saw_running = False
-        running_path = _queue_dir(config) / "running" / "uuid-a.json"
-        while time.time() < deadline:
+        success = threading.Event()
+
+        def on_start(task_uuid, task):
+            nonlocal saw_running
+            running_path = _queue_dir(config) / "running" / "uuid-a.json"
             if running_path.is_file():
                 saw_running = True
-            if is_done(config.exec_done_dir, "uuid-a"):
-                break
-            time.sleep(0.05)
 
-        engine._shutdown = True
-        t.join(timeout=3.0)
+        def on_success(task_uuid, task, metrics):
+            success.set()
+
+        hooks.on_task_start.side_effect = on_start
+        hooks.on_task_success.side_effect = on_success
+        engine = DagEngine(config, hooks)
+        running_path = _queue_dir(config) / "running" / "uuid-a.json"
+
+        t = _run_engine_in_thread(engine)
+        success.wait()
+        _stop_engine(engine, t)
 
         assert saw_running
         assert is_done(config.exec_done_dir, "uuid-a")
         assert _read_done(config, "uuid-a") == "0"
         assert not running_path.exists()
 
-    def test_running_file_removed_on_timeout(self, tmp_path):
+    def test_running_file_removed_on_timeout(self, tmp_path, monkeypatch):
         """jobs/running/<uuid>.json is cleared on timeout exit too."""
+        clock = _FakeClock()
+        monkeypatch.setattr("ghdag.dag.task_launcher.time", clock)
         config = _make_config(
             tmp_path,
             [{"uuid": "uuid-a", "command": "sleep 60", "depends": []}],
@@ -222,17 +281,19 @@ class TestTaskCancel:
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = None
+        timed_out = threading.Event()
+
+        def on_failure(task_uuid, task, returncode, stderr_text, metrics):
+            if task_uuid == "uuid-a":
+                timed_out.set()
+
+        hooks.on_task_failure.side_effect = on_failure
         engine = DagEngine(config, hooks)
-
-        t = threading.Thread(target=engine.run, daemon=True)
-        t.start()
-        deadline = time.time() + 8.0
         running_path = _queue_dir(config) / "running" / "uuid-a.json"
-        while time.time() < deadline and not is_done(config.exec_done_dir, "uuid-a"):
-            time.sleep(0.05)
 
-        engine._shutdown = True
-        t.join(timeout=3.0)
+        t = _run_engine_in_thread(engine)
+        timed_out.wait()
+        _stop_engine(engine, t)
 
         assert is_done(config.exec_done_dir, "uuid-a")
         assert _read_done(config, "uuid-a") == "TIMEOUT"

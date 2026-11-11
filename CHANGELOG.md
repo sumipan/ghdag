@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Tests only: remove wall-clock dependencies from eight test modules (`tests/test_result_finalize.py`, `tests/test_session_lineage.py`, `tests/test_status.py`, `tests/test_task_cancel.py`, `tests/test_task_events.py`, `tests/test_task_events_multi_engine.py`, `tests/workflow/test_dispatcher.py`, `tests/workflow/test_dispatcher_reload.py`) per docs/TEST.md T13 (sumipan/nexus#6194).
+
 ## 0.125.7 - 2026-11-11
 
 ### Changed

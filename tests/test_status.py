@@ -16,6 +16,8 @@ from ghdag.status import (
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+_FIXED_NOW = datetime(2026, 9, 10, 15, 0, 0, tzinfo=timezone.utc)
+
 
 def _write_exec(path: Path, records: list[dict]) -> None:
     path.write_text(
@@ -225,7 +227,15 @@ class TestIssueStatusUnit:
         assert by_name["c"].status == "dep_failed"
         assert result.orphan_uuids == []
 
-    def test_running_tasks(self, tmp_path: Path) -> None:
+    def test_running_tasks(self, tmp_path: Path, monkeypatch) -> None:
+        class _FixedDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                if tz is not None and tz == timezone.utc:
+                    return _FIXED_NOW
+                return _FIXED_NOW
+
+        monkeypatch.setattr("ghdag.status.datetime", _FixedDatetime)
         running_dir = tmp_path / "running"
         running_dir.mkdir()
         started = "2026-09-10T14:39:20+00:00"
@@ -249,13 +259,9 @@ class TestIssueStatusUnit:
         assert task.started_at == started
         assert task.engine == "shell"
         assert task.pid == 6526
-        assert task.elapsed_sec >= 0.0
-        # started_at is in the past relative to "now"
         started_dt = datetime.fromisoformat(started)
-        assert started_dt.tzinfo is not None
-        assert task.elapsed_sec > (
-            datetime.now(timezone.utc) - started_dt
-        ).total_seconds() - 5
+        expected_elapsed = (_FIXED_NOW - started_dt).total_seconds()
+        assert task.elapsed_sec == expected_elapsed
 
 
 class TestIssueStatusFixtures:

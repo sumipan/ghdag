@@ -32,12 +32,27 @@ def _make_config(tmp_path: Path, records: list[dict], **overrides) -> DagConfig:
     return DagConfig(**defaults)
 
 
-def _run_engine(engine: DagEngine, timeout: float = 5.0) -> None:
-    t = threading.Thread(target=engine.run, daemon=True)
-    t.start()
-    t.join(timeout=timeout)
+def _run_engine(engine: DagEngine) -> None:
+    finished = threading.Event()
+    hooks = engine._hooks
+
+    prior_rejected = hooks.on_task_rejected.side_effect
+
+    def mark_done_rejected(*args, **kwargs) -> None:
+        finished.set()
+        if callable(prior_rejected):
+            prior_rejected(*args, **kwargs)
+
+    if hooks.check_rejected.return_value:
+        hooks.on_task_rejected.side_effect = mark_done_rejected
+    else:
+        hooks.on_task_success.side_effect = lambda *_a, **_k: finished.set()
+
+    thread = threading.Thread(target=engine.run, daemon=True)
+    thread.start()
+    finished.wait()
     engine._shutdown = True
-    t.join(timeout=2.0)
+    thread.join()
 
 
 def _make_hooks(*, rejected: bool = False) -> MagicMock:
@@ -74,7 +89,7 @@ class TestResultFinalizePolicy:
         ])
         hooks = _make_hooks()
         engine = DagEngine(config, hooks)
-        _run_engine(engine, timeout=5.0)
+        _run_engine(engine)
 
         assert result_path.read_text(encoding="utf-8") == long_content
 
@@ -96,7 +111,7 @@ class TestResultFinalizePolicy:
         ])
         hooks = _make_hooks()
         engine = DagEngine(config, hooks)
-        _run_engine(engine, timeout=5.0)
+        _run_engine(engine)
 
         content = result_path.read_text(encoding="utf-8")
         assert "Analysis result..." in content
@@ -119,7 +134,7 @@ class TestResultFinalizePolicy:
         ])
         hooks = _make_hooks()
         engine = DagEngine(config, hooks)
-        _run_engine(engine, timeout=5.0)
+        _run_engine(engine)
 
         assert result_path.exists()
         content = result_path.read_text(encoding="utf-8")
@@ -143,7 +158,7 @@ class TestResultFinalizePolicy:
         ])
         hooks = _make_hooks()
         engine = DagEngine(config, hooks)
-        _run_engine(engine, timeout=5.0)
+        _run_engine(engine)
 
         content = result_path.read_text(encoding="utf-8")
         assert content == "New result"
@@ -167,7 +182,7 @@ class TestResultFinalizePolicy:
         ])
         hooks = _make_hooks()
         engine = DagEngine(config, hooks)
-        _run_engine(engine, timeout=5.0)
+        _run_engine(engine)
 
         assert result_path.read_text(encoding="utf-8") == long_content
 
@@ -232,7 +247,7 @@ class TestRetryResultPathCleanup:
         hooks = _make_hooks(rejected=True)
         hooks.on_task_rejected.side_effect = on_rejected
         engine = DagEngine(config, hooks)
-        _run_engine(engine, timeout=5.0)
+        _run_engine(engine)
 
         hooks.on_task_rejected.assert_called_once()
         _, kwargs_call = hooks.on_task_rejected.call_args
@@ -267,7 +282,7 @@ class TestRetryResultPathCleanup:
         hooks = _make_hooks(rejected=True)
         hooks.on_task_rejected.side_effect = on_rejected
         engine = DagEngine(config, hooks)
-        _run_engine(engine, timeout=5.0)
+        _run_engine(engine)
 
         hooks.on_task_rejected.assert_called_once()
         # REJECTED_FINAL so the file should still exist

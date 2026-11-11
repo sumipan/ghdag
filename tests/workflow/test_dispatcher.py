@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -19,6 +18,8 @@ from ghdag.core.models.workflow import (
 from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
+
+_FIXED_WALL_EPOCH = 1_700_000_000
 
 
 def _make_workflow() -> WorkflowConfig:
@@ -51,10 +52,13 @@ def _iso(ts: int) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
 
 
-def test_once_rate_limited_logs_skip_line_without_raising(tmp_path, caplog):
+def test_once_rate_limited_logs_skip_line_without_raising(tmp_path, caplog, monkeypatch):
     """AC-2: watch --once (max_iterations=1) logs one skip line and returns normally."""
+    monkeypatch.setattr(
+        "ghdag.workflow.dispatcher.time.time", lambda: _FIXED_WALL_EPOCH,
+    )
     dispatcher, github = _make_dispatcher(tmp_path)
-    reset_at = int(time.time()) + 600
+    reset_at = _FIXED_WALL_EPOCH + 600
     github.list_all_issues.side_effect = RateLimitError(
         "rate limited", status_code=403, reset_at=reset_at
     )
@@ -69,10 +73,13 @@ def test_once_rate_limited_logs_skip_line_without_raising(tmp_path, caplog):
     assert dispatcher._rate_limited_until == reset_at
 
 
-def test_poll_skipped_until_reset(tmp_path, caplog):
+def test_poll_skipped_until_reset(tmp_path, caplog, monkeypatch):
     """Subsequent iterations do not call the API before reset_at."""
+    monkeypatch.setattr(
+        "ghdag.workflow.dispatcher.time.time", lambda: _FIXED_WALL_EPOCH,
+    )
     dispatcher, github = _make_dispatcher(tmp_path)
-    reset_at = int(time.time()) + 600
+    reset_at = _FIXED_WALL_EPOCH + 600
     github.list_all_issues.side_effect = RateLimitError(
         "rate limited", status_code=403, reset_at=reset_at
     )
@@ -87,10 +94,13 @@ def test_poll_skipped_until_reset(tmp_path, caplog):
     assert len(skip_lines) == 3
 
 
-def test_poll_resumes_after_reset(tmp_path):
+def test_poll_resumes_after_reset(tmp_path, monkeypatch):
     """The first iteration past reset_at polls normally and clears the state."""
+    monkeypatch.setattr(
+        "ghdag.workflow.dispatcher.time.time", lambda: _FIXED_WALL_EPOCH,
+    )
     dispatcher, github = _make_dispatcher(tmp_path)
-    dispatcher._rate_limited_until = int(time.time()) - 1
+    dispatcher._rate_limited_until = _FIXED_WALL_EPOCH - 1
 
     dispatcher.run(max_iterations=1)
 
@@ -125,9 +135,12 @@ def _two_matches(dispatcher: WorkflowDispatcher) -> list[dict]:
     ]
 
 
-def test_dispatch_rate_limit_sets_skip_and_stops_remaining_matches(tmp_path, caplog):
+def test_dispatch_rate_limit_sets_skip_and_stops_remaining_matches(tmp_path, caplog, monkeypatch):
+    monkeypatch.setattr(
+        "ghdag.workflow.dispatcher.time.time", lambda: _FIXED_WALL_EPOCH,
+    )
     dispatcher, _github = _make_dispatcher(tmp_path)
-    reset_at = int(time.time()) + 600
+    reset_at = _FIXED_WALL_EPOCH + 600
     matches = _two_matches(dispatcher)
     dispatcher.poll_once = MagicMock(return_value=matches)  # type: ignore[method-assign]
     dispatcher.dispatch = MagicMock(  # type: ignore[method-assign]

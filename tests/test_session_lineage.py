@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
-from ghdag.llm.session import SessionRecord, SessionStore
+from ghdag.llm.session import SessionStore
+
+_FIXED_CREATED_AT = "2026-06-01T12:00:00+00:00"
 
 
 def test_record_compacted_stores_lineage_fields(tmp_path):
@@ -46,7 +48,7 @@ def test_lookup_reads_lineage_from_json_without_private_apis(tmp_path):
     payload = {
         "engine": "claude",
         "session_id": "sess-c",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": _FIXED_CREATED_AT,
         "parent_session_id": "sess-p",
         "is_compacted": True,
         "summary_tokens": 12,
@@ -56,14 +58,12 @@ def test_lookup_reads_lineage_from_json_without_private_apis(tmp_path):
     store = SessionStore(store_dir)
     resolved = store.lookup("k")
 
-    assert resolved == SessionRecord(
-        engine="claude",
-        session_id="sess-c",
-        created_at=resolved.created_at,
-        parent_session_id="sess-p",
-        is_compacted=True,
-        summary_tokens=12,
-    )
+    assert resolved.engine == "claude"
+    assert resolved.session_id == "sess-c"
+    assert resolved.created_at == datetime.fromisoformat(_FIXED_CREATED_AT)
+    assert resolved.parent_session_id == "sess-p"
+    assert resolved.is_compacted is True
+    assert resolved.summary_tokens == 12
 
 
 def test_gc_preserves_unexpired_compacted_lineage(tmp_path):
