@@ -1,24 +1,24 @@
 # ghdag
 
-ghdag runs LLM and shell task graphs on your own machine. GitHub Issue labels select a workflow handler, the handler's steps become task records in a local queue file, and a dependency-aware DAG runner executes them.
+ghdag is a local orchestrator for LLM and shell task graphs. Labelled GitHub Issues (or a file-backed `LocalForge`) pick a workflow handler; the handler's steps become JSON lines in `jobs/exec.jsonl`, and `ghdag run` executes the dependency DAG on your machine.
 
-ghdag is built from two independent processes that share only files:
+Two processes share only files on disk:
 
-- the **intake tower** (`ghdag watch` / `ghdag trigger`) turns labelled Issues into task records in `jobs/exec.jsonl`;
-- the **execution tower** (`ghdag run`) watches `exec.jsonl`, launches tasks whose dependencies succeeded, and writes one `done/<uuid>` marker per task.
+- **Intake** — `ghdag watch` polls Issues and `ghdag trigger` dispatches one Issue; both append tasks through `LLMPipelineAPI.submit`.
+- **Execution** — `ghdag run` watches `exec.jsonl`, starts tasks when dependencies succeed, and writes `done/<uuid>` markers.
 
-Unlike CI-hosted orchestrators (GitHub Actions, Dagger), nothing runs on a hosted runner: engines are the local `claude`, `cursor-agent` (cursor; the legacy binary name `agent` is kept only as a log alias), `codex` and `gemini` CLIs, and coordination uses local files and `fcntl` locks.
+Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-agent`, `codex`, `gemini`, or `bash` for shell steps). Coordination uses the queue file, runtime directories, and `fcntl` locks.
 
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.114.0-blue)
+![version](https://img.shields.io/badge/version-v0.125.1-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.114.0** (`pyproject.toml` `version = "0.114.0"`) |
+| Current release | **v0.125.1** (`pyproject.toml` `version = "0.125.1"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.114.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.125.1"
 ```
 
 Install from a checkout with the development tools:
@@ -1059,6 +1059,7 @@ Additional error `code` values without a dedicated exception type:
 | `LLMParseError` | `GhdagError` | `LLM_OUTPUT_NOT_JSON` | 3 | `ghdag.llm.capabilities` | Output does not match `output_format`; has `raw`, `reason` |
 | `ConfigLoadError` | `GhdagError`, `ValueError` | `LLM_MODELS_CONFIG_INVALID` | 3 | `ghdag.llm._config` | Invalid `llm-models.yml` |
 | `FanoutError` | `ConfigError` | `FANOUT_INVALID` | 3 | `ghdag.dag.fanout` | Invalid fan-out specification |
+| `ReplyBlockError` | `ConfigError` | `REPLY_BLOCK_INVALID` | 3 | `ghdag.core.reply_block` | Invalid reply-block YAML or fields inside an engine result fence |
 | `RecoverError` | `GhdagError` | `RECOVER_NOT_POSSIBLE` | 1 | `ghdag.dag.recover` | A recover plan, or its execution, is not possible |
 | `ToolRegistryError` | `GhdagError` | `TOOL_REGISTRY_INVALID` | 3 | `ghdag.tool.exceptions` | Tool definition naming violation or duplicate |
 | `AdapterNotFoundError` | `GhdagError`, `ValueError` | `ADAPTER_NOT_FOUND` | 3 | `ghdag.core.command` | No engine adapter for an engine name |
@@ -1140,7 +1141,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.114.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.125.1"
 ```
 
 and read `CHANGELOG.md` before upgrading.
