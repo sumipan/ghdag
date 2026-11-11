@@ -11,9 +11,9 @@ from pathlib import Path
 
 from ghdag.core.exceptions import GhdagError
 from ghdag.core.models.dag import Task
+from ghdag.core.ports.quota import QuotaAdmissionPort
 from ghdag.io.audit import AuditContext, write_audit_log
 from ghdag.io.done import is_done
-from ghdag.quota import QuotaGate
 
 logger = logging.getLogger(__name__)
 
@@ -266,7 +266,7 @@ def append(
     audit_path: Path,
     idempotency_key: str | None = None,
     default_permission_uuids: list[str] | None = None,
-    quota_gate: QuotaGate | None = None,
+    quota_gate: QuotaAdmissionPort | None = None,
 ) -> None:
     """Append records as JSONL under LOCK_EX and write an audit enqueue record."""
     if not records:

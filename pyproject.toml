@@ -142,6 +142,10 @@ forbidden_modules = [
   "ghdag.workflow",
   "ghdag.cli",
   "ghdag.ui",
+  "ghdag.quota",
+]
+ignore_imports = [
+  "ghdag.llm.managed -> ghdag.quota",
 ]
 
 [[tool.importlinter.contracts]]

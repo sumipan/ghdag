@@ -139,6 +139,56 @@ class TestAppend:
         written = json.loads(path.read_text(encoding="utf-8").strip())
         assert written["annotations"]["_request_id"] == "req-1"
 
+    def test_append_admit_calls_match_engine_and_role_records(self, tmp_path: Path) -> None:
+        from ghdag.io.audit import AuditContext
+        from ghdag.io.exec_jsonl import append
+
+        calls: list[dict] = []
+
+        class FakeQuotaAdmission:
+            def admit(self, **kwargs: object) -> object:
+                calls.append(dict(kwargs))
+                return None
+
+        path = tmp_path / "exec.jsonl"
+        gate = FakeQuotaAdmission()
+        records = [
+            {
+                "uuid": "eng-1",
+                "command": "claude -p hi",
+                "engine": "claude",
+            },
+            {
+                "uuid": "role-1",
+                "command": "skill x",
+                "role": "impl",
+                "role_engines": ["cursor", "claude"],
+            },
+            {"uuid": "plain-1", "command": "echo ok"},
+        ]
+        append(
+            path,
+            records,
+            AuditContext(source="test"),
+            audit_path=tmp_path / "audit.jsonl",
+            quota_gate=gate,
+        )
+        assert len(calls) == 2
+        assert calls[0] == {
+            "task_uuid": "eng-1",
+            "engine": "claude",
+            "phase": "enqueue",
+            "role": None,
+            "role_engines": None,
+        }
+        assert calls[1] == {
+            "task_uuid": "role-1",
+            "engine": None,
+            "phase": "enqueue",
+            "role": "impl",
+            "role_engines": ["cursor", "claude"],
+        }
+
     def test_append_does_not_create_task_level_deferred_ledger(self, tmp_path: Path) -> None:
         from datetime import datetime, timedelta, timezone
 
