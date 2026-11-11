@@ -108,6 +108,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("exec_jsonl", help="Path to exec.jsonl file")
     run_parser.add_argument(
         "--interval-sec",
+        "--interval",
         type=float,
         default=1.0,
         dest="interval",
@@ -138,6 +139,7 @@ def _build_parser() -> argparse.ArgumentParser:
     watch_parser.add_argument("workflows_dir", help="Path to workflows YAML directory")
     watch_parser.add_argument(
         "--interval-sec",
+        "--interval",
         type=float,
         default=30.0,
         dest="interval",
@@ -146,6 +148,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     watch_parser.add_argument(
         "--exec-jsonl",
+        "--exec-md",
         default="jobs/exec.jsonl",
         dest="exec_jsonl",
         metavar="PATH",
@@ -191,6 +194,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     ui_parser.add_argument(
         "--interval-sec",
+        "--interval",
         type=float,
         default=3.0,
         dest="interval",
@@ -220,6 +224,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     mcp_parser.add_argument(
         "--exec-jsonl",
+        "--exec-md",
         default="jobs/exec.jsonl",
         metavar="PATH",
         help="Path to exec.jsonl (default: <repo-root>/jobs/exec.jsonl)",
@@ -259,6 +264,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     llm_parser.add_argument(
         "--timeout-sec",
+        "--timeout",
         type=int,
         default=None,
         dest="timeout",
@@ -344,6 +350,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     trigger_parser.add_argument(
         "--exec-jsonl",
+        "--exec-md",
         default="jobs/exec.jsonl",
         dest="exec_jsonl",
         metavar="PATH",
@@ -404,6 +411,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     status_parser.add_argument(
         "--exec-jsonl",
+        "--exec-md",
         default=None,
         dest="exec_jsonl",
         metavar="PATH",
@@ -467,6 +475,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     recover_parser.add_argument(
         "--exec-jsonl",
+        "--exec-md",
         default="jobs/exec.jsonl",
         dest="exec_jsonl",
         metavar="PATH",
@@ -657,6 +666,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     quota_status.add_argument(
         "--exec-jsonl",
+        "--exec-path",
         default="jobs/exec.jsonl",
         dest="exec_path",
         metavar="PATH",

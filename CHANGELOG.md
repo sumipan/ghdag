@@ -35,11 +35,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Host consumer migration (sumipan/nexus#6465)
 
-1. Merge this ghdag release (`v0.129.0`) first; do not add compatibility shims for removed CLI flags or re-exports.
-2. Keep host pins below `0.129.0` until a follow-up nexus Issue updates every consumer (`scripts/`, `tools/`, Procfile, skills) to the new CLI flags and definition-package imports listed above.
-3. In one host PR, land consumer updates and bump the ghdag pin to `0.129.0`; verify with host CI before merge.
-
-Until step 3 completes, old `from ghdag import QueueTaskStore` call sites and `--exec-md` / `--interval` flags in nexus are expected and are not blockers for this ghdag PR.
+1. Merge this ghdag release (`v0.129.0`) first.
+2. Follow-up issues (filed before merge): sumipan/nexus#6485 (issuesmith `trigger --exec-jsonl` + pin) and sumipan/nexus#6486 (nexus Procfile/tools/docs + mltgnt/issuesmith pins). Merge producer before consumers; remove transition aliases in a later ghdag release after #6486 merges.
+3. **Transition compatibility (v0.129.0 only):** legacy CLI flags (`--exec-md`, `--exec-path`, `--interval`, `--timeout`) remain argparse aliases for the canonical flags; removed top-level imports resolve via lazy `ghdag.__getattr__` with `DeprecationWarning` and are not listed in `ghdag.__all__`.
+4. **Regression tests:** `tests/cli/test_cli_main.py::test_v0129_host_consumer_argv_regression_record` and `tests/core/test_import_compat.py` (`test_v0129_*`) pin the replacement argv and imports documented in #6485 / #6486.
 
 ## 0.127.0 - 2026-11-11
 

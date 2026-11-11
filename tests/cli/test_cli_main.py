@@ -121,7 +121,6 @@ class TestLlmCapabilitiesPreset:
 
 
 def test_exec_jsonl_flag_is_consistent(tmp_path):
-    from ghdag.cli import main
     from ghdag.cli.main import _build_parser
 
     wf = tmp_path / "wf"
@@ -165,19 +164,22 @@ def test_exec_jsonl_flag_is_consistent(tmp_path):
     )
     assert quota_args.exec_path == exec_path
 
-    for argv in (
-        ["watch", str(wf), "--exec-md", exec_path],
-        ["trigger", "1", "--handler", "impl", "--exec-md", exec_path],
-        ["dag", "recover", "--issue", "1", "--handler", "impl", "--exec-md", exec_path],
-        ["quota", "status", "--exec-path", exec_path],
-    ):
-        with pytest.raises(SystemExit) as exc:
-            main(argv)
-        assert exc.value.code == 2
+    legacy_cases = (
+        (["watch", str(wf), "--exec-md", exec_path], "exec_jsonl", exec_path),
+        (["trigger", "1", "--handler", "impl", "--exec-md", exec_path], "exec_jsonl", exec_path),
+        (
+            ["dag", "recover", "--issue", "1", "--handler", "impl", "--exec-md", exec_path],
+            "exec_jsonl",
+            exec_path,
+        ),
+        (["quota", "status", "--exec-path", exec_path], "exec_path", exec_path),
+    )
+    for argv, dest, expected in legacy_cases:
+        args = parser.parse_args(argv)
+        assert getattr(args, dest) == expected
 
 
 def test_duration_flags_use_sec_suffix(tmp_path):
-    from ghdag.cli import main
     from ghdag.cli.main import _build_parser
 
     exec_md = tmp_path / "exec.jsonl"
@@ -200,15 +202,52 @@ def test_duration_flags_use_sec_suffix(tmp_path):
     llm_args = parser.parse_args(["llm", "hello", "--timeout-sec", "120"])
     assert llm_args.timeout == 120
 
-    for argv in (
-        ["run", str(exec_md), "--interval", "10"],
-        ["watch", str(wf), "--interval", "5", "--once"],
-        ["ui", "--interval", "4"],
-        ["llm", "hello", "--timeout", "120"],
-    ):
-        with pytest.raises(SystemExit) as exc:
-            main(argv)
-        assert exc.value.code == 2
+    legacy_duration = (
+        (["run", str(exec_md), "--interval", "10"], "interval", 10.0),
+        (["watch", str(wf), "--interval", "5", "--once"], "interval", 5.0),
+        (["ui", "--interval", "4"], "interval", 4.0),
+        (["llm", "hello", "--timeout", "120"], "timeout", 120),
+    )
+    for argv, dest, expected in legacy_duration:
+        args = parser.parse_args(argv)
+        assert getattr(args, dest) == expected
+
+
+def test_v0129_host_consumer_argv_regression_record(tmp_path):
+    """Regression record for sumipan/nexus#6486 watcher and sumipan/nexus#6485 trigger."""
+    from ghdag.cli.main import _build_parser
+
+    wf = tmp_path / "workflows"
+    wf.mkdir()
+    parser = _build_parser()
+    watch_args = parser.parse_args(
+        [
+            "watch",
+            str(wf),
+            "--exec-jsonl",
+            "jobs/exec.jsonl",
+            "--interval-sec",
+            "60",
+        ],
+    )
+    assert watch_args.exec_jsonl == "jobs/exec.jsonl"
+    assert watch_args.interval == 60.0
+    legacy_watch = parser.parse_args(
+        ["watch", str(wf), "--exec-md", "jobs/exec.jsonl", "--interval", "60"],
+    )
+    assert legacy_watch.exec_jsonl == "jobs/exec.jsonl"
+    assert legacy_watch.interval == 60.0
+    trigger_args = parser.parse_args(
+        [
+            "trigger",
+            "42",
+            "--handler",
+            "impl",
+            "--exec-jsonl",
+            "jobs/exec.jsonl",
+        ],
+    )
+    assert trigger_args.exec_jsonl == "jobs/exec.jsonl"
 
 
 class TestStatusJson:
