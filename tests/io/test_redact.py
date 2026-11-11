@@ -76,7 +76,7 @@ def test_events_reader_redacts_and_appends_count(tmp_path: Path):
     )
     thread.start()
     proc.wait()
-    thread.join(timeout=2.0)
+    thread.join()
     text = events_path.read_text(encoding="utf-8")
     assert pat not in text
     assert "[REDACTED:github_pat]" in text

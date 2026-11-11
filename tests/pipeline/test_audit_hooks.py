@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 
 import pytest
 
@@ -13,6 +12,7 @@ from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import Task
 
 UUID = "test-uuid-0000-0000-0000-000000000001"
+_FIXED_STARTED_AT = 1_700_000_000.0
 
 
 def _make_task() -> Task:
@@ -20,7 +20,6 @@ def _make_task() -> Task:
 
 
 def _make_metrics(status: str = "success") -> TaskMetrics:
-    now = time.time()
     return TaskMetrics(
         uuid=UUID,
         engine="claude",
@@ -28,8 +27,8 @@ def _make_metrics(status: str = "success") -> TaskMetrics:
         wall_time_sec=10.5,
         token_count=1500,
         status=status,
-        started_at=now,
-        finished_at=now + 10.5,
+        started_at=_FIXED_STARTED_AT,
+        finished_at=_FIXED_STARTED_AT + 10.5,
     )
 
 
@@ -117,7 +116,6 @@ class TestAuditHooks:
         hooks.on_task_empty_result(UUID, task, "", metrics)
 
     def _make_metrics_with_correlation(self, status: str = "success", correlation_id: str | None = None) -> TaskMetrics:
-        now = time.time()
         return TaskMetrics(
             uuid=UUID,
             engine="claude",
@@ -125,8 +123,8 @@ class TestAuditHooks:
             wall_time_sec=10.5,
             token_count=1500,
             status=status,
-            started_at=now,
-            finished_at=now + 10.5,
+            started_at=_FIXED_STARTED_AT,
+            finished_at=_FIXED_STARTED_AT + 10.5,
             correlation_id=correlation_id,
         )
 
@@ -192,7 +190,6 @@ class TestAuditHooks:
         """AuditHooks forwards TaskMetrics.request_id into the audit record."""
         audit_path = tmp_path / "audit.jsonl"
         hooks = AuditHooks(audit_path=audit_path)
-        now = time.time()
         metrics = TaskMetrics(
             uuid=UUID,
             engine="claude",
@@ -200,8 +197,8 @@ class TestAuditHooks:
             wall_time_sec=1.0,
             token_count=100,
             status="success",
-            started_at=now,
-            finished_at=now + 1.0,
+            started_at=_FIXED_STARTED_AT,
+            finished_at=_FIXED_STARTED_AT + 1.0,
             request_id="req-from-metrics",
         )
         hooks.on_task_success(UUID, _make_task(), metrics)
@@ -210,7 +207,6 @@ class TestAuditHooks:
         assert r["request_id"] == "req-from-metrics"
 
     def _make_metrics_with_failure_class(self, status: str = "failure", failure_class: FailureClass | None = None) -> TaskMetrics:
-        now = time.time()
         return TaskMetrics(
             uuid=UUID,
             engine="claude",
@@ -218,8 +214,8 @@ class TestAuditHooks:
             wall_time_sec=10.5,
             token_count=1500,
             status=status,
-            started_at=now,
-            finished_at=now + 10.5,
+            started_at=_FIXED_STARTED_AT,
+            finished_at=_FIXED_STARTED_AT + 10.5,
             failure_class=failure_class,
         )
 

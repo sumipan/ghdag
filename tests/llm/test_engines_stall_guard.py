@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import signal
 import subprocess
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -29,7 +28,7 @@ _BUSY_PS = (
 
 
 class FakeProc:
-    """Popen stand-in whose communicate sleeps ``timeout`` and raises N times."""
+    """Popen stand-in whose communicate raises TimeoutExpired for N calls, then returns."""
 
     def __init__(
         self,
@@ -55,8 +54,6 @@ class FakeProc:
     def communicate(self, input=None, timeout=None):  # noqa: A002 — mirrors Popen
         self.calls.append({"input": input, "timeout": timeout})
         if self._remaining is None or self._remaining > 0:
-            if timeout is not None:
-                time.sleep(timeout)
             if self._remaining is not None:
                 self._remaining -= 1
             raise subprocess.TimeoutExpired(self.cmd, timeout)
@@ -72,6 +69,13 @@ def guard_env(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, int]]:
     kills: list[tuple[int, int]] = []
     monkeypatch.setattr(engines, "_stall_kill", lambda pid, sig: kills.append((pid, sig)))
     monkeypatch.setattr(engines, "_stall_ps", lambda: _STALLED_PS)
+    mono = {"t": 0.0}
+
+    def fake_monotonic() -> float:
+        mono["t"] += 0.06
+        return mono["t"]
+
+    monkeypatch.setattr(engines.time, "monotonic", fake_monotonic)
     return kills
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
@@ -11,6 +10,9 @@ from unittest.mock import patch
 import pytest
 
 from ghdag.io.audit_query import detect_correlation_bursts, get_correlation_top_n
+
+_FIXED_EPOCH = 1_700_000_000.0
+_JST = timezone(timedelta(hours=9))
 
 
 def _write_events(path: Path, events: list[dict]) -> None:
@@ -20,8 +22,14 @@ def _write_events(path: Path, events: list[dict]) -> None:
 
 
 def _ts(offset_sec: float = 0.0) -> str:
-    dt = datetime.fromtimestamp(time.time() - offset_sec, tz=timezone(timedelta(hours=9)))
+    dt = datetime.fromtimestamp(_FIXED_EPOCH - offset_sec, tz=_JST)
     return dt.isoformat()
+
+
+@pytest.fixture(autouse=True)
+def _fixed_query_clock():
+    with patch("ghdag.io.audit_query.time.time", return_value=_FIXED_EPOCH):
+        yield
 
 
 @pytest.fixture
@@ -165,8 +173,7 @@ class TestGetCorrelationTopN:
              "correlation_id": "cid-new", "timestamp": _ts(60)},
         ])
 
-        with patch("ghdag.io.audit_query.time.time", return_value=time.time()):
-            result = get_correlation_top_n(audit_path, since_sec=3600, top_n=5)
+        result = get_correlation_top_n(audit_path, since_sec=3600, top_n=5)
 
         assert len(result) == 1
         assert result[0]["correlation_id"] == "cid-new"

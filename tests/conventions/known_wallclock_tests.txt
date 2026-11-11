@@ -12,15 +12,6 @@ tests/dag/test_engine_quota.py
 tests/dag/test_engine_reader_threads.py
 tests/dag/test_engine_serialize_mutating.py
 tests/dag/test_engine_wait_state.py
-tests/io/test_redact.py
-tests/llm/test_engines_stall_guard.py
-tests/llm/test_managed.py
-tests/llm/test_session.py
-tests/metrics/test_models.py
-tests/pipeline/test_audit.py
-tests/pipeline/test_audit_hooks.py
-tests/pipeline/test_audit_query_burst.py
-tests/pipeline/test_wait.py
 tests/test_result_finalize.py
 tests/test_session_lineage.py
 tests/test_status.py

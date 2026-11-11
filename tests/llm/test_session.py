@@ -48,10 +48,11 @@ def test_gc_deletes_only_expired_sessions(tmp_path):
 
     store_dir = tmp_path / ".sessions"
     old_path = store_dir / "old.json"
+    old_created = datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     old_data = {
         "engine": "claude",
         "session_id": "sess-old",
-        "created_at": (datetime.now(timezone.utc) - timedelta(days=10)).isoformat(),
+        "created_at": old_created.isoformat(),
     }
     old_path.write_text(json.dumps(old_data), encoding="utf-8")
 
@@ -70,7 +71,7 @@ def test_lookup_legacy_record_falls_back_to_mtime(tmp_path):
         json.dumps({"engine": "claude", "session_id": "sess-legacy"}),
         encoding="utf-8",
     )
-    expected = datetime.now(timezone.utc) - timedelta(hours=3)
+    expected = datetime(2024, 6, 1, 9, 0, 0, tzinfo=timezone.utc)
     os.utime(legacy_path, (expected.timestamp(), expected.timestamp()))
 
     store = SessionStore(store_dir)
@@ -79,4 +80,4 @@ def test_lookup_legacy_record_falls_back_to_mtime(tmp_path):
     assert resolved is not None
     assert resolved.engine == "claude"
     assert resolved.session_id == "sess-legacy"
-    assert abs((resolved.created_at - expected).total_seconds()) < 2
+    assert resolved.created_at == expected

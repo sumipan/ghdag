@@ -529,9 +529,7 @@ class TestRotation:
 
     def test_small_same_day_audit_file_appends_without_rotation(self, tmp_path):
         """AC-3: same-day, small file → no rotation; record appended."""
-        from datetime import datetime, timedelta, timezone
-        JST = timezone(timedelta(hours=9))
-        today_ts = datetime.now(JST).isoformat()
+        today_ts = "2026-11-11T12:00:00+09:00"
 
         audit_path = tmp_path / "audit.jsonl"
         audit_path.write_text(json.dumps({"timestamp": today_ts}) + "\n")
