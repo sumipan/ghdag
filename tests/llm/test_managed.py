@@ -15,6 +15,9 @@ from ghdag.llm.engines import LLMResult
 from ghdag.llm.managed import ManagedResult, call_managed
 from ghdag.quota import QuotaGate
 
+_QUOTA_OBSERVED_AT = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+_QUOTA_NOW = datetime(2024, 1, 15, 12, 1, 0, tzinfo=timezone.utc)
+
 
 def _llm(stdout: str = "ok", stderr: str = "", returncode: int = 0) -> LLMResult:
     return LLMResult(stdout=stdout, stderr=stderr, returncode=returncode)
@@ -484,8 +487,12 @@ class TestCallManagedFallback:
 
     def test_skips_paused_fallback_candidates(self, tmp_path: Path):
         gate = QuotaGate(tmp_path / "quota-gate.json")
-        now = datetime.now(timezone.utc)
-        gate.report(engine="codex", status="paused", observed_at=now, reason="pre-paused")
+        gate.report(
+            engine="codex",
+            status="paused",
+            observed_at=_QUOTA_OBSERVED_AT,
+            reason="pre-paused",
+        )
         calls: list[str] = []
 
         def fake_call(prompt, *, engine, **kwargs):
@@ -505,6 +512,7 @@ class TestCallManagedFallback:
             return adapter
 
         with (
+            patch("ghdag.quota._aware_now", side_effect=lambda now=None: _QUOTA_NOW if now is None else now),
             patch("ghdag.llm.managed.call", side_effect=fake_call),
             patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
             patch(
@@ -524,8 +532,7 @@ class TestCallManagedFallback:
 
     def test_all_candidates_paused_returns_primary_failure(self, tmp_path: Path):
         gate = QuotaGate(tmp_path / "quota-gate.json")
-        now = datetime.now(timezone.utc)
-        gate.report(engine="codex", status="paused", observed_at=now)
+        gate.report(engine="codex", status="paused", observed_at=_QUOTA_OBSERVED_AT)
         calls: list[str] = []
 
         def fake_call(prompt, *, engine, **kwargs):
@@ -535,6 +542,7 @@ class TestCallManagedFallback:
 
         mock_adapter = _adapter(failure=FailureClass.QUOTA_EXHAUSTED)
         with (
+            patch("ghdag.quota._aware_now", side_effect=lambda now=None: _QUOTA_NOW if now is None else now),
             patch("ghdag.llm.managed.call", side_effect=fake_call),
             patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
             patch(

@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from ghdag.core.models.metrics import FailureClass, TaskMetrics
 
 UUID = "test-uuid-0000-0000-0000-000000000001"
+_FIXED_STARTED_AT = 1_700_000_000.0
 
 
 class TestTaskMetrics:
     def test_task_metrics_legacy_ctor_leaves_correlation_id_none(self):
         """AC-4: construction with legacy args succeeds and correlation_id is None."""
-        now = time.time()
         m = TaskMetrics(
             uuid=UUID,
             engine="claude",
@@ -22,14 +20,13 @@ class TestTaskMetrics:
             wall_time_sec=10.5,
             token_count=1500,
             status="success",
-            started_at=now,
-            finished_at=now + 10.5,
+            started_at=_FIXED_STARTED_AT,
+            finished_at=_FIXED_STARTED_AT + 10.5,
         )
         assert m.correlation_id is None
 
     def test_task_metrics_stores_correlation_id(self):
         """AC-4: passing correlation_id stores it on the field."""
-        now = time.time()
         m = TaskMetrics(
             uuid=UUID,
             engine="claude",
@@ -37,19 +34,18 @@ class TestTaskMetrics:
             wall_time_sec=10.5,
             token_count=1500,
             status="success",
-            started_at=now,
-            finished_at=now + 10.5,
+            started_at=_FIXED_STARTED_AT,
+            finished_at=_FIXED_STARTED_AT + 10.5,
             correlation_id="issuesmith:brushup:958",
         )
         assert m.correlation_id == "issuesmith:brushup:958"
 
     def test_task_metrics_rejects_mutation(self):
         """frozen=True: mutation is rejected."""
-        now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,
             wall_time_sec=1.0, token_count=None, status="success",
-            started_at=now, finished_at=now + 1.0,
+            started_at=_FIXED_STARTED_AT, finished_at=_FIXED_STARTED_AT + 1.0,
         )
         with pytest.raises(Exception):
             m.correlation_id = "should-fail"  # type: ignore[misc]
@@ -58,21 +54,19 @@ class TestTaskMetrics:
 
     def test_failure_class_default_none(self):
         """failure_class omitted → None (backward compatible)."""
-        now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,
             wall_time_sec=1.0, token_count=None, status="failure",
-            started_at=now, finished_at=now + 1.0,
+            started_at=_FIXED_STARTED_AT, finished_at=_FIXED_STARTED_AT + 1.0,
         )
         assert m.failure_class is None
 
     def test_failure_class_set(self):
         """Passing failure_class=FailureClass.TIMEOUT stores it on the field."""
-        now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,
             wall_time_sec=1.0, token_count=None, status="failure",
-            started_at=now, finished_at=now + 1.0,
+            started_at=_FIXED_STARTED_AT, finished_at=_FIXED_STARTED_AT + 1.0,
             failure_class=FailureClass.TIMEOUT,
         )
         assert m.failure_class == FailureClass.TIMEOUT
@@ -80,11 +74,10 @@ class TestTaskMetrics:
 
     def test_task_metrics_additional_tags_optional(self):
         """TaskMetrics.additional_tags is optional (default None)."""
-        now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,
             wall_time_sec=1.0, token_count=None, status="success",
-            started_at=now, finished_at=now + 1.0,
+            started_at=_FIXED_STARTED_AT, finished_at=_FIXED_STARTED_AT + 1.0,
             additional_tags={"template": "b1"},
         )
         assert m.additional_tags == {"template": "b1"}
@@ -92,7 +85,7 @@ class TestTaskMetrics:
         m2 = TaskMetrics(
             uuid=UUID, engine=None, model=None,
             wall_time_sec=1.0, token_count=None, status="success",
-            started_at=now, finished_at=now + 1.0,
+            started_at=_FIXED_STARTED_AT, finished_at=_FIXED_STARTED_AT + 1.0,
         )
         assert m2.additional_tags is None
 
@@ -192,11 +185,10 @@ class TestFailureClass:
 
     def test_task_metrics_with_enum(self):
         """TaskMetrics can be built with failure_class=FailureClass.TIMEOUT."""
-        now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,
             wall_time_sec=1.0, token_count=None, status="failure",
-            started_at=now, finished_at=now + 1.0,
+            started_at=_FIXED_STARTED_AT, finished_at=_FIXED_STARTED_AT + 1.0,
             failure_class=FailureClass.TIMEOUT,
         )
         assert m.failure_class == FailureClass.TIMEOUT
@@ -204,21 +196,19 @@ class TestFailureClass:
 
     def test_task_metrics_default_none(self):
         """TaskMetrics default failure_class is None."""
-        now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,
             wall_time_sec=1.0, token_count=None, status="success",
-            started_at=now, finished_at=now + 1.0,
+            started_at=_FIXED_STARTED_AT, finished_at=_FIXED_STARTED_AT + 1.0,
         )
         assert m.failure_class is None
 
     def test_task_metrics_request_id_optional(self):
         """TaskMetrics.request_id is optional (default None)."""
-        now = time.time()
         m = TaskMetrics(
             uuid=UUID, engine=None, model=None,
             wall_time_sec=1.0, token_count=None, status="success",
-            started_at=now, finished_at=now + 1.0,
+            started_at=_FIXED_STARTED_AT, finished_at=_FIXED_STARTED_AT + 1.0,
             request_id="req-1",
         )
         assert m.request_id == "req-1"
