@@ -82,3 +82,28 @@ def test_import_workflow_resolves_get_adapter() -> None:
     adapter = get_adapter("claude")
     assert adapter.name == "claude"
     assert hasattr(adapter, "build_exec_record")
+
+
+def test_import_ghdag_does_not_eager_load_subpackages() -> None:
+    """``import ghdag`` must only load the package shell and core.exceptions deps."""
+
+    code = r"""
+import sys
+import ghdag
+loaded = sorted(m for m in sys.modules if m.startswith("ghdag"))
+assert "ghdag.io.exec_jsonl" not in loaded, loaded
+assert "ghdag.quota" not in loaded, loaded
+assert len(loaded) <= 10, (len(loaded), loaded)
+print("OK")
+"""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = _SRC
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "OK" in result.stdout

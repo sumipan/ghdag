@@ -8,6 +8,10 @@ import logging
 import os
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ghdag.quota import QuotaGate
 
 from ghdag.core.exceptions import GhdagError
 from ghdag.core.models.dag import Task
