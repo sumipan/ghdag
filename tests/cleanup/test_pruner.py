@@ -235,7 +235,7 @@ class TestStuckDoneExecPrune:
         """Case F: no done, no files → removed from exec.jsonl
 
         Job enqueue always creates the order file before appending exec.jsonl at
-        every entry point (LLMPipelineAPI / submit_order / enqueue, etc.), and
+        every entry point (LLMPipelineAPI / enqueue, etc.), and
         append_exec runs under fcntl.LOCK_EX. Therefore "present in exec.jsonl but
         no files" is a dead entry, not pending.
         """

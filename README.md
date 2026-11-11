@@ -282,7 +282,6 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.core.container.container_prefix` | `(capabilities, *, workdir='"$PWD"') -> list[str]` |
 | `ghdag.workflow.load_workflows` | `(directory) -> list[WorkflowConfig]` |
 | `ghdag.workflow.get_forge` | `(repo=None) -> ForgePort` |
-| `ghdag.pipeline.submit_order` | `(state, *, engine, content, audit_source, model=None, queue_dir="jobs", depends=None, annotations=None, idempotency_key=None, correlation_id=None) -> dict` |
 | `ghdag.pipeline.wait_for_result` | `(exec_done_dir, uuid, *, timeout, poll_interval=0.5) -> tuple[str, str]` |
 | `ghdag.pipeline.state_label` | `(state_id, pack=None) -> str`; label from `pack` (default: the active language pack); unknown identifiers are returned unchanged |
 | `ghdag.dag.recover.plan_recover` | `(*, state_dir, exec_jsonl_path, workflow_name, handler_name, issue_number, queue_dir, done_dir, from_step=None, running_uuids=None) -> RecoverPlan` |
@@ -346,7 +345,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.llm` | `_config`, `DEFAULT_ENGINE_MODELS`, `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PRESETS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `EngineSpec`, `InputMode`, `PromptFlag`, `LLMCapabilities`, `LLMParseError`, `LLMResult`, `ManagedResult`, `TextResult`, `SessionRecord`, `SessionStore`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `build_llm_cmd`, `call`, `call_managed`, `call_text`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model` |
 | `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
 | `ghdag.metrics` | `FailureClass`, `MetricsRecorder`, `TaskMetrics`, `TokenUsage` |
-| `ghdag.pipeline` | `AuditContext`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_adapter`, `resolve_models`, `status_rank`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `task_status`, `state_label`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `STATE_EMPTY`, `STATE_DEFERRED`, `STATE_ENGINE_ERROR`, `STATE_FAIL`, `STATE_OK`, `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_REJECTED`, `STATE_RUNNING`, `STATE_UNKNOWN_DONE`, `make_order_record`, `submit_order`, `write_task_exit_audit` |
+| `ghdag.pipeline` | `AuditContext`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_adapter`, `resolve_models`, `status_rank`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `task_status`, `state_label`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `STATE_EMPTY`, `STATE_DEFERRED`, `STATE_ENGINE_ERROR`, `STATE_FAIL`, `STATE_OK`, `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_REJECTED`, `STATE_RUNNING`, `STATE_UNKNOWN_DONE`, `write_task_exit_audit` |
 | `ghdag.tool` | `FallbackEntry`, `TOOL_EXIT_CODES`, `ToolDef`, `ToolRegistry`, `write_tool_fallback_audit` |
 | `ghdag.vcs` | `CommitResult`, `ConflictError`, `GitSink`, `LocalGitSink`, `NullSink`, `OwnershipError`, `get_sink`, `git_enabled` |
 | `ghdag.workflow` | `ConsumeEntry`, `DispatchResult`, `ForgePort`, `GitHubIssueClient`, `HandlerConfig`, `OnTriggerConfig`, `SkillIOSpec`, `StepConfig`, `TriggerConfig`, `WorkflowConfig`, `load_workflows`, `WorkflowDispatcher`, `create_github_client`, `get_forge`, `transition`, `typecheck_dag` |
@@ -445,7 +444,7 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 
 | File | Written by | Read by | Contents |
 |---|---|---|---|
-| `jobs/exec.jsonl` | `LLMPipelineAPI.submit`, `submit_order`, `DagEngine.append_task` | `DagEngine` | One JSON task record per line (see [exec.jsonl task fields](#execjsonl-task-fields)) |
+| `jobs/exec.jsonl` | `LLMPipelineAPI.submit`, `DagEngine.append_task` | `DagEngine` | One JSON task record per line (see [exec.jsonl task fields](#execjsonl-task-fields)) |
 | `done/<uuid>` | `DagEngine` / `TaskLauncher` | dispatcher, `ghdag status`, `ghdag dag recover`, Web UI | Done marker (see [Done markers](#done-markers)) |
 | `running/<uuid>.json` | `TaskLauncher` at launch | `ghdag dag cancel`, `ghdag status --running`, Web UI, restart adoption | `pgid`, `started_at`; optional `interrupted_at`, `interrupted_reruns`. Removed when the task exits |
 | `cancel/<uuid>` | `ghdag dag cancel`, Web UI `POST /api/stop` | `DagEngine` | Empty marker requesting cancellation |
@@ -665,7 +664,6 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `pipeline/order.py` | Template order builders (`TemplateVariableError`) |
 | `pipeline/state.py` | `PipelineState` |
 | `pipeline/status.py` | Task state identifiers (`task_status`, `STATE_*`) and display labels (`state_label`) |
-| `pipeline/submit.py` | `make_order_record`, `submit_order` |
 | `pipeline/wait.py` | `wait_for_result` done-marker polling |
 | `tool/__init__.py` | Tool definition API |
 | `tool/audit.py` | `write_tool_fallback_audit` |

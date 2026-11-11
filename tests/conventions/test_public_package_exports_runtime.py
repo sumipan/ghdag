@@ -122,6 +122,15 @@ def test_llm_public_exports_match_requested_contract() -> None:
     _assert_public_exports(llm, names, sources)
 
 
+def test_pipeline_submission_helpers_are_not_public() -> None:
+    """Issue sumipan/nexus#6440 — legacy submit helpers are not package exports."""
+    import ghdag.pipeline as pipeline
+
+    for name in ("make_order_record", "submit_order"):
+        assert name not in pipeline.__all__
+        assert not hasattr(pipeline, name)
+
+
 def test_audit_hooks_public_home_is_dag_only() -> None:
     """Issue sumipan/nexus#6451 — AuditHooks is exported from ghdag.dag only."""
     import ghdag.dag as dag

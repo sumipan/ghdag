@@ -31,7 +31,6 @@ from ghdag.pipeline.status import (
     state_label,
     task_status,
 )
-from ghdag.pipeline.submit import make_order_record, submit_order
 from ghdag.pipeline.wait import wait_for_result
 
 __all__ = [
@@ -65,7 +64,5 @@ __all__ = [
     "STATE_REJECTED",
     "STATE_RUNNING",
     "STATE_UNKNOWN_DONE",
-    "make_order_record",
-    "submit_order",
     "write_task_exit_audit",
 ]
