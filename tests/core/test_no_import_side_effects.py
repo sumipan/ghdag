@@ -36,6 +36,44 @@ print("OK")
     assert "OK" in result.stdout
 
 
+def test_import_quota_as_first_ghdag_module_succeeds() -> None:
+    """First ghdag import may be ghdag.quota without circular import (nexus #6484)."""
+    code = r"""
+import ghdag.quota  # noqa: F401
+print("OK")
+"""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = _SRC
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "OK" in result.stdout
+
+
+def test_import_exec_jsonl_as_first_ghdag_module_succeeds() -> None:
+    """First ghdag import may be ghdag.io.exec_jsonl without circular import (nexus #6484)."""
+    code = r"""
+import ghdag.io.exec_jsonl  # noqa: F401
+print("OK")
+"""
+    env = os.environ.copy()
+    env["PYTHONPATH"] = _SRC
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+    assert "OK" in result.stdout
+
+
 def test_import_workflow_resolves_get_adapter() -> None:
     """get_adapter('claude') returns an EngineAdapter right after importing ghdag.workflow."""
     import ghdag.workflow  # noqa: F401
