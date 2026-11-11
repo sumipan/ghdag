@@ -122,11 +122,22 @@ def _poll_until_done(
     uuid: str,
     *,
     clock: _FakeClock | None = None,
+    freeze_after_term: bool = False,
 ) -> None:
+    """Poll until done, advancing the fake clock per iteration.
+
+    With ``freeze_after_term`` the clock stops once SIGTERM has been sent, so
+    how long the real process takes to exit cannot push the fake clock past
+    ``kill_grace``.
+    """
     while not is_done(launcher._config.exec_done_dir, uuid):
         launcher.check_completions()
-        if clock is not None:
-            clock.advance(0.05)
+        if clock is None:
+            continue
+        rt = launcher._running.get(uuid)
+        if freeze_after_term and rt is not None and rt.term_sent_at is not None:
+            continue
+        clock.advance(0.05)
     launcher.check_completions()
 
 
@@ -271,7 +282,7 @@ class TestEarlyCompleteWithoutSigkill:
 
             with patch("ghdag.dag.task_launcher.os.killpg", wraps=os.killpg) as mock_killpg:
                 mono_at_poll = clock.monotonic()
-                _poll_until_done(launcher, uuid, clock=clock)
+                _poll_until_done(launcher, uuid, clock=clock, freeze_after_term=True)
                 elapsed_mono = clock.monotonic() - mono_at_poll
 
             assert elapsed_mono < launcher._config.kill_grace
