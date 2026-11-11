@@ -100,3 +100,18 @@ class NetworkError(GitHubApiError):
     """Network error such as connection timeout or DNS resolution failure."""
 
     code = "GITHUB_NETWORK"
+
+
+class LLMParseError(GhdagError):
+    """Raised when a response violates the output_format contract."""
+
+    code = "LLM_OUTPUT_NOT_JSON"
+    exit_code = 3
+
+    def __init__(self, raw: str, reason: str):
+        self.raw = raw
+        self.reason = reason
+        super().__init__(
+            f"LLM output parse failed: {reason}",
+            hint="Return exactly one JSON object; surrounding prose and a code fence are allowed",
+        )

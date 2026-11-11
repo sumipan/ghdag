@@ -16,11 +16,12 @@ from ghdag.core.exceptions import (
 from ghdag.core.exceptions import (
     GhdagError as GhdagErrorFromModule,
 )
+from ghdag.core.exceptions import LLMParseError as LLMParseErrorCanonical
 from ghdag.core.models.files import PathTraversalError
 from ghdag.dag.fanout import FanoutError
 from ghdag.files.append import AppendRecoverError
+from ghdag.llm import LLMParseError
 from ghdag.llm._config import ConfigLoadError
-from ghdag.llm.capabilities import LLMParseError
 from ghdag.llm.engines import EngineModelError
 from ghdag.pipeline.config import ModelValidationError
 from ghdag.pipeline.llm_pipeline import DependencyError
@@ -84,6 +85,9 @@ def test_llm_parse_error_preserves_attributes():
     err = LLMParseError("raw output", "invalid json")
     assert err.raw == "raw output"
     assert err.reason == "invalid json"
+    assert err.code == "LLM_OUTPUT_NOT_JSON"
+    assert err.exit_code == 3
+    assert LLMParseError is LLMParseErrorCanonical
 
 
 # --- GitHub API exception hierarchy (issue #1289) ---
