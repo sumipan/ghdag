@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.126.1 - 2026-11-11
+
+### Removed
+
+- Compatibility re-export modules (no new aliases; import from the one-segment package or canonical module instead): `ghdag.exceptions` → `ghdag.core.exceptions`; `ghdag.dag.stall_guard` → `ghdag.core.stall_guard` (and `read_ps` from `ghdag.llm.engines` where needed); `ghdag.dag.state` (internal done-directory helpers); `ghdag.files._rotate` (internal); `ghdag.files.models` → `ghdag.files`; `ghdag.llm.capabilities` → `ghdag.core.capabilities` / `ghdag.llm`; `ghdag.llm.spec` → `ghdag.core.engine_spec` / `ghdag.core.command`; `ghdag.metrics.models` → `ghdag.metrics`; `ghdag.pipeline.audit` → `ghdag.io.audit`; `ghdag.pipeline.audit_query` → `ghdag.io.audit_query`; `ghdag.pipeline.hooks` → `ghdag.dag` (`AuditHooks`); `ghdag.pipeline.result` → `ghdag` / `ghdag.io.queue`; `ghdag.workflow.engine` → `ghdag.core.command`; `ghdag.workflow.schema` → `ghdag.workflow` (sumipan/nexus#6439 / #6450 / #6451).
+
+### Changed
+
+- Public imports: `AuditHooks` is exported from `ghdag.dag` only; `ghdag.pipeline` no longer re-exports it. README drops the module-level `__all__` inventory and documents that deep import paths are internal (sumipan/nexus#6451).
+
 ## 0.125.8 - 2026-11-11
 
 ### Changed

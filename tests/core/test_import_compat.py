@@ -15,6 +15,12 @@ _REMOVED_SHIM_MODULES = (
     "ghdag.llm.capabilities",
     "ghdag.llm.spec",
     "ghdag.metrics.models",
+    "ghdag.pipeline.audit",
+    "ghdag.pipeline.audit_query",
+    "ghdag.pipeline.hooks",
+    "ghdag.pipeline.result",
+    "ghdag.workflow.engine",
+    "ghdag.workflow.schema",
 )
 
 
@@ -33,7 +39,7 @@ def test_dag_models_import_compat() -> None:
 
 
 def test_workflow_schema_import_compat() -> None:
-    from ghdag.workflow.schema import (
+    from ghdag.core.models.workflow import (
         DispatchResult,
         HandlerConfig,
         OnTriggerConfig,
@@ -51,7 +57,7 @@ def test_workflow_schema_import_compat() -> None:
 
 
 def test_workflow_engine_adapter_import_compat() -> None:
-    from ghdag.workflow.engine import EngineAdapter, get_adapter
+    from ghdag.core.command import EngineAdapter, get_adapter
 
     adapter = get_adapter("claude")
     assert adapter.name == "claude"
@@ -60,7 +66,7 @@ def test_workflow_engine_adapter_import_compat() -> None:
 
 
 def test_pipeline_hooks_audithooks_import_compat() -> None:
-    from ghdag.pipeline.hooks import AuditHooks
+    from ghdag.dag import AuditHooks
 
     assert AuditHooks.__name__ == "AuditHooks"
 

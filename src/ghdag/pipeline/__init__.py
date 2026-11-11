@@ -9,7 +9,6 @@ from ghdag.pipeline.config import (
     PipelineConfig,
     resolve_models,
 )
-from ghdag.pipeline.hooks import AuditHooks
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, SubmittedStep
 from ghdag.pipeline.order import (
     InlineOrderBuilder,
@@ -37,7 +36,6 @@ from ghdag.pipeline.wait import wait_for_result
 
 __all__ = [
     "AuditContext",
-    "AuditHooks",
     "ModelValidationError",
     "PipelineConfig",
     "PipelineState",

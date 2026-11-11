@@ -84,23 +84,13 @@ class TestGenericAdapter:
                 assert key in record, f"{name}: missing key {key!r}"
 
 
-# ---------------------------------------------------------------------------
-# Removed deprecated aliases
-# ---------------------------------------------------------------------------
+def test_workflow_import_keeps_builtin_adapter_resolution() -> None:
+    """Issue sumipan/nexus#6451 — built-in engines resolve after importing ghdag.workflow."""
+    import ghdag.workflow  # noqa: F401
+    from ghdag.core.command import get_adapter
 
-class TestRemovedDeprecatedAliases:
-    @pytest.mark.parametrize(
-        "import_stmt",
-        [
-            "from ghdag.workflow.engine import ClaudeAdapter",
-            "from ghdag.workflow.engine import GeminiAdapter",
-            "from ghdag.workflow.engine import CursorAdapter",
-            "from ghdag.workflow.engine import ShellAdapter",
-        ],
-    )
-    def test_deprecated_alias_import_raises(self, import_stmt: str):
-        with pytest.raises(ImportError):
-            exec(import_stmt, {})  # noqa: S102
+    adapter = get_adapter("claude")
+    assert adapter.name == "claude"
 
 
 # ---------------------------------------------------------------------------

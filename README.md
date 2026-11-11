@@ -234,7 +234,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 
 ## Public API
 
-Supported import paths are `ghdag` and one-segment `ghdag.<package>` only. Deeper paths (`ghdag.<package>.<module>`) and top-level shims are not part of the public contract; they remain importable for compatibility until a later release removes them. `python -m ghdag` and other module entry points are separate from this rule.
+Supported import paths are `ghdag` and one-segment `ghdag.<package>` only. Deeper paths (`ghdag.<package>.<module>`) are internal and may change without notice. `python -m ghdag` and other module entry points are separate from this rule.
 
 Import from the paths below. Names starting with `_` are private, even when a module lists them in `__all__`.
 
@@ -338,7 +338,7 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.config` | `env` (accessors listed under [Environment variables](#environment-variables)) |
 | `ghdag.core` | `command` |
 | `ghdag.core.ports` | `ForgePort` |
-| `ghdag.dag` | `DagConfig`, `DagEngine`, `DagHooks`, `DefaultHooks`, `DONE_SUCCESS`, `FanOutSpec`, `LEGACY_DONE_DEFERRED`, `PIPELINE_WAIT_QUOTA`, `RunningTask`, `Task`, `WAIT_QUOTA_COMPANION_RE`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_jsonl`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
+| `ghdag.dag` | `AuditHooks`, `DagConfig`, `DagEngine`, `DagHooks`, `DefaultHooks`, `DONE_SUCCESS`, `FanOutSpec`, `LEGACY_DONE_DEFERRED`, `PIPELINE_WAIT_QUOTA`, `RunningTask`, `Task`, `WAIT_QUOTA_COMPANION_RE`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_jsonl`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
 | `ghdag.files` | `AppendResult`, `AppendStatus`, `MdFile`, `PathTraversalError`, `PromoteResult`, `PromoteStatus`, `WriteResult`, `md_append`, `md_promote`, `md_read`, `md_write` |
 | `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
 | `ghdag.forge` | `DEFAULT_REPO`, `ForgePort`, `GitHubApiError`, `GitHubClient`, `LocalForge`, `get_forge` |
@@ -346,56 +346,14 @@ Import from the paths below. Names starting with `_` are private, even when a mo
 | `ghdag.llm` | `_config`, `DEFAULT_ENGINE_MODELS`, `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PRESETS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `EngineSpec`, `InputMode`, `PromptFlag`, `LLMCapabilities`, `LLMParseError`, `LLMResult`, `ManagedResult`, `TextResult`, `SessionRecord`, `SessionStore`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `build_llm_cmd`, `call`, `call_managed`, `call_text`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model` |
 | `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
 | `ghdag.metrics` | `FailureClass`, `MetricsRecorder`, `TaskMetrics`, `TokenUsage` |
-| `ghdag.pipeline` | `AuditContext`, `AuditHooks`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_adapter`, `resolve_models`, `status_rank`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `task_status`, `state_label`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `STATE_EMPTY`, `STATE_DEFERRED`, `STATE_ENGINE_ERROR`, `STATE_FAIL`, `STATE_OK`, `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_REJECTED`, `STATE_RUNNING`, `STATE_UNKNOWN_DONE`, `make_order_record`, `submit_order`, `write_task_exit_audit` |
+| `ghdag.pipeline` | `AuditContext`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_adapter`, `resolve_models`, `status_rank`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `task_status`, `state_label`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `STATE_EMPTY`, `STATE_DEFERRED`, `STATE_ENGINE_ERROR`, `STATE_FAIL`, `STATE_OK`, `STATE_PENDING_DEPS`, `STATE_PENDING_RUN`, `STATE_REJECTED`, `STATE_RUNNING`, `STATE_UNKNOWN_DONE`, `make_order_record`, `submit_order`, `write_task_exit_audit` |
 | `ghdag.tool` | `FallbackEntry`, `TOOL_EXIT_CODES`, `ToolDef`, `ToolRegistry`, `write_tool_fallback_audit` |
 | `ghdag.vcs` | `CommitResult`, `ConflictError`, `GitSink`, `LocalGitSink`, `NullSink`, `OwnershipError`, `get_sink`, `git_enabled` |
 | `ghdag.workflow` | `ConsumeEntry`, `DispatchResult`, `ForgePort`, `GitHubIssueClient`, `HandlerConfig`, `OnTriggerConfig`, `SkillIOSpec`, `StepConfig`, `TriggerConfig`, `WorkflowConfig`, `load_workflows`, `WorkflowDispatcher`, `create_github_client`, `get_forge`, `transition`, `typecheck_dag` |
 
 The `STATE_*` constants are language-neutral identifiers: `pending_deps`, `pending_run`, `running`, `deferred`, `ok`, `fail`, `rejected`, `empty`, `engine_error`, `unknown`. `task_status()` returns one of them; use `state_label()` for the display text.
 
-### Module `__all__`
-
-Modules that declare their own `__all__` (private `_` names omitted). Modules marked "shim" re-export another module for import compatibility. These deeper paths may still work until compatibility removals land; they are not the public import contract — use the package-level table above.
-
-| Module | Public symbols |
-|---|---|
-| `ghdag.exceptions` (shim) | `GhdagError`, `GitHubApiError`, `AuthError`, `RateLimitError`, `PermissionDeniedError`, `NetworkError`, `ConfigError`, `CliUsageError` |
-| `ghdag.status` | `IssueStatus`, `StepStatus`, `RunningTask`, `issue_status`, `running_tasks` |
-| `ghdag.github_cli` | `GitHubClient`, `DEFAULT_REPO`, `API_BASE`, `GRAPHQL_URL`, `get_forge` |
-| `ghdag.audit.span` | `EVENT_TYPE_E2E_COMPLETED`, `EVENT_TYPE_E2E_FAILED`, `EVENT_TYPE_LATENCY_SPAN`, `LATENCY_SPAN_JSONL`, `emit_span`, `make_span_id` |
-| `ghdag.config.env` | `github_token`, `github_repositories_raw`, `ghdag_audit_path`, `ghdag_token_warn_threshold`, `ghdag_safe_default_permission`, `ghdag_llm_models`, `latency_span_path`, `session_compaction_enabled`, `engine_isolation_enabled`, `enable_git`, `ghdag_vcs_config`, `ghdag_state_dir`, `state_dir`, `RuntimePaths`, `resolve_runtime_paths`, `ghdag_language_pack`, `stall_guard_enabled`, `stall_guard_stall_sec`, `stall_guard_interval_sec`, `ghdag_task_env_deny`, `ghdag_task_env_allow`, `ghdag_redact_patterns_path`, `set_pending_env_denied_count`, `pending_env_denied_count` |
-| `ghdag.config.language` | `STATE_IDS`, `UI_KEYS`, `LanguagePack`, `EN`, `load_language_pack`, `get_language_pack` |
-| `ghdag.core.command` | `AdapterNotFoundError`, `EngineAdapter`, `build_llm_cmd`, `get_adapter`, `inject_resume`, `register_adapter`, `render_exec_command` |
-| `ghdag.core.container` | `CONTAINER_WORKDIR`, `container_prefix` |
-| `ghdag.dag.hooks` | `DagHooks`, `DefaultHooks` |
-| `ghdag.dag.models` | `Task`, `DagConfig`, `RunningTask` |
-| `ghdag.dag.parser` | `parse_jsonl`, `validate_dependencies` |
-| `ghdag.dag.state` | `is_done`, `mark_done`, `load_done_from_dir`, `load_succeeded_from_dir` |
-| `ghdag.dag.stall_guard` (shim) | `ProcInfo`, `StallEvent`, `StallTracker`, `find_stalled_state_readers`, `parse_ps_output`, `read_ps`, `scan_process_tree` (implementation in `ghdag.core.stall_guard`; `read_ps` in `ghdag.llm.engines`) |
-| `ghdag.files.models` (shim) | `PathTraversalError`, `MdFile`, `AppendStatus`, `AppendResult`, `WriteResult`, `PromoteStatus`, `PromoteResult` |
-| `ghdag.io.audit` | `AuditContext`, `append_audit_record`, `compute_prompt_hash`, `now_ts`, `epoch_ts`, `write_audit_log`, `write_llm_audit_log`, `write_llm_inference_audit`, `write_rate_limit_audit`, `write_compaction_audit`, `write_quarantine_audit`, `write_task_exit_audit`, `write_task_retry_audit` |
-| `ghdag.io.audit_query` | `read_task_exit_events`, `get_latest_status`, `detect_correlation_bursts`, `get_correlation_top_n` |
-| `ghdag.io.exec_jsonl` | `build_idempotency_key`, `parse_idempotency_key`, `handler_generation_key`, `get_generation`, `read`, `parse`, `parse_as_dict`, `check_idempotency`, `find_records_by_idempotency_key`, `append`, `remove_by_predicate`, `remove_by_uuids`, `prune`, `load_uuids`, `validate`, `repair`, `extract_uuid` |
-| `ghdag.llm.capabilities` | `LLMParseError`, `LLMCapabilities`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `READONLY_OBSERVE`, `PRESETS` |
-| `ghdag.llm.engines` | `EngineModelError`, `LLMResult`, `TextResult`, `build_llm_cmd`, `call`, `call_text`, `extract_stream_result`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model`, `ENGINE_CLI`, `ENGINE_DEFAULTS`, `TIMEOUT_RETURNCODE`, `supports_capability` |
-| `ghdag.llm.managed` | `ManagedResult`, `call_managed` |
-| `ghdag.llm.spec` (shim) | `InputMode`, `PromptFlag`, `DangerFlagPosition`, `EngineSpec`, `ENGINE_SPECS`, `render_exec_command` |
-| `ghdag.metrics.models` (shim) | `FailureClass`, `TokenUsage`, `TaskMetrics` |
-| `ghdag.metrics.parsers` | `parse_engine_model`, `parse_token_usage_json`, `parse_token_count` |
-| `ghdag.pipeline.audit` (shim) | The public names of `ghdag.io.audit` except `now_ts` / `epoch_ts` |
-| `ghdag.pipeline.audit_query` (shim) | Same as `ghdag.io.audit_query` |
-| `ghdag.pipeline.hooks` (shim) | `AuditHooks` |
-| `ghdag.pipeline.order` | `OrderBuilder`, `InlineOrderBuilder`, `TemplateOrderBuilder`, `TemplateVariableError` |
-| `ghdag.pipeline.result` (shim) | `QueueTask`, `QueueTaskStore` |
-| `ghdag.ui.dashboard` | `aggregate_task_status`, `aggregate_token_usage`, `aggregate_cb_firing`, `resolve_audit_path` |
-| `ghdag.ui.monitor` | `STATE_*` constants, `read_done_content`, `interpret_done`, `dep_succeeded`, `label_for_done`, `task_status`, `task_state`, `Row` (`state_id` is the identifier, `state` its language-pack label), `MonitorTask`, `build_rows`, `filter_rows`, `relayout_tree_for_visible_rows`, `apply_default_monitor_filters` |
-| `ghdag.vcs.factory` | `get_sink`, `git_enabled` |
-| `ghdag.vcs.local` | `LocalGitSink` |
-| `ghdag.vcs.sink` | `CommitResult`, `ConflictError`, `GitSink`, `NullSink`, `OwnershipError` |
-| `ghdag.workflow.engine` (shim) | `EngineAdapter`, `AdapterNotFoundError`, `register_adapter`, `get_adapter` |
-| `ghdag.workflow.schema` (shim) | `StepConfig`, `OnTriggerConfig`, `HandlerConfig`, `TriggerConfig`, `DispatchResult`, `WorkflowConfig` |
-
-Modules without `__all__`, importable directly under the same compatibility status as above:
+Modules without a package-level export, importable directly as implementation detail:
 
 | Module | Public functions / classes |
 |---|---|
@@ -540,7 +498,7 @@ Register in Claude Code (example):
 | First SIGTERM / SIGINT | Writes `interrupted_at` into every `running/<uuid>.json`, stops launching, and drains running tasks until `task_timeout` elapses (no drain when `task_timeout` is `None`); the remaining tasks are then terminated and the runner exits |
 | Second SIGTERM / SIGINT | Exits immediately |
 | Restart | After the first `exec.jsonl` load, `adopt_orphans` inspects `running/*.json`: live tasks are adopted and tracked to completion, dead tasks are closed with `ORPHANED_ON_RESTART`, and interrupted tasks (`interrupted_at` set) are killed if still alive and relaunched once with the same UUID and `GHDAG_PREVIOUS_ATTEMPT=interrupted` |
-| Engine stall guard | When `stall_guard_enabled()` is true (default), `TaskLauncher.check_completions` uses `ghdag.core.stall_guard.StallTracker` (import via `ghdag.dag.stall_guard`; `read_ps` is injected from `ghdag.llm.engines`) to detect cursor DAG tasks whose shell state-transfer `cat` children are stuck at zero CPU; after `stall_guard_stall_sec()` (default 180s) it sends SIGTERM and writes a `stall_guard` audit event |
+| Engine stall guard | When `stall_guard_enabled()` is true (default), `TaskLauncher.check_completions` uses `ghdag.core.stall_guard.StallTracker` (`read_ps` is injected from `ghdag.llm.engines`) to detect cursor DAG tasks whose shell state-transfer `cat` children are stuck at zero CPU; after `stall_guard_stall_sec()` (default 180s) it sends SIGTERM and writes a `stall_guard` audit event |
 
 ### Engine output and failure classification
 
@@ -597,13 +555,12 @@ Mutating endpoints (`POST /api/retry`, `POST /api/stop`) require `Content-Type: 
 
 ### Module inventory
 
-Every Python module under `src/ghdag/`. Package `__init__.py` files re-export the symbols listed under [Public API](#public-api); modules described as shims only re-export another module.
+Every Python module under `src/ghdag/`. Package `__init__.py` files re-export the symbols listed under [Public API](#public-api).
 
 | Module | Role |
 |---|---|
 | `__init__.py` | Top-level public API and `__version__` |
 | `__main__.py` | `python -m ghdag` entry point |
-| `exceptions.py` | Shim re-exporting `GhdagError` and the GitHub API exceptions |
 | `github_cli.py` | `gh`-style CLI (`python -m ghdag.github_cli`) over `get_forge()` |
 | `github_client.py` | `GitHubClient` REST / GraphQL client (ETag cache, pagination, rate limits) |
 | `maintenance.py` | Queue validation and repair (`exec.jsonl`, done markers) |
@@ -666,13 +623,9 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `dag/models.py` | `Task` / `DagConfig` re-export and the runner-side `RunningTask` |
 | `dag/parser.py` | `parse_jsonl` for `exec.jsonl` |
 | `dag/recover.py` | `plan_recover` / `execute_recover` (`RecoverError`) |
-| `dag/state.py` | Done-directory state helpers |
-| `dag/stall_guard.py` | Shim re-exporting `ghdag.core.stall_guard` plus `read_ps` from `llm.engines` (backward-compatible import path) |
 | `dag/task_launcher.py` | `TaskLauncher`: subprocess launch, streaming, completion, orphan adoption, stall-guard scans |
 | `files/__init__.py` | Markdown file operations API |
-| `files/_rotate.py` | Shim for `ghdag.io._rotate` |
 | `files/append.py` | `md_append`: idempotent section append (`AppendRecoverError`) |
-| `files/models.py` | Shim for `ghdag.core.models.files` |
 | `files/promote.py` | `md_promote` |
 | `files/reader.py` | `md_read` |
 | `files/writer.py` | `md_write` |
@@ -692,12 +645,10 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `llm/__init__.py` | One-shot LLM API |
 | `llm/_config.py` | `llm-models.yml` loading (`ConfigLoadError`) |
 | `llm/_constants.py` | `DEFAULT_ENGINE_MODELS` |
-| `llm/capabilities.py` | Capabilities re-export and `LLMParseError` |
 | `llm/compaction.py` | Resume-session handoff summary compaction (JSON output mode) |
 | `llm/engines.py` | Engine / model allow-list, `call` / `call_text`, `supports_capability` (`EngineModelError`) |
 | `llm/managed.py` | `call_managed`: failure classification, quota report, fallback |
 | `llm/session.py` | `SessionRecord`, `SessionStore` |
-| `llm/spec.py` | Shim for `EngineSpec` / `render_exec_command` |
 | `llm/adapters/__init__.py` | `get_output_adapter` |
 | `llm/adapters/claude_json.py` | claude JSON / stream-json output adapter |
 | `llm/adapters/codex.py` | codex `--json` output adapter |
@@ -706,17 +657,12 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `llm/adapters/cursor_stream.py` | cursor stream-json adapter and `RetriableError:` classification |
 | `llm/adapters/failure_classification.py` | Shared failure classification (`looks_like_question`, missing binary, auth, quota pause) |
 | `metrics/__init__.py` | `MetricsRecorder`, `TaskMetrics` |
-| `metrics/models.py` | Shim for `TaskMetrics`, `TokenUsage`, `FailureClass` |
 | `metrics/parsers.py` | Engine / model detection and token count parsing |
 | `metrics/recorder.py` | `MetricsRecorder`: locked JSONL append |
 | `pipeline/__init__.py` | Intake pipeline public API |
-| `pipeline/audit.py` | Shim for `ghdag.io.audit` |
-| `pipeline/audit_query.py` | Shim for `ghdag.io.audit_query` |
 | `pipeline/config.py` | `PipelineConfig`, `resolve_models` (`ModelValidationError`) |
-| `pipeline/hooks.py` | Shim for `AuditHooks` |
 | `pipeline/llm_pipeline.py` | `LLMPipelineAPI`, `SubmittedStep` (`DependencyError`) |
 | `pipeline/order.py` | Template order builders (`TemplateVariableError`) |
-| `pipeline/result.py` | Shim for `QueueTask` / `QueueTaskStore` |
 | `pipeline/state.py` | `PipelineState` |
 | `pipeline/status.py` | Task state identifiers (`task_status`, `STATE_*`) and display labels (`state_label`) |
 | `pipeline/submit.py` | `make_order_record`, `submit_order` |
@@ -738,10 +684,8 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `workflow/__init__.py` | Workflow public API |
 | `workflow/conditional_step.py` | Conditional LLM step helper (`python -m`) |
 | `workflow/dispatcher.py` | `WorkflowDispatcher` polling and dispatch (`ContextHookError`) |
-| `workflow/engine.py` | Shim for engine adapters |
 | `workflow/loader.py` | Workflow YAML loading and validation (`ValidationError`) |
 | `workflow/render.py` | `render: live` runtime template runner (`python -m`) |
-| `workflow/schema.py` | Shim for workflow dataclasses |
 | `workflow/state_machine.py` | Label transition state machine (`python -m`) |
 | `workflow/typecheck.py` | Static skill I/O type check across steps (`TypeCheckError`) |
 
@@ -1043,7 +987,7 @@ Additional error `code` values without a dedicated exception type:
 
 | Exception | Parent(s) | Code | Exit | Defined in | Raised when |
 |---|---|---|---|---|---|
-| `GhdagError` | `Exception` | `GHDAG_ERROR` | 1 | `ghdag.core.exceptions` (also `ghdag`, `ghdag.exceptions`) | Base class; also raised directly, for example for an invalid language pack or a missing default repository |
+| `GhdagError` | `Exception` | `GHDAG_ERROR` | 1 | `ghdag.core.exceptions` (also `ghdag`) | Base class; also raised directly, for example for an invalid language pack or a missing default repository |
 | `ConfigError` | `GhdagError`, `ValueError` | `CONFIG_INVALID` | 3 | `ghdag.core.exceptions` | Invalid configuration or validated input |
 | `CliUsageError` | `GhdagError` | `CLI_USAGE` | 2 | `ghdag.core.exceptions` | Invalid CLI argument combination |
 | `GitHubApiError` | `GhdagError` | `GITHUB_API_ERROR` | 4 | `ghdag.core.exceptions` | A GitHub API call failed; has `status_code` |
@@ -1056,7 +1000,7 @@ Additional error `code` values without a dedicated exception type:
 | `DependencyError` | `ConfigError` | `STEP_DEPENDENCY_INVALID` | 3 | `ghdag.pipeline.llm_pipeline` | Invalid step dependencies |
 | `ModelValidationError` | `GhdagError` | `STEP_MODEL_INVALID` | 3 | `ghdag.pipeline.config` | Invalid model configuration |
 | `EngineModelError` | `ConfigError` | `ENGINE_MODEL_INVALID` | 3 | `ghdag.llm.engines` | Unknown engine, or model not in the allow-list |
-| `LLMParseError` | `GhdagError` | `LLM_OUTPUT_NOT_JSON` | 3 | `ghdag.llm.capabilities` | Output does not match `output_format`; has `raw`, `reason` |
+| `LLMParseError` | `GhdagError` | `LLM_OUTPUT_NOT_JSON` | 3 | `ghdag.core.exceptions` | Output does not match `output_format`; has `raw`, `reason` |
 | `ConfigLoadError` | `GhdagError`, `ValueError` | `LLM_MODELS_CONFIG_INVALID` | 3 | `ghdag.llm._config` | Invalid `llm-models.yml` |
 | `FanoutError` | `ConfigError` | `FANOUT_INVALID` | 3 | `ghdag.dag.fanout` | Invalid fan-out specification |
 | `ReplyBlockError` | `ConfigError` | `REPLY_BLOCK_INVALID` | 3 | `ghdag.core.reply_block` | Invalid reply-block YAML or fields inside an engine result fence |

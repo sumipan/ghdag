@@ -12,7 +12,6 @@ from ghdag.core.ports.forge import ForgePort
 from ghdag.forge import get_forge
 from ghdag.github_client import GitHubClient as GitHubIssueClient
 from ghdag.github_client import create_github_client
-from ghdag.workflow import engine as engine  # noqa: F401 — triggers adapter registration
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.loader import load_workflows
 from ghdag.workflow.state_machine import transition
