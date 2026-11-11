@@ -273,7 +273,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `ghdag.workflow.load_workflows` | `(directory) -> list[WorkflowConfig]` |
 | `ghdag.forge.get_forge` | `(repo=None) -> ForgePort` |
 | `ghdag.pipeline.wait_for_result` | `(exec_done_dir, uuid, *, timeout, poll_interval=0.5) -> tuple[str, str]` |
-| `ghdag.pipeline.state_label` | `(state_id, pack=None) -> str`; label from `pack` (default: the active language pack); unknown identifiers are returned unchanged |
+| `ghdag.pipeline.status.state_label` | `(state_id, pack=None) -> str`; label from `pack` (default: the active language pack); unknown identifiers are returned unchanged |
 | `ghdag.dag.recover.plan_recover` | `(*, state_dir, exec_jsonl_path, workflow_name, handler_name, issue_number, queue_dir, done_dir, from_step=None, running_uuids=None) -> RecoverPlan` |
 | `ghdag.dag.recover.execute_recover` | `(plan, *, queue_dir, done_dir, dry_run=False, running_uuids=None, keep_results=False, now=None) -> RecoverResult` |
 | `ghdag.cleanup.cleanup_queue` | `(queue_dir, archive_dir, done_dir, exec_md, cutoff_days=1, orphan_days=7, dry_run=False, auto_repair=False) -> CleanupResult` |
@@ -340,7 +340,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `ghdag.vcs` | `CommitResult`, `ConflictError`, `GitSink`, `LocalGitSink`, `NullSink`, `OwnershipError`, `get_sink`, `git_enabled` |
 | `ghdag.workflow` | `ConsumeEntry`, `DispatchResult`, `HandlerConfig`, `OnTriggerConfig`, `SkillIOSpec`, `StepConfig`, `TriggerConfig`, `WorkflowConfig`, `load_workflows`, `WorkflowDispatcher`, `transition`, `typecheck_dag` |
 
-The `STATE_*` constants are language-neutral identifiers: `pending_deps`, `pending_run`, `running`, `deferred`, `ok`, `fail`, `rejected`, `empty`, `engine_error`, `unknown`. `task_status()` returns one of them; use `state_label()` for the display text.
+The `STATE_*` constants are language-neutral identifiers: `pending_deps`, `pending_run`, `running`, `deferred`, `ok`, `fail`, `rejected`, `empty`, `engine_error`, `unknown`. Import them and `task_status()` / `state_label()` from `ghdag.pipeline.status`; use `state_label()` for the display text.
 
 Modules without a package-level export, importable directly as implementation detail:
 
@@ -908,7 +908,7 @@ question_suffixes:          # optional
 
 | Section | Required | Keys | Meaning |
 |---|---|---|---|
-| `state_labels` | yes | `pending_deps`, `pending_run`, `running`, `deferred`, `ok`, `fail`, `rejected`, `empty`, `engine_error`, `unknown` (`STATE_IDS`) | Display label per state identifier; read with `ghdag.pipeline.state_label(state_id, pack=None)` |
+| `state_labels` | yes | `pending_deps`, `pending_run`, `running`, `deferred`, `ok`, `fail`, `rejected`, `empty`, `engine_error`, `unknown` (`STATE_IDS`) | Display label per state identifier; read with `ghdag.pipeline.status.state_label(state_id, pack=None)` |
 | `ui` | yes | `page_size_option` (`{n}` is the row count), `tab_tasks`, `tab_bursts`, `col_time_tree`, `col_state`, `col_engine_model`, `col_label`, `empty_tasks`, `col_count`, `col_last_seen`, `empty_bursts`, `confirm_stop` (`UI_KEYS`) | Web UI strings, served by `/api/config` |
 | `question_suffixes` | no | `extra` (list of non-empty strings) | Line endings that, in addition to ASCII `?`, mark engine output as a question (see [failure classification](#engine-output-and-failure-classification)); omitting the section equals `extra: []` |
 

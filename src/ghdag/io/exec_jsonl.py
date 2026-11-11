@@ -8,16 +8,13 @@ import logging
 import os
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from ghdag.quota import QuotaGate
 
 from ghdag.core.exceptions import GhdagError
 from ghdag.core.models.dag import Task
 from ghdag.core.ports.quota import QuotaAdmissionPort
 from ghdag.io.audit import AuditContext, write_audit_log
 from ghdag.io.done import is_done
+from ghdag.quota import QuotaGate
 
 logger = logging.getLogger(__name__)
 
