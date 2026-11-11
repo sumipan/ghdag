@@ -18,7 +18,7 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 
 | Item | Value |
 |---|---|
-| Current release | **v0.125.1** (`pyproject.toml` `version = "0.125.0"`) |
+| Current release | **v0.125.1** (`pyproject.toml` `version = "0.125.1"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
