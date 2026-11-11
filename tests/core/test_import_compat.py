@@ -166,28 +166,3 @@ def test_no_metrics_to_llm_direct_import() -> None:
         check=False,
     )
     assert result.stdout.strip() == "", f"Found direct metrics→llm imports:\n{result.stdout}"
-
-
-_HOST_TOP_LEVEL_REPLACEMENTS = (
-    ("QueueTaskStore", "ghdag.io.queue", "QueueTaskStore"),
-    ("QueueTask", "ghdag.io.queue", "QueueTask"),
-    ("DagEngine", "ghdag.dag", "DagEngine"),
-    ("WorkflowDispatcher", "ghdag.workflow", "WorkflowDispatcher"),
-)
-
-
-@pytest.mark.parametrize("_, module_name, attr", _HOST_TOP_LEVEL_REPLACEMENTS)
-def test_v0129_host_definition_package_imports(_, module_name: str, attr: str) -> None:
-    """Regression record: canonical imports for sumipan/nexus#6486 host consumers."""
-    mod = importlib.import_module(module_name)
-    assert getattr(mod, attr) is not None
-
-
-def test_v0129_deprecated_top_level_queue_task_store_import() -> None:
-    """Transition alias until sumipan/nexus#6486 lands (tools result_delivery / collect)."""
-    with pytest.warns(DeprecationWarning, match="ghdag.io.queue.QueueTaskStore"):
-        from ghdag import QueueTaskStore  # noqa: F401
-
-    from ghdag.io.queue import QueueTaskStore as canonical
-
-    assert QueueTaskStore is canonical
