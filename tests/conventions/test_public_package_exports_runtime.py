@@ -5,6 +5,8 @@ from __future__ import annotations
 import types
 from typing import Any
 
+import pytest
+
 
 def _assert_public_exports(
     package: types.ModuleType,
@@ -141,3 +143,8 @@ def test_audit_hooks_public_home_is_dag_only() -> None:
     assert getattr(dag, "AuditHooks") is canonical
     assert "AuditHooks" not in pipeline.__all__
     assert not hasattr(pipeline, "AuditHooks")
+
+
+def test_legacy_permission_exports_are_absent() -> None:
+    """Issue sumipan/nexus#6501 — Permission rename AC placeholder until P1 lands."""
+    pytest.skip("Permission/PERMISSIONS rename not implemented yet (sumipan/nexus#6501)")
