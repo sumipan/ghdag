@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -210,11 +211,16 @@ def test_wait_idle_becomes_true_after_finish(
     gate = QuotaGate(tmp_path / "quota-gate.json")
     gate.begin_run(task_uuid="task-1", engine="claude", now=_dt(12))
 
-    def fake_sleep(_sec: float) -> None:
+    sleep_calls: list[float] = []
+
+    def fake_sleep(sec: float) -> None:
+        sleep_calls.append(sec)
         gate.finish_run(task_uuid="task-1")
 
-    monkeypatch.setattr("ghdag.quota.time.sleep", fake_sleep)
+    fake_time = types.SimpleNamespace(monotonic=lambda: 1_000.0, sleep=fake_sleep)
+    monkeypatch.setattr("ghdag.quota.time", fake_time)
     assert gate.wait_idle("claude", timeout=0.3, poll_interval=0.01) is True
+    assert sleep_calls == [0.01]
 
 
 def test_legacy_state_without_new_keys_is_loaded(tmp_path: Path) -> None:
