@@ -177,7 +177,7 @@ class TestLLMCapabilitiesArgs:
 
     def test_llm_capabilities_preset_text_only(self):
         """--capabilities-preset text_only → TEXT_ONLY capabilities passed to call()"""
-        from ghdag.llm.capabilities import TEXT_ONLY
+        from ghdag.core.capabilities import TEXT_ONLY
         mock_result = self._make_result()
         captured: dict = {}
 
@@ -237,7 +237,7 @@ class TestLLMCapabilitiesArgs:
 
     def test_llm_preset_and_permission_mode_override(self):
         """--capabilities-preset text_only + --permission-mode plan → override permission_mode on preset"""
-        from ghdag.llm.capabilities import TEXT_ONLY
+        from ghdag.core.capabilities import TEXT_ONLY
         mock_result = self._make_result()
         captured: dict = {}
 

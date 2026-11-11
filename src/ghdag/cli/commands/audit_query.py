@@ -11,7 +11,7 @@ def cmd_audit_query(args) -> None:
     from datetime import datetime
     from pathlib import Path
 
-    from ghdag.pipeline.audit_query import (
+    from ghdag.io.audit_query import (
         detect_correlation_bursts,
         read_task_exit_events,
     )

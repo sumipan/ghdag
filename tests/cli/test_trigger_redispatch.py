@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ghdag.workflow.schema import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
+from ghdag.core.models.workflow import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
 
 
 def _make_workflow() -> WorkflowConfig:

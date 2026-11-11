@@ -565,7 +565,7 @@ def cli_main(argv: list[str] | None = None) -> int:
     try:
         client = get_forge()
     except Exception as exc:
-        from ghdag.exceptions import GhdagError
+        from ghdag.core.exceptions import GhdagError
         if isinstance(exc, (GhdagError, ValueError)):
             print(str(exc), file=sys.stderr)
             return 1
@@ -615,7 +615,7 @@ def cli_main(argv: list[str] | None = None) -> int:
         print(f"Unknown subcommand: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:
-        from ghdag.exceptions import GhdagError
+        from ghdag.core.exceptions import GhdagError
         if not isinstance(exc, (GhdagError, RuntimeError, ValueError, KeyError)):
             raise
         print(str(exc), file=sys.stderr)

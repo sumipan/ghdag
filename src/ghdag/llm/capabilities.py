@@ -11,7 +11,7 @@ from ghdag.core.capabilities import (
     WEB_RESEARCH,
     LLMCapabilities,
 )
-from ghdag.exceptions import GhdagError
+from ghdag.core.exceptions import GhdagError
 
 
 class LLMParseError(GhdagError):

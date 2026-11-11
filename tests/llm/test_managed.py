@@ -9,8 +9,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ghdag.core.capabilities import JSON_ONLY
 from ghdag.core.models.metrics import FailureClass, TokenUsage
-from ghdag.llm.capabilities import JSON_ONLY
 from ghdag.llm.engines import LLMResult
 from ghdag.llm.managed import ManagedResult, call_managed
 from ghdag.quota import QuotaGate

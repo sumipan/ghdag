@@ -6,9 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ghdag.llm.capabilities import LLMCapabilities
+from ghdag.core.capabilities import LLMCapabilities
+from ghdag.core.command import render_exec_command
+from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.llm.engines import LLMResult, build_llm_cmd, call
-from ghdag.llm.spec import ENGINE_SPECS, render_exec_command
 
 
 @pytest.fixture(autouse=True)
@@ -87,7 +88,7 @@ class TestBuildLlmCmdCodex:
 
     def test_render_exec_command_codex_with_capabilities(self):
         """With capabilities set, flags are built via _build_codex_flags."""
-        from ghdag.llm.capabilities import LLMCapabilities
+        from ghdag.core.capabilities import LLMCapabilities
         spec = ENGINE_SPECS["codex"]
         cmd = render_exec_command(
             spec,
@@ -110,7 +111,7 @@ class TestBuildLlmCmdCodex:
         so without reading capabilities.permission_mode the flag is dropped. Then codex
         starts in workspace-write and fails to write outside cwd (e.g. a diary repo).
         """
-        from ghdag.llm.capabilities import DANGEROUS_FULL_ACCESS
+        from ghdag.core.capabilities import DANGEROUS_FULL_ACCESS
         spec = ENGINE_SPECS["codex"]
         cmd = render_exec_command(
             spec,
@@ -124,7 +125,7 @@ class TestBuildLlmCmdCodex:
 
     def test_render_exec_command_codex_default_keeps_sandbox(self):
         """Default capabilities do not add the bypass flag (sandbox stays on)."""
-        from ghdag.llm.capabilities import LLMCapabilities
+        from ghdag.core.capabilities import LLMCapabilities
         spec = ENGINE_SPECS["codex"]
         cmd = render_exec_command(
             spec,
@@ -323,7 +324,7 @@ class TestCodexIgnoredCapabilities:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_codex_with_text_only_does_not_raise(self, mock_run: MagicMock):
         """Passing TEXT_ONLY (with disallowed_tools) to codex does not raise NotImplementedError."""
-        from ghdag.llm.capabilities import TEXT_ONLY
+        from ghdag.core.capabilities import TEXT_ONLY
         mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
         result = call("test", engine="codex", capabilities=TEXT_ONLY)
         assert result.returncode == 0
@@ -377,33 +378,33 @@ class TestExtraArgsDedupe:
 
     def test_dedupe_removes_valueless_flag_emitted_by_builder(self):
         """Valueless flags present on the builder side are dropped from extra_args."""
-        from ghdag.llm.spec import _dedupe_extra_args
+        from ghdag.core.command import _dedupe_extra_args
         assert _dedupe_extra_args(
             ("--json", "--skip-git-repo-check"), ["--json", "--skip-git-repo-check"]
         ) == []
 
     def test_dedupe_removes_flag_with_value_as_a_pair(self):
         """Flags with values are dropped as flag+value pairs."""
-        from ghdag.llm.spec import _dedupe_extra_args
+        from ghdag.core.command import _dedupe_extra_args
         assert _dedupe_extra_args(
             ("--output-format", "json"), ["--permission-mode", "default", "--output-format", "json"]
         ) == []
 
     def test_dedupe_keeps_flags_builder_did_not_emit(self):
         """Flags the builder did not emit remain, including their values."""
-        from ghdag.llm.spec import _dedupe_extra_args
+        from ghdag.core.command import _dedupe_extra_args
         assert _dedupe_extra_args(
             ("--output-format", "json"), ["--permission-mode", "default"]
         ) == ["--output-format", "json"]
 
     def test_dedupe_noop_when_builder_emits_nothing(self):
         """When perm_flags is empty, extra_args is unchanged."""
-        from ghdag.llm.spec import _dedupe_extra_args
+        from ghdag.core.command import _dedupe_extra_args
         assert _dedupe_extra_args(("-o", "pipefail"), []) == ["-o", "pipefail"]
 
     def test_codex_render_has_no_duplicate_flags_for_every_preset(self):
         """No flag duplicates in codex argv for any permission preset."""
-        from ghdag.llm.capabilities import PRESETS
+        from ghdag.core.capabilities import PRESETS
         spec = ENGINE_SPECS["codex"]
         for name, caps in PRESETS.items():
             cmd = render_exec_command(
@@ -416,7 +417,7 @@ class TestExtraArgsDedupe:
 
     def test_claude_json_only_no_duplicate_output_format(self):
         """claude + json_only does not duplicate --output-format (valued-flag regression)."""
-        from ghdag.llm.capabilities import PRESETS
+        from ghdag.core.capabilities import PRESETS
         cmd = render_exec_command(
             ENGINE_SPECS["claude"], order_path="jobs/order.md",
             model="claude-sonnet-4-6", capabilities=PRESETS["json_only"],
@@ -430,7 +431,7 @@ class TestExtraArgsDedupe:
         DAG default is stream-json --verbose (#2966). ClaudeJsonAdapter reads usage /
         session_id from the JSONL result line.
         """
-        from ghdag.llm.capabilities import PRESETS
+        from ghdag.core.capabilities import PRESETS
         cmd = render_exec_command(
             ENGINE_SPECS["claude"], order_path="jobs/order.md",
             model="claude-sonnet-4-6", capabilities=PRESETS["text_only"],
@@ -441,7 +442,7 @@ class TestExtraArgsDedupe:
 
     def test_cursor_text_only_keeps_extra_args_output_format(self):
         """cursor + text_only keeps extra_args --output-format stream-json."""
-        from ghdag.llm.capabilities import PRESETS
+        from ghdag.core.capabilities import PRESETS
         cmd = render_exec_command(
             ENGINE_SPECS["cursor"], order_path="jobs/order.md",
             model="auto", capabilities=PRESETS["text_only"],
@@ -452,7 +453,7 @@ class TestExtraArgsDedupe:
 
     def test_cursor_json_only_overrides_stream_default(self):
         """cursor + json_only returns to single JSON and drops stream-only flags."""
-        from ghdag.llm.capabilities import PRESETS
+        from ghdag.core.capabilities import PRESETS
         cmd = render_exec_command(
             ENGINE_SPECS["cursor"], order_path="jobs/order.md",
             model="auto", capabilities=PRESETS["json_only"],
@@ -474,7 +475,7 @@ class TestExtraArgsDedupe:
 
     def test_gemini_without_builder_keeps_extra_args(self):
         """extra_args for engines without a builder are unchanged."""
-        from ghdag.llm.capabilities import PRESETS
+        from ghdag.core.capabilities import PRESETS
         cmd = render_exec_command(
             ENGINE_SPECS["gemini"], order_path="jobs/order.md",
             model="gemini-3-flash", capabilities=PRESETS["text_only"],
@@ -502,7 +503,7 @@ class TestSandboxCapability:
 
     def test_readonly_observe_preset(self):
         """PRESETS['readonly_observe'] has sandbox=readonly and edit-tool denies."""
-        from ghdag.llm.capabilities import PRESETS
+        from ghdag.core.capabilities import PRESETS
 
         caps = PRESETS["readonly_observe"]
         assert caps.sandbox == "readonly"
@@ -510,7 +511,7 @@ class TestSandboxCapability:
 
     def test_readonly_observe_claude_flags(self):
         """READONLY_OBSERVE → plan mode without Write deny (sumipan/nexus#3188)."""
-        from ghdag.llm.capabilities import READONLY_OBSERVE
+        from ghdag.core.capabilities import READONLY_OBSERVE
         from ghdag.llm.engines import _build_claude_flags
 
         assert _build_claude_flags(READONLY_OBSERVE, False) == [
@@ -522,14 +523,14 @@ class TestSandboxCapability:
 
     def test_non_plan_presets_keep_write_denied(self):
         """TEXT_ONLY / JSON_ONLY / WEB_RESEARCH still deny Write."""
-        from ghdag.llm.capabilities import JSON_ONLY, TEXT_ONLY, WEB_RESEARCH
+        from ghdag.core.capabilities import JSON_ONLY, TEXT_ONLY, WEB_RESEARCH
 
         for caps in (TEXT_ONLY, JSON_ONLY, WEB_RESEARCH):
             assert "Write" in caps.disallowed_tools
 
     def test_readonly_observe_cursor_codex_argv_unchanged(self):
         """cursor / codex argv is identical to the pre-#3188 preset value."""
-        from ghdag.llm.capabilities import READONLY_OBSERVE
+        from ghdag.core.capabilities import READONLY_OBSERVE
 
         previous = LLMCapabilities(
             sandbox="readonly", disallowed_tools=("Edit", "Write", "NotebookEdit")
@@ -659,7 +660,7 @@ class TestSandboxCapability:
 
 class TestWebSearchCapability:
     def test_claude_web_research_allowed_tools_from_builder(self):
-        from ghdag.llm.capabilities import WEB_RESEARCH
+        from ghdag.core.capabilities import WEB_RESEARCH
         from ghdag.llm.engines import _build_claude_flags
 
         flags = _build_claude_flags(WEB_RESEARCH, False)
@@ -670,7 +671,7 @@ class TestWebSearchCapability:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_cursor_web_research_no_extra_argv(self, mock_run: MagicMock):
-        from ghdag.llm.capabilities import WEB_RESEARCH
+        from ghdag.core.capabilities import WEB_RESEARCH
 
         captured: dict = {}
 

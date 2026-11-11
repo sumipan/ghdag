@@ -53,7 +53,7 @@ class TestRunNormal:
         assert kwargs["exec_jsonl_path"] == str(exec_md)
         assert kwargs["poll_interval"] == 1.0
         assert "cwd" in kwargs
-        from ghdag.pipeline.hooks import AuditHooks
+        from ghdag.dag.audit_hooks import AuditHooks
         assert isinstance(_RecordingEngine.last_hooks, AuditHooks)
         assert _RecordingEngine.ran is True
 
@@ -143,7 +143,7 @@ class TestRunHooks:
             from ghdag.cli import main
             main(["run", str(exec_md)])
 
-        from ghdag.pipeline.hooks import AuditHooks
+        from ghdag.dag.audit_hooks import AuditHooks
         assert isinstance(_RecordingEngine.last_hooks, AuditHooks)
 
 

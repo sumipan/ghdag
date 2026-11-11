@@ -23,6 +23,7 @@ from ghdag.config.env import (
     stall_guard_interval_sec,
     stall_guard_stall_sec,
 )
+from ghdag.core.capabilities import TEXT_ONLY, LLMCapabilities
 from ghdag.core.command import (
     _CAPABILITY_FLAG_BUILDERS,
     _build_claude_flags,
@@ -30,15 +31,15 @@ from ghdag.core.command import (
     _build_cursor_flags,
     build_llm_cmd,
 )
+from ghdag.core.engine_spec import ENGINE_SPECS, InputMode
+from ghdag.core.exceptions import ConfigError
 from ghdag.core.models.metrics import FailureClass
 from ghdag.core.ports.output import EngineError
 from ghdag.core.stall_guard import StallEvent, StallTracker
-from ghdag.exceptions import ConfigError
 from ghdag.llm._config import load_engine_models
 from ghdag.llm.adapters import get_output_adapter
-from ghdag.llm.capabilities import TEXT_ONLY, LLMCapabilities, LLMParseError
+from ghdag.llm.capabilities import LLMParseError
 from ghdag.llm.json_extract import extract_json_text
-from ghdag.llm.spec import ENGINE_SPECS, InputMode
 
 __all__ = [
     "EngineModelError",

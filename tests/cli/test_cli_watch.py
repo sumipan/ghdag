@@ -133,7 +133,7 @@ class TestWatchOrderBuilderConstruction:
         """watch delegates order builder construction to build_order_builders (#6092)."""
         from unittest.mock import MagicMock
 
-        from ghdag.workflow.schema import WorkflowConfig
+        from ghdag.core.models.workflow import WorkflowConfig
 
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()

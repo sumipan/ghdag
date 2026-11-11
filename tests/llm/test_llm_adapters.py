@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 
+from ghdag.core.models.metrics import TokenUsage
 from ghdag.llm.adapters.codex import CodexAdapter
-from ghdag.metrics.models import TokenUsage
 
 SAMPLE_JSONL = "\n".join([
     json.dumps({"type": "thread.started", "thread_id": "019fee6d-9bdd-75e3-bcf6-4f760ab4fa66"}),

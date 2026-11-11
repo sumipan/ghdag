@@ -79,19 +79,9 @@ class TestIoAuditQuery:
 
 
 class TestCompatAuditQuery:
-    def test_pipeline_shim_same_objects(self) -> None:
-        import ghdag.io.audit_query as io_aq
-        import ghdag.pipeline.audit_query as pipeline_aq
-
-        assert pipeline_aq.read_task_exit_events is io_aq.read_task_exit_events
-        assert pipeline_aq.get_latest_status is io_aq.get_latest_status
-        assert pipeline_aq.detect_correlation_bursts is io_aq.detect_correlation_bursts
-        assert pipeline_aq.get_correlation_top_n is io_aq.get_correlation_top_n
-
     def test_pipeline_package_reexports_from_io(self) -> None:
+        import ghdag.pipeline as pipeline_pkg
         from ghdag.io.audit_query import get_latest_status, read_task_exit_events
-        from ghdag.pipeline import get_latest_status as pub_status
-        from ghdag.pipeline import read_task_exit_events as pub_read
 
-        assert pub_read is read_task_exit_events
-        assert pub_status is get_latest_status
+        assert pipeline_pkg.read_task_exit_events is read_task_exit_events
+        assert pipeline_pkg.get_latest_status is get_latest_status

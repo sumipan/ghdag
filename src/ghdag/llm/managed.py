@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
 
+from ghdag.core.capabilities import TEXT_ONLY, LLMCapabilities
 from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.llm.adapters import get_output_adapter
-from ghdag.llm.capabilities import TEXT_ONLY, LLMCapabilities
 from ghdag.llm.engines import LLMResult, call, validate_engine_model
 from ghdag.quota import QuotaGate
 

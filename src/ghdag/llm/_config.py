@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 from ghdag.config.env import ghdag_llm_models
-from ghdag.exceptions import GhdagError
+from ghdag.core.exceptions import GhdagError
 from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
 
 
