@@ -32,13 +32,12 @@ from ghdag.core.command import (
     build_llm_cmd,
 )
 from ghdag.core.engine_spec import ENGINE_SPECS, InputMode
-from ghdag.core.exceptions import ConfigError
+from ghdag.core.exceptions import ConfigError, LLMParseError
 from ghdag.core.models.metrics import FailureClass
 from ghdag.core.ports.output import EngineError
 from ghdag.core.stall_guard import StallEvent, StallTracker
 from ghdag.llm._config import load_engine_models
 from ghdag.llm.adapters import get_output_adapter
-from ghdag.llm.capabilities import LLMParseError
 from ghdag.llm.json_extract import extract_json_text
 
 __all__ = [

@@ -6,6 +6,7 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 
+from ghdag.core.exceptions import LLMParseError
 from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.parsers import parse_token_usage_json
 from ghdag.core.ports.output import EngineError, EngineErrorKind
@@ -14,7 +15,6 @@ from ghdag.llm.adapters.failure_classification import (
     classify_common_failure,
     looks_like_question,
 )
-from ghdag.llm.capabilities import LLMParseError
 
 
 def extract_stream_result(stdout: str) -> str:

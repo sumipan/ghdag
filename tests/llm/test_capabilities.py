@@ -73,7 +73,7 @@ class TestCapabilities:
 class TestLLMParseErrorCodes:
     def test_llm_parse_error_declares_code_and_exit(self):
         """#6142: LLMParseError uses LLM_OUTPUT_NOT_JSON and exit 3."""
-        from ghdag.llm.capabilities import LLMParseError
+        from ghdag.llm import LLMParseError
 
         err = LLMParseError("not json", "invalid")
         assert err.code == "LLM_OUTPUT_NOT_JSON"

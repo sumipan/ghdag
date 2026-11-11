@@ -2,17 +2,26 @@
 
 from __future__ import annotations
 
+import importlib
 
-def test_exceptions_import_compat() -> None:
-    from ghdag.exceptions import (
-        AuthError,
-        GhdagError,
-        GitHubApiError,
-    )
+import pytest
 
-    assert issubclass(GhdagError, Exception)
-    assert issubclass(GitHubApiError, GhdagError)
-    assert issubclass(AuthError, GitHubApiError)
+_REMOVED_SHIM_MODULES = (
+    "ghdag.exceptions",
+    "ghdag.dag.stall_guard",
+    "ghdag.dag.state",
+    "ghdag.files._rotate",
+    "ghdag.files.models",
+    "ghdag.llm.capabilities",
+    "ghdag.llm.spec",
+    "ghdag.metrics.models",
+)
+
+
+@pytest.mark.parametrize("module_name", _REMOVED_SHIM_MODULES)
+def test_removed_core_shim_module_is_not_importable(module_name: str) -> None:
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(module_name)
 
 
 def test_dag_models_import_compat() -> None:
@@ -21,23 +30,6 @@ def test_dag_models_import_compat() -> None:
     assert Task.__name__ == "Task"
     assert DagConfig.__name__ == "DagConfig"
     assert RunningTask.__name__ == "RunningTask"
-
-
-def test_metrics_models_import_compat() -> None:
-    from ghdag.metrics.models import FailureClass, TaskMetrics, TokenUsage
-
-    assert FailureClass.TIMEOUT.cause == "transient"
-    assert TokenUsage.__name__ == "TokenUsage"
-    assert TaskMetrics.__name__ == "TaskMetrics"
-
-
-def test_files_models_import_compat() -> None:
-    from ghdag.files.models import AppendResult, MdFile, PromoteResult, WriteResult
-
-    assert MdFile.__name__ == "MdFile"
-    assert AppendResult.__name__ == "AppendResult"
-    assert WriteResult.__name__ == "WriteResult"
-    assert PromoteResult.__name__ == "PromoteResult"
 
 
 def test_workflow_schema_import_compat() -> None:
@@ -56,41 +48,6 @@ def test_workflow_schema_import_compat() -> None:
     assert TriggerConfig.__name__ == "TriggerConfig"
     assert DispatchResult.__name__ == "DispatchResult"
     assert WorkflowConfig.__name__ == "WorkflowConfig"
-
-
-def test_llm_capabilities_import_compat() -> None:
-    from ghdag.llm.capabilities import (
-        JSON_ONLY,
-        PRESETS,
-        TEXT_ONLY,
-        LLMCapabilities,
-    )
-
-    assert LLMCapabilities.__name__ == "LLMCapabilities"
-    assert "text_only" in PRESETS
-    assert TEXT_ONLY.output_format == "text"
-    assert JSON_ONLY.output_format == "json"
-
-
-def test_llm_spec_import_compat() -> None:
-    from enum import Enum
-
-    from ghdag.llm.spec import (
-        ENGINE_SPECS,
-        DangerFlagPosition,
-        EngineSpec,
-        InputMode,
-        PromptFlag,
-        render_exec_command,
-    )
-
-    assert EngineSpec.__name__ == "EngineSpec"
-    assert "claude" in ENGINE_SPECS
-    assert issubclass(InputMode, Enum)
-    assert InputMode.STDIN in InputMode
-    assert PromptFlag.FLAG_ONLY in PromptFlag
-    assert DangerFlagPosition is not None
-    assert callable(render_exec_command)
 
 
 def test_workflow_engine_adapter_import_compat() -> None:
@@ -159,11 +116,9 @@ def test_workflow_import_side_effect_get_output_adapter() -> None:
 def test_residual_definitions_stay_in_domain_modules() -> None:
     import ghdag.dag.hooks as hooks_mod
     import ghdag.dag.models as dag_models_mod
-    import ghdag.llm.capabilities as cap_mod
 
     assert "RunningTask" in dag_models_mod.__dict__
     assert "DefaultHooks" in hooks_mod.__dict__
-    assert "LLMParseError" in cap_mod.__dict__
 
 
 def test_no_llm_to_metrics_direct_import() -> None:
