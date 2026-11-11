@@ -9,6 +9,7 @@ from ghdag.core.vocabulary import (
 
 from ._util import WaitQuotaSignal, check_pipeline_status, default_check_rejected, parse_wait_quota_signal
 from ._util import _extract_tee_target as extract_tee_target
+from .audit_hooks import AuditHooks
 from .engine import DagEngine
 from .fanout import FanOutSpec, build_child_jsonl_record, parse_fanout_spec
 from .hooks import DagHooks, DefaultHooks
@@ -17,6 +18,7 @@ from .parser import parse_jsonl
 from .recover import execute_recover, plan_recover, running_uuids_from_queue_dir
 
 __all__ = [
+    "AuditHooks",
     "DagConfig",
     "DagEngine",
     "DagHooks",

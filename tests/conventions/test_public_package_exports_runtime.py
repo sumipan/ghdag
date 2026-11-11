@@ -120,3 +120,15 @@ def test_llm_public_exports_match_requested_contract() -> None:
         "container_prefix": container.container_prefix,
     }
     _assert_public_exports(llm, names, sources)
+
+
+def test_audit_hooks_public_home_is_dag_only() -> None:
+    """Issue sumipan/nexus#6451 — AuditHooks is exported from ghdag.dag only."""
+    import ghdag.dag as dag
+    import ghdag.pipeline as pipeline
+    from ghdag.dag.audit_hooks import AuditHooks as canonical
+
+    assert "AuditHooks" in dag.__all__
+    assert getattr(dag, "AuditHooks") is canonical
+    assert "AuditHooks" not in pipeline.__all__
+    assert not hasattr(pipeline, "AuditHooks")

@@ -71,23 +71,6 @@ class TestCompatImports:
         assert rec["uuid"] == "u1"
         assert rec["status"] == "success"
 
-    def test_pipeline_all_writers_resolvable(self) -> None:
-        from ghdag.pipeline import audit as pa
-
-        for name in (
-            "AuditContext",
-            "write_audit_log",
-            "write_llm_audit_log",
-            "write_llm_inference_audit",
-            "write_task_retry_audit",
-            "write_quarantine_audit",
-            "write_task_exit_audit",
-            "write_rate_limit_audit",
-            "compute_prompt_hash",
-        ):
-            assert hasattr(pa, name), name
-
-
 class TestWriteRepairTurnAudit:
     def test_record_shape(self, tmp_path: Path) -> None:
         from ghdag.io.audit import write_repair_turn_audit

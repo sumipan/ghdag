@@ -28,12 +28,8 @@ _PUBLIC_API_SNAPSHOT: frozenset[str] = frozenset({
 
 _KNOWN_PRIVATE_IMPORT_VIOLATIONS: frozenset[str] = frozenset({
     "dag/recover.py",
-    "files/_rotate.py",
-    "pipeline/audit.py",
     "pipeline/status.py",
     "llm/engines.py",
-    "llm/spec.py",
-    "workflow/engine.py",
 })
 
 
