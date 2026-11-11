@@ -1,6 +1,5 @@
 """Tests for ghdag.dag.engine — §5.4 acceptance criteria."""
 
-import time
 from unittest.mock import MagicMock
 
 from ghdag_dag_conftest_helpers import (
@@ -35,7 +34,7 @@ class TestFanOutManagerUnit:
             FanOutItem(id="c1", command="echo 1"),
             FanOutItem(id="c2", command="echo 2"),
         ])
-        t = time.time()
+        t = 1_700_000_000.0
         metrics = TaskMetrics(
             uuid=parent_uuid, engine=None, model=None,
             wall_time_sec=1.0, token_count=None, status="success",
@@ -71,7 +70,7 @@ class TestFanOutManagerUnit:
             model="claude-sonnet-4-6",
         )
         spec = FanOutSpec(children=[FanOutItem(id="a", prompt="do a")])
-        t = time.time()
+        t = 1_700_000_000.0
         metrics = TaskMetrics(
             uuid=parent_uuid,
             engine="claude",
@@ -124,8 +123,8 @@ class TestFanOutManagerUnit:
             wall_time_sec=1.0,
             token_count=None,
             status="success",
-            started_at=time.time(),
-            finished_at=time.time(),
+            started_at=1_700_000_000.0,
+            finished_at=1_700_000_000.0,
         )
         lines: list[str] = []
         fm2 = FanOutManager(
@@ -174,8 +173,8 @@ class TestFanOutManagerUnit:
             wall_time_sec=1.0,
             token_count=None,
             status="success",
-            started_at=time.time(),
-            finished_at=time.time(),
+            started_at=1_700_000_000.0,
+            finished_at=1_700_000_000.0,
         )
 
         with pytest.raises(FanoutError):
@@ -200,7 +199,7 @@ class TestFanOutManagerUnit:
         parent_uuid = "parent-fm"
         child_uuids = {f"{parent_uuid}--fo--c1", f"{parent_uuid}--fo--c2"}
         task = Task(uuid=parent_uuid, command="true")
-        t = time.time()
+        t = 1_700_000_000.0
         metrics = TaskMetrics(
             uuid=parent_uuid, engine=None, model=None,
             wall_time_sec=1.0, token_count=None, status="success",

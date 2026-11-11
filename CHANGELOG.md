@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Tests only: remove wall-clock dependencies from `tests/dag` and `tests/files` per docs/TEST.md T13 (sumipan/nexus#6191).
+
 ## 0.125.0 - 2026-11-11
 
 ### Removed

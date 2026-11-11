@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import time
-
 from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import Task
 from ghdag.metrics.models import TaskMetrics
@@ -16,7 +14,7 @@ def _make_task() -> Task:
 
 
 def _make_metrics(status: str = "success") -> TaskMetrics:
-    now = time.time()
+    now = 1_700_000_000.0
     return TaskMetrics(
         uuid=UUID,
         engine="claude",

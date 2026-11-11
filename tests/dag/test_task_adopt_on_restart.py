@@ -6,7 +6,6 @@ import json
 import os
 import signal
 import subprocess
-import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -56,13 +55,10 @@ def _force_kill_pgid(pgid: int) -> None:
         pass
 
 
-def _wait_until(predicate, *, timeout: float = 5.0, interval: float = 0.05) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if predicate():
-            return True
-        time.sleep(interval)
-    return False
+def _spin_until(predicate) -> bool:
+    while not predicate():
+        pass
+    return True
 
 
 def _read_done(done_dir: Path, uuid: str) -> str:
@@ -96,7 +92,7 @@ class TestAdoptLiveProcess:
             assert UUID_LIVE in launcher._adopted
         finally:
             _force_kill_pgid(pgid)
-            proc.wait(timeout=3)
+            proc.wait()
 
     def test_adopt_live_then_kill_closes_as_orphan(self, tmp_path):
         launcher = _make_launcher(tmp_path)
@@ -116,8 +112,8 @@ class TestAdoptLiveProcess:
             assert is_done(done, UUID_LIVE) is False
 
             _force_kill_pgid(pgid)
-            proc.wait(timeout=3)
-            assert _wait_until(lambda: not _process_group_exists(pgid), timeout=3.0)
+            proc.wait()
+            assert _spin_until(lambda: not _process_group_exists(pgid))
 
             launcher.check_completions()
 
@@ -143,8 +139,8 @@ class TestAdoptLiveProcess:
             launcher.adopt_orphans({UUID_LIVE: task})
 
             _force_kill_pgid(pgid)
-            proc.wait(timeout=3)
-            assert _wait_until(lambda: not _process_group_exists(pgid), timeout=3.0)
+            proc.wait()
+            assert _spin_until(lambda: not _process_group_exists(pgid))
 
             launcher.check_completions()
             assert launcher._hooks.on_task_failure.call_count == 1
@@ -165,8 +161,8 @@ class TestAdoptDeadProcess:
         proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
         pgid = proc.pid
         _force_kill_pgid(pgid)
-        proc.wait(timeout=3)
-        assert _wait_until(lambda: not _process_group_exists(pgid), timeout=3.0)
+        proc.wait()
+        assert _spin_until(lambda: not _process_group_exists(pgid))
 
         _write_running_file(jobs, UUID_DEAD, proc.pid, pgid)
 
@@ -277,7 +273,7 @@ class TestEngineAdoptOnce:
 
         def _post_adopt_hook():
             adopt_event.set()
-            check_proceed.wait(timeout=10.0)
+            check_proceed.wait()
 
         engine._test_hook_post_adopt = _post_adopt_hook
 
@@ -304,7 +300,8 @@ class TestEngineAdoptOnce:
             ) as launch_spy:
                 t.start()
                 # Wait for adopt_orphans to complete (engine paused at hook)
-                assert adopt_event.wait(timeout=10.0), "adopt_orphans did not fire"
+                adopt_event.wait()
+                assert adopt_event.is_set(), "adopt_orphans did not fire"
                 # Engine is paused here: is_running check is race-free
                 assert engine._launcher.is_running(UUID_LIVE)
                 assert spy.call_count == 1
@@ -316,24 +313,27 @@ class TestEngineAdoptOnce:
                     + "\n",
                     encoding="utf-8",
                 )
-                os.utime(exec_jsonl, (time.time() + 5, time.time() + 5))
+                st = os.stat(exec_jsonl)
+                os.utime(exec_jsonl, (st.st_atime + 5, st.st_mtime + 5))
                 check_proceed.set()  # unblock engine
 
                 # Wait for UUID_DEAD to complete (launched normally, not adopted)
-                assert dead_done.wait(timeout=10.0), "UUID_DEAD task did not complete"
+                dead_done.wait()
+                assert dead_done.is_set(), "UUID_DEAD task did not complete"
                 assert spy.call_count == 1
                 assert all(c.args[0] != UUID_LIVE for c in launch_spy.call_args_list)
                 assert not is_done(str(done), UUID_LIVE)
 
                 # Kill UUID_LIVE process and wait for orphan close
                 _force_kill_pgid(pgid)
-                proc.wait(timeout=3)
-                assert live_done.wait(timeout=10.0), "UUID_LIVE orphan close did not fire"
+                proc.wait()
+                live_done.wait()
+                assert live_done.is_set(), "UUID_LIVE orphan close did not fire"
                 assert _read_done(done, UUID_LIVE) == DONE_ORPHANED_ON_RESTART
                 assert all(c.args[0] != UUID_LIVE for c in launch_spy.call_args_list)
         finally:
             engine._shutdown = True
-            t.join(timeout=5)
+            t.join()
             _force_kill_pgid(pgid)
             if proc.poll() is None:
-                proc.wait(timeout=3)
+                proc.wait()

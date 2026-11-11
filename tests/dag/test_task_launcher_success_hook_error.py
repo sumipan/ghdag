@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import json
-import time
 from unittest.mock import MagicMock, patch
 
 from ghdag.core.vocabulary import DONE_UNKNOWN_FAILURE
@@ -44,8 +43,8 @@ def _make_running_task(
         uuid=uuid,
         task=task,
         proc=proc,
-        started_at=time.time() - 0.1,
-        started_at_mono=time.monotonic() - 0.1,
+        started_at=1_700_000_000.0 - 0.1,
+        started_at_mono=10_000.0 - 0.1,
         stderr_buf=io.BytesIO(b""),
         retry_depth=0,
         stdout_buf=io.BytesIO(b""),

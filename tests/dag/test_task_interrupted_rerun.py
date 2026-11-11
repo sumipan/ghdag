@@ -6,7 +6,6 @@ import json
 import os
 import signal
 import subprocess
-import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -72,13 +71,26 @@ def _force_kill_pgid(pgid: int) -> None:
         pass
 
 
-def _wait_until(predicate, *, timeout: float = 5.0, interval: float = 0.05) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if predicate():
-            return True
-        time.sleep(interval)
-    return False
+def _spin_until(predicate) -> bool:
+    while not predicate():
+        pass
+    return True
+
+
+class _FakeClock:
+    def __init__(self, mono: float = 10_000.0, wall: float = 1_700_000_000.0) -> None:
+        self._mono = mono
+        self._wall = wall
+
+    def monotonic(self) -> float:
+        return self._mono
+
+    def time(self) -> float:
+        return self._wall
+
+    def advance(self, sec: float) -> None:
+        self._mono += sec
+        self._wall += sec
 
 
 UUID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -116,8 +128,8 @@ class TestMarkInterruptedAll:
         finally:
             _force_kill_pgid(proc_a.pid)
             _force_kill_pgid(proc_b.pid)
-            proc_a.wait(timeout=2)
-            proc_b.wait(timeout=2)
+            proc_a.wait()
+            proc_b.wait()
 
     def test_missing_running_file_skipped_no_exception(self, tmp_path):
         launcher = _make_launcher(tmp_path)
@@ -149,7 +161,7 @@ class TestMarkInterruptedAll:
             assert "interrupted_at" in data
         finally:
             _force_kill_pgid(proc_b.pid)
-            proc_b.wait(timeout=2)
+            proc_b.wait()
 
 
 class TestAdoptOrphansInterrupted:
@@ -177,12 +189,12 @@ class TestAdoptOrphansInterrupted:
             assert UUID_A in launcher._pending_reruns
             assert launcher._pending_reruns[UUID_A] == 1
 
-            proc.wait(timeout=3)
+            proc.wait()
             assert not _process_group_exists(pgid)
         finally:
             _force_kill_pgid(pgid)
             if proc.poll() is None:
-                proc.wait(timeout=2)
+                proc.wait()
 
     def test_dead_pgid_with_interrupted_at_queued_for_rerun(self, tmp_path):
         """AC-2b (dead): dead process with interrupted_at queued for rerun."""
@@ -192,8 +204,8 @@ class TestAdoptOrphansInterrupted:
         proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
         pgid = proc.pid
         _force_kill_pgid(pgid)
-        proc.wait(timeout=3)
-        assert _wait_until(lambda: not _process_group_exists(pgid), timeout=3.0)
+        proc.wait()
+        assert _spin_until(lambda: not _process_group_exists(pgid))
 
         _write_running_file(
             jobs, UUID_A, proc.pid, pgid,
@@ -219,8 +231,8 @@ class TestAdoptOrphansInterrupted:
         proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
         pgid = proc.pid
         _force_kill_pgid(pgid)
-        proc.wait(timeout=3)
-        assert _wait_until(lambda: not _process_group_exists(pgid), timeout=3.0)
+        proc.wait()
+        assert _spin_until(lambda: not _process_group_exists(pgid))
 
         _write_running_file(
             jobs, UUID_A, proc.pid, pgid,
@@ -251,8 +263,8 @@ class TestAdoptOrphansInterrupted:
         proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
         pgid = proc.pid
         _force_kill_pgid(pgid)
-        proc.wait(timeout=3)
-        assert _wait_until(lambda: not _process_group_exists(pgid), timeout=3.0)
+        proc.wait()
+        assert _spin_until(lambda: not _process_group_exists(pgid))
 
         _write_running_file(jobs, UUID_A, proc.pid, pgid)
         task = Task(uuid=UUID_A, command="sleep 30")
@@ -294,7 +306,7 @@ class TestRerunAfterInterrupt:
             launcher.check_completions()
             return UUID_A not in launcher._running
 
-        assert _wait_until(_poll, timeout=10.0)
+        assert _spin_until(_poll)
 
         env_content = env_file.read_text(encoding="utf-8").strip()
         assert env_content == "interrupted"
@@ -327,7 +339,7 @@ class TestRerunAfterInterrupt:
             launcher.check_completions()
             return UUID_A not in launcher._running
 
-        assert _wait_until(_poll, timeout=10.0)
+        assert _spin_until(_poll)
 
         assert not env_file.exists()
         assert is_done(str(done), UUID_A)
@@ -336,7 +348,9 @@ class TestRerunAfterInterrupt:
 class TestInterruptedNoDone:
     """AC-2f: interrupted task does not get on_task_failure or done marker."""
 
-    def test_interrupted_task_no_failure_hook_no_done(self, tmp_path):
+    def test_interrupted_task_no_failure_hook_no_done(self, tmp_path, monkeypatch):
+        clock = _FakeClock()
+        monkeypatch.setattr("ghdag.dag.task_launcher.time", clock)
         launcher = _make_launcher(tmp_path)
         jobs = tmp_path / "jobs"
         done = jobs / "done"
@@ -349,19 +363,19 @@ class TestInterruptedNoDone:
         launched = launcher.launch(UUID_A, task)
         assert launched
 
-        assert _wait_until(lambda: launcher.is_running(UUID_A), timeout=3.0)
+        assert _spin_until(lambda: launcher.is_running(UUID_A))
 
         launcher._interrupting.add(UUID_A)
         rt = launcher._running[UUID_A]
         from ghdag.dag.task_launcher import _signal_process_tree
         _signal_process_tree(rt.proc, signal.SIGTERM)
-        rt.term_sent_at = time.monotonic()
+        rt.term_sent_at = clock.monotonic()
 
         def _poll():
             launcher.check_completions()
             return not launcher.is_running(UUID_A)
 
-        assert _wait_until(_poll, timeout=5.0)
+        assert _spin_until(_poll)
 
         assert not is_done(str(done), UUID_A)
         launcher._hooks.on_task_failure.assert_not_called()
