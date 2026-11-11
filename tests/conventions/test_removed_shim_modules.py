@@ -15,6 +15,7 @@ _PIPELINE_WORKFLOW_SHIMS = (
     "ghdag.pipeline.audit_query",
     "ghdag.pipeline.hooks",
     "ghdag.pipeline.result",
+    "ghdag.pipeline.submit",
     "ghdag.workflow.engine",
     "ghdag.workflow.schema",
 )
@@ -44,3 +45,9 @@ def test_readme_omits_removed_shim_paths() -> None:
     assert "### Module `__all__`" not in text
     for fqn in _ALL_REMOVED_SHIM_FQNS:
         assert fqn not in text, f"README still references removed shim {fqn!r}"
+    for forbidden in (
+        "ghdag.pipeline.submit_order",
+        "make_order_record",
+        "pipeline/submit.py",
+    ):
+        assert forbidden not in text, f"README still references removed submission helper {forbidden!r}"

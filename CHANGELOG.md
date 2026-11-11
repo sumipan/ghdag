@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.127.0 - 2026-11-11
+
+### Removed
+
+- `ghdag.pipeline.submit` (`make_order_record`, `submit_order`) and their exports from `ghdag.pipeline`. Use `LLMPipelineAPI.submit` instead; unspecified step `permission` defaults to `text_only` (sumipan/nexus#6440).
+
 ## 0.126.1 - 2026-11-11
 
 ### Removed
