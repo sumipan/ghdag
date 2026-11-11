@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -13,7 +12,7 @@ from ghdag.metrics.models import TaskMetrics
 
 
 def _base_metrics(uuid: str) -> TaskMetrics:
-    t = time.time()
+    t = 1_700_000_000.0
     return TaskMetrics(
         uuid=uuid,
         engine=None,

@@ -212,7 +212,6 @@ class TestDagHooksIntegration:
         """D3: when the hook returns target_path, the engine calls md_promote"""
         import io
         import subprocess
-        import time
         from unittest.mock import MagicMock, patch
 
         from ghdag.dag.engine import DagEngine
@@ -245,7 +244,7 @@ class TestDagHooksIntegration:
         proc.wait()
         rt = RunningTask(
             uuid="t1", task=task, proc=proc,
-            started_at=time.time(), started_at_mono=time.monotonic(),
+            started_at=1_700_000_000.0, started_at_mono=10_000.0,
             stderr_buf=io.BytesIO(b""), retry_depth=0,
             stdout_buf=io.BytesIO(b"promoted content\n"),
         )
@@ -267,7 +266,6 @@ class TestDagHooksIntegration:
         """D4: when check_promote_target returns None, promote is not run"""
         import io
         import subprocess
-        import time
         from unittest.mock import MagicMock, patch
 
         from ghdag.dag.engine import DagEngine
@@ -297,7 +295,7 @@ class TestDagHooksIntegration:
         proc.wait()
         rt = RunningTask(
             uuid="t2", task=task, proc=proc,
-            started_at=time.time(), started_at_mono=time.monotonic(),
+            started_at=1_700_000_000.0, started_at_mono=10_000.0,
             stderr_buf=io.BytesIO(b""), retry_depth=0,
             stdout_buf=io.BytesIO(b"content\n"),
         )
@@ -313,7 +311,6 @@ class TestDagHooksIntegration:
         """D5: even if promote raises, the task itself is treated as success"""
         import io
         import subprocess
-        import time
         from unittest.mock import MagicMock, patch
 
         from ghdag.dag.engine import DagEngine
@@ -343,7 +340,7 @@ class TestDagHooksIntegration:
         proc.wait()
         rt = RunningTask(
             uuid="t3", task=task, proc=proc,
-            started_at=time.time(), started_at_mono=time.monotonic(),
+            started_at=1_700_000_000.0, started_at_mono=10_000.0,
             stderr_buf=io.BytesIO(b""), retry_depth=0,
             stdout_buf=io.BytesIO(b"content\n"),
         )

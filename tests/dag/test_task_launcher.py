@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -71,7 +70,7 @@ class TestTaskLauncherUnit:
         task = Task(uuid="done-test", command="true")
         rt = RunningTask(
             uuid="done-test", task=task, proc=proc,
-            started_at=time.time(), started_at_mono=time.monotonic(),
+            started_at=1_700_000_000.0, started_at_mono=10_000.0,
             stderr_buf=io.BytesIO(b""), retry_depth=0,
         )
         launcher._running["done-test"] = rt

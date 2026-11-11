@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import json
 import logging
-import time
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -111,8 +110,8 @@ def _make_running_task(task: Task, stdout: bytes = b"", stderr: bytes = b"", ret
         uuid=task.uuid,
         task=task,
         proc=proc,
-        started_at=time.time() - 0.1,
-        started_at_mono=time.monotonic() - 0.1,
+        started_at=1_700_000_000.0 - 0.1,
+        started_at_mono=10_000.0 - 0.1,
         stderr_buf=io.BytesIO(stderr),
         stdout_buf=io.BytesIO(stdout),
         retry_depth=task.retry,

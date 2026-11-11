@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import signal
-import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,6 +13,22 @@ from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.models import DagConfig, RunningTask, Task
 from ghdag.dag.stall_guard import StallEvent, StallTracker
 from ghdag.dag.task_launcher import TaskLauncher
+
+
+class _FakeClock:
+    def __init__(self, mono: float = 10_000.0, wall: float = 1_700_000_000.0) -> None:
+        self._mono = mono
+        self._wall = wall
+
+    def monotonic(self) -> float:
+        return self._mono
+
+    def time(self) -> float:
+        return self._wall
+
+    def advance(self, sec: float) -> None:
+        self._mono += sec
+        self._wall += sec
 
 
 def _make_launcher(tmp_path) -> TaskLauncher:
@@ -76,7 +91,11 @@ def test_non_cursor_no_tracker(mock_popen, tmp_path, engine: str) -> None:
     assert launcher._running["u1"].stall_tracker is None
 
 
-def test_check_completions_invokes_tracker_and_writes_audit(tmp_path, caplog) -> None:
+def test_check_completions_invokes_tracker_and_writes_audit(
+    tmp_path, caplog, monkeypatch,
+) -> None:
+    clock = _FakeClock(mono=10_000.0)
+    monkeypatch.setattr("ghdag.dag.task_launcher.time", clock)
     launcher = _make_launcher(tmp_path)
     proc = MagicMock()
     proc.poll.return_value = None
@@ -89,8 +108,8 @@ def test_check_completions_invokes_tracker_and_writes_audit(tmp_path, caplog) ->
         uuid="stall-uuid",
         task=task,
         proc=proc,
-        started_at=time.time(),
-        started_at_mono=time.monotonic(),
+        started_at=1_700_000_000.0,
+        started_at_mono=10_000.0,
         stderr_buf=io.BytesIO(b""),
         stall_tracker=mock_tracker,
     )
@@ -111,7 +130,9 @@ def test_check_completions_invokes_tracker_and_writes_audit(tmp_path, caplog) ->
 
 
 @patch("ghdag.dag.task_launcher._signal_process_tree")
-def test_timeout_still_signals_process_tree(mock_signal, tmp_path) -> None:
+def test_timeout_still_signals_process_tree(mock_signal, tmp_path, monkeypatch) -> None:
+    clock = _FakeClock(mono=20_000.0)
+    monkeypatch.setattr("ghdag.dag.task_launcher.time", clock)
     launcher = _make_launcher(tmp_path)
     proc = MagicMock()
     proc.poll.return_value = None
@@ -120,8 +141,8 @@ def test_timeout_still_signals_process_tree(mock_signal, tmp_path) -> None:
         uuid="t1",
         task=task,
         proc=proc,
-        started_at=time.time() - 5000,
-        started_at_mono=time.monotonic() - 5000,
+        started_at=clock.time() - 5000,
+        started_at_mono=clock.monotonic() - 5000,
         stderr_buf=io.BytesIO(b""),
         stall_tracker=MagicMock(spec=StallTracker),
     )

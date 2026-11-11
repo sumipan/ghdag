@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import io
 import json
-import time
 from unittest.mock import MagicMock, patch
 
 from ghdag.dag.engine import DagEngine
@@ -64,8 +63,8 @@ def test_claude_json_result_path_contains_text_only(mock_mark_done, tmp_path):
         uuid="test-claude-text",
         task=task,
         proc=_make_proc(0),
-        started_at=time.time() - 1.0,
-        started_at_mono=time.monotonic() - 1.0,
+        started_at=1_700_000_000.0 - 1.0,
+        started_at_mono=10_000.0 - 1.0,
         stderr_buf=io.BytesIO(b""),
         stdout_buf=io.BytesIO(_CLAUDE_JSON_STDOUT),
     )
@@ -95,8 +94,8 @@ def test_claude_json_metrics_are_non_null(mock_mark_done, tmp_path):
         uuid="test-claude-metrics",
         task=task,
         proc=_make_proc(0),
-        started_at=time.time() - 1.0,
-        started_at_mono=time.monotonic() - 1.0,
+        started_at=1_700_000_000.0 - 1.0,
+        started_at_mono=10_000.0 - 1.0,
         stderr_buf=io.BytesIO(b""),
         stdout_buf=io.BytesIO(_CLAUDE_JSON_STDOUT),
     )
@@ -128,8 +127,8 @@ def test_cursor_plain_text_result_path_unchanged(mock_mark_done, tmp_path):
         uuid="test-cursor-text",
         task=task,
         proc=_make_proc(0),
-        started_at=time.time() - 1.0,
-        started_at_mono=time.monotonic() - 1.0,
+        started_at=1_700_000_000.0 - 1.0,
+        started_at_mono=10_000.0 - 1.0,
         stderr_buf=io.BytesIO(b""),
         stdout_buf=io.BytesIO(plain_text),
     )
@@ -155,8 +154,8 @@ def test_cursor_token_count_is_none(mock_mark_done, tmp_path):
         uuid="test-cursor-none",
         task=task,
         proc=_make_proc(0),
-        started_at=time.time() - 1.0,
-        started_at_mono=time.monotonic() - 1.0,
+        started_at=1_700_000_000.0 - 1.0,
+        started_at_mono=10_000.0 - 1.0,
         stderr_buf=io.BytesIO(b""),
         stdout_buf=io.BytesIO(b"some output"),
     )
@@ -200,8 +199,8 @@ def test_cursor_json_writes_result_text_and_session(mock_mark_done, tmp_path):
         uuid=parent_uuid,
         task=task,
         proc=_make_proc(0),
-        started_at=time.time() - 1.0,
-        started_at_mono=time.monotonic() - 1.0,
+        started_at=1_700_000_000.0 - 1.0,
+        started_at_mono=10_000.0 - 1.0,
         stderr_buf=io.BytesIO(b""),
         stdout_buf=io.BytesIO(_CURSOR_JSON_STDOUT),
     )
@@ -250,8 +249,8 @@ def test_codex_jsonl_writes_result_text_and_session(mock_mark_done, tmp_path):
         uuid=parent_uuid,
         task=task,
         proc=_make_proc(0),
-        started_at=time.time() - 1.0,
-        started_at_mono=time.monotonic() - 1.0,
+        started_at=1_700_000_000.0 - 1.0,
+        started_at_mono=10_000.0 - 1.0,
         stderr_buf=io.BytesIO(b""),
         stdout_buf=io.BytesIO(_CODEX_JSONL_STDOUT),
     )
