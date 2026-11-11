@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.125.3 - 2026-11-11
+
 ### Changed
 
 - Tests only: remove wall-clock dependencies from thirteen root-level test modules per docs/TEST.md T13 (sumipan/nexus#6192).
