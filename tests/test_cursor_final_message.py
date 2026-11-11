@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -336,14 +335,18 @@ class TestDagResultUsesReconstructedTurns:
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = None
+        finished = threading.Event()
+
+        def _on_success(*_args, **_kwargs) -> None:
+            finished.set()
+
+        hooks.on_task_success.side_effect = _on_success
         engine = DagEngine(config, hooks)
         t = threading.Thread(target=engine.run, daemon=True)
         t.start()
-        deadline = time.time() + 5.0
-        while time.time() < deadline and not result_file.exists():
-            time.sleep(0.05)
+        finished.wait()
         engine._shutdown = True
-        t.join(timeout=3.0)
+        t.join()
 
         events_path = tmp_path / "jobs" / "events" / "evt-final.jsonl"
         assert events_path.is_file()

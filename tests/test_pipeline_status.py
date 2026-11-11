@@ -108,12 +108,29 @@ def _make_config(tmp_path, records: list[dict], **overrides) -> DagConfig:
     return DagConfig(**defaults)
 
 
-def _run_engine_with_timeout(engine: DagEngine, timeout: float = 5.0) -> None:
+def _run_engine_with_timeout(
+    engine: DagEngine,
+    hooks: MagicMock,
+    *,
+    expected_completions: int = 1,
+) -> None:
+    idle = threading.Event()
+    seen = {"count": 0}
+
+    def _on_completion(*_args, **_kwargs) -> None:
+        seen["count"] += 1
+        if seen["count"] >= expected_completions:
+            idle.set()
+
+    hooks.on_task_success.side_effect = _on_completion
+    hooks.on_task_failure.side_effect = _on_completion
+    hooks.on_task_dep_failed.side_effect = _on_completion
+
     t = threading.Thread(target=engine.run, daemon=True)
     t.start()
-    t.join(timeout=timeout)
+    idle.wait()
     engine._shutdown = True
-    t.join(timeout=2.0)
+    t.join()
 
 
 class TestEngineCheckPipelineStatus:
@@ -127,7 +144,7 @@ class TestEngineCheckPipelineStatus:
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = "IMPL_FAILED"
         engine = DagEngine(config, hooks)
-        _run_engine_with_timeout(engine, timeout=5.0)
+        _run_engine_with_timeout(engine, hooks)
         done = load_done_from_dir(config.exec_done_dir)
         assert "uuid-a" in done
         succeeded = load_succeeded_from_dir(config.exec_done_dir)
@@ -142,7 +159,7 @@ class TestEngineCheckPipelineStatus:
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = "IMPL_DONE"
         engine = DagEngine(config, hooks)
-        _run_engine_with_timeout(engine, timeout=5.0)
+        _run_engine_with_timeout(engine, hooks)
         succeeded = load_succeeded_from_dir(config.exec_done_dir)
         assert "uuid-a" in succeeded
 
@@ -151,7 +168,7 @@ class TestEngineCheckPipelineStatus:
         hooks = MagicMock()
         hooks.check_rejected.return_value = False
         engine = DagEngine(config, hooks)
-        _run_engine_with_timeout(engine, timeout=5.0)
+        _run_engine_with_timeout(engine, hooks)
         hooks.check_pipeline_status.assert_not_called()
         done = load_done_from_dir(config.exec_done_dir)
         assert "uuid-a" in done
@@ -173,7 +190,7 @@ class TestEngineCheckPipelineStatus:
         hooks.check_rejected.return_value = False
         hooks.check_pipeline_status.return_value = "IMPL_FAILED"
         engine = DagEngine(config, hooks)
-        _run_engine_with_timeout(engine, timeout=5.0)
+        _run_engine_with_timeout(engine, hooks, expected_completions=2)
         done = load_done_from_dir(config.exec_done_dir)
         assert "uuid-a" in done
         assert "uuid-b" in done

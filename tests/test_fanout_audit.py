@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -14,6 +13,8 @@ from ghdag.dag.models import DagConfig, Task
 from ghdag.io.audit import AuditContext
 from ghdag.metrics.models import TaskMetrics
 from ghdag.pipeline.state import PipelineState
+
+FIXED_TS = 1_700_000_000.0
 
 
 def _make_config(tmp_path: Path) -> DagConfig:
@@ -42,7 +43,6 @@ class TestFanOutAudit:
             FanOutItem(id="c1", command="echo 1"),
             FanOutItem(id="c2", command="echo 2"),
         ])
-        t = time.time()
         metrics = TaskMetrics(
             uuid=parent_uuid,
             engine=None,
@@ -50,8 +50,8 @@ class TestFanOutAudit:
             wall_time_sec=1.0,
             token_count=None,
             status="success",
-            started_at=t,
-            finished_at=t,
+            started_at=FIXED_TS,
+            finished_at=FIXED_TS,
         )
 
         engine._fanout_manager.spawn(parent_uuid, task, spec, metrics)

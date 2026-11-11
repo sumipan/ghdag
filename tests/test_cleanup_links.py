@@ -3,11 +3,26 @@
 from __future__ import annotations
 
 import json
-import time
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from ghdag.cleanup import cleanup_queue
+
+FIXED_NOW_TS = 1_762_600_000.0
+FIXED_NOW_DT = datetime.fromtimestamp(FIXED_NOW_TS, tz=timezone.utc)
+
+
+@pytest.fixture(autouse=True)
+def _fixed_cleanup_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            return FIXED_NOW_DT if tz is None else FIXED_NOW_DT.astimezone(tz)
+
+    monkeypatch.setattr("ghdag.cleanup.orchestrator.datetime", _FixedDatetime)
 
 TS = "20260101120000"
 UUID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -19,7 +34,7 @@ UUID_D = "dddddddd-dddd-dddd-dddd-dddddddddddd"
 def _set_mtime(path: Path, days_ago: float) -> None:
     import os
 
-    t = time.time() - days_ago * 86400
+    t = FIXED_NOW_TS - days_ago * 86400
     os.utime(path, (t, t))
 
 
