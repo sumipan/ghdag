@@ -16,8 +16,8 @@ from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
 from ghdag.config.env import engine_isolation_enabled, ghdag_safe_default_permission
-from ghdag.exceptions import ConfigError
-from ghdag.pipeline.audit import AuditContext
+from ghdag.core.exceptions import ConfigError
+from ghdag.io.audit import AuditContext
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import PipelineState
 
@@ -28,7 +28,7 @@ class DependencyError(ConfigError):
     code = "STEP_DEPENDENCY_INVALID"
 
 if TYPE_CHECKING:
-    from ghdag.workflow.schema import StepConfig, WorkflowConfig
+    from ghdag.core.models.workflow import StepConfig, WorkflowConfig
 
 
 def build_order_builders(workflows: list[WorkflowConfig]) -> dict[str, OrderBuilder]:
@@ -358,8 +358,9 @@ class LLMPipelineAPI:
         permission: str | None = None,
     ) -> dict:
         """Build one exec.jsonl record (internal method)."""
-        from ghdag.llm.capabilities import PRESETS
-        from ghdag.llm.spec import ENGINE_SPECS, render_exec_command
+        from ghdag.core.capabilities import PRESETS
+        from ghdag.core.command import render_exec_command
+        from ghdag.core.engine_spec import ENGINE_SPECS
 
         preset_keys = sorted(PRESETS.keys())
         if permission is not None and permission not in PRESETS:

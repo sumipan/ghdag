@@ -11,27 +11,27 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ghdag.exceptions import ConfigError, RateLimitError
-from ghdag.github_client import GitHubIssuePort
-from ghdag.io.audit import now_ts
-from ghdag.pipeline.audit import (
-    AuditContext,
-    append_audit_record,
-    write_rate_limit_audit,
-)
-from ghdag.pipeline.audit_query import detect_correlation_bursts
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
-from ghdag.pipeline.order import OrderBuilder
-from ghdag.pipeline.state import build_idempotency_key
-from ghdag.workflow.loader import load_workflows
-from ghdag.workflow.render import build_live_trampoline
-from ghdag.workflow.schema import (
+from ghdag.core.exceptions import ConfigError, RateLimitError
+from ghdag.core.models.workflow import (
     DispatchResult,
     HandlerConfig,
     StepConfig,
     TriggerConfig,
     WorkflowConfig,
 )
+from ghdag.github_client import GitHubIssuePort
+from ghdag.io.audit import (
+    AuditContext,
+    append_audit_record,
+    now_ts,
+    write_rate_limit_audit,
+)
+from ghdag.io.audit_query import detect_correlation_bursts
+from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
+from ghdag.pipeline.order import OrderBuilder
+from ghdag.pipeline.state import build_idempotency_key
+from ghdag.workflow.loader import load_workflows
+from ghdag.workflow.render import build_live_trampoline
 
 
 class _LiveRenderOrderBuilder:

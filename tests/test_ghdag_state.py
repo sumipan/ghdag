@@ -1,8 +1,8 @@
-"""Tests for ghdag.dag.state — §5.3 acceptance criteria."""
+"""Tests for ghdag.io.done — §5.3 acceptance criteria."""
 
 import concurrent.futures
 
-from ghdag.dag.state import is_done, load_done_from_dir, load_succeeded_from_dir, mark_done
+from ghdag.io.done import is_done, load_done_from_dir, load_succeeded_from_dir, mark_done
 
 
 class TestState:

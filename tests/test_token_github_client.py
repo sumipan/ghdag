@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ghdag.exceptions import (
+from ghdag.core.exceptions import (
     AuthError,
     NetworkError,
     PermissionDeniedError,

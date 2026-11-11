@@ -1,6 +1,6 @@
 """ghdag.tool.exceptions — Tool registry exceptions."""
 
-from ghdag.exceptions import GhdagError
+from ghdag.core.exceptions import GhdagError
 
 
 class ToolRegistryError(GhdagError):

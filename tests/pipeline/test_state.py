@@ -71,8 +71,8 @@ class TestSubmitWithoutAuditContext:
         """AC7: required — omitting audit_context on LLMPipelineAPI.submit() raises TypeError."""
         from unittest.mock import MagicMock
 
+        from ghdag.core.models.workflow import StepConfig
         from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-        from ghdag.workflow.schema import StepConfig
 
         pipeline_state = MagicMock()
         pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"

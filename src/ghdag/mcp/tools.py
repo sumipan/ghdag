@@ -13,8 +13,8 @@ from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.exceptions import ConfigError
 from ghdag.core.models.workflow import StepConfig
 from ghdag.io import exec_jsonl
+from ghdag.io.audit import AuditContext
 from ghdag.io.done import dep_succeeded, done_failure_class, interpret_done, read_done_content
-from ghdag.pipeline.audit import AuditContext
 from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.pipeline.state import PipelineState
 from ghdag.status import issue_status, running_tasks

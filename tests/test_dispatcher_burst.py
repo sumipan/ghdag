@@ -11,18 +11,18 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ghdag.core.models.workflow import (
+    HandlerConfig,
+    StepConfig,
+    TriggerConfig,
+    WorkflowConfig,
+)
 from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import (
     _BURST_COOLDOWN_SEC,
     _BURST_THRESHOLD,
     WorkflowDispatcher,
-)
-from ghdag.workflow.schema import (
-    HandlerConfig,
-    StepConfig,
-    TriggerConfig,
-    WorkflowConfig,
 )
 
 FIXED_NOW = 1_762_600_000.0

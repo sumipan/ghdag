@@ -7,11 +7,10 @@ import shlex
 
 import pytest
 
-from ghdag.core.capabilities import WEB_RESEARCH, LLMCapabilities
+from ghdag.core.capabilities import TEXT_ONLY, WEB_RESEARCH, LLMCapabilities
 from ghdag.core.command import build_llm_cmd, inject_resume, render_exec_command
 from ghdag.core.container import container_prefix
 from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
-from ghdag.llm.capabilities import TEXT_ONLY
 from ghdag.llm.engines import _validate_capabilities_for_engine
 
 

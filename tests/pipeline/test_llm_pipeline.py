@@ -7,9 +7,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from ghdag_pipeline_conftest_helpers import _TEST_AUDIT_CTX, _make_api, _track_build_order
 
-from ghdag.pipeline.audit import AuditContext
+from ghdag.core.models.workflow import StepConfig
+from ghdag.io.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import DependencyError, LLMPipelineAPI, validate_depends
-from ghdag.workflow.schema import StepConfig
 
 
 class TestAC1SingleStep:
@@ -383,7 +383,7 @@ class TestAuditContextPropagation:
 
     def test_submit_forwards_audit_context_to_append_exec_records(self):
         """AC-1: audit_context is forwarded to append_exec_records."""
-        from ghdag.pipeline.audit import AuditContext
+        from ghdag.io.audit import AuditContext
 
         api, pipeline_state, _ = _make_api()
         forwarded: list[AuditContext | None] = []

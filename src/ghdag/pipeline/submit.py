@@ -7,7 +7,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from ghdag.core.command import get_adapter
-from ghdag.pipeline.audit import AuditContext
+from ghdag.io.audit import AuditContext
 from ghdag.pipeline.state import PipelineState
 
 _TZ = ZoneInfo("Asia/Tokyo")

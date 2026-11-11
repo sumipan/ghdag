@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from importlib import resources
 
-from ghdag.exceptions import ConfigError
+from ghdag.core.exceptions import ConfigError
 
 SCHEMA_NAMES: tuple[str, ...] = (
     "workflow-config",

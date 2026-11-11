@@ -7,7 +7,7 @@ import json
 
 import pytest
 
-from ghdag.metrics.models import TaskMetrics
+from ghdag.core.models.metrics import TaskMetrics
 from ghdag.metrics.recorder import MetricsRecorder
 
 FIXED_NOW = 1_700_000_000.0

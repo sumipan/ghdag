@@ -8,7 +8,7 @@ import pytest
 
 from ghdag import QueueTask as QueueTaskTop
 from ghdag import QueueTaskStore as QueueTaskStoreTop
-from ghdag.pipeline.result import QueueTask, QueueTaskStore
+from ghdag.io.queue import QueueTask, QueueTaskStore
 
 
 def test_top_level_exports_are_same_classes() -> None:

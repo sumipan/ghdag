@@ -6,12 +6,12 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
+from ghdag.core.models.metrics import TaskMetrics
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.fanout import FanOutItem, FanOutSpec
 from ghdag.dag.hooks import DagHooks
 from ghdag.dag.models import DagConfig, Task
 from ghdag.io.audit import AuditContext
-from ghdag.metrics.models import TaskMetrics
 from ghdag.pipeline.state import PipelineState
 
 FIXED_TS = 1_700_000_000.0

@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 from ghdag_pipeline_conftest_helpers import _TEST_AUDIT_CTX, _make_api
 
+from ghdag.core.models.workflow import StepConfig
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-from ghdag.workflow.schema import StepConfig
 
 
 class TestPerWorkflowOrderBuilder:

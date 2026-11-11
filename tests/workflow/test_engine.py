@@ -1,17 +1,17 @@
-"""Tests for ghdag.workflow.engine — _GenericAdapter, get_adapter."""
+"""Tests for ghdag.core.command — _GenericAdapter, get_adapter."""
 
 from __future__ import annotations
 
 import pytest
 
-from ghdag.llm.spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
-from ghdag.workflow.engine import (
+from ghdag.core.command import (
     _CUSTOM_ADAPTERS,
     AdapterNotFoundError,
     _GenericAdapter,
     get_adapter,
     register_adapter,
 )
+from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
 
 # ---------------------------------------------------------------------------
 # _GenericAdapter — AC3 integration tests
@@ -377,7 +377,7 @@ class TestGenericAdapterCapabilities:
 
     def test_claude_text_only_capabilities_add_permission_mode_flag(self):
         """AC4: _GenericAdapter(claude) + capabilities=TEXT_ONLY → command includes --permission-mode default"""
-        from ghdag.llm.capabilities import TEXT_ONLY
+        from ghdag.core.capabilities import TEXT_ONLY
         adapter = _GenericAdapter(ENGINE_SPECS["claude"])
         record = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=TEXT_ONLY)
         assert "--permission-mode" in record["command"]
@@ -385,7 +385,7 @@ class TestGenericAdapterCapabilities:
 
     def test_claude_text_only_capabilities_omit_dangerously_skip(self):
         """AC4: TEXT_ONLY → no --dangerously-skip-permissions"""
-        from ghdag.llm.capabilities import TEXT_ONLY
+        from ghdag.core.capabilities import TEXT_ONLY
         adapter = _GenericAdapter(ENGINE_SPECS["claude"])
         record = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=TEXT_ONLY)
         assert "--dangerously-skip-permissions" not in record["command"]
@@ -400,7 +400,7 @@ class TestGenericAdapterCapabilities:
 
     def test_cursor_capabilities_text_only_no_force(self):
         """cursor + capabilities=TEXT_ONLY → no --force"""
-        from ghdag.llm.capabilities import TEXT_ONLY
+        from ghdag.core.capabilities import TEXT_ONLY
         adapter = _GenericAdapter(ENGINE_SPECS["cursor"])
         record = adapter.build_exec_record(
             uuid="u1", order_path="queue/order.md", result_path="queue/result.md",

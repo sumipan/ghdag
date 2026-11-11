@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ghdag.exceptions import AuthError
+from ghdag.core.exceptions import AuthError
 from ghdag.github_client import (
     GitHubClient,
     create_github_client,

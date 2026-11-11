@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ghdag.pipeline.audit_query import detect_correlation_bursts, get_correlation_top_n
+from ghdag.io.audit_query import detect_correlation_bursts, get_correlation_top_n
 
 
 def _write_events(path: Path, events: list[dict]) -> None:

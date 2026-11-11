@@ -14,12 +14,12 @@ from ghdag_workflow_conftest_helpers import (
     _setup_extended_yaml,
 )
 
-from ghdag.pipeline.llm_pipeline import DependencyError
-from ghdag.workflow.loader import ValidationError, load_workflows
-from ghdag.workflow.schema import (
+from ghdag.core.models.workflow import (
     TriggerConfig,
     WorkflowConfig,
 )
+from ghdag.pipeline.llm_pipeline import DependencyError
+from ghdag.workflow.loader import ValidationError, load_workflows
 
 
 class TestTC1YamlParseOk:

@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 
-from ghdag.exceptions import GhdagError
+from ghdag.core.exceptions import GhdagError
 
 
 class ModelValidationError(GhdagError):

@@ -6,11 +6,11 @@ import json
 
 import pytest
 
+from ghdag.core.models.metrics import TokenUsage
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.adapters.cursor import CursorAdapter
 from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
-from ghdag.metrics.models import TokenUsage
 
 # ---------------------------------------------------------------------------
 # ClaudeJsonAdapter

@@ -23,8 +23,8 @@ from unittest import mock
 
 import pytest
 
+from ghdag.core.exceptions import PermissionDeniedError
 from ghdag.core.ports.github import GitHubIssuePort
-from ghdag.exceptions import PermissionDeniedError
 from ghdag.github_client import GitHubClient
 
 # --- Real probe constants (2026-09-10) ---

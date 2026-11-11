@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 
-from ghdag.metrics.models import FailureClass
-from ghdag.pipeline.audit import write_task_exit_audit
+from ghdag.core.models.metrics import FailureClass
+from ghdag.io.audit import write_task_exit_audit
 
 UUID = "8cad156e-0000-0000-0000-000000000001"
 
@@ -163,7 +163,7 @@ class TestWriteTaskExitAudit:
 
     def test_exit_audit_appends_alongside_enqueue_record(self, tmp_path):
         """AC-10: enqueue (write_audit_log) and exit records coexist in one file."""
-        from ghdag.pipeline.audit import AuditContext, write_audit_log
+        from ghdag.io.audit import AuditContext, write_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
         write_audit_log(
@@ -199,7 +199,7 @@ class TestWriteTaskExitAudit:
 
     def test_enqueue_and_exit_audit_share_correlation_id(self, tmp_path):
         """AC-3: enqueue and exit records share the same correlation_id."""
-        from ghdag.pipeline.audit import AuditContext, write_audit_log
+        from ghdag.io.audit import AuditContext, write_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
         write_audit_log(

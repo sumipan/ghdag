@@ -6,7 +6,7 @@ from importlib import resources
 
 import pytest
 
-from ghdag.exceptions import ConfigError
+from ghdag.core.exceptions import ConfigError
 from ghdag.schemas import SCHEMA_NAMES, load_schema
 
 _DRAFT_2020_12 = "https://json-schema.org/draft/2020-12/schema"

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 
-from ghdag.pipeline.audit import AuditContext, write_audit_log
+from ghdag.io.audit import AuditContext, write_audit_log
 
 UUID1 = "38d6b791-1072-42f0-838d-45c7d10748ff"
 UUID2 = "aaaabbbb-cccc-dddd-eeee-ffffffffffff"
@@ -352,7 +352,7 @@ class TestWriteLlmAuditLog:
 
     def test_write_llm_audit_log_records_all_fields(self, tmp_path):
         """AC1: all fields specified — recorded correctly."""
-        from ghdag.pipeline.audit import write_llm_audit_log
+        from ghdag.io.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
         write_llm_audit_log(
@@ -381,7 +381,7 @@ class TestWriteLlmAuditLog:
 
     def test_ac_a3_external_request_id(self, tmp_path):
         """AC-A3: when request_id is specified, that value is used."""
-        from ghdag.pipeline.audit import write_llm_audit_log
+        from ghdag.io.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
         write_llm_audit_log(
@@ -396,7 +396,7 @@ class TestWriteLlmAuditLog:
 
     def test_write_llm_audit_log_omitted_correlation_id_is_null(self, tmp_path):
         """AC2: correlation_id omitted → null."""
-        from ghdag.pipeline.audit import write_llm_audit_log
+        from ghdag.io.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
         write_llm_audit_log(
@@ -411,7 +411,7 @@ class TestWriteLlmAuditLog:
 
     def test_write_llm_audit_log_omitted_timeout_sec_is_null(self, tmp_path):
         """AC6: timeout_sec omitted → null."""
-        from ghdag.pipeline.audit import write_llm_audit_log
+        from ghdag.io.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
         write_llm_audit_log(
@@ -426,7 +426,7 @@ class TestWriteLlmAuditLog:
 
     def test_write_llm_audit_log_io_failure_logs_warning_only(self, tmp_path, capsys):
         """AC8: I/O failure → stderr warning only; exception is not propagated."""
-        from ghdag.pipeline.audit import write_llm_audit_log
+        from ghdag.io.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
         audit_path.mkdir()
@@ -443,7 +443,7 @@ class TestWriteLlmAuditLog:
 
     def test_request_id_unique_per_call(self, tmp_path):
         """request_id is a distinct UUID4 per call."""
-        from ghdag.pipeline.audit import write_llm_audit_log
+        from ghdag.io.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
         for _ in range(3):
@@ -460,7 +460,7 @@ class TestWriteLlmAuditLog:
 
     def test_appends_multiple_calls(self, tmp_path):
         """Multiple calls append multiple JSONL lines."""
-        from ghdag.pipeline.audit import write_llm_audit_log
+        from ghdag.io.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
         write_llm_audit_log(audit_path, engine="claude", model="claude-sonnet-4-6", exit_code=0)
@@ -471,7 +471,7 @@ class TestWriteLlmAuditLog:
 
     def test_llm_audit_log_coexists_with_enqueue_records(self, tmp_path):
         """AC11: enqueue and llm_call records can coexist in the same file."""
-        from ghdag.pipeline.audit import write_llm_audit_log
+        from ghdag.io.audit import write_llm_audit_log
 
         audit_path = tmp_path / "audit.jsonl"
         write_audit_log(
@@ -580,7 +580,7 @@ class TestRotation:
     def test_write_llm_audit_log_triggers_size_rotation(self, tmp_path, monkeypatch):
         """AC-6: write_llm_audit_log triggers rotation."""
         import ghdag.io._rotate as rotate_mod
-        from ghdag.pipeline.audit import write_llm_audit_log
+        from ghdag.io.audit import write_llm_audit_log
         monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
 
         audit_path = tmp_path / "audit.jsonl"
@@ -593,7 +593,7 @@ class TestRotation:
     def test_write_task_exit_audit_triggers_size_rotation(self, tmp_path, monkeypatch):
         """AC-6: write_task_exit_audit triggers rotation."""
         import ghdag.io._rotate as rotate_mod
-        from ghdag.pipeline.audit import write_task_exit_audit
+        from ghdag.io.audit import write_task_exit_audit
         monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
 
         audit_path = tmp_path / "audit.jsonl"

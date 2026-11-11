@@ -17,13 +17,13 @@ from ghdag_workflow_conftest_helpers import (
     _make_issue,
 )
 
-from ghdag.workflow.dispatcher import ContextHookError
-from ghdag.workflow.schema import (
+from ghdag.core.models.workflow import (
     HandlerConfig,
     StepConfig,
     TriggerConfig,
     WorkflowConfig,
 )
+from ghdag.workflow.dispatcher import ContextHookError
 
 
 class TestTC9ContextHook:

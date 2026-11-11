@@ -11,6 +11,7 @@ import pytest
 
 from ghdag.dag.models import DagConfig, Task
 from ghdag.dag.task_launcher import TaskLauncher
+from ghdag.io.audit import write_compaction_audit
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.compaction import (
     GENSHIJIN_HANDOFF_PROMPT,
@@ -20,7 +21,6 @@ from ghdag.llm.compaction import (
 )
 from ghdag.llm.engines import LLMResult, TextResult
 from ghdag.llm.session import SessionRecord, SessionStore
-from ghdag.pipeline.audit import write_compaction_audit
 
 
 def _record(

@@ -7,15 +7,15 @@ import types
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.workflow.schema import (
+from ghdag.core.models.workflow import (
     HandlerConfig,
     OnTriggerConfig,
     StepConfig,
     TriggerConfig,
     WorkflowConfig,
 )
+from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.workflow.dispatcher import WorkflowDispatcher
 
 # ---------------------------------------------------------------------------
 # TC-1: YAML parse (happy path)

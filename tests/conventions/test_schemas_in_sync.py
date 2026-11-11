@@ -20,15 +20,15 @@ from ghdag.core.models.workflow import (
     STEP_KEYS,
     TRIGGER_KEYS,
     WORKFLOW_KEYS,
+    StepConfig,
 )
 from ghdag.dag.fanout import FanOutItem
-from ghdag.pipeline.audit import AuditContext
+from ghdag.io.audit import AuditContext
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.pipeline.state import PipelineState
 from ghdag.schemas import SCHEMA_NAMES, load_schema
 from ghdag.status import StepStatus
-from ghdag.workflow.schema import StepConfig
 
 _ISSUE_STEP_STATUSES = frozenset(
     {

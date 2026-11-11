@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from ghdag.core.models.workflow import WorkflowConfig
 from ghdag.workflow.loader import ValidationError, load_workflow_file
-from ghdag.workflow.schema import WorkflowConfig
 from ghdag.workflow.state_machine import (
     _load_workflow_config,
     get_current_phase,

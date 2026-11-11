@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ghdag.workflow.schema import (
+from ghdag.core.models.workflow import (
     HandlerConfig,
     StepConfig,
     TriggerConfig,

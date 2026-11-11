@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from ghdag.workflow.schema import StepConfig, WorkflowConfig
+from ghdag.core.models.workflow import StepConfig, WorkflowConfig
 
 
 @dataclass

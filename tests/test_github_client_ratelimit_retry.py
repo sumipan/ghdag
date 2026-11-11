@@ -17,7 +17,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ghdag.exceptions import RateLimitError
+from ghdag.core.exceptions import RateLimitError
 from ghdag.github_client import GitHubClient
 
 

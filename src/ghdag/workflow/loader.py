@@ -12,6 +12,7 @@ import yaml
 
 from ghdag.core.capabilities import PRESETS
 from ghdag.core.engine_spec import ENGINE_SPECS
+from ghdag.core.exceptions import ConfigError
 from ghdag.core.models.workflow import (
     HANDLER_KEYS,
     NONTERMINAL_CLOSED_KEYS,
@@ -19,16 +20,13 @@ from ghdag.core.models.workflow import (
     STEP_KEYS,
     TRIGGER_KEYS,
     WORKFLOW_KEYS,
-    NonterminalClosedConfig,
-    validate_workflow_roles,
-)
-from ghdag.exceptions import ConfigError
-from ghdag.workflow.schema import (
     HandlerConfig,
+    NonterminalClosedConfig,
     OnTriggerConfig,
     StepConfig,
     TriggerConfig,
     WorkflowConfig,
+    validate_workflow_roles,
 )
 
 logger = logging.getLogger(__name__)
