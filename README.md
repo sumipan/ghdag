@@ -269,7 +269,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `ghdag.llm.build_llm_cmd` | `(engine, model, prompt, *, permission=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=False) -> list[str]` — when `isolation=True`, claude adds `--disable-slash-commands`; codex adds `-c skills.include_instructions=false`; cursor is unchanged |
 | `ghdag.core.command.render_exec_command` | `(spec, *, order_path, model, prompt=None, permission=None, resume_session_id=None, isolation=False) -> str` |
 | `ghdag.core.command.inject_resume` | `(spec, command, session_id) -> str` — insert resume into a command string produced by `render_exec_command` (no resume) |
-| `ghdag.core.container.container_prefix` | `(capabilities, *, workdir='"$PWD"') -> list[str]` |
+| `ghdag.core.container.container_prefix` | `(permission, *, workdir='"$PWD"') -> list[str]` |
 | `ghdag.workflow.load_workflows` | `(directory) -> list[WorkflowConfig]` |
 | `ghdag.forge.get_forge` | `(repo=None) -> ForgePort` |
 | `ghdag.pipeline.wait_for_result` | `(exec_done_dir, uuid, *, timeout, poll_interval=0.5) -> tuple[str, str]` |

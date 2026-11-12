@@ -166,7 +166,7 @@ def validate_engine_model(engine: str, model: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 # Unsupported capabilities: passing a non-default value raises NotImplementedError.
-# "isolation" is not an Permission attribute but a meta capability for supports_capability
+# "isolation" is not a Permission attribute but a meta capability for supports_capability
 # (whether global config isolation is possible). Unsupported on cursor because its CLI has no
 # skills/rules isolation flag (nexus #3044; the alternative is physical isolation, nexus #2972).
 _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {

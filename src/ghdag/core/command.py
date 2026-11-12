@@ -226,7 +226,7 @@ def render_exec_command(
 
     prompt is ignored for FLAG_ONLY / NONE (not put in argv; input is stdin / ARGV only).
     When permission is None, EngineSpec.danger_flag is used as before.
-    When capabilities is given, flags are generated via _CAPABILITY_FLAG_BUILDERS and
+    When permission is given, flags are generated via _CAPABILITY_FLAG_BUILDERS and
     flags emitted by the builder are removed from extra_args (_dedupe_extra_args).
     When isolation=True and the engine is claude, --disable-slash-commands is added (nexus #3174).
     When isolation=True and the engine is codex, -c skills.include_instructions=false is added (#5541).
