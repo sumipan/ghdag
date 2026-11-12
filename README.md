@@ -335,7 +335,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `ghdag.llm` | `_config`, `DEFAULT_ENGINE_MODELS`, `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PERMISSIONS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `EngineSpec`, `InputMode`, `PromptFlag`, `Permission`, `LLMParseError`, `LLMResult`, `ManagedResult`, `TextResult`, `SessionRecord`, `SessionStore`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `build_llm_cmd`, `call`, `call_managed`, `call_text`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model` |
 | `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
 | `ghdag.metrics` | `FailureClass`, `MetricsRecorder`, `TaskMetrics`, `TokenUsage` |
-| `ghdag.pipeline` | `AuditContext`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_adapter`, `resolve_models`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `write_task_exit_audit` |
+| `ghdag.pipeline` | `AuditContext`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_command_adapter`, `resolve_models`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `write_task_exit_audit` |
 | `ghdag.tool` | `FallbackEntry`, `TOOL_EXIT_CODES`, `ToolDef`, `ToolRegistry`, `write_tool_fallback_audit` |
 | `ghdag.vcs` | `CommitResult`, `ConflictError`, `GitSink`, `LocalGitSink`, `NullSink`, `OwnershipError`, `get_sink`, `git_enabled` |
 | `ghdag.workflow` | `ConsumeEntry`, `DispatchResult`, `HandlerConfig`, `OnTriggerConfig`, `SkillIOSpec`, `StepConfig`, `TriggerConfig`, `WorkflowConfig`, `load_workflows`, `WorkflowDispatcher`, `transition`, `typecheck_dag` |
@@ -407,7 +407,7 @@ claude, cursor, gemini and codex receive the prompt on stdin (`InputMode.STDIN`)
 | `GitHubIssuePort` | `ghdag.core.ports.github` | Minimal Issue client used by `WorkflowDispatcher` (`get_issue`, `reopen_issue`, `list_issues`, `list_all_issues`, ...) |
 | `OrderBuilder` | `ghdag.core.ports.order` | Build order text: `build_order(step_id, context) -> str` |
 | `EngineOutputAdapter` | `ghdag.core.ports.output` | Parse engine output: `extract_result_text`, `extract_token_usage`, `extract_session_id`, `extract_error`, `classify_failure` |
-| `EngineAdapter` | `ghdag.core.command` | Custom engine command builder registered with `register_adapter` |
+| `EngineAdapter` | `ghdag.core.command` | Custom engine command builder registered with `register_command_adapter` |
 
 ## Architecture
 

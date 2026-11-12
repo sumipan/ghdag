@@ -1,59 +1,71 @@
 """Tests for ghdag.core.command adapter exec records."""
 
-from ghdag.core.command import get_adapter
+from __future__ import annotations
+
+import pytest
+
+from ghdag.core.command import get_command_adapter
 
 
-class TestAdapterOutputs:
-
-    def test_claude_adapter_build_exec_record(self):
-        adapter = get_adapter("claude")
-        record = adapter.build_exec_record(
-            uuid="u1",
-            order_path="queue/order.md",
-            result_path="results/result.md",
-            model="claude-sonnet-4-6",
-            depends=[],
-        )
-        assert record["uuid"] == "u1"
-        cmd = record["command"]
-        assert cmd == (
-            "claude -p --model 'claude-sonnet-4-6' --output-format stream-json --verbose"
-            " --dangerously-skip-permissions < queue/order.md"
-        )
-
-    def test_gemini_adapter_uses_double_dash_model(self):
-        """get_adapter('gemini') uses --model, not -m"""
-        adapter = get_adapter("gemini")
-        record = adapter.build_exec_record(
-            uuid="u1",
-            order_path="queue/order.md",
-            result_path="results/result.md",
-            model="gemini-2.5-flash",
-            depends=[],
-        )
-        cmd = record["command"]
-        assert " -m " not in cmd
-        assert "--model 'gemini-2.5-flash'" in cmd
-
-    def test_cursor_adapter_p_force_adjacent(self):
-        """get_adapter('cursor') output has adjacent -p --force"""
-        adapter = get_adapter("cursor")
-        record = adapter.build_exec_record(
-            uuid="u1",
-            order_path="queue/order.md",
-            result_path="results/result.md",
-            model="auto",
-            depends=[],
-        )
-        assert "-p --force" in record["command"]
-
-    def test_shell_adapter_bash_pipefail(self):
-        adapter = get_adapter("shell")
-        record = adapter.build_exec_record(
-            uuid="u1",
-            order_path="queue/order.sh",
-            result_path="results/result.md",
-            model=None,
-            depends=[],
-        )
-        assert record["command"] == "bash -o pipefail queue/order.sh"
+@pytest.mark.parametrize(
+    ("engine", "kwargs", "command_assertions"),
+    [
+        (
+            "claude",
+            {
+                "uuid": "u1",
+                "order_path": "queue/order.md",
+                "result_path": "results/result.md",
+                "model": "claude-sonnet-4-6",
+                "depends": [],
+            },
+            lambda cmd: cmd
+            == (
+                "claude -p --model 'claude-sonnet-4-6' --output-format stream-json --verbose"
+                " --dangerously-skip-permissions < queue/order.md"
+            ),
+        ),
+        (
+            "gemini",
+            {
+                "uuid": "u1",
+                "order_path": "queue/order.md",
+                "result_path": "results/result.md",
+                "model": "gemini-2.5-flash",
+                "depends": [],
+            },
+            lambda cmd: " -m " not in cmd and "--model 'gemini-2.5-flash'" in cmd,
+        ),
+        (
+            "cursor",
+            {
+                "uuid": "u1",
+                "order_path": "queue/order.md",
+                "result_path": "results/result.md",
+                "model": "auto",
+                "depends": [],
+            },
+            lambda cmd: "-p --force" in cmd,
+        ),
+        (
+            "shell",
+            {
+                "uuid": "u1",
+                "order_path": "queue/order.sh",
+                "result_path": "results/result.md",
+                "model": None,
+                "depends": [],
+            },
+            lambda cmd: cmd == "bash -o pipefail queue/order.sh",
+        ),
+    ],
+)
+def test_get_command_adapter_preserves_engine_commands(
+    engine: str,
+    kwargs: dict[str, object],
+    command_assertions,
+) -> None:
+    """Issue sumipan/nexus#6535 — renamed API preserves per-engine command tokens."""
+    adapter = get_command_adapter(engine)
+    record = adapter.build_exec_record(**kwargs)
+    command_assertions(record["command"])

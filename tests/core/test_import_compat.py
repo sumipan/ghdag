@@ -56,13 +56,20 @@ def test_workflow_schema_import_compat() -> None:
     assert WorkflowConfig.__name__ == "WorkflowConfig"
 
 
-def test_workflow_engine_adapter_import_compat() -> None:
-    from ghdag.core.command import EngineAdapter, get_adapter
+def test_command_adapter_public_imports() -> None:
+    from ghdag.core.command import (
+        EngineAdapter,
+        get_command_adapter,
+        register_command_adapter,
+    )
+    from ghdag.pipeline import get_command_adapter as pipeline_get_command_adapter
 
-    adapter = get_adapter("claude")
+    adapter = get_command_adapter("claude")
     assert adapter.name == "claude"
     assert hasattr(adapter, "build_exec_record")
     assert EngineAdapter is not None
+    assert callable(register_command_adapter)
+    assert pipeline_get_command_adapter is get_command_adapter
 
 
 def test_pipeline_hooks_audithooks_import_compat() -> None:

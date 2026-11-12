@@ -74,11 +74,11 @@ print("OK")
     assert "OK" in result.stdout
 
 
-def test_import_workflow_resolves_get_adapter() -> None:
-    """get_adapter('claude') returns an EngineAdapter right after importing ghdag.workflow."""
+def test_get_command_adapter_after_workflow_import() -> None:
+    """Issue sumipan/nexus#6535 — get_command_adapter after ghdag.workflow import."""
     import ghdag.workflow  # noqa: F401
-    from ghdag.core.command import get_adapter
+    from ghdag.core.command import get_command_adapter
 
-    adapter = get_adapter("claude")
+    adapter = get_command_adapter("claude")
     assert adapter.name == "claude"
     assert hasattr(adapter, "build_exec_record")

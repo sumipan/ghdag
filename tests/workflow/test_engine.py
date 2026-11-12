@@ -1,4 +1,4 @@
-"""Tests for ghdag.core.command — _GenericAdapter, get_adapter."""
+"""Tests for ghdag.core.command — _GenericAdapter, get_command_adapter."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from ghdag.core.command import (
     _CUSTOM_ADAPTERS,
     AdapterNotFoundError,
     _GenericAdapter,
-    get_adapter,
-    register_adapter,
+    get_command_adapter,
+    register_command_adapter,
 )
 from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
 
@@ -87,19 +87,19 @@ class TestGenericAdapter:
 def test_workflow_import_keeps_builtin_adapter_resolution() -> None:
     """Issue sumipan/nexus#6451 — built-in engines resolve after importing ghdag.workflow."""
     import ghdag.workflow  # noqa: F401
-    from ghdag.core.command import get_adapter
+    from ghdag.core.command import get_command_adapter
 
-    adapter = get_adapter("claude")
+    adapter = get_command_adapter("claude")
     assert adapter.name == "claude"
 
 
 # ---------------------------------------------------------------------------
-# shell adapter via get_adapter
+# shell adapter via get_command_adapter
 # ---------------------------------------------------------------------------
 
 class TestShellAdapterViaGetAdapter:
     def setup_method(self):
-        self.adapter = get_adapter("shell")
+        self.adapter = get_command_adapter("shell")
         self.base_kwargs = dict(
             order_path="queue/ts-shell-order-abc123.md",
             result_path="queue/ts-shell-result-abc123.md",
@@ -135,56 +135,42 @@ class TestShellAdapterViaGetAdapter:
 
 
 # ---------------------------------------------------------------------------
-# get_adapter / register_adapter — AC3, AC4
+# get_command_adapter / register_command_adapter — sumipan/nexus#6535
 # ---------------------------------------------------------------------------
 
-class TestGetAdapter:
-    def test_get_claude_returns_generic_adapter_with_correct_name(self):
-        """AC3: get_adapter(\"claude\") returns _GenericAdapter"""
-        adapter = get_adapter("claude")
+
+def test_get_command_adapter_resolves_known_and_unknown_engines() -> None:
+    """Issue sumipan/nexus#6535 — built-in engines resolve; unknown names raise AdapterNotFoundError."""
+    for name in ("claude", "gemini", "cursor", "shell"):
+        adapter = get_command_adapter(name)
         assert isinstance(adapter, _GenericAdapter)
-        assert adapter.name == "claude"
+        assert adapter.name == name
 
-    def test_get_gemini_returns_generic_adapter_with_correct_name(self):
-        adapter = get_adapter("gemini")
-        assert isinstance(adapter, _GenericAdapter)
-        assert adapter.name == "gemini"
+    with pytest.raises(AdapterNotFoundError, match="Unknown engine"):
+        get_command_adapter("unknown")
+    with pytest.raises(AdapterNotFoundError) as exc_info:
+        get_command_adapter("unknown")
+    msg = str(exc_info.value)
+    assert "claude" in msg or "gemini" in msg
 
-    def test_get_cursor_returns_generic_adapter_with_correct_name(self):
-        adapter = get_adapter("cursor")
-        assert isinstance(adapter, _GenericAdapter)
-        assert adapter.name == "cursor"
 
-    def test_get_shell_returns_generic_adapter_with_correct_name(self):
-        adapter = get_adapter("shell")
-        assert isinstance(adapter, _GenericAdapter)
-        assert adapter.name == "shell"
+def test_register_command_adapter_round_trip() -> None:
+    """Issue sumipan/nexus#6535 — custom adapter registration round trip."""
 
-    def test_unknown_engine_raises_value_error(self):
-        with pytest.raises(AdapterNotFoundError, match="Unknown engine"):
-            get_adapter("unknown")
+    class TestAdapter:
+        name = "_test_engine_"
 
-    def test_error_message_contains_available_engines(self):
-        with pytest.raises(AdapterNotFoundError) as exc_info:
-            get_adapter("unknown")
-        msg = str(exc_info.value)
-        assert "claude" in msg or "gemini" in msg
+        def build_exec_record(self, **kwargs):
+            return {}
 
-    def test_register_custom_adapter(self):
-        """Custom adapter can be registered via register_adapter and retrieved via get_adapter"""
-        class TestAdapter:
-            name = "_test_engine_"
-            def build_exec_record(self, **kwargs):
-                return {}
-
-        original_custom = dict(_CUSTOM_ADAPTERS)
-        try:
-            register_adapter(TestAdapter())
-            adapter = get_adapter("_test_engine_")
-            assert isinstance(adapter, TestAdapter)
-        finally:
-            _CUSTOM_ADAPTERS.clear()
-            _CUSTOM_ADAPTERS.update(original_custom)
+    original_custom = dict(_CUSTOM_ADAPTERS)
+    try:
+        register_command_adapter(TestAdapter())
+        adapter = get_command_adapter("_test_engine_")
+        assert isinstance(adapter, TestAdapter)
+    finally:
+        _CUSTOM_ADAPTERS.clear()
+        _CUSTOM_ADAPTERS.update(original_custom)
 
 
 # ---------------------------------------------------------------------------
@@ -193,7 +179,7 @@ class TestGetAdapter:
 
 class TestVirtualEngineRegistration:
     def test_virtual_engine_via_engine_specs(self):
-        """AC4: virtual engine temporarily registered in ENGINE_SPECS works via get_adapter"""
+        """AC4: virtual engine temporarily registered in ENGINE_SPECS works via get_command_adapter"""
         test_spec = EngineSpec(
             name="_test_",
             cli="echo",
@@ -207,7 +193,7 @@ class TestVirtualEngineRegistration:
         )
         ENGINE_SPECS["_test_"] = test_spec
         try:
-            adapter = get_adapter("_test_")
+            adapter = get_command_adapter("_test_")
             assert isinstance(adapter, _GenericAdapter)
             assert adapter.name == "_test_"
 
@@ -233,8 +219,8 @@ class TestVirtualEngineRegistration:
 
         original_custom = dict(_CUSTOM_ADAPTERS)
         try:
-            register_adapter(MyAdapter())
-            adapter = get_adapter("_my_custom_")
+            register_command_adapter(MyAdapter())
+            adapter = get_command_adapter("_my_custom_")
             assert isinstance(adapter, MyAdapter)
             assert adapter.build_exec_record() == {"custom": True}
         finally:

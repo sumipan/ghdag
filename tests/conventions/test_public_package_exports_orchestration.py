@@ -51,7 +51,7 @@ def test_pipeline_public_exports_match_requested_contract() -> None:
             "write_task_exit_audit",
             "TemplateVariableError",
             "build_idempotency_key",
-            "get_adapter",
+            "get_command_adapter",
         }
     )
     sources = {
@@ -59,9 +59,11 @@ def test_pipeline_public_exports_match_requested_contract() -> None:
         "write_task_exit_audit": audit.write_task_exit_audit,
         "TemplateVariableError": order.TemplateVariableError,
         "build_idempotency_key": exec_jsonl.build_idempotency_key,
-        "get_adapter": command.get_adapter,
+        "get_command_adapter": command.get_command_adapter,
     }
     _assert_public_exports(pipeline, names, sources)
+    assert not hasattr(pipeline, "get_adapter")
+    assert "get_adapter" not in pipeline.__all__
 
 
 def test_workflow_public_exports_match_requested_contract() -> None:

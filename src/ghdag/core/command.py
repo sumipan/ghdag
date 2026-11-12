@@ -22,9 +22,9 @@ __all__ = [
     "_build_cursor_flags",
     "_dedupe_extra_args",
     "build_llm_cmd",
-    "get_adapter",
+    "get_command_adapter",
     "inject_resume",
-    "register_adapter",
+    "register_command_adapter",
     "render_exec_command",
 ]
 
@@ -515,11 +515,11 @@ class AdapterNotFoundError(GhdagError, ValueError):
     exit_code = 3
 
 
-def register_adapter(adapter: EngineAdapter) -> None:
+def register_command_adapter(adapter: EngineAdapter) -> None:
     _CUSTOM_ADAPTERS[adapter.name] = adapter
 
 
-def get_adapter(name: str) -> EngineAdapter:
+def get_command_adapter(name: str) -> EngineAdapter:
     spec = ENGINE_SPECS.get(name)
     if spec is not None:
         return _GenericAdapter(spec)
