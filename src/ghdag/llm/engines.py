@@ -213,6 +213,10 @@ def _resolve_isolation(isolation: bool | None) -> bool:
 # cursor: there is no CLI flag equivalent to disallowed_tools, and _build_cursor_flags does not
 #   reference it. The approval-deny when --force is not given is the effective guard. This
 #   documents what was previously silently ignored.
+# Engines whose command builder turns permission_mode="bypassPermissions" into a bypass
+# flag (codex: --dangerously-bypass-approvals-and-sandbox, cursor: --force).
+_BYPASS_FLAG_ENGINES: frozenset[str] = frozenset({"codex", "cursor"})
+
 _IGNORED_CAPABILITIES: dict[str, set[str]] = {
     "codex": {"allowed_tools", "disallowed_tools"},
     "cursor": {"disallowed_tools", "web_search"},
@@ -250,6 +254,10 @@ def _validate_permission_for_engine(engine: str, permission: Permission) -> None
             continue
         val = getattr(permission, attr)
         if attr == "permission_mode":
+            # codex / cursor have no permission modes, but their command builders map
+            # "bypassPermissions" to the engine's own bypass flag.
+            if val == "bypassPermissions" and engine in _BYPASS_FLAG_ENGINES:
+                continue
             if val != "default":
                 raise NotImplementedError(
                     f"{engine} engine does not support {attr} != default (got {val!r})"

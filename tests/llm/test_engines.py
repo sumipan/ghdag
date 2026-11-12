@@ -308,12 +308,12 @@ class TestCodexUnsupportedCapabilities:
             call("test", engine="codex", permission=Permission(output_format="json"))
 
     def test_codex_unsupported_permission_mode(self):
-        """Non-default permission_mode raises NotImplementedError."""
+        """A permission_mode codex cannot express raises NotImplementedError."""
         with pytest.raises(NotImplementedError, match="permission_mode"):
             call(
                 "test",
                 engine="codex",
-                permission=Permission(permission_mode="bypassPermissions"),
+                permission=Permission(permission_mode="acceptEdits"),
             )
 
 

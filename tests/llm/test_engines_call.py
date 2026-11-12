@@ -48,6 +48,18 @@ class TestValidateCapabilitiesForEngine:
         with pytest.raises(NotImplementedError, match="permission_mode"):
             call("hello", engine="gemini", permission=DANGEROUS_FULL_ACCESS)
 
+    @pytest.mark.parametrize(
+        ("engine", "flag"),
+        [("codex", "--dangerously-bypass-approvals-and-sandbox"), ("cursor", "--force")],
+    )
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_full_access_runs_codex_and_cursor_with_their_bypass_flag(
+        self, mock_run, engine, flag
+    ):
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        call("hello", engine=engine, permission=DANGEROUS_FULL_ACCESS)
+        assert flag in _last_subprocess_cmd(mock_run)
+
     @patch("ghdag.llm.engines.subprocess.run")
     def test_cursor_with_web_research_ok(self, mock_run):
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)

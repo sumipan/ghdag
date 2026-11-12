@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.132.1 - 2026-11-12
+
+### Fixed
+
+- `ghdag.llm.call` accepts `permission_mode="bypassPermissions"` (`DANGEROUS_FULL_ACCESS`) for codex and cursor and passes the engine's own bypass flag (`--dangerously-bypass-approvals-and-sandbox` / `--force`). 0.132.0 removed `dangerously_skip_permissions` from `call()` but still rejected the preset for these two engines, so they could not be run with full access at all.
+
 ## 0.132.0 - 2026-11-12
 
 ### Changed
