@@ -7,19 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ghdag.llm import (
-    ENGINE_DEFAULTS,
-    JSON_ONLY,
-    TEXT_ONLY,
-    EngineModelError,
-    LLMParseError,
-    LLMResult,
-    Permission,
-    call,
-    list_engines,
-    list_models,
-    validate_engine_model,
-)
+from ghdag.core.capabilities import JSON_ONLY, TEXT_ONLY
+from ghdag.core.exceptions import LLMParseError
+from ghdag.llm import Permission, call, list_engines, validate_engine_model
+from ghdag.llm.engines import ENGINE_DEFAULTS, EngineModelError, LLMResult, list_models
 
 
 class TestEngineModels:

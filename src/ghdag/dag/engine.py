@@ -323,7 +323,7 @@ class DagEngine:
         promote_target = self._hooks.check_promote_target(result_path)
         if not promote_target:
             return
-        from ghdag.files import md_promote
+        from ghdag.files.promote import md_promote
         try:
             md_promote(
                 result_path,

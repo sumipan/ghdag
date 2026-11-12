@@ -4,16 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from ghdag.core.capabilities import PERMISSIONS, TEXT_ONLY, Permission
-from ghdag.llm import (
-    DANGEROUS_FULL_ACCESS,
-    JSON_ONLY,
-    WEB_RESEARCH,
-    build_llm_cmd,
-)
+from ghdag.core.capabilities import JSON_ONLY, PERMISSIONS, TEXT_ONLY, WEB_RESEARCH, Permission
+from ghdag.llm import DANGEROUS_FULL_ACCESS
 from ghdag.llm import (
     TEXT_ONLY as TEXT_ONLY_EXPORT,
 )
+from ghdag.llm.engines import build_llm_cmd
 
 
 def test_permission_registry_identity() -> None:
@@ -90,7 +86,7 @@ class TestCapabilities:
 class TestLLMParseErrorCodes:
     def test_llm_parse_error_declares_code_and_exit(self):
         """#6142: LLMParseError uses LLM_OUTPUT_NOT_JSON and exit 3."""
-        from ghdag.llm import LLMParseError
+        from ghdag.core.exceptions import LLMParseError
 
         err = LLMParseError("not json", "invalid")
         assert err.code == "LLM_OUTPUT_NOT_JSON"

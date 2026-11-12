@@ -24,11 +24,8 @@ from ghdag.io.done import (
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    "IssueStatus",
     "StepStatus",
-    "RunningTask",
     "issue_status",
-    "running_tasks",
 ]
 
 # Canonical English statuses returned by _step_status_core (pipeline maps to JP).

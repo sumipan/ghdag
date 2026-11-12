@@ -16,8 +16,6 @@ SCHEMA_NAMES: tuple[str, ...] = (
     "reply-block",
 )
 
-__all__ = ["SCHEMA_NAMES", "load_schema"]
-
 
 def load_schema(name: str) -> dict:
     """Load a bundled schema by logical name (without ``.schema.json`` suffix)."""
@@ -29,3 +27,6 @@ def load_schema(name: str) -> dict:
         )
     path = resources.files("ghdag.schemas").joinpath(f"{name}.schema.json")
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+__all__: list[str] = []

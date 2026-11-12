@@ -1,5 +1,5 @@
 """ghdag.config — shared configuration helpers (env accessors)."""
 
-from ghdag.config import env
+from . import env as env
 
-__all__ = ["env"]
+__all__: list[str] = []

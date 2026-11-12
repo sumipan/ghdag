@@ -6,7 +6,8 @@ from unittest.mock import patch
 
 import pytest
 
-from ghdag.files import PathTraversalError, WriteResult, md_write
+from ghdag.core.models.files import PathTraversalError, WriteResult
+from ghdag.files import md_write
 
 
 @pytest.fixture

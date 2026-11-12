@@ -2,14 +2,9 @@
 
 from __future__ import annotations
 
-from ghdag.llm import (
-    DANGEROUS_FULL_ACCESS,
-    JSON_ONLY,
-    TEXT_ONLY,
-    WEB_RESEARCH,
-    Permission,
-    build_llm_cmd,
-)
+from ghdag.core.capabilities import JSON_ONLY, TEXT_ONLY, WEB_RESEARCH
+from ghdag.llm import DANGEROUS_FULL_ACCESS, Permission
+from ghdag.llm.engines import build_llm_cmd
 
 
 class TestBuildLLMCmd:

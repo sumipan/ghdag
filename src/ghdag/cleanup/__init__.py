@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from ghdag.core.vocabulary import QUEUE_FILE_RE
-
 
 @dataclass
 class CleanupResult:
@@ -27,6 +25,4 @@ def file_timestamp(path: Path) -> float:
     return getattr(st, "st_birthtime", st.st_mtime)
 
 
-from ghdag.cleanup.orchestrator import cleanup_queue  # noqa: E402
-
-__all__ = ["cleanup_queue", "CleanupResult", "file_timestamp", "QUEUE_FILE_RE"]
+__all__: list[str] = []

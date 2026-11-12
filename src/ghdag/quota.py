@@ -45,6 +45,11 @@ class QuotaReportResult:
 
 
 @dataclass(frozen=True)
+class Missing:
+    """Placeholder symbol for upstream API compatibility checks."""
+
+
+@dataclass(frozen=True)
 class AdmissionDecision:
     allowed: bool
     status: str
@@ -1257,4 +1262,12 @@ def _engine_effective_available(
         return True
     return False
 
+
+__all__ = [
+    "QuotaGate",
+    "QuotaSnapshot",
+    "EngineQuotaState",
+    "AdmissionDecision",
+    "Missing",
+]
 

@@ -321,24 +321,22 @@ With `fallback_candidates` and `quota_gate`, `call()` classifies failures throug
 
 | Package | Public symbols |
 |---|---|
-| `ghdag.audit` | `emit_span`, `make_span_id` |
-| `ghdag.cleanup` | `cleanup_queue`, `CleanupResult`, `file_timestamp`, `QUEUE_FILE_RE` |
 | `ghdag.cli` | `main` |
-| `ghdag.config` | `env` (accessors listed under [Environment variables](#environment-variables)) |
-| `ghdag.core` | `command` |
 | `ghdag.core.ports` | `ForgePort` |
-| `ghdag.dag` | `AuditHooks`, `DagConfig`, `DagEngine`, `DagHooks`, `DefaultHooks`, `DONE_SUCCESS`, `FanOutSpec`, `LEGACY_DONE_DEFERRED`, `PIPELINE_WAIT_QUOTA`, `Task`, `WAIT_QUOTA_COMPANION_RE`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_jsonl`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
-| `ghdag.files` | `AppendResult`, `AppendStatus`, `MdFile`, `PathTraversalError`, `PromoteResult`, `PromoteStatus`, `WriteResult`, `md_append`, `md_promote`, `md_read`, `md_write` |
+| `ghdag.dag` | `AuditHooks`, `DagConfig`, `DagEngine`, `DagHooks`, `DONE_SUCCESS`, `FanOutSpec`, `LEGACY_DONE_DEFERRED`, `PIPELINE_WAIT_QUOTA`, `Task`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
+| `ghdag.files` | `md_read`, `md_write` |
 | `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
 | `ghdag.forge` | `DEFAULT_REPO`, `ForgePort`, `GitHubApiError`, `GitHubClient`, `LocalForge`, `get_forge` |
-| `ghdag.io` | `audit`, `audit_query`, `done`, `exec_jsonl`, `queue`, `redact`, `sessions` |
-| `ghdag.llm` | `_config`, `DEFAULT_ENGINE_MODELS`, `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PERMISSIONS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `EngineSpec`, `InputMode`, `PromptFlag`, `Permission`, `LLMParseError`, `LLMResult`, `SessionRecord`, `SessionStore`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `build_llm_cmd`, `call`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model` |
+| `ghdag.io` | `done`, `exec_jsonl`, `queue`, `redact`, `sessions` |
+| `ghdag.llm` | `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PERMISSIONS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `Permission`, `LLMResult`, `SessionRecord`, `TEXT_ONLY`, `DANGEROUS_FULL_ACCESS`, `call`, `get_engine_models`, `list_engines`, `validate_engine_model` |
 | `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
 | `ghdag.metrics` | `FailureClass`, `MetricsRecorder`, `TaskMetrics`, `TokenUsage` |
-| `ghdag.pipeline` | `AuditContext`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_command_adapter`, `resolve_models`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `write_task_exit_audit` |
-| `ghdag.tool` | `FallbackEntry`, `TOOL_EXIT_CODES`, `ToolDef`, `ToolRegistry`, `write_tool_fallback_audit` |
-| `ghdag.vcs` | `CommitResult`, `ConflictError`, `GitSink`, `LocalGitSink`, `NullSink`, `OwnershipError`, `get_sink`, `git_enabled` |
-| `ghdag.workflow` | `ConsumeEntry`, `DispatchResult`, `HandlerConfig`, `OnTriggerConfig`, `SkillIOSpec`, `StepConfig`, `TriggerConfig`, `WorkflowConfig`, `load_workflows`, `WorkflowDispatcher`, `transition`, `typecheck_dag` |
+| `ghdag.pipeline` | `AuditContext`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_command_adapter`, `resolve_models`, `LLMPipelineAPI`, `wait_for_result`, `write_task_exit_audit` |
+| `ghdag.quota` | `QuotaGate`, `QuotaSnapshot`, `EngineQuotaState`, `AdmissionDecision`, `Missing` |
+| `ghdag.status` | `StepStatus`, `issue_status` |
+| `ghdag.tool` | `ToolDef` |
+| `ghdag.vcs` | `CommitResult`, `ConflictError`, `LocalGitSink`, `NullSink`, `OwnershipError`, `get_sink`, `git_enabled` |
+| `ghdag.workflow` | `ConsumeEntry`, `HandlerConfig`, `SkillIOSpec`, `StepConfig`, `TriggerConfig`, `WorkflowConfig`, `load_workflows`, `WorkflowDispatcher`, `transition`, `typecheck_dag` |
 
 The `STATE_*` constants are language-neutral identifiers: `pending_deps`, `pending_run`, `running`, `deferred`, `ok`, `fail`, `rejected`, `empty`, `engine_error`, `unknown`. Import them and `task_status()` / `state_label()` from `ghdag.pipeline.status`; use `state_label()` for the display text.
 
