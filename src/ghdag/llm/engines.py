@@ -23,7 +23,7 @@ from ghdag.config.env import (
     stall_guard_interval_sec,
     stall_guard_stall_sec,
 )
-from ghdag.core.capabilities import TEXT_ONLY, LLMCapabilities
+from ghdag.core.capabilities import TEXT_ONLY, Permission
 from ghdag.core.command import (
     _CAPABILITY_FLAG_BUILDERS,
     _build_claude_flags,
@@ -166,7 +166,7 @@ def validate_engine_model(engine: str, model: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 # Unsupported capabilities: passing a non-default value raises NotImplementedError.
-# "isolation" is not an LLMCapabilities attribute but a meta capability for supports_capability
+# "isolation" is not a Permission attribute but a meta capability for supports_capability
 # (whether global config isolation is possible). Unsupported on cursor because its CLI has no
 # skills/rules isolation flag (nexus #3044; the alternative is physical isolation, nexus #2972).
 _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
@@ -225,8 +225,8 @@ def supports_capability(engine: str, capability: str) -> bool:
     return capability not in effective_unsupported
 
 
-def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities) -> None:
-    """Verify that the engine supports the features in capabilities.
+def _validate_permission_for_engine(engine: str, permission: Permission) -> None:
+    """Verify that the engine supports the features in permission.
 
     Attributes listed in _IGNORED_CAPABILITIES skip validation and are accepted (noop).
 
@@ -238,10 +238,10 @@ def _validate_capabilities_for_engine(engine: str, capabilities: LLMCapabilities
     if ignored:
         unsupported = unsupported - ignored
     for attr in unsupported:
-        # Meta capabilities such as isolation are not on LLMCapabilities (supports_capability only)
-        if not hasattr(capabilities, attr):
+        # Meta capabilities such as isolation are not on Permission (supports_capability only)
+        if not hasattr(permission, attr):
             continue
-        val = getattr(capabilities, attr)
+        val = getattr(permission, attr)
         if attr == "permission_mode":
             if val != "default":
                 raise NotImplementedError(
@@ -296,7 +296,7 @@ class LLMResult:
 
     def validate(
         self,
-        capabilities: LLMCapabilities,
+        permission: Permission,
         *,
         engine: str | None = None,
     ) -> "LLMResult":
@@ -317,7 +317,7 @@ class LLMResult:
         """
         if not self.ok:
             return self
-        if capabilities.stream and engine != "codex":
+        if permission.stream and engine != "codex":
             self.raw_stdout = self.stdout
             if engine == "cursor":
                 from ghdag.llm.adapters.cursor_stream import reconstruct_assistant_turns
@@ -329,8 +329,8 @@ class LLMResult:
                     self.stdout = _extract_stream_result(self.stdout)
             else:
                 self.stdout = _extract_stream_result(self.stdout)
-        if capabilities.output_format == "json":
-            stream_preprocessed = capabilities.stream and engine != "codex"
+        if permission.output_format == "json":
+            stream_preprocessed = permission.stream and engine != "codex"
             if stream_preprocessed:
                 body = self.stdout
             elif engine in ("claude", "cursor"):
@@ -562,7 +562,7 @@ def call(
     timeout: int | None = None,
     stdin_text: str | None = None,
     cwd: Path | str | None = None,
-    capabilities: LLMCapabilities = TEXT_ONLY,
+    permission: Permission = TEXT_ONLY,
     dangerously_skip_permissions: bool = False,
     resume_session_id: str | None = None,
     isolation: bool | None = None,
@@ -578,7 +578,7 @@ def call(
             into a single stdin (stdin_text only when prompt is empty, prompt only when
             None, ``prompt + "\n\n" + stdin_text`` when both are non-empty)
         cwd: subprocess working directory (None for the current process cwd)
-        capabilities: capability-constraint value object (default: TEXT_ONLY)
+        permission: capability-constraint value object (default: TEXT_ONLY)
         isolation: engine isolation. When None, resolved from the GHDAG_ENGINE_ISOLATION env var
             (default False)
     Returns:
@@ -589,7 +589,7 @@ def call(
         EngineModelError: engine/model validation failed
         NotImplementedError: capabilities feature not supported by the engine
     """
-    _validate_capabilities_for_engine(engine, capabilities)
+    _validate_permission_for_engine(engine, permission)
     if resume_session_id:
         unsupported = _UNSUPPORTED_CAPABILITIES.get(engine, set())
         ignored = _IGNORED_CAPABILITIES.get(engine, set())
@@ -611,7 +611,7 @@ def call(
         engine,
         resolved_model,
         prompt,
-        capabilities=capabilities,
+        permission=permission,
         dangerously_skip_permissions=dangerously_skip_permissions,
         resume_session_id=resume_session_id,
         isolation=resolved_isolation,
@@ -674,7 +674,7 @@ def call(
         latency_ms=latency_ms,
         session_id=session_id,
     )
-    return llm_result.validate(capabilities, engine=engine)
+    return llm_result.validate(permission, engine=engine)
 
 
 def call_text(
@@ -685,7 +685,7 @@ def call_text(
     timeout: int | None = None,
     stdin_text: str | None = None,
     cwd: Path | str | None = None,
-    capabilities: LLMCapabilities = TEXT_ONLY,
+    permission: Permission = TEXT_ONLY,
     dangerously_skip_permissions: bool = False,
     resume_session_id: str | None = None,
     isolation: bool | None = None,
@@ -702,7 +702,7 @@ def call_text(
         timeout=timeout,
         stdin_text=stdin_text,
         cwd=cwd,
-        capabilities=capabilities,
+        permission=permission,
         dangerously_skip_permissions=dangerously_skip_permissions,
         resume_session_id=resume_session_id,
         isolation=isolation,

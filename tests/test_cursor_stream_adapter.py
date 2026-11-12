@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ghdag.core.capabilities import LLMCapabilities
+from ghdag.core.capabilities import Permission
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
 from ghdag.llm.engines import TextResult, call
@@ -255,7 +255,7 @@ class TestCursorStreamCapability:
         result = call(
             "hello",
             engine="cursor",
-            capabilities=LLMCapabilities(stream=True),
+            permission=Permission(stream=True),
         )
         assert result.ok
         assert result.stdout == "pong"

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping, Sequence
 
-from ghdag.core.capabilities import TEXT_ONLY, LLMCapabilities
+from ghdag.core.capabilities import TEXT_ONLY, Permission
 from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.engines import LLMResult, call, validate_engine_model
@@ -42,7 +42,7 @@ def call_managed(
     timeout: int | None = None,
     stdin_text: str | None = None,
     cwd: Path | str | None = None,
-    capabilities: LLMCapabilities = TEXT_ONLY,
+    permission: Permission = TEXT_ONLY,
     fallback_candidates: Sequence[tuple[str, str | None]] = (),
     additional_tags: Mapping[str, str] | None = None,
     quota_gate: QuotaGate | None = None,
@@ -65,7 +65,7 @@ def call_managed(
         timeout=timeout,
         stdin_text=stdin_text,
         cwd=cwd,
-        capabilities=capabilities,
+        permission=permission,
         isolation=isolation,
     )
     attempts = 1
@@ -133,7 +133,7 @@ def call_managed(
                 timeout=timeout,
                 stdin_text=stdin_text,
                 cwd=cwd,
-                capabilities=capabilities,
+                permission=permission,
                 isolation=isolation,
             )
             attempts = 2
@@ -163,7 +163,7 @@ def _run_once(
     timeout: int | None,
     stdin_text: str | None,
     cwd: Path | str | None,
-    capabilities: LLMCapabilities,
+    permission: Permission,
     isolation: bool | None = None,
 ) -> tuple[LLMResult, str, TokenUsage | None, str | None]:
     result = call(
@@ -173,7 +173,7 @@ def _run_once(
         timeout=timeout,
         stdin_text=stdin_text,
         cwd=cwd,
-        capabilities=capabilities,
+        permission=permission,
         isolation=isolation,
     )
     adapter = get_output_adapter(engine)
@@ -183,7 +183,7 @@ def _run_once(
     stdout_bytes = stdout_for_adapter.encode("utf-8")
     stderr_bytes = result.stderr.encode("utf-8")
     extracted = adapter.extract_result_text(stdout_bytes, stderr_bytes).decode("utf-8")
-    if capabilities.output_format == "json" and result.raw_stdout is not None:
+    if permission.output_format == "json" and result.raw_stdout is not None:
         body = result.stdout
     else:
         body = extracted if extracted else result.stdout

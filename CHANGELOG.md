@@ -7,6 +7,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.130.0 - 2026-11-12
+
+### Changed
+
+- Rename the LLM constraint value object to `Permission` and the preset registry to `PERMISSIONS`. Public call paths (`ghdag.llm.call`, `call_text`, `call_managed`, `build_llm_cmd`, `ghdag.core.command.render_exec_command`, `container_prefix`, and `EngineAdapter.build_exec_record`) take keyword argument `permission` instead of `capabilities`. Preset keys and workflow step field `permission` are unchanged (sumipan/nexus#6501).
+
+### Removed
+
+- `LLMCapabilities`, `PRESETS`, and the `capabilities` keyword on public LLM / command APIs; use `Permission`, `PERMISSIONS`, and `permission` (sumipan/nexus#6501).
+
+| Before | After |
+| --- | --- |
+| `from ghdag.llm import LLMCapabilities, PRESETS` | `from ghdag.llm import Permission, PERMISSIONS` |
+| `ghdag.llm.call(..., capabilities=TEXT_ONLY)` | `ghdag.llm.call(..., permission=TEXT_ONLY)` |
+
+### Host consumer migration (sumipan/nexus#6501)
+
+1. Ship this rename in ghdag **v0.130.0**; do not restore `LLMCapabilities` / `PRESETS` / `capabilities=` compatibility shims.
+2. Pinned host consumers (sumipan/nexus#6493): file one tracking Issue per consumer repository (nexus host, issuesmith, mltgnt, slack-project). Each follow-up PR updates `Permission` / `PERMISSIONS` imports and the `permission` keyword together with the ghdag pin to **v0.130.0**.
+3. Record each per-consumer tracking Issue number on sumipan/nexus#6501 before any consumer pin exceeds v0.130.0.
+
+### Regression test checklist (sumipan/nexus#6501)
+
+| Area | Test |
+| --- | --- |
+| workflow step `permission` key / exec record shape | `tests/workflow/test_engine.py::test_exec_record_permission_argument_preserves_schema` |
+| MCP tool `permission` enum vs `PERMISSIONS` | `tests/conventions/test_schemas_in_sync.py::test_permission_registry_matches_workflow_and_mcp_schema` |
+| exec.jsonl record keys vs schema | `tests/conventions/test_schemas_in_sync.py::test_exec_record_keys_subset_of_schema` |
+| Public LLM API keyword `permission` | `tests/llm/test_call_text.py::test_public_signatures_use_permission` |
+| `Permission` / `PERMISSIONS` exports | `tests/conventions/test_public_package_exports_runtime.py::test_permission_names_are_public` |
+| Preset registry identity | `tests/llm/test_capabilities.py::test_permission_registry_identity` |
+
 ## 0.129.0 - 2026-11-12
 
 ### Changed

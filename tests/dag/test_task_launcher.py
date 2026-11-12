@@ -267,7 +267,7 @@ def test_apply_resume_codex_search_command(tmp_path: Path) -> None:
         ENGINE_SPECS["codex"],
         order_path="child.md",
         model="M",
-        capabilities=WEB_RESEARCH,
+        permission=WEB_RESEARCH,
     )
     task = Task(
         uuid="child-uuid",

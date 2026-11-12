@@ -358,12 +358,12 @@ class LLMPipelineAPI:
         permission: str | None = None,
     ) -> dict:
         """Build one exec.jsonl record (internal method)."""
-        from ghdag.core.capabilities import PRESETS
+        from ghdag.core.capabilities import PERMISSIONS
         from ghdag.core.command import render_exec_command
         from ghdag.core.engine_spec import ENGINE_SPECS
 
-        preset_keys = sorted(PRESETS.keys())
-        if permission is not None and permission not in PRESETS:
+        preset_keys = sorted(PERMISSIONS.keys())
+        if permission is not None and permission not in PERMISSIONS:
             raise ConfigError(
                 f"Unknown permission preset: {permission!r}. Available: {preset_keys}",
                 code="STEP_PERMISSION_UNKNOWN",
@@ -373,22 +373,22 @@ class LLMPipelineAPI:
         safe_default_env: str | None = None
         safe_default_applied = False
         if permission is not None:
-            capabilities = PRESETS[permission]
+            perm = PERMISSIONS[permission]
         else:
             safe_default_env = ghdag_safe_default_permission()
             if safe_default_env:
-                if safe_default_env not in PRESETS:
+                if safe_default_env not in PERMISSIONS:
                     raise ConfigError(
                         f"Unknown GHDAG_SAFE_DEFAULT_PERMISSION: {safe_default_env!r}. "
                         f"Available: {preset_keys}",
                         code="STEP_PERMISSION_UNKNOWN",
                         hint=f"available presets: {preset_keys}",
                     )
-                capabilities = PRESETS[safe_default_env]
+                perm = PERMISSIONS[safe_default_env]
                 safe_default_applied = True
             else:
                 safe_default_env = "text_only"  # safe default (hardcoded)
-                capabilities = PRESETS["text_only"]
+                perm = PERMISSIONS["text_only"]
                 safe_default_applied = True
 
         if engine not in ENGINE_SPECS:
@@ -414,7 +414,7 @@ class LLMPipelineAPI:
                 spec,
                 order_path=f"{self._queue_dir}/{order_filename}",
                 model=model,
-                capabilities=capabilities,
+                permission=perm,
                 isolation=engine_isolation_enabled(),
             ),
             "depends": depends,

@@ -7,11 +7,11 @@ import shlex
 
 import pytest
 
-from ghdag.core.capabilities import TEXT_ONLY, WEB_RESEARCH, LLMCapabilities
+from ghdag.core.capabilities import TEXT_ONLY, WEB_RESEARCH, Permission
 from ghdag.core.command import build_llm_cmd, inject_resume, render_exec_command
 from ghdag.core.container import container_prefix
 from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
-from ghdag.llm.engines import _validate_capabilities_for_engine
+from ghdag.llm.engines import _validate_permission_for_engine
 
 
 class TestIsolationOptIn:
@@ -84,7 +84,7 @@ class TestCodexIsolationOptIn:
             ENGINE_SPECS["codex"],
             order_path="jobs/order.md",
             model="gpt-5.6-terra",
-            capabilities=TEXT_ONLY,
+            permission=TEXT_ONLY,
             isolation=False,
         )
         tokens = shlex.split(cmd.split(" < ", 1)[0])
@@ -97,7 +97,7 @@ class TestCodexIsolationOptIn:
             ENGINE_SPECS["codex"],
             order_path="jobs/order.md",
             model="gpt-5.6-terra",
-            capabilities=TEXT_ONLY,
+            permission=TEXT_ONLY,
             isolation=True,
         )
         tokens = shlex.split(cmd.split(" < ", 1)[0])
@@ -110,7 +110,7 @@ class TestCodexIsolationOptIn:
             ENGINE_SPECS["codex"],
             order_path="jobs/order.md",
             model="gpt-5.6-terra",
-            capabilities=TEXT_ONLY,
+            permission=TEXT_ONLY,
             resume_session_id="sess-1",
             isolation=True,
         )
@@ -127,7 +127,7 @@ _CLAUDE_TEXT_ONLY_FLAGS = [
     "Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch",
 ]
 
-_CONTAINER = LLMCapabilities(
+_CONTAINER = Permission(
     sandbox="container",
     container_image="img:1",
     container_mounts=("/h/.codex:/root/.codex:ro",),
@@ -170,13 +170,13 @@ class TestPreSubcommandArgs:
             subcommand=("run",),
         )
         cmd = render_exec_command(
-            spec, order_path="jobs/order.md", model=None, capabilities=TEXT_ONLY,
+            spec, order_path="jobs/order.md", model=None, permission=TEXT_ONLY,
         )
         assert cmd.startswith("tool --global run ")
 
     def test_codex_web_research_precedes_exec(self) -> None:
         cmd = build_llm_cmd(
-            "codex", "gpt-5.5", "hello", capabilities=WEB_RESEARCH,
+            "codex", "gpt-5.5", "hello", permission=WEB_RESEARCH,
         )
         assert cmd[:4] == ["codex", "--search", "exec", "-"]
         assert cmd.count("--search") == 1
@@ -186,7 +186,7 @@ class TestPreSubcommandArgs:
             "codex",
             "gpt-5.5",
             "hello",
-            capabilities=WEB_RESEARCH,
+            permission=WEB_RESEARCH,
             resume_session_id="sid",
         )
         assert cmd[:5] == ["codex", "--search", "exec", "resume", "sid"]
@@ -196,7 +196,7 @@ class TestPreSubcommandArgs:
             ENGINE_SPECS["codex"],
             order_path="jobs/order.md",
             model="gpt-5.5",
-            capabilities=WEB_RESEARCH,
+            permission=WEB_RESEARCH,
         )
         assert cmd.startswith("codex --search exec - ")
 
@@ -209,7 +209,7 @@ class TestPreSubcommandArgs:
             ENGINE_SPECS["codex"],
             order_path="jobs/order.md",
             model="gpt-5.5",
-            capabilities=caps,
+            permission=caps,
         )
         prefix = " ".join(container_prefix(caps))
         inner = (
@@ -286,7 +286,7 @@ class TestRenderExecCommandUnchanged:
     def test_claude(self) -> None:
         cmd = render_exec_command(
             ENGINE_SPECS["claude"], order_path="jobs/order.md", model="claude-opus-4-6",
-            capabilities=TEXT_ONLY,
+            permission=TEXT_ONLY,
         )
         assert cmd == (
             "claude -p --model 'claude-opus-4-6' --output-format stream-json --verbose "
@@ -298,7 +298,7 @@ class TestRenderExecCommandUnchanged:
     def test_cursor(self) -> None:
         cmd = render_exec_command(
             ENGINE_SPECS["cursor"], order_path="jobs/order.md", model="composer-2",
-            capabilities=TEXT_ONLY,
+            permission=TEXT_ONLY,
         )
         assert cmd == (
             "cursor-agent --model 'composer-2' -p --output-format stream-json "
@@ -308,7 +308,7 @@ class TestRenderExecCommandUnchanged:
     def test_codex(self) -> None:
         cmd = render_exec_command(
             ENGINE_SPECS["codex"], order_path="jobs/order.md", model="gpt-5.6-terra",
-            capabilities=TEXT_ONLY,
+            permission=TEXT_ONLY,
         )
         assert cmd == (
             "codex exec - --model 'gpt-5.6-terra' --json --skip-git-repo-check "
@@ -345,13 +345,13 @@ class TestRenderExecCommandContainer:
     def test_wrapped(self, engine: str, model: str, inner: str) -> None:
         cmd = render_exec_command(
             ENGINE_SPECS[engine], order_path="jobs/order.md", model=model,
-            capabilities=_CONTAINER,
+            permission=_CONTAINER,
         )
         assert cmd == f"{_PREFIX} {inner} < jobs/order.md"
         # Engine flags are identical to sandbox="off".
         off = render_exec_command(
             ENGINE_SPECS[engine], order_path="jobs/order.md", model=model,
-            capabilities=_OFF,
+            permission=_OFF,
         )
         assert cmd == f"{_PREFIX} {off}"
 
@@ -378,7 +378,7 @@ class TestRenderExecCommandContainer:
     def test_wrapped_resume(self, engine: str, model: str, inner: str) -> None:
         cmd = render_exec_command(
             ENGINE_SPECS[engine], order_path="jobs/order file.md", model=model,
-            capabilities=_CONTAINER, resume_session_id="sess-1",
+            permission=_CONTAINER, resume_session_id="sess-1",
         )
         assert cmd.startswith(_PREFIX + " ")
         assert cmd.endswith("< 'jobs/order file.md'")
@@ -388,7 +388,7 @@ class TestRenderExecCommandContainer:
         caps = dataclasses.replace(_CONTAINER, permission_mode="default")
         for engine in ("claude", "cursor", "codex"):
             cmd = render_exec_command(
-                ENGINE_SPECS[engine], order_path="o.md", model="m", capabilities=caps,
+                ENGINE_SPECS[engine], order_path="o.md", model="m", permission=caps,
             )
             assert "--permission-mode plan" not in cmd
             assert "--sandbox" not in cmd
@@ -398,18 +398,18 @@ class TestRenderExecCommandContainer:
         with pytest.raises(ValueError, match="container"):
             render_exec_command(
                 ENGINE_SPECS["shell"], order_path="o.sh", model=None,
-                capabilities=_CONTAINER,
+                permission=_CONTAINER,
             )
 
     @pytest.mark.parametrize("engine", ["claude", "cursor", "codex"])
     def test_build_llm_cmd_rejects_container(self, engine: str) -> None:
         with pytest.raises(ValueError, match="container"):
-            build_llm_cmd(engine, "m", "prompt", capabilities=_CONTAINER)
+            build_llm_cmd(engine, "m", "prompt", permission=_CONTAINER)
 
     @pytest.mark.parametrize("engine", ["gemini", "shell"])
     def test_gemini_shell_reject_container(self, engine: str) -> None:
         with pytest.raises(NotImplementedError, match="sandbox"):
-            _validate_capabilities_for_engine(engine, _CONTAINER)
+            _validate_permission_for_engine(engine, _CONTAINER)
 
 
 class TestInjectResume:
@@ -418,27 +418,27 @@ class TestInjectResume:
     @pytest.mark.parametrize("engine", ["claude", "cursor", "codex"])
     @pytest.mark.parametrize("model", ["M", None])
     @pytest.mark.parametrize(
-        "capabilities",
-        [None, LLMCapabilities(stream=True)],
+        "permission",
+        [None, Permission(stream=True)],
     )
     def test_inject_resume_matches_render_exec_command(
         self,
         engine: str,
         model: str | None,
-        capabilities: LLMCapabilities | None,
+        permission: Permission | None,
     ) -> None:
         spec = ENGINE_SPECS[engine]
         base = render_exec_command(
             spec,
             order_path="jobs/x.md",
             model=model,
-            capabilities=capabilities,
+            permission=permission,
         )
         expected = render_exec_command(
             spec,
             order_path="jobs/x.md",
             model=model,
-            capabilities=capabilities,
+            permission=permission,
             resume_session_id="S",
         )
         assert inject_resume(spec, base, "S") == expected

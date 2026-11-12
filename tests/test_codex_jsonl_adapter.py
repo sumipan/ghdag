@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ghdag.core.capabilities import LLMCapabilities
+from ghdag.core.capabilities import Permission
 from ghdag.core.ports.output import EngineErrorKind
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.codex_jsonl import CodexJsonlAdapter
@@ -72,7 +72,7 @@ class TestCodexStreamCapability:
         result = call(
             "hello",
             engine="codex",
-            capabilities=LLMCapabilities(stream=True),
+            permission=Permission(stream=True),
         )
         assert result.ok
         # codex keeps raw JSONL on LLMResult; adapters extract text

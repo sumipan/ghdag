@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ghdag.core.capabilities import PRESETS
+from ghdag.core.capabilities import PERMISSIONS
 from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.vocabulary import DONE_ENGINE_ERROR
 from ghdag.io.done import mark_done
@@ -84,7 +84,7 @@ class TestToolCatalog:
         step_items = enqueue["inputSchema"]["properties"]["steps"]["items"]
         assert step_items["required"] == ["engine"]
         assert step_items["properties"]["engine"]["enum"] == sorted(ENGINE_SPECS)
-        assert step_items["properties"]["permission"]["enum"] == sorted(PRESETS)
+        assert step_items["properties"]["permission"]["enum"] == sorted(PERMISSIONS)
         assert (
             step_items["properties"]["model"]["description"]
             == "Omit for the engine default; ghdag llm --list-models lists the allowed models."

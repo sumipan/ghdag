@@ -3,10 +3,10 @@
 from ghdag.core.capabilities import (
     DANGEROUS_FULL_ACCESS,
     JSON_ONLY,
-    PRESETS,
+    PERMISSIONS,
     TEXT_ONLY,
     WEB_RESEARCH,
-    LLMCapabilities,
+    Permission,
 )
 from ghdag.core.container import container_prefix
 from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
@@ -39,14 +39,14 @@ __all__ = [
     "ENGINE_SPECS",
     "EngineError",
     "EngineModelError",
-    "PRESETS",
+    "PERMISSIONS",
     "classify_common_failure",
     "container_prefix",
     "supports_capability",
     "EngineSpec",
     "InputMode",
     "PromptFlag",
-    "LLMCapabilities",
+    "Permission",
     "LLMParseError",
     "LLMResult",
     "ManagedResult",

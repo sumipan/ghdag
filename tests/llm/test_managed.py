@@ -153,7 +153,7 @@ class TestCallManagedSuccess:
                 return_value="claude-sonnet-4-6",
             ),
         ):
-            result = call_managed("p", engine="claude", capabilities=JSON_ONLY)
+            result = call_managed("p", engine="claude", permission=JSON_ONLY)
 
         assert json.loads(result.body) == {"result": "done", "ok": True}
         assert result.body != "done"
@@ -579,7 +579,7 @@ class TestManagedBodySelectionWithJsonRequest:
             patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
             patch("ghdag.llm.managed.validate_engine_model", return_value="codex-default"),
         ):
-            result = call_managed("p", engine="codex", capabilities=JSON_ONLY)
+            result = call_managed("p", engine="codex", permission=JSON_ONLY)
 
         assert result.body == self._EXTRACTED
         assert self._STATUS_MARKER in result.body.splitlines()
@@ -593,7 +593,7 @@ class TestManagedBodySelectionWithJsonRequest:
             patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
             patch("ghdag.llm.managed.validate_engine_model", return_value="auto"),
         ):
-            result = call_managed("p", engine="cursor", capabilities=JSON_ONLY)
+            result = call_managed("p", engine="cursor", permission=JSON_ONLY)
 
         assert result.body == self._EXTRACTED
         assert self._STATUS_MARKER in result.body.splitlines()
@@ -613,7 +613,7 @@ class TestManagedBodySelectionWithJsonRequest:
             patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
             patch("ghdag.llm.managed.validate_engine_model", return_value="claude-sonnet-4-6"),
         ):
-            result = call_managed("p", engine="claude", capabilities=JSON_ONLY)
+            result = call_managed("p", engine="claude", permission=JSON_ONLY)
 
         assert result.body == validated
         assert result.body != "adapter-should-not-win"
@@ -654,7 +654,7 @@ class TestManagedBodySelectionWithJsonRequest:
                 "p",
                 engine="claude",
                 fallback_candidates=[("codex", "gpt-5.6-sol")],
-                capabilities=JSON_ONLY,
+                permission=JSON_ONLY,
                 quota_gate=gate,
             )
 

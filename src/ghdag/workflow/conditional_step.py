@@ -40,7 +40,7 @@ def _build_command(engine: str, model: str) -> list[str]:
         engine,
         model,
         "",
-        capabilities=DANGEROUS_FULL_ACCESS,
+        permission=DANGEROUS_FULL_ACCESS,
         dangerously_skip_permissions=True,
     )
 

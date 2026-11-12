@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ghdag.core.capabilities import LLMCapabilities
+from ghdag.core.capabilities import Permission
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig
 from ghdag.llm.adapters.cursor_stream import (
@@ -271,7 +271,7 @@ class TestCursorStreamAdapterFinalMessage:
 
 class TestLLMResultValidateCursor:
     def test_validate_cursor_stream_stdout_becomes_joined_turns(self):
-        caps = LLMCapabilities(stream=True)
+        caps = Permission(stream=True)
         result = LLMResult(stdout=_FINAL_MESSAGE, stderr="", returncode=0)
         validated = result.validate(caps, engine="cursor")
         assert validated.stdout == _JOINED
@@ -280,7 +280,7 @@ class TestLLMResultValidateCursor:
         assert body == _JOINED
 
     def test_validate_claude_stream_keeps_result_field(self):
-        caps = LLMCapabilities(stream=True)
+        caps = Permission(stream=True)
         stream = _jsonl(
             {"type": "assistant", "message": {"content": [{"type": "text", "text": "mid"}]}},
             _result("final-claude"),
@@ -289,7 +289,7 @@ class TestLLMResultValidateCursor:
         assert result.validate(caps, engine="claude").stdout == "final-claude"
 
     def test_validate_codex_stream_preserves_raw_stdout(self):
-        caps = LLMCapabilities(stream=True)
+        caps = Permission(stream=True)
         raw = '{"type":"item.completed"}\n{"type":"result","result":"x"}\n'
         result = LLMResult(stdout=raw, stderr="", returncode=0)
         assert result.validate(caps, engine="codex").stdout == raw

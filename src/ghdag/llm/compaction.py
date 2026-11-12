@@ -142,7 +142,7 @@ def compact_resume_session(
             model=model,
             resume_session_id=parent_record.session_id,
             cwd=cwd,
-            capabilities=JSON_ONLY,
+            permission=JSON_ONLY,
         )
     except Exception:
         return CompactionResult(
@@ -177,7 +177,7 @@ def compact_resume_session(
             engine=parent_record.engine,
             model=model,
             cwd=cwd,
-            capabilities=JSON_ONLY,
+            permission=JSON_ONLY,
         )
     except Exception:
         return CompactionResult(

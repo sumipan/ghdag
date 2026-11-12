@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from ghdag.core import vocabulary as vocab
-from ghdag.core.capabilities import PRESETS
+from ghdag.core.capabilities import PERMISSIONS
 from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.models.metrics import FailureClass
 from ghdag.core.models.workflow import (
@@ -74,7 +74,43 @@ def test_workflow_config_key_sets_match_loader() -> None:
     assert step_engine == sorted(ENGINE_SPECS)
 
     step_permission = schema["$defs"]["step"]["properties"]["permission"]["enum"]
-    assert step_permission == sorted(PRESETS)
+    assert step_permission == sorted(PERMISSIONS)
+
+
+def test_permission_registry_matches_workflow_and_mcp_schema(tmp_path: Path) -> None:
+    """Issue sumipan/nexus#6501 — workflow step and MCP enum track PERMISSIONS keys."""
+    from ghdag.mcp.tools import McpRuntime, McpToolRegistry
+    from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+    from ghdag.pipeline.order import InlineOrderBuilder
+    from ghdag.pipeline.state import PipelineState
+
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+    exec_jsonl = jobs / "exec.jsonl"
+    exec_jsonl.touch()
+    state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
+    runtime = McpRuntime(
+        state=state,
+        pipeline=LLMPipelineAPI(
+            pipeline_state=state,
+            order_builder=InlineOrderBuilder(),
+            queue_dir=str(jobs),
+        ),
+        queue_dir=str(jobs),
+        done_dir=jobs / "done",
+        running_dir=jobs / "running",
+    )
+    enqueue = next(
+        t for t in McpToolRegistry(runtime).list_tools() if t["name"] == "ghdag_enqueue"
+    )
+    step_enum = enqueue["inputSchema"]["properties"]["steps"]["items"]["properties"][
+        "permission"
+    ]["enum"]
+
+    workflow_schema = load_schema("workflow-config")
+    workflow_enum = workflow_schema["$defs"]["step"]["properties"]["permission"]["enum"]
+    assert workflow_enum == sorted(PERMISSIONS)
+    assert step_enum == sorted(PERMISSIONS)
 
 
 def test_reply_block_status_enum_matches_vocabulary() -> None:

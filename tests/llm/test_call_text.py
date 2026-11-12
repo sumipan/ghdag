@@ -2,14 +2,33 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import FrozenInstanceError
 from unittest.mock import patch
 
 import pytest
 
+from ghdag.core.command import render_exec_command
+from ghdag.core.container import container_prefix
 from ghdag.core.ports.output import EngineErrorKind
-from ghdag.llm import LLMCapabilities, TextResult, call_text
+from ghdag.llm import Permission, TextResult, build_llm_cmd, call, call_managed, call_text
 from ghdag.llm.engines import LLMResult
+
+
+def test_public_signatures_use_permission() -> None:
+    """Issue sumipan/nexus#6501 — public LLM entrypoints take permission, not capabilities."""
+    targets = (
+        call,
+        call_text,
+        call_managed,
+        build_llm_cmd,
+        render_exec_command,
+        container_prefix,
+    )
+    for fn in targets:
+        params = inspect.signature(fn).parameters
+        assert "permission" in params, f"{fn.__name__} missing permission parameter"
+        assert "capabilities" not in params, f"{fn.__name__} still exposes capabilities"
 
 # ---------------------------------------------------------------------------
 # TextResult dataclass tests
@@ -219,7 +238,7 @@ class TestCallTextStreamRawStdout:
         result = call_text(
             "test prompt",
             engine="claude",
-            capabilities=LLMCapabilities(stream=True),
+            permission=Permission(stream=True),
         )
         assert result.body == "extracted body"
         assert result.raw.raw_stdout == self._STREAM_JSONL

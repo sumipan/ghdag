@@ -7,7 +7,7 @@ import shlex
 from collections.abc import Callable
 from typing import Protocol
 
-from ghdag.core.capabilities import TEXT_ONLY, LLMCapabilities
+from ghdag.core.capabilities import TEXT_ONLY, Permission
 from ghdag.core.container import container_prefix
 from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec, InputMode, PromptFlag
 from ghdag.core.exceptions import GhdagError
@@ -93,12 +93,12 @@ _CLAUDE_WEB_SEARCH_DEFAULT_TOOLS: tuple[str, ...] = (
 )
 
 
-def _claude_allowed_tools(capabilities: LLMCapabilities) -> tuple[str, ...]:
+def _claude_allowed_tools(permission: Permission) -> tuple[str, ...]:
     """Resolve --allowed-tools for claude from allowed_tools and web_search."""
-    if capabilities.web_search:
-        if not capabilities.allowed_tools:
+    if permission.web_search:
+        if not permission.allowed_tools:
             return _CLAUDE_WEB_SEARCH_DEFAULT_TOOLS
-        merged = list(capabilities.allowed_tools)
+        merged = list(permission.allowed_tools)
         for tool in ("WebFetch", "WebSearch"):
             if tool not in merged:
                 merged.append(tool)
@@ -110,47 +110,47 @@ def _claude_allowed_tools(capabilities: LLMCapabilities) -> tuple[str, ...]:
             seen.add(tool)
             deduped.append(tool)
         return tuple(deduped)
-    return capabilities.allowed_tools
+    return permission.allowed_tools
 
 
 def _capability_pre_subcommand_args(
     engine: str,
     spec: EngineSpec,
-    capabilities: LLMCapabilities | None,
+    permission: Permission | None,
 ) -> tuple[str, ...]:
     """Static spec.pre_subcommand_args plus capability-derived pre-subcommand args."""
     parts = list(spec.pre_subcommand_args)
-    if capabilities is not None and engine == "codex" and capabilities.web_search:
+    if permission is not None and engine == "codex" and permission.web_search:
         if "--search" not in parts:
             parts.append("--search")
     return tuple(parts)
 
 
 def _build_claude_flags(
-    capabilities: LLMCapabilities, dangerously_skip_permissions: bool
+    permission: Permission, dangerously_skip_permissions: bool
 ) -> list[str]:
     # sandbox=readonly → --permission-mode plan (read-only Bash allowed, mutations denied).
     # Combining it with an explicit permission_mode is rejected because the meanings conflict.
-    if capabilities.sandbox == "readonly":
-        if capabilities.permission_mode != "default":
+    if permission.sandbox == "readonly":
+        if permission.permission_mode != "default":
             raise ValueError(
                 "sandbox='readonly' conflicts with explicit permission_mode="
-                f"{capabilities.permission_mode!r}; use one or the other"
+                f"{permission.permission_mode!r}; use one or the other"
             )
         flags = ["--permission-mode", "plan"]
     else:
-        flags = ["--permission-mode", capabilities.permission_mode]
+        flags = ["--permission-mode", permission.permission_mode]
     # stream=True → stream-json --verbose. EngineSpec.extra_args carries the same flags, so
     # render_exec_command deduplicates them with _dedupe_extra_args (#2966).
-    if capabilities.stream:
+    if permission.stream:
         flags += ["--output-format", "stream-json", "--verbose"]
-    elif capabilities.output_format != "text":
-        flags += ["--output-format", capabilities.output_format]
-    allowed_tools = _claude_allowed_tools(capabilities)
+    elif permission.output_format != "text":
+        flags += ["--output-format", permission.output_format]
+    allowed_tools = _claude_allowed_tools(permission)
     if allowed_tools:
         flags += ["--allowed-tools", ",".join(allowed_tools)]
-    if capabilities.disallowed_tools:
-        flags += ["--disallowed-tools", ",".join(capabilities.disallowed_tools)]
+    if permission.disallowed_tools:
+        flags += ["--disallowed-tools", ",".join(permission.disallowed_tools)]
     # --disable-slash-commands is added by build_llm_cmd / render_exec_command
     # only when isolation=True (nexus #3174).
     if dangerously_skip_permissions:
@@ -159,7 +159,7 @@ def _build_claude_flags(
 
 
 def _build_cursor_flags(
-    capabilities: LLMCapabilities, dangerously_skip_permissions: bool
+    permission: Permission, dangerously_skip_permissions: bool
 ) -> list[str]:
     # cursor CLI `--sandbox <enabled|disabled>` is a binary mode that overrides config
     # (observed via agent --help). When enabled, Cursor's sandbox is enforced.
@@ -167,8 +167,8 @@ def _build_cursor_flags(
     # When stream=True, emit --output-format stream-json --stream-partial-output and
     # avoid duplicates with EngineSpec.extra_args via _dedupe_extra_args (#2967 / #2968).
     flags: list[str] = []
-    bypass = dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions"
-    if capabilities.sandbox == "readonly":
+    bypass = dangerously_skip_permissions or permission.permission_mode == "bypassPermissions"
+    if permission.sandbox == "readonly":
         if bypass:
             raise ValueError(
                 "sandbox='readonly' conflicts with --force (bypass permissions)"
@@ -176,25 +176,25 @@ def _build_cursor_flags(
         flags += ["--sandbox", "enabled"]
     elif bypass:
         flags.append("--force")
-    if capabilities.stream:
+    if permission.stream:
         flags += ["--output-format", "stream-json", "--stream-partial-output"]
-    elif capabilities.output_format != "text":
-        flags += ["--output-format", capabilities.output_format]
+    elif permission.output_format != "text":
+        flags += ["--output-format", permission.output_format]
     return flags
 
 
 def _build_codex_flags(
-    capabilities: LLMCapabilities, dangerously_skip_permissions: bool
+    permission: Permission, dangerously_skip_permissions: bool
 ) -> list[str]:
     # permission_mode is also checked for the exec.jsonl path (render_exec_command).
     # render_exec_command calls the builder with dangerously_skip_permissions=False fixed, so
     # without looking at capabilities DANGEROUS_FULL_ACCESS would not become a CLI flag and
     # codex would start in the workspace-write sandbox, unable to write outside cwd.
-    # The call() path never reaches this branch, because _validate_capabilities_for_engine
+    # The call() path never reaches this branch, because _validate_permission_for_engine
     # rejects codex with permission_mode != "default".
     flags = ["--json", "--skip-git-repo-check"]
-    bypass = dangerously_skip_permissions or capabilities.permission_mode == "bypassPermissions"
-    if capabilities.sandbox == "readonly":
+    bypass = dangerously_skip_permissions or permission.permission_mode == "bypassPermissions"
+    if permission.sandbox == "readonly":
         if bypass:
             raise ValueError(
                 "sandbox='readonly' conflicts with dangerously-bypass-sandbox"
@@ -205,7 +205,7 @@ def _build_codex_flags(
     return flags
 
 
-_CAPABILITY_FLAG_BUILDERS: dict[str, Callable[[LLMCapabilities, bool], list[str]]] = {
+_CAPABILITY_FLAG_BUILDERS: dict[str, Callable[[Permission, bool], list[str]]] = {
     "claude": _build_claude_flags,
     "cursor": _build_cursor_flags,
     "codex": _build_codex_flags,
@@ -218,15 +218,15 @@ def render_exec_command(
     order_path: str,
     model: str | None,
     prompt: str | None = None,
-    capabilities: LLMCapabilities | None = None,
+    permission: Permission | None = None,
     resume_session_id: str | None = None,
     isolation: bool = False,
 ) -> str:
     """For the command field of exec.jsonl (does not include the tee pipe).
 
     prompt is ignored for FLAG_ONLY / NONE (not put in argv; input is stdin / ARGV only).
-    When capabilities is None, EngineSpec.danger_flag is used as before.
-    When capabilities is given, flags are generated via _CAPABILITY_FLAG_BUILDERS and
+    When permission is None, EngineSpec.danger_flag is used as before.
+    When permission is given, flags are generated via _CAPABILITY_FLAG_BUILDERS and
     flags emitted by the builder are removed from extra_args (_dedupe_extra_args).
     When isolation=True and the engine is claude, --disable-slash-commands is added (nexus #3174).
     When isolation=True and the engine is codex, -c skills.include_instructions=false is added (#5541).
@@ -236,10 +236,10 @@ def render_exec_command(
     del prompt  # not put in argv for FLAG_ONLY / NONE
 
     perm_flags: list[str] = []
-    if capabilities is not None:
+    if permission is not None:
         builder = _CAPABILITY_FLAG_BUILDERS.get(spec.name)
         if builder:
-            perm_flags = builder(capabilities, False)
+            perm_flags = builder(permission, False)
 
     effective_extra_args = _dedupe_extra_args(spec.extra_args, perm_flags)
     if isolation and spec.name == "claude":
@@ -258,7 +258,7 @@ def render_exec_command(
         elif spec.name == "codex":
             subcommand = ["exec", "resume", f"'{resume_session_id}'"]
 
-    in_container = capabilities is not None and capabilities.sandbox == "container"
+    in_container = permission is not None and permission.sandbox == "container"
 
     if spec.input_mode is InputMode.ARGV:
         if in_container:
@@ -266,7 +266,7 @@ def render_exec_command(
                 f"sandbox='container' is not supported for ARGV engine {spec.name!r}"
             )
         pre_args = _capability_pre_subcommand_args(
-            spec.name, spec, capabilities
+            spec.name, spec, permission
         )
         parts = [spec.cli, *pre_args, *spec.subcommand]
         if spec.extra_args:
@@ -277,8 +277,12 @@ def render_exec_command(
     if spec.input_mode is not InputMode.STDIN:
         raise ValueError(f"Unknown input_mode: {spec.input_mode!r}")
 
-    pre_args = _capability_pre_subcommand_args(spec.name, spec, capabilities)
-    parts = [*container_prefix(capabilities), spec.cli] if in_container else [spec.cli]
+    pre_args = _capability_pre_subcommand_args(spec.name, spec, permission)
+    if in_container:
+        assert permission is not None
+        parts = [*container_prefix(permission), spec.cli]
+    else:
+        parts = [spec.cli]
     parts.extend(pre_args)
     parts.extend(subcommand)
 
@@ -292,7 +296,7 @@ def render_exec_command(
             parts.append(f"'{model}'")
 
     def _append_danger_or_perm() -> None:
-        if capabilities is None:
+        if permission is None:
             if spec.danger_flag:
                 parts.append(spec.danger_flag)
         else:
@@ -369,7 +373,7 @@ def build_llm_cmd(
     model: str,
     prompt: str,
     *,
-    capabilities: LLMCapabilities = TEXT_ONLY,
+    permission: Permission = TEXT_ONLY,
     dangerously_skip_permissions: bool = False,
     resume_session_id: str | None = None,
     isolation: bool = False,
@@ -380,7 +384,7 @@ def build_llm_cmd(
         engine: Engine name
         model: Validated model ID
         prompt: prompt text. STDIN engines do not put it on argv (the caller passes it via stdin)
-        capabilities: Capability-constraint value object (default: TEXT_ONLY)
+        permission: Capability-constraint value object (default: TEXT_ONLY)
         dangerously_skip_permissions: Add --dangerously-skip-permissions for the claude engine
         resume_session_id: Session ID to resume (supported engines only)
         isolation: When True, claude gets --disable-slash-commands (nexus #3174); codex gets
@@ -389,10 +393,10 @@ def build_llm_cmd(
         Command list for subprocess
 
     Raises:
-        ValueError: capabilities.sandbox == "container" (only render_exec_command wraps
+        ValueError: permission.sandbox == "container" (only render_exec_command wraps
             commands in a container).
     """
-    if capabilities.sandbox == "container":
+    if permission.sandbox == "container":
         raise ValueError(
             "sandbox='container' is not supported by build_llm_cmd; "
             "use render_exec_command"
@@ -400,7 +404,7 @@ def build_llm_cmd(
     spec = ENGINE_SPECS.get(engine)
     cli = spec.cli if spec else engine
     if spec:
-        pre_args = _capability_pre_subcommand_args(engine, spec, capabilities)
+        pre_args = _capability_pre_subcommand_args(engine, spec, permission)
         subcommand = list(spec.subcommand)
         if resume_session_id and spec.name == "codex":
             subcommand = ["exec", "resume", resume_session_id]
@@ -428,7 +432,7 @@ def build_llm_cmd(
 
     builder = _CAPABILITY_FLAG_BUILDERS.get(engine)
     if builder:
-        cmd += builder(capabilities, dangerously_skip_permissions)
+        cmd += builder(permission, dangerously_skip_permissions)
     elif dangerously_skip_permissions and spec and spec.danger_flag:
         cmd.append(spec.danger_flag)
 
@@ -457,7 +461,7 @@ class EngineAdapter(Protocol):
         model: str | None,
         depends: list[str],
         prompt: str | None = None,
-        capabilities: LLMCapabilities | None = None,
+        permission: Permission | None = None,
     ) -> dict:
         """Assemble one record (dict) to write to exec.jsonl.
         The command field does not include the tee pipe.
@@ -484,7 +488,7 @@ class _GenericAdapter:
         model: str | None,
         depends: list[str],
         prompt: str | None = None,
-        capabilities: LLMCapabilities | None = None,
+        permission: Permission | None = None,
     ) -> dict:
         return {
             "uuid": uuid,
@@ -492,7 +496,7 @@ class _GenericAdapter:
             "model": model if self._spec.model_flag else None,
             "command": render_exec_command(
                 self._spec, order_path=order_path, prompt=prompt, model=model,
-                capabilities=capabilities,
+                permission=permission,
             ),
             "depends": depends,
             "result_path": result_path,

@@ -172,7 +172,7 @@ def test_render_exec_command_includes_resume_for_claude_cursor(engine, expected)
         order_path="queue/order.md",
         prompt="p",
         model="m",
-        capabilities=TEXT_ONLY,
+        permission=TEXT_ONLY,
         resume_session_id="sess_1",
     )
     assert expected in command
@@ -184,7 +184,7 @@ def test_render_exec_command_switches_codex_to_resume_subcommand():
         order_path="queue/order.md",
         prompt="p",
         model="gpt-5.6-terra",
-        capabilities=TEXT_ONLY,
+        permission=TEXT_ONLY,
         resume_session_id="sess_1",
     )
     assert "codex exec resume 'sess_1'" in command
@@ -198,7 +198,7 @@ def test_render_exec_command_degrades_without_resume_for_unsupported_engines(eng
         order_path="queue/order.md",
         prompt="p",
         model="m",
-        capabilities=TEXT_ONLY,
+        permission=TEXT_ONLY,
         resume_session_id="sess_1",
     )
     assert "--resume" not in command
