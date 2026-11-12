@@ -19,7 +19,7 @@ class TestLlmAuditPath:
 
     def _make_result(self, returncode: int = 0):
         from ghdag.llm.engines import LLMResult
-        return LLMResult(stdout="ok\n", stderr="", returncode=returncode)
+        return LLMResult(body="ok\n", stdout="ok\n", stderr="", returncode=returncode)
 
     def test_llm_audit_path_and_correlation_id(self, tmp_path):
         """AC1: --audit-path + --correlation-id + success → append record."""
@@ -177,7 +177,7 @@ def test_permission_preset_is_forwarded():
 
     def capture_call(*_args, **kwargs):
         captured.update(kwargs)
-        return LLMResult(stdout="ok", stderr="", returncode=0)
+        return LLMResult(body="ok", stdout="ok", stderr="", returncode=0)
 
     from ghdag.cli import main
 
@@ -243,12 +243,21 @@ class TestCLI:
 
 
 class TestLlmStructuredOutput:
-    def test_llm_json_envelope_on_success(self, capsys, monkeypatch):
+    def test_llm_json_prints_unified_result_fields(self, capsys, monkeypatch):
         monkeypatch.delenv("GHDAG_AUDIT_PATH", raising=False)
         monkeypatch.setattr("ghdag.config.env.ghdag_audit_path", lambda: None)
         from ghdag.llm.engines import LLMResult
 
-        mock_result = LLMResult(stdout="ok\n", stderr="", returncode=0, latency_ms=12.0)
+        mock_result = LLMResult(
+            body="ok\n",
+            stdout="ok\n",
+            stderr="",
+            returncode=0,
+            latency_ms=12.0,
+            engine_used="claude",
+            model_used="claude-sonnet-4-6",
+            session_id="sess-1",
+        )
         with patch("ghdag.llm.engines.call", return_value=mock_result), \
              patch("ghdag.llm.engines.validate_engine_model", return_value="claude-sonnet-4-6"):
             from ghdag.cli import main
@@ -260,8 +269,12 @@ class TestLlmStructuredOutput:
         payload = json.loads(captured.out.strip())
         assert payload["ok"] is True
         assert payload["returncode"] == 0
-        assert payload["stdout"] == "ok\n"
+        assert payload["body"] == "ok\n"
         assert payload["failure_class"] is None
+        assert payload["engine_used"] == "claude"
+        assert payload["model_used"] == "claude-sonnet-4-6"
+        assert payload["session_id"] == "sess-1"
+        assert payload["attempts"] == 1
 
     def test_llm_prompt_required_on_tty_exits_2(self, capsys, monkeypatch):
         monkeypatch.setattr("sys.stdin", type("Tty", (), {"isatty": lambda self: True})())

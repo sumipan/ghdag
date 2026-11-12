@@ -1,26 +1,26 @@
-"""tests/llm/test_call_text.py — unit tests for TextResult dataclass and call_text."""
+"""tests/llm/test_call_text.py — unified ghdag.llm.call / LLMResult (Issue sumipan/nexus#6529)."""
 
 from __future__ import annotations
 
 import inspect
-from dataclasses import FrozenInstanceError
-from unittest.mock import patch
+import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ghdag.core.capabilities import JSON_ONLY
 from ghdag.core.command import render_exec_command
 from ghdag.core.container import container_prefix
+from ghdag.core.exceptions import LLMParseError
 from ghdag.core.ports.output import EngineErrorKind
-from ghdag.llm import Permission, TextResult, build_llm_cmd, call, call_managed, call_text
-from ghdag.llm.engines import LLMResult
+from ghdag.llm import build_llm_cmd, call
+from ghdag.llm import engines as engines_mod
 
 
 def test_public_signatures_use_permission() -> None:
     """Issue sumipan/nexus#6501 — public LLM entrypoints take permission, not capabilities."""
     targets = (
         call,
-        call_text,
-        call_managed,
         build_llm_cmd,
         render_exec_command,
         container_prefix,
@@ -30,223 +30,140 @@ def test_public_signatures_use_permission() -> None:
         assert "permission" in params, f"{fn.__name__} missing permission parameter"
         assert "capabilities" not in params, f"{fn.__name__} still exposes capabilities"
 
-# ---------------------------------------------------------------------------
-# TextResult dataclass tests
-# ---------------------------------------------------------------------------
 
-class TestTextResult:
-    def test_construction(self):
-        raw = LLMResult(stdout="hello", stderr="", returncode=0)
-        result = TextResult(body="hello", success=True, raw=raw)
-        assert result.body == "hello"
-        assert result.success is True
-        assert result.raw is raw
+def test_public_api_exports_only_call_and_llm_result() -> None:
+    """Issue sumipan/nexus#6529 — one-shot API surface is call + LLMResult only."""
+    import ghdag.llm as llm_pkg
 
-    def test_frozen_raises_on_assignment(self):
-        raw = LLMResult(stdout="hello", stderr="", returncode=0)
-        result = TextResult(body="hello", success=True, raw=raw)
-        with pytest.raises(FrozenInstanceError):
-            result.body = "changed"  # type: ignore[misc]
-
-    def test_stderr_delegates_to_raw(self):
-        raw = LLMResult(stdout="", stderr="warn message", returncode=0)
-        result = TextResult(body="", success=True, raw=raw)
-        assert result.stderr == "warn message"
-
-    def test_returncode_delegates_to_raw(self):
-        raw = LLMResult(stdout="", stderr="", returncode=1)
-        result = TextResult(body="", success=False, raw=raw)
-        assert result.returncode == 1
-
-    def test_stderr_and_returncode_from_raw(self):
-        raw = LLMResult(stdout="out", stderr="err", returncode=2)
-        result = TextResult(body="out", success=False, raw=raw)
-        assert result.stderr == "err"
-        assert result.returncode == 2
-
-    def test_session_id_delegates_to_raw(self):
-        raw = LLMResult(stdout="out", stderr="", returncode=0, session_id="sess-abc")
-        result = TextResult(body="out", success=True, raw=raw)
-        assert result.session_id == "sess-abc"
+    assert "call" in llm_pkg.__all__
+    assert "LLMResult" in llm_pkg.__all__
+    for removed in ("call_text", "call_managed", "TextResult", "ManagedResult"):
+        assert removed not in llm_pkg.__all__
+    with pytest.raises(ImportError):
+        from ghdag.llm import call_text  # noqa: F401
+    with pytest.raises(ImportError):
+        from ghdag.llm import call_managed  # noqa: F401
+    with pytest.raises(ImportError):
+        from ghdag.llm import TextResult  # noqa: F401
+    with pytest.raises(ImportError):
+        from ghdag.llm import ManagedResult  # noqa: F401
 
 
-# ---------------------------------------------------------------------------
-# call_text function tests
-# ---------------------------------------------------------------------------
-
-def _make_llm_result(stdout: str, stderr: str = "", returncode: int = 0) -> LLMResult:
-    return LLMResult(stdout=stdout, stderr=stderr, returncode=returncode)
-
-
-class TestCallText:
-    def test_error_stream_sets_success_false_and_empty_body(self):
-        error_jsonl = '{"type":"error","message":"Selected model is at capacity."}'
-        mock_result = _make_llm_result(stdout=error_jsonl, returncode=0)
-        with patch("ghdag.llm.engines.call", return_value=mock_result):
-            result = call_text("test prompt", engine="codex")
-        assert result.success is False
-        assert result.body == ""
-        assert result.error is not None
-        assert result.error.kind is EngineErrorKind.CAPACITY
-
-    def test_claude_engine_extracts_result_field(self):
-        """ClaudeJsonAdapter returns "extracted" from {"result": "extracted"}."""
-        import json
-        json_stdout = json.dumps({"result": "extracted", "type": "result"})
-        mock_result = _make_llm_result(stdout=json_stdout)
-        with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
-            result = call_text("test prompt", engine="claude")
-        mock_call.assert_called_once()
-        assert isinstance(result, TextResult)
-        assert result.body == "extracted"
-        assert result.success is True
-
-    def test_adapter_empty_output_falls_back_to_raw_stdout(self):
-        """When the adapter returns empty bytes, body falls back to raw.stdout."""
-        # CodexAdapter returns empty bytes when there are zero agent_message events
-        mock_result = _make_llm_result(stdout="fallback text")
-        with patch("ghdag.llm.engines.call", return_value=mock_result):
-            with patch("ghdag.llm.adapters.get_output_adapter") as mock_get_adapter:
-                mock_adapter = type("MockAdapter", (), {
-                    "extract_result_text": lambda self, out, err: b"",
-                })()
-                mock_get_adapter.return_value = mock_adapter
-                result = call_text("test prompt", engine="codex")
-        assert result.body == "fallback text"
-
-    def test_nonzero_returncode_sets_success_false(self):
-        """When call() returns returncode=1, success=False and body has a fallback value."""
-        mock_result = _make_llm_result(stdout="error output", stderr="some error", returncode=1)
-        with patch("ghdag.llm.engines.call", return_value=mock_result):
-            result = call_text("test prompt", engine="claude")
-        assert result.success is False
-        assert result.returncode == 1
-        assert result.error is None
-        # body is adapter output or raw.stdout fallback — must be non-empty
-        assert result.body
-
-    def test_returns_text_result_type(self):
-        mock_result = _make_llm_result(stdout="output")
-        with patch("ghdag.llm.engines.call", return_value=mock_result):
-            result = call_text("hello", engine="claude")
-        assert isinstance(result, TextResult)
-
-    def test_passes_kwargs_to_call(self):
-        """call_text forwards arguments to call() correctly."""
-        mock_result = _make_llm_result(stdout="ok")
-        with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
-            call_text(
-                "my prompt",
-                engine="claude",
-                model="claude-sonnet-5",
-                timeout=30,
-                stdin_text="input",
-                dangerously_skip_permissions=True,
-            )
-        call_kwargs = mock_call.call_args
-        assert call_kwargs[0][0] == "my prompt"
-        assert call_kwargs[1]["engine"] == "claude"
-        assert call_kwargs[1]["model"] == "claude-sonnet-5"
-        assert call_kwargs[1]["timeout"] == 30
-        assert call_kwargs[1]["stdin_text"] == "input"
-        assert call_kwargs[1]["dangerously_skip_permissions"] is True
-
-    def test_import_from_ghdag_llm(self):
-        """from ghdag.llm import call_text, TextResult succeeds."""
-        from ghdag.llm import TextResult as TR
-        from ghdag.llm import call_text as ct
-        assert TR is TextResult
-        assert ct is call_text
-
-    def test_codex_engine_extracts_agent_message(self):
-        """CodexAdapter extracts agent_message text from JSONL into body."""
-        import json
-        jsonl_line = json.dumps({
-            "type": "item.completed",
-            "item": {"type": "agent_message", "text": "hello"},
-        })
-        mock_result = _make_llm_result(stdout=jsonl_line)
-        with patch("ghdag.llm.engines.call", return_value=mock_result):
-            result = call_text("test prompt", engine="codex")
-        assert result.body == "hello"
-        assert result.success is True
-
-    def test_cursor_engine_extracts_json_result(self):
-        """CursorAdapter extracts result from JSON stdout into body."""
-        import json
-        payload = json.dumps({
-            "type": "result",
-            "result": "pong",
-            "session_id": "85105031-11df-48a2-a791-812a0128b4cf",
-        })
-        mock_result = _make_llm_result(stdout=payload)
-        with patch("ghdag.llm.engines.call", return_value=mock_result):
-            result = call_text("test prompt", engine="cursor")
-        assert result.body == "pong"
-        assert result.success is True
-
-    def test_cursor_engine_passes_through_plain_text(self):
-        """CursorAdapter passes non-JSON stdout through to body as-is."""
-        mock_result = _make_llm_result(stdout="cursor output")
-        with patch("ghdag.llm.engines.call", return_value=mock_result):
-            result = call_text("test prompt", engine="cursor")
-        assert result.body == "cursor output"
-        assert result.success is True
-
-    def test_passthrough_engine_passes_through_stdout(self):
-        """For an unknown engine, _PassthroughAdapter passes stdout through to body."""
-        mock_result = _make_llm_result(stdout="raw text")
-        with patch("ghdag.llm.engines.call", return_value=mock_result):
-            result = call_text("test prompt", engine="unknown")
-        assert result.body == "raw text"
-        assert result.success is True
-
-    def test_passthrough_empty_stdout_returns_empty(self):
-        """With _PassthroughAdapter, empty stdout yields body == ''."""
-        mock_result = _make_llm_result(stdout="")
-        with patch("ghdag.llm.engines.call", return_value=mock_result):
-            result = call_text("test prompt", engine="unknown")
-        assert result.body == ""
-
-    def test_json_text_preserved_in_body(self):
-        """When the result field holds a JSON string, body keeps it as-is."""
-        import json
-        json_stdout = json.dumps({"result": '{"key": "val"}', "type": "result"})
-        mock_result = _make_llm_result(stdout=json_stdout)
-        with patch("ghdag.llm.engines.call", return_value=mock_result):
-            result = call_text("test prompt", engine="claude")
-        assert result.body == '{"key": "val"}'
+def test_call_signature_has_unified_options() -> None:
+    """Issue sumipan/nexus#6529 — single call() exposes fallback / quota kwargs."""
+    params = inspect.signature(call).parameters
+    for name in (
+        "permission",
+        "resume_session_id",
+        "fallback_candidates",
+        "permission_overrides",
+        "fallback_on_timeout",
+        "quota_gate",
+    ):
+        assert name in params, f"call() missing {name}"
+    assert "dangerously_skip_permissions" not in params
 
 
-class TestCallTextStreamRawStdout:
-    """call_text() exposes claude stream JSONL via raw.raw_stdout (#6026)."""
+def test_call_success_returns_body_raw_output_and_metadata() -> None:
+    """Issue sumipan/nexus#6529 — success path fills body and metadata from adapter."""
+    envelope = json.dumps({"type": "result", "result": "extracted", "session_id": "s1"})
+    mock_adapter = MagicMock()
+    mock_adapter.extract_error.return_value = None
+    mock_adapter.extract_result_text.return_value = b"extracted"
+    mock_adapter.extract_token_usage.return_value = None
+    mock_adapter.extract_session_id.return_value = "s1"
+    mock_adapter.classify_failure.return_value = None
 
-    _STREAM_JSONL = (
-        '{"type":"system","subtype":"init"}\n'
-        '{"type":"rate_limit_event","rate_limit_info":{}}\n'
-        '{"type":"assistant","message":{"content":[{"type":"text","text":"mid"}]}}\n'
-        '{"type":"result","subtype":"success","result":"extracted body"}\n'
-    )
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_text_exposes_claude_stream_raw_stdout(self, mock_run):
-        mock_run.return_value = type(
-            "Proc",
-            (),
-            {"stdout": self._STREAM_JSONL, "stderr": "", "returncode": 0},
-        )()
-        result = call_text(
-            "test prompt",
-            engine="claude",
-            permission=Permission(stream=True),
+    with (
+        patch.object(engines_mod, "_call_once") as mock_once,
+        patch.object(engines_mod, "get_output_adapter", return_value=mock_adapter),
+        patch.object(engines_mod, "validate_engine_model", return_value="claude-sonnet-4-6"),
+    ):
+        mock_once.return_value = engines_mod._SubprocessRun(
+            stdout=envelope,
+            stderr="",
+            returncode=0,
+            latency_ms=5.0,
+            session_id="s1",
         )
-        assert result.body == "extracted body"
-        assert result.raw.raw_stdout == self._STREAM_JSONL
+        result = call("hello", engine="claude", model="claude-sonnet-4-6")
+
+    assert result.ok is True
+    assert result.body == "extracted"
+    assert result.stdout == envelope
+    assert result.raw_stdout is None
+    assert result.attempts == 1
+    assert result.engine_used == "claude"
+    assert result.model_used == "claude-sonnet-4-6"
+    assert result.failure_class is None
 
 
-class TestCallTextCwd:
-    def test_call_text_forwards_cwd(self, tmp_path):
-        mock_result = _make_llm_result(stdout="ok")
-        with patch("ghdag.llm.engines.call", return_value=mock_result) as mock_call:
-            call_text("hello", engine="claude", cwd=tmp_path)
-        assert mock_call.call_args.kwargs["cwd"] == tmp_path
+def test_call_adapter_error_sets_error_and_empty_body() -> None:
+    """Issue sumipan/nexus#6529 — structured adapter error forces ok=False and body=''."""
+    error_jsonl = '{"type":"error","message":"Selected model is at capacity."}'
+    mock_adapter = MagicMock()
+    mock_adapter.extract_error.return_value = MagicMock(kind=EngineErrorKind.CAPACITY)
+    mock_adapter.extract_result_text.return_value = b""
+    mock_adapter.extract_token_usage.return_value = None
+
+    with (
+        patch.object(engines_mod, "_call_once") as mock_once,
+        patch.object(engines_mod, "get_output_adapter", return_value=mock_adapter),
+        patch.object(engines_mod, "validate_engine_model", return_value="gpt-default"),
+    ):
+        mock_once.return_value = engines_mod._SubprocessRun(
+            stdout=error_jsonl,
+            stderr="",
+            returncode=0,
+            latency_ms=1.0,
+        )
+        result = call("test", engine="codex")
+
+    assert result.ok is False
+    assert result.error is not None
+    assert result.body == ""
+
+
+def test_call_json_permission_extracts_json_or_raises_parse_error() -> None:
+    """Issue sumipan/nexus#6529 — JSON_ONLY puts parsed JSON in body or raises LLMParseError."""
+    fenced = 'Here is the answer:\n```json\n{"k": "v"}\n```'
+    mock_adapter = MagicMock()
+    mock_adapter.extract_error.return_value = None
+    mock_adapter.extract_result_text.return_value = fenced.encode()
+    mock_adapter.extract_token_usage.return_value = None
+    mock_adapter.classify_failure.return_value = None
+
+    with (
+        patch.object(engines_mod, "_call_once") as mock_once,
+        patch.object(engines_mod, "get_output_adapter", return_value=mock_adapter),
+        patch.object(engines_mod, "validate_engine_model", return_value="claude-sonnet-4-6"),
+    ):
+        mock_once.return_value = engines_mod._SubprocessRun(
+            stdout=fenced,
+            stderr="",
+            returncode=0,
+            latency_ms=1.0,
+        )
+        result = call("p", engine="claude", permission=JSON_ONLY)
+
+    assert result.body == '{"k": "v"}'
+
+    bad_adapter = MagicMock()
+    bad_adapter.extract_error.return_value = None
+    bad_adapter.extract_result_text.return_value = b"not json at all"
+    bad_adapter.extract_token_usage.return_value = None
+    bad_adapter.classify_failure.return_value = None
+
+    with (
+        patch.object(engines_mod, "_call_once") as mock_once,
+        patch.object(engines_mod, "get_output_adapter", return_value=bad_adapter),
+        patch.object(engines_mod, "validate_engine_model", return_value="claude-sonnet-4-6"),
+    ):
+        mock_once.return_value = engines_mod._SubprocessRun(
+            stdout="not json at all",
+            stderr="",
+            returncode=0,
+            latency_ms=1.0,
+        )
+        with pytest.raises(LLMParseError):
+            call("p", engine="claude", permission=JSON_ONLY)

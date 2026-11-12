@@ -19,17 +19,14 @@ from ghdag.llm.engines import (
     ENGINE_DEFAULTS,
     EngineModelError,
     LLMResult,
-    TextResult,
     build_llm_cmd,
     call,
-    call_text,
     get_engine_models,
     list_engines,
     list_models,
     supports_capability,
     validate_engine_model,
 )
-from ghdag.llm.managed import ManagedResult, call_managed
 from ghdag.llm.session import SessionRecord, SessionStore
 
 __all__ = [
@@ -49,8 +46,6 @@ __all__ = [
     "Permission",
     "LLMParseError",
     "LLMResult",
-    "ManagedResult",
-    "TextResult",
     "SessionRecord",
     "SessionStore",
     "TEXT_ONLY",
@@ -59,8 +54,6 @@ __all__ = [
     "DANGEROUS_FULL_ACCESS",
     "build_llm_cmd",
     "call",
-    "call_managed",
-    "call_text",
     "get_engine_models",
     "list_engines",
     "list_models",

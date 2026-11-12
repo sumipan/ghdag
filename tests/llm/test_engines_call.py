@@ -187,41 +187,14 @@ class TestCallCapabilities:
         assert "--permission-mode" in cmd
         assert "--disallowed-tools" in cmd
 
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_dangerously_skip_permissions_true_claude(self, mock_run: MagicMock):
-        """dangerously_skip_permissions=True + engine=claude → flag on command"""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("hello", engine="claude", dangerously_skip_permissions=True)
-        cmd = _last_subprocess_cmd(mock_run)
-        assert "--dangerously-skip-permissions" in cmd
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_dangerously_skip_permissions_false_no_flag(self, mock_run: MagicMock):
-        """dangerously_skip_permissions=False (default) → no flag"""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("hello", engine="claude", dangerously_skip_permissions=False)
-        cmd = _last_subprocess_cmd(mock_run)
-        assert "--dangerously-skip-permissions" not in cmd
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_dangerously_skip_permissions_true_gemini_ignored(self, mock_run: MagicMock):
-        """dangerously_skip_permissions=True + engine=gemini → Claude-specific flag ignored"""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("hello", engine="gemini", permission=Permission(), dangerously_skip_permissions=True)
-        cmd = _last_subprocess_cmd(mock_run)
-        assert "--dangerously-skip-permissions" not in cmd
-
     def test_call_action_raises_type_error(self):
         """Legacy action arg → TypeError"""
         with pytest.raises(TypeError):
             call("hello", action="skill")  # type: ignore
 
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_action_skill_cursor_force(self, mock_run: MagicMock):
-        """cursor with dangerously_skip_permissions=True attaches --force"""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("test prompt", engine="cursor", dangerously_skip_permissions=True)
-        cmd = _last_subprocess_cmd(mock_run)
+    def test_build_llm_cmd_cursor_dangerous_full_access_force(self):
+        """DANGEROUS_FULL_ACCESS on cursor argv adds --force (build_llm_cmd path)."""
+        cmd = build_llm_cmd("cursor", "auto", "test", permission=DANGEROUS_FULL_ACCESS)
         assert "--force" in cmd
 
     @patch("ghdag.llm.engines.subprocess.run")

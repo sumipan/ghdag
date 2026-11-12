@@ -21,7 +21,7 @@ def _stall_guard_off(monkeypatch: pytest.MonkeyPatch) -> None:
 class TestLLMResultLatencyMs:
     def test_llm_result_latency_ms_default(self):
         """Default latency_ms is 0.0 when unspecified."""
-        r = LLMResult(stdout="out", stderr="", returncode=0)
+        r = LLMResult(body="out", stdout="out", stderr="", returncode=0)
         assert r.latency_ms == 0.0
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -273,10 +273,9 @@ class TestCallResumeSessionId:
         assert result.session_id == "85105031-11df-48a2-a791-812a0128b4cf"
 
     @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_text_cursor_extracts_result_from_json(self, mock_run: MagicMock):
-        """call_text(cursor) puts JSON result in body and keeps session_id."""
+    def test_call_cursor_extracts_result_from_json(self, mock_run: MagicMock):
+        """call(cursor) puts JSON result in body and keeps session_id."""
         from ghdag.llm.adapters.cursor import CursorAdapter
-        from ghdag.llm.engines import call_text
 
         stdout = (
             '{"type":"result","subtype":"success","is_error":false,'
@@ -285,7 +284,7 @@ class TestCallResumeSessionId:
             '"usage":{"inputTokens":7144,"outputTokens":73}}'
         )
         mock_run.return_value = MagicMock(stdout=stdout, stderr="", returncode=0)
-        result = call_text("hello", engine="cursor", permission=Permission())
+        result = call("hello", engine="cursor", permission=Permission())
         assert result.body == "pong"
         assert result.session_id == "85105031-11df-48a2-a791-812a0128b4cf"
         usage = CursorAdapter().extract_token_usage(stdout.encode("utf-8"), b"")
@@ -626,6 +625,7 @@ class TestSandboxCapability:
             call(
                 "test",
                 engine="shell",
+                model="bash",
                 permission=Permission(sandbox="readonly"),
             )
 
@@ -690,7 +690,7 @@ class TestWebSearchCapability:
 
     def test_shell_web_search_raises_before_subprocess(self):
         with pytest.raises(NotImplementedError, match="web_search"):
-            call("hello", engine="shell", permission=Permission(web_search=True))
+            call("hello", engine="shell", model="bash", permission=Permission(web_search=True))
 
 
 class TestCallCwd:
@@ -738,7 +738,7 @@ class TestCallLaunchFailure:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_cursor_agent_missing_classifies_environment_error(self, mock_run: MagicMock):
         """PATH has grok's agent but not cursor-agent → ENGINE_ENVIRONMENT_ERROR."""
-        from ghdag.llm.managed import call_managed
+        from ghdag.core.models.metrics import FailureClass
 
         mock_run.side_effect = FileNotFoundError(
             2, "No such file or directory", "cursor-agent",
@@ -746,9 +746,7 @@ class TestCallLaunchFailure:
         result = call("hello", engine="cursor")
         assert result.returncode == 127
         assert "cursor-agent: command not found" in result.stderr
-        managed = call_managed("hello", engine="cursor")
-        assert managed.returncode == 127
-        assert managed.failure_class == "ENGINE_ENVIRONMENT_ERROR"
+        assert result.failure_class == FailureClass.ENGINE_ENVIRONMENT_ERROR
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_permission_error_becomes_126(self, mock_run: MagicMock):
@@ -764,15 +762,15 @@ class TestCallLaunchFailure:
             call("hello", engine="cursor", cwd="/no/such/dir")
 
     @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_managed_classifies_missing_binary(self, mock_run: MagicMock):
-        from ghdag.llm.managed import call_managed
+    def test_call_classifies_missing_binary(self, mock_run: MagicMock):
+        from ghdag.core.models.metrics import FailureClass
 
         mock_run.side_effect = FileNotFoundError(
             2, "No such file or directory", "cursor-agent",
         )
-        managed = call_managed("hello", engine="cursor")
-        assert managed.returncode == 127
-        assert managed.failure_class == "ENGINE_ENVIRONMENT_ERROR"
+        result = call("hello", engine="cursor")
+        assert result.returncode == 127
+        assert result.failure_class == FailureClass.ENGINE_ENVIRONMENT_ERROR
 
 
 class TestCallTimeout:
@@ -838,18 +836,18 @@ class TestCallTimeout:
         assert result.returncode == 124
 
     def test_llm_result_failure_class_defaults_to_none(self):
-        r = LLMResult(stdout="", stderr="", returncode=1)
+        r = LLMResult(body="", stdout="", stderr="", returncode=1)
         assert r.failure_class is None
         assert r.timed_out is False
 
     @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_managed_reports_timeout(self, mock_run: MagicMock):
+    def test_call_reports_timeout(self, mock_run: MagicMock):
         import subprocess
 
-        from ghdag.llm.managed import call_managed
+        from ghdag.core.models.metrics import FailureClass
 
         mock_run.side_effect = subprocess.TimeoutExpired(["cursor-agent"], 5)
-        managed = call_managed("hello", engine="cursor", timeout=5)
-        assert managed.returncode == 124
-        assert managed.failure_class == "TIMEOUT"
-        assert managed.attempts == 1
+        result = call("hello", engine="cursor", timeout=5)
+        assert result.returncode == 124
+        assert result.failure_class == FailureClass.TIMEOUT
+        assert result.attempts == 1

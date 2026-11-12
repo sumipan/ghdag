@@ -13,8 +13,9 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ghdag.config.env import (
@@ -33,20 +34,26 @@ from ghdag.core.command import (
 )
 from ghdag.core.engine_spec import ENGINE_SPECS, InputMode
 from ghdag.core.exceptions import ConfigError, LLMParseError
-from ghdag.core.models.metrics import FailureClass
+from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.ports.output import EngineError
 from ghdag.core.stall_guard import StallEvent, StallTracker
 from ghdag.llm._config import load_engine_models
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.json_extract import extract_json_text
+from ghdag.quota import QuotaGate
+
+_FALLBACK_CLASSES = frozenset(
+    {
+        FailureClass.QUOTA_EXHAUSTED,
+        FailureClass.AUTH,
+    }
+)
 
 __all__ = [
     "EngineModelError",
     "LLMResult",
-    "TextResult",
     "build_llm_cmd",
     "call",
-    "call_text",
     "extract_stream_result",
     "get_engine_models",
     "list_engines",
@@ -271,106 +278,173 @@ def _validate_permission_for_engine(engine: str, permission: Permission) -> None
 
 @dataclass
 class LLMResult:
-    """Result of a one-shot LLM call."""
+    """Result of a unified one-shot LLM call."""
+
+    body: str
     stdout: str
     stderr: str
     returncode: int
+    raw_stdout: str | None = None
     latency_ms: float = 0.0
     session_id: str | None = None
     failure_class: FailureClass | None = None
-    """Failure class decided by ``call()`` itself (e.g. ``TIMEOUT``).
-
-    ``None`` means the caller must classify from ``stdout`` / ``stderr``
-    (``call_managed`` does this through the engine's output adapter).
-    """
-    raw_stdout: str | None = None
-    """Subprocess stdout before stream or ``json_only`` body extraction; ``None`` otherwise."""
+    error: EngineError | None = None
+    usage: TokenUsage | None = None
+    engine_used: str = ""
+    model_used: str = ""
+    attempts: int = 1
+    quota_reported: bool = False
+    additional_tags: dict[str, str] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
-        return self.returncode == 0
+        return self.returncode == 0 and self.error is None
 
     @property
     def timed_out(self) -> bool:
         return self.failure_class is FailureClass.TIMEOUT
 
-    def validate(
-        self,
-        permission: Permission,
-        *,
-        engine: str | None = None,
-    ) -> "LLMResult":
-        """Validate the output_format contract. Raises LLMParseError on failure.
 
-        Validation is skipped when returncode != 0 (error output takes precedence).
-        With stream=True on cursor, the reconstructed assistant-turn body is preferred,
-        falling back to the legacy stream result if absent. For claude, the final result
-        is extracted from the JSONL and replaces stdout. For codex, raw JSONL is kept.
-        On successful claude/cursor stream calls, ``raw_stdout`` holds the pre-extraction
-        stdout (including trailing newlines). For ``output_format == "json"``, it holds
-        the pre-body-extraction stdout (envelope or raw engine output). It stays ``None``
-        for codex and failed calls.
-        Returns:
-            self (allows chaining)
-        Raises:
-            LLMParseError: if output_format == "json" and stdout is not valid JSON
-        """
-        if not self.ok:
-            return self
-        if permission.stream and engine != "codex":
-            self.raw_stdout = self.stdout
-            if engine == "cursor":
-                from ghdag.llm.adapters.cursor_stream import reconstruct_assistant_turns
+@dataclass
+class _SubprocessRun:
+    """Raw output from a single subprocess invocation before completion."""
 
-                reconstructed = reconstruct_assistant_turns(self.stdout.encode("utf-8"))
-                if reconstructed:
-                    self.stdout = reconstructed
-                else:
-                    self.stdout = _extract_stream_result(self.stdout)
+    stdout: str
+    stderr: str
+    returncode: int
+    latency_ms: float
+    failure_class: FailureClass | None = None
+    raw_stdout: str | None = None
+    session_id: str | None = None
+
+
+def _normalize_subprocess_output(
+    run: _SubprocessRun,
+    *,
+    engine: str,
+    permission: Permission,
+) -> None:
+    """Apply stream / JSON normalization in place on a successful run."""
+    if run.returncode != 0:
+        return
+    if permission.stream and engine != "codex":
+        run.raw_stdout = run.stdout
+        if engine == "cursor":
+            from ghdag.llm.adapters.cursor_stream import reconstruct_assistant_turns
+
+            reconstructed = reconstruct_assistant_turns(run.stdout.encode("utf-8"))
+            if reconstructed:
+                run.stdout = reconstructed
             else:
-                self.stdout = _extract_stream_result(self.stdout)
-        if permission.output_format == "json":
-            stream_preprocessed = permission.stream and engine != "codex"
-            if stream_preprocessed:
-                body = self.stdout
-            elif engine in ("claude", "cursor"):
-                adapter = get_output_adapter(engine)
-                body = adapter.extract_result_text(
-                    self.stdout.encode("utf-8"),
-                    self.stderr.encode("utf-8"),
-                ).decode("utf-8")
-                if not body:
-                    body = self.stdout
-            else:
-                body = self.stdout
-            if not stream_preprocessed:
-                self.raw_stdout = self.stdout
-            try:
-                self.stdout = extract_json_text(body)
-            except LLMParseError as e:
-                raise LLMParseError(raw=body, reason=e.reason) from e
-        return self
+                run.stdout = _extract_stream_result(run.stdout)
+        else:
+            run.stdout = _extract_stream_result(run.stdout)
+    if permission.output_format == "json":
+        stream_preprocessed = permission.stream and engine != "codex"
+        if stream_preprocessed:
+            body = run.stdout
+        elif engine in ("claude", "cursor"):
+            adapter = get_output_adapter(engine)
+            body = adapter.extract_result_text(
+                run.stdout.encode("utf-8"),
+                run.stderr.encode("utf-8"),
+            ).decode("utf-8")
+            if not body:
+                body = run.stdout
+        else:
+            body = run.stdout
+        if not stream_preprocessed:
+            run.raw_stdout = run.stdout
+        try:
+            run.stdout = extract_json_text(body)
+        except LLMParseError as e:
+            raise LLMParseError(raw=body, reason=e.reason) from e
 
 
-@dataclass(frozen=True)
-class TextResult:
-    """Result of call_text(). A snapshot with text already extracted by the adapter."""
-    body: str
-    success: bool
-    raw: LLMResult
-    error: EngineError | None = None
+def _complete_result(
+    run: _SubprocessRun,
+    *,
+    engine: str,
+    model: str,
+    permission: Permission,
+) -> LLMResult:
+    """Build a finished ``LLMResult`` from one subprocess run."""
+    adapter = get_output_adapter(engine)
+    stdout_for_adapter = run.raw_stdout if run.raw_stdout is not None else run.stdout
+    stdout_bytes = stdout_for_adapter.encode("utf-8")
+    stderr_bytes = run.stderr.encode("utf-8")
+    failure_class = run.failure_class
+    if failure_class is None and run.returncode != 0:
+        failure_class = adapter.classify_failure(
+            run.returncode, stdout_bytes, stderr_bytes
+        )
+    error = adapter.extract_error(stdout_bytes, stderr_bytes)
+    if error is not None:
+        return LLMResult(
+            body="",
+            stdout=run.stdout,
+            stderr=run.stderr,
+            raw_stdout=run.raw_stdout,
+            returncode=run.returncode,
+            latency_ms=run.latency_ms,
+            session_id=run.session_id,
+            failure_class=failure_class,
+            error=error,
+            usage=adapter.extract_token_usage(stdout_bytes, stderr_bytes),
+            engine_used=engine,
+            model_used=model,
+        )
+    extracted = adapter.extract_result_text(stdout_bytes, stderr_bytes).decode("utf-8")
+    if permission.output_format == "json" and run.raw_stdout is not None:
+        body = run.stdout
+    else:
+        body = extracted if extracted else run.stdout
+    usage = adapter.extract_token_usage(stdout_bytes, stderr_bytes)
+    return LLMResult(
+        body=body,
+        stdout=run.stdout,
+        stderr=run.stderr,
+        raw_stdout=run.raw_stdout,
+        returncode=run.returncode,
+        latency_ms=run.latency_ms,
+        session_id=run.session_id,
+        failure_class=failure_class,
+        error=None,
+        usage=usage,
+        engine_used=engine,
+        model_used=model,
+    )
 
-    @property
-    def stderr(self) -> str:
-        return self.raw.stderr
 
-    @property
-    def returncode(self) -> int:
-        return self.raw.returncode
+def _resolve_permission(
+    engine: str,
+    default: Permission,
+    permission_overrides: Mapping[str, Permission] | None,
+) -> Permission:
+    if permission_overrides and engine in permission_overrides:
+        return permission_overrides[engine]
+    return default
 
-    @property
-    def session_id(self) -> str | None:
-        return self.raw.session_id
+
+def _select_fallback(
+    candidates: Sequence[tuple[str, str | None]],
+    quota_gate: QuotaGate | None,
+) -> tuple[str, str | None] | None:
+    if not candidates:
+        return None
+    paused: set[str] = set()
+    if quota_gate is not None:
+        snapshot = quota_gate.snapshot()
+        paused = {
+            name
+            for name, state in snapshot.engines.items()
+            if state.status == "paused"
+        }
+    for candidate_engine, candidate_model in candidates:
+        if candidate_engine in paused:
+            continue
+        return candidate_engine, candidate_model
+    return None
 
 
 def extract_stream_result(stdout: str) -> str:
@@ -393,9 +467,9 @@ def _compose_stdin(prompt: str, stdin_text: str | None) -> str:
     return prompt + "\n\n" + stdin_text
 
 
-def _launch_failure_result(executable: str, returncode: int, reason: str, t0: float) -> LLMResult:
-    """Turn a launch failure (FileNotFoundError / PermissionError) into a shell-style LLMResult."""
-    return LLMResult(
+def _launch_failure_result(executable: str, returncode: int, reason: str, t0: float) -> _SubprocessRun:
+    """Turn a launch failure (FileNotFoundError / PermissionError) into a shell-style run."""
+    return _SubprocessRun(
         stdout="",
         stderr=f"{executable}: {reason}\n",
         returncode=returncode,
@@ -422,8 +496,8 @@ def _partial_output(data: bytes | str | None) -> str:
 
 def _timeout_result(
     executable: str, exc: subprocess.TimeoutExpired, t0: float
-) -> LLMResult:
-    """Turn ``subprocess.TimeoutExpired`` into an ``LLMResult`` tagged ``TIMEOUT``.
+) -> _SubprocessRun:
+    """Turn ``subprocess.TimeoutExpired`` into a run tagged ``TIMEOUT``.
 
     The process has already been killed by ``subprocess.run``. The partial
     stdout / stderr are kept so the caller can still inspect what the engine
@@ -434,7 +508,7 @@ def _timeout_result(
     if stderr and not stderr.endswith("\n"):
         stderr += "\n"
     stderr += f"TIMEOUT: {executable} timed out after {exc.timeout}s\n"
-    return LLMResult(
+    return _SubprocessRun(
         stdout=_partial_output(exc.stdout),
         stderr=stderr,
         returncode=TIMEOUT_RETURNCODE,
@@ -554,41 +628,19 @@ def _run_with_stall_guard(
     )
 
 
-def call(
+def _call_once(
     prompt: str,
     *,
-    engine: str = "claude",
-    model: str | None = None,
-    timeout: int | None = None,
-    stdin_text: str | None = None,
-    cwd: Path | str | None = None,
-    permission: Permission = TEXT_ONLY,
-    dangerously_skip_permissions: bool = False,
-    resume_session_id: str | None = None,
-    isolation: bool | None = None,
-) -> LLMResult:
-    """Call the LLM one-shot and return the result.
-
-    Args:
-        prompt: prompt string
-        engine: engine name (default: "claude")
-        model: model ID (None for the engine default)
-        timeout: timeout in seconds (None for no limit)
-        stdin_text: text passed on standard input. STDIN engines join it with prompt
-            into a single stdin (stdin_text only when prompt is empty, prompt only when
-            None, ``prompt + "\n\n" + stdin_text`` when both are non-empty)
-        cwd: subprocess working directory (None for the current process cwd)
-        permission: capability-constraint value object (default: TEXT_ONLY)
-        isolation: engine isolation. When None, resolved from the GHDAG_ENGINE_ISOLATION env var
-            (default False)
-    Returns:
-        LLMResult (missing binary: returncode=127; not executable: 126;
-        timeout: returncode=124 with ``failure_class=FailureClass.TIMEOUT`` and
-        the partial stdout / stderr captured before the process was killed)
-    Raises:
-        EngineModelError: engine/model validation failed
-        NotImplementedError: capabilities feature not supported by the engine
-    """
+    engine: str,
+    model: str | None,
+    timeout: int | None,
+    stdin_text: str | None,
+    cwd: Path | str | None,
+    permission: Permission,
+    resume_session_id: str | None,
+    isolation: bool | None,
+) -> _SubprocessRun:
+    """Run the engine subprocess once (no retry, no adapter completion)."""
     _validate_permission_for_engine(engine, permission)
     if resume_session_id:
         unsupported = _UNSUPPORTED_CAPABILITIES.get(engine, set())
@@ -612,7 +664,6 @@ def call(
         resolved_model,
         prompt,
         permission=permission,
-        dangerously_skip_permissions=dangerously_skip_permissions,
         resume_session_id=resume_session_id,
         isolation=resolved_isolation,
     )
@@ -654,9 +705,6 @@ def call(
             raise
         return _launch_failure_result(cmd[0], 126, "permission denied", t0)
     except subprocess.TimeoutExpired as e:
-        # The engine kept running past ``timeout`` (e.g. cursor ``agent -p`` idling
-        # after it had already committed). Report it as a classified failure
-        # instead of unwinding the caller (sumipan/nexus#4304).
         return _timeout_result(cmd[0], e, t0)
     latency_ms = (time.monotonic() - t0) * 1000
     session_id: str | None = None
@@ -667,17 +715,46 @@ def call(
             result.stderr.encode("utf-8"),
         )
 
-    llm_result = LLMResult(
+    return _SubprocessRun(
         stdout=result.stdout,
         stderr=result.stderr,
         returncode=result.returncode,
         latency_ms=latency_ms,
         session_id=session_id,
     )
-    return llm_result.validate(permission, engine=engine)
 
 
-def call_text(
+def _run_completed_attempt(
+    prompt: str,
+    *,
+    engine: str,
+    model: str | None,
+    timeout: int | None,
+    stdin_text: str | None,
+    cwd: Path | str | None,
+    permission: Permission,
+    resume_session_id: str | None,
+    isolation: bool | None,
+) -> LLMResult:
+    resolved_model = validate_engine_model(engine, model)
+    run = _call_once(
+        prompt,
+        engine=engine,
+        model=model,
+        timeout=timeout,
+        stdin_text=stdin_text,
+        cwd=cwd,
+        permission=permission,
+        resume_session_id=resume_session_id,
+        isolation=isolation,
+    )
+    _normalize_subprocess_output(run, engine=engine, permission=permission)
+    return _complete_result(
+        run, engine=engine, model=resolved_model, permission=permission
+    )
+
+
+def call(
     prompt: str,
     *,
     engine: str = "claude",
@@ -686,33 +763,105 @@ def call_text(
     stdin_text: str | None = None,
     cwd: Path | str | None = None,
     permission: Permission = TEXT_ONLY,
-    dangerously_skip_permissions: bool = False,
     resume_session_id: str | None = None,
     isolation: bool | None = None,
-) -> TextResult:
-    """Call the LLM one-shot and return a TextResult with text extracted by the adapter.
+    fallback_candidates: Sequence[tuple[str, str | None]] = (),
+    permission_overrides: Mapping[str, Permission] | None = None,
+    fallback_on_timeout: bool = False,
+    quota_gate: QuotaGate | None = None,
+    additional_tags: Mapping[str, str] | None = None,
+) -> LLMResult:
+    """Call the LLM one-shot and return a completed ``LLMResult``.
 
-    Same signature as call(). Usable as a drop-in, backward-compatible superset.
-    Falls back to raw.stdout when the adapter output is empty.
+    Without fallback / quota arguments, runs the primary engine once. With
+    ``fallback_candidates`` and matching failure classes, retries at most once on
+    a non-paused alternate engine and optionally reports quota state.
     """
-    result = call(
+    tags = dict(additional_tags or {})
+    primary_engine = engine
+    primary_permission = _resolve_permission(engine, permission, permission_overrides)
+
+    result = _run_completed_attempt(
         prompt,
         engine=engine,
         model=model,
         timeout=timeout,
         stdin_text=stdin_text,
         cwd=cwd,
-        permission=permission,
-        dangerously_skip_permissions=dangerously_skip_permissions,
+        permission=primary_permission,
         resume_session_id=resume_session_id,
         isolation=isolation,
     )
-    adapter = get_output_adapter(engine)
-    stdout_bytes = result.stdout.encode("utf-8")
-    stderr_bytes = result.stderr.encode("utf-8")
-    error = adapter.extract_error(stdout_bytes, stderr_bytes)
-    if error is not None:
-        return TextResult(body="", success=False, error=error, raw=result)
-    extracted = adapter.extract_result_text(stdout_bytes, stderr_bytes).decode("utf-8")
-    body = extracted if extracted else result.stdout
-    return TextResult(body=body, success=result.ok, error=None, raw=result)
+    attempts = 1
+    quota_reported = False
+
+    if result.ok:
+        if quota_gate is not None:
+            quota_gate.reset_auth_strike(engine=primary_engine)
+        result.attempts = attempts
+        result.additional_tags = tags
+        return result
+
+    fallback_classes: frozenset[FailureClass] = _FALLBACK_CLASSES
+    if fallback_on_timeout:
+        fallback_classes = fallback_classes | {FailureClass.TIMEOUT}
+
+    failure_class = result.failure_class
+    if (
+        failure_class is not None
+        and failure_class in fallback_classes
+        and quota_gate is not None
+        and failure_class in _FALLBACK_CLASSES
+    ):
+        now = datetime.now(timezone.utc)
+        if failure_class is FailureClass.AUTH:
+            strikes = quota_gate.increment_auth_strike(
+                engine=primary_engine,
+                observed_at=now,
+            )
+            if strikes >= 2:
+                quota_gate.report(
+                    engine=primary_engine,
+                    status="paused",
+                    observed_at=now,
+                    reason="call classified as AUTH",
+                    kind="failure",
+                    set_by="call",
+                )
+                quota_reported = True
+        else:
+            quota_gate.report(
+                engine=primary_engine,
+                status="paused",
+                observed_at=now,
+                reason=f"call classified as {failure_class.value}",
+                kind="failure",
+                set_by="call",
+            )
+            quota_reported = True
+
+    alt = (
+        _select_fallback(fallback_candidates, quota_gate)
+        if failure_class in fallback_classes
+        else None
+    )
+    if alt is not None:
+        alt_engine, alt_model = alt
+        alt_permission = _resolve_permission(alt_engine, permission, permission_overrides)
+        result = _run_completed_attempt(
+            prompt,
+            engine=alt_engine,
+            model=alt_model,
+            timeout=timeout,
+            stdin_text=stdin_text,
+            cwd=cwd,
+            permission=alt_permission,
+            resume_session_id=None,
+            isolation=isolation,
+        )
+        attempts = 2
+
+    result.attempts = attempts
+    result.quota_reported = quota_reported
+    result.additional_tags = tags
+    return result

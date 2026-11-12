@@ -119,6 +119,7 @@ class TestCliEmitsLlmInference:
 
         audit_path = tmp_path / "audit.jsonl"
         mock_result = LLMResult(
+            body="ok\n",
             stdout="ok\n",
             stderr="",
             returncode=0,

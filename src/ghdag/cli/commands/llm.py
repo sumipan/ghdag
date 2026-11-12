@@ -10,19 +10,16 @@ from ghdag.config.env import ghdag_audit_path
 from ghdag.core.exceptions import CliUsageError
 
 
-def _llm_result_envelope(result, *, engine: str, model: str | None) -> dict[str, object]:
+def _llm_result_envelope(result) -> dict[str, object]:
     failure = result.failure_class
     return {
+        "body": result.body,
         "ok": result.ok,
         "returncode": result.returncode,
-        "engine": engine,
-        "model": model,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "latency_ms": result.latency_ms,
         "failure_class": failure.value if failure is not None else None,
-        "cause": None,
-        "retry_policy": None,
+        "engine_used": result.engine_used,
+        "model_used": result.model_used,
+        "attempts": result.attempts,
         "session_id": result.session_id,
     }
 
@@ -78,11 +75,10 @@ def cmd_llm(args) -> None:
     result = call(prompt, **call_kwargs)
 
     if args.output_json:
-        resolved_model = validate_engine_model(args.engine, args.model)
-        print(json.dumps(_llm_result_envelope(result, engine=args.engine, model=resolved_model)))
+        print(json.dumps(_llm_result_envelope(result)))
     else:
-        if result.stdout:
-            print(result.stdout, end="")
+        if result.body:
+            print(result.body, end="")
         if result.stderr:
             print(result.stderr, end="", file=sys.stderr)
 
