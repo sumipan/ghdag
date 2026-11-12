@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.132.0 - 2026-11-12
+
 ### Changed
 
 - **Breaking:** Unify one-shot LLM invocation on `ghdag.llm.call` / `LLMResult`. `call_text`, `call_managed`, `TextResult`, and `ManagedResult` are removed; `LLMResult` always carries `body`, and `ok` is true only when `returncode == 0` and `error is None`. Quota / auth fallback kwargs (`fallback_candidates`, `quota_gate`, `fallback_on_timeout`, …) live on `call()`. Use permission preset `DANGEROUS_FULL_ACCESS` instead of `dangerously_skip_permissions` on `call()` (sumipan/nexus#6529).
