@@ -278,7 +278,11 @@ def render_exec_command(
         raise ValueError(f"Unknown input_mode: {spec.input_mode!r}")
 
     pre_args = _capability_pre_subcommand_args(spec.name, spec, permission)
-    parts = [*container_prefix(permission), spec.cli] if in_container else [spec.cli]
+    if in_container:
+        assert permission is not None
+        parts = [*container_prefix(permission), spec.cli]
+    else:
+        parts = [spec.cli]
     parts.extend(pre_args)
     parts.extend(subcommand)
 
