@@ -373,6 +373,11 @@ def _complete_result(
     stdout_for_adapter = run.raw_stdout if run.raw_stdout is not None else run.stdout
     stdout_bytes = stdout_for_adapter.encode("utf-8")
     stderr_bytes = run.stderr.encode("utf-8")
+    failure_class = run.failure_class
+    if failure_class is None and run.returncode != 0:
+        failure_class = adapter.classify_failure(
+            run.returncode, stdout_bytes, stderr_bytes
+        )
     error = adapter.extract_error(stdout_bytes, stderr_bytes)
     if error is not None:
         return LLMResult(
@@ -383,7 +388,7 @@ def _complete_result(
             returncode=run.returncode,
             latency_ms=run.latency_ms,
             session_id=run.session_id,
-            failure_class=run.failure_class,
+            failure_class=failure_class,
             error=error,
             usage=adapter.extract_token_usage(stdout_bytes, stderr_bytes),
             engine_used=engine,
@@ -394,12 +399,6 @@ def _complete_result(
         body = run.stdout
     else:
         body = extracted if extracted else run.stdout
-    failure_class = run.failure_class
-    if failure_class is None and run.returncode != 0:
-        classified = adapter.classify_failure(
-            run.returncode, stdout_bytes, stderr_bytes
-        )
-        failure_class = classified
     usage = adapter.extract_token_usage(stdout_bytes, stderr_bytes)
     return LLMResult(
         body=body,

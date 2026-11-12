@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from ghdag.core.capabilities import JSON_ONLY, TEXT_ONLY
 from ghdag.core.models.metrics import FailureClass
+from ghdag.core.ports.output import EngineError, EngineErrorKind
 from ghdag.llm import engines as engines_mod
 from ghdag.llm.engines import call
 from ghdag.quota import QuotaGate
@@ -94,6 +95,55 @@ def test_call_quota_fallback_uses_override_and_reports_primary(tmp_path: Path) -
     assert calls[1][1] is codex_json
     snap = gate.snapshot()
     assert snap.engines["claude"].status == "paused"
+
+
+def test_call_structured_quota_error_is_classified_before_fallback(tmp_path: Path) -> None:
+    """A structured error must not bypass failure classification and fallback."""
+    gate = QuotaGate(tmp_path / "quota.json")
+    calls: list[str] = []
+
+    def fake_once(prompt, *, engine, **kwargs):
+        del prompt, kwargs
+        calls.append(engine)
+        if engine == "claude":
+            return _subprocess("quota error", returncode=1)
+        return _subprocess("ok", returncode=0)
+
+    primary_adapter = _adapter(failure=FailureClass.QUOTA_EXHAUSTED)
+    primary_adapter.extract_error.return_value = EngineError(
+        kind=EngineErrorKind.QUOTA_EXHAUSTED,
+        message="quota exhausted",
+        retryable=False,
+    )
+    fallback_adapter = _adapter(body=b"ok")
+
+    with (
+        patch.object(engines_mod, "_call_once", side_effect=fake_once),
+        patch.object(
+            engines_mod,
+            "get_output_adapter",
+            side_effect=lambda engine: (
+                primary_adapter if engine == "claude" else fallback_adapter
+            ),
+        ),
+        patch.object(
+            engines_mod,
+            "validate_engine_model",
+            side_effect=lambda engine, model: model or f"{engine}-default",
+        ),
+    ):
+        result = call(
+            "p",
+            engine="claude",
+            fallback_candidates=[("codex", None)],
+            quota_gate=gate,
+        )
+
+    assert calls == ["claude", "codex"]
+    assert result.ok is True
+    assert result.engine_used == "codex"
+    assert result.attempts == 2
+    assert result.quota_reported is True
 
 
 def test_call_timeout_does_not_fallback_or_pause_by_default(tmp_path: Path) -> None:
