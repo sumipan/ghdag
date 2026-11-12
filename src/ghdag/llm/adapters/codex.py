@@ -21,8 +21,9 @@ class CodexAdapter:
     codex --json emits multi-line JSONL. The body is stored in item.text of
     item.completed + agent_message, and usage in the usage of turn.completed.
 
-    LLMResult.stdout stays raw JSONL; callers that need text must go through
-    extract_result_text() (note the asymmetry with the claude engine).
+    Unified ``call()`` sets ``LLMResult.body`` from ``extract_result_text()`` while
+    leaving ``stdout`` as the raw JSONL for stream-capable runs. Direct adapter use
+    still requires ``extract_result_text()`` (asymmetric with the claude engine).
     """
 
     def extract_result_text(self, stdout: bytes, stderr: bytes) -> bytes:

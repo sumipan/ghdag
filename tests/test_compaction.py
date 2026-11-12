@@ -19,7 +19,7 @@ from ghdag.llm.compaction import (
     CompactionResult,
     compact_resume_session,
 )
-from ghdag.llm.engines import LLMResult, TextResult
+from ghdag.llm.engines import LLMResult
 from ghdag.llm.session import SessionRecord, SessionStore
 
 
@@ -68,24 +68,29 @@ def test_genshijin_prompt_is_machine_handoff_style():
     assert "output_style" not in GENSHIJIN_HANDOFF_PROMPT
 
 
-def _text_result(body: str, *, session_id: str | None, ok: bool = True) -> TextResult:
-    raw = LLMResult(
+def _llm_result(body: str, *, session_id: str | None, ok: bool = True) -> LLMResult:
+    return LLMResult(
+        body=body,
         stdout=body,
         stderr="",
         returncode=0 if ok else 1,
         session_id=session_id,
     )
-    return TextResult(body=body, success=ok, raw=raw, error=None)
 
 
-def _claude_json_text_result(payload: dict) -> TextResult:
-    """Build a TextResult as call_text would from claude --output-format json stdout."""
+def _claude_json_llm_result(payload: dict) -> LLMResult:
+    """Build an LLMResult as call() would from claude --output-format json stdout."""
     stdout = json.dumps(payload)
     adapter = ClaudeJsonAdapter()
     body = adapter.extract_result_text(stdout.encode(), b"").decode()
     session_id = adapter.extract_session_id(stdout.encode(), b"")
-    raw = LLMResult(stdout=stdout, stderr="", returncode=0, session_id=session_id)
-    return TextResult(body=body, success=True, raw=raw, error=None)
+    return LLMResult(
+        body=body,
+        stdout=stdout,
+        stderr="",
+        returncode=0,
+        session_id=session_id,
+    )
 
 
 def test_compact_resume_passes_json_capabilities_to_both_calls(tmp_path):
@@ -97,14 +102,14 @@ def test_compact_resume_passes_json_capabilities_to_both_calls(tmp_path):
 
     calls: list[dict] = []
 
-    def fake_call_text(prompt, **kwargs):
+    def fake_call_fn(prompt, **kwargs):
         calls.append(kwargs)
         if kwargs.get("resume_session_id") == "sess-parent":
-            return _text_result(
+            return _llm_result(
                 '{"facts":[],"unresolved":[],"next":[],"files":[],"constraints":[]}',
                 session_id="sess-parent",
             )
-        return _text_result("ack", session_id="sess-compacted")
+        return _llm_result("ack", session_id="sess-compacted")
 
     compact_resume_session(
         store=store,
@@ -113,7 +118,7 @@ def test_compact_resume_passes_json_capabilities_to_both_calls(tmp_path):
         compacted_key="child__compacted",
         policy=CompactionPolicy(token_threshold=10, enabled=True),
         token_usage=50_000,
-        call_text_fn=fake_call_text,
+        call_fn=fake_call_fn,
     )
 
     assert len(calls) == 2
@@ -134,16 +139,16 @@ def test_compact_resume_records_session_id_from_claude_json_output(tmp_path):
         '{"facts":[],"unresolved":[],"next":[],"files":[],"constraints":[]}'
     )
 
-    def fake_call_text(prompt, **kwargs):
+    def fake_call_fn(prompt, **kwargs):
         if kwargs.get("resume_session_id") == "sess-parent":
-            return _claude_json_text_result(
+            return _claude_json_llm_result(
                 {
                     "type": "result",
                     "result": summary_json,
                     "session_id": "sess-parent",
                 }
             )
-        return _claude_json_text_result(
+        return _claude_json_llm_result(
             {
                 "type": "result",
                 "result": "ack",
@@ -158,7 +163,7 @@ def test_compact_resume_records_session_id_from_claude_json_output(tmp_path):
         compacted_key="child__compacted",
         policy=CompactionPolicy(token_threshold=10, enabled=True),
         token_usage=50_000,
-        call_text_fn=fake_call_text,
+        call_fn=fake_call_fn,
     )
 
     assert result.status == "compacted"
@@ -175,13 +180,13 @@ def test_compact_resume_falls_back_when_seed_has_no_session_id(tmp_path):
     parent = store.lookup("parent")
     assert parent is not None
 
-    def fake_call_text(prompt, **kwargs):
+    def fake_call_fn(prompt, **kwargs):
         if kwargs.get("resume_session_id") == "sess-parent":
-            return _text_result(
+            return _llm_result(
                 '{"facts":[],"unresolved":[],"next":[],"files":[],"constraints":[]}',
                 session_id="sess-parent",
             )
-        return _text_result("ack", session_id=None)
+        return _llm_result("ack", session_id=None)
 
     result = compact_resume_session(
         store=store,
@@ -190,7 +195,7 @@ def test_compact_resume_falls_back_when_seed_has_no_session_id(tmp_path):
         compacted_key="child__compacted",
         policy=CompactionPolicy(token_threshold=10, enabled=True),
         token_usage=50_000,
-        call_text_fn=fake_call_text,
+        call_fn=fake_call_fn,
     )
 
     assert result.status == "fallback"
@@ -219,14 +224,14 @@ def test_compact_resume_creates_new_session_with_lineage(tmp_path):
 
     calls: list[dict] = []
 
-    def fake_call_text(prompt, **kwargs):
+    def fake_call_fn(prompt, **kwargs):
         calls.append({"prompt": prompt, **kwargs})
         if kwargs.get("resume_session_id") == "sess-parent":
-            return _text_result(
+            return _llm_result(
                 '{"facts":[],"unresolved":[],"next":[],"files":[],"constraints":[]}',
                 session_id="sess-parent",
             )
-        return _text_result("ack", session_id="sess-compacted")
+        return _llm_result("ack", session_id="sess-compacted")
 
     result = compact_resume_session(
         store=store,
@@ -235,7 +240,7 @@ def test_compact_resume_creates_new_session_with_lineage(tmp_path):
         compacted_key="child__compacted",
         policy=CompactionPolicy(token_threshold=10, enabled=True),
         token_usage=50_000,
-        call_text_fn=fake_call_text,
+        call_fn=fake_call_fn,
     )
 
     assert result.status == "compacted"
@@ -287,10 +292,10 @@ def test_compact_fallbacks(tmp_path, scenario, kwargs, expected_reason):
     parent = kwargs.get("parent_record", store.lookup("parent"))
     call_fails = kwargs.pop("call_fails", False)
 
-    def fake_call_text(*_a, **_k):
+    def fake_call_fn(*_a, **_k):
         if call_fails:
-            return _text_result("", session_id=None, ok=False)
-        return _text_result("ok", session_id="sess-new")
+            return _llm_result("", session_id=None, ok=False)
+        return _llm_result("ok", session_id="sess-new")
 
     result = compact_resume_session(
         store=store,
@@ -299,7 +304,7 @@ def test_compact_fallbacks(tmp_path, scenario, kwargs, expected_reason):
         compacted_key="compacted",
         policy=CompactionPolicy(token_threshold=100_000, enabled=True),
         token_usage=kwargs.get("token_usage"),
-        call_text_fn=fake_call_text,
+        call_fn=fake_call_fn,
     )
 
     assert isinstance(result, CompactionResult)

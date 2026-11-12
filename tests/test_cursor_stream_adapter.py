@@ -15,7 +15,7 @@ import pytest
 from ghdag.core.capabilities import Permission
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
-from ghdag.llm.engines import TextResult, call
+from ghdag.llm.engines import LLMResult, call
 
 
 @pytest.fixture(autouse=True)
@@ -62,13 +62,17 @@ class TestCursorStreamAdapterExtraction:
             "5e7ca003-6637-4c42-b168-e2a4c05f1c8c"
         )
 
-    def test_text_result_session_id_from_stream(self):
+    def test_llm_result_session_id_from_stream(self):
         adapter = CursorStreamAdapter()
         sid = adapter.extract_session_id(_STREAM_SUCCESS, b"")
-        from ghdag.llm.engines import LLMResult
-
-        raw = LLMResult(stdout=_STREAM_SUCCESS.decode(), stderr="", returncode=0, session_id=sid)
-        assert TextResult(body="pong", success=True, raw=raw).session_id == sid
+        result = LLMResult(
+            body="pong",
+            stdout=_STREAM_SUCCESS.decode(),
+            stderr="",
+            returncode=0,
+            session_id=sid,
+        )
+        assert result.session_id == sid
 
     def test_is_terminal_result_event(self):
         adapter = CursorStreamAdapter()

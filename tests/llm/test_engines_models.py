@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -14,6 +15,7 @@ from ghdag.llm import (
     LLMParseError,
     LLMResult,
     Permission,
+    call,
     list_engines,
     list_models,
     validate_engine_model,
@@ -130,97 +132,127 @@ class TestValidateEngineModel:
 
 class TestLLMResult:
     def test_ok_success(self):
-        r = LLMResult(stdout="out", stderr="", returncode=0)
+        r = LLMResult(body="out", stdout="out", stderr="", returncode=0)
         assert r.ok is True
 
     def test_ok_failure(self):
-        r = LLMResult(stdout="", stderr="err", returncode=1)
+        r = LLMResult(body="", stdout="", stderr="err", returncode=1)
+        assert r.ok is False
+
+    def test_ok_false_when_adapter_error_set(self):
+        from ghdag.core.ports.output import EngineError, EngineErrorKind
+
+        r = LLMResult(
+            body="",
+            stdout="x",
+            stderr="",
+            returncode=0,
+            error=EngineError(kind=EngineErrorKind.CAPACITY, message="full", retryable=True),
+        )
         assert r.ok is False
 
 
-class TestLLMResultValidate:
-    def test_json_ok_valid_json(self):
-        """JSON_ONLY + valid JSON → no LLMParseError"""
-        r = LLMResult(stdout='{"k": "v"}', stderr="", returncode=0)
-        result = r.validate(JSON_ONLY)
-        assert result is r  # returns self
+class TestCallOutputNormalization:
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_json_ok_valid_json(self, mock_run: MagicMock):
+        """JSON_ONLY + valid JSON → body holds parsed JSON text."""
+        mock_run.return_value = MagicMock(stdout='{"k": "v"}', stderr="", returncode=0)
+        result = call("hello", permission=JSON_ONLY)
+        assert result.body == '{"k": "v"}'
+        assert result.ok
 
-    def test_json_ok_invalid_json(self):
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_json_ok_invalid_json(self, mock_run: MagicMock):
         """JSON_ONLY + non-JSON → LLMParseError"""
-        r = LLMResult(stdout="not json", stderr="", returncode=0)
+        mock_run.return_value = MagicMock(stdout="not json", stderr="", returncode=0)
         with pytest.raises(LLMParseError) as exc_info:
-            r.validate(JSON_ONLY)
+            call("hello", permission=JSON_ONLY)
         assert exc_info.value.raw == "not json"
 
-    def test_json_fail_skips_validation(self):
-        """returncode != 0 → skip validation"""
-        r = LLMResult(stdout="err", stderr="", returncode=1)
-        result = r.validate(JSON_ONLY)  # should not raise
-        assert result is r
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_json_fail_skips_validation(self, mock_run: MagicMock):
+        """returncode != 0 → skip JSON extraction"""
+        mock_run.return_value = MagicMock(stdout="err", stderr="", returncode=1)
+        result = call("hello", permission=JSON_ONLY)
+        assert not result.ok
 
-    def test_text_ok_no_validation(self):
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_text_ok_no_validation(self, mock_run: MagicMock):
         """TEXT_ONLY → no JSON validation"""
-        r = LLMResult(stdout="not json", stderr="", returncode=0)
-        result = r.validate(TEXT_ONLY)  # should not raise
-        assert result is r
+        mock_run.return_value = MagicMock(stdout="not json", stderr="", returncode=0)
+        result = call("hello", permission=TEXT_ONLY)
+        assert result.body == "not json"
 
-    def test_stream_extracts_result_from_jsonl(self):
-        """stream=True → extract final result from JSONL"""
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_stream_extracts_result_from_jsonl(self, mock_run: MagicMock):
+        """stream=True → extract final result from JSONL into body."""
         jsonl = (
             '{"type":"system","subtype":"init"}\n'
             '{"type":"assistant","message":{"content":[{"type":"text","text":"partial"}]}}\n'
             '{"type":"result","subtype":"success","result":"final answer"}\n'
         )
-        r = LLMResult(stdout=jsonl, stderr="", returncode=0)
-        result = r.validate(Permission(stream=True))
-        assert result.stdout == "final answer"
+        mock_run.return_value = MagicMock(stdout=jsonl, stderr="", returncode=0)
+        result = call("hello", engine="claude", permission=Permission(stream=True))
+        assert result.body == "final answer"
 
-    def test_stream_json_output_validated_after_extraction(self):
-        """stream=True + output_format=json → JSON validate after extract"""
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_stream_json_output_validated_after_extraction(self, mock_run: MagicMock):
+        """stream=True + output_format=json → JSON validate after extract."""
         jsonl = (
             '{"type":"result","subtype":"success","result":"{\\"k\\": \\"v\\"}"}\n'
         )
-        r = LLMResult(stdout=jsonl, stderr="", returncode=0)
-        result = r.validate(Permission(stream=True, output_format="json"))
-        assert result.stdout == '{"k": "v"}'
+        mock_run.return_value = MagicMock(stdout=jsonl, stderr="", returncode=0)
+        result = call(
+            "hello",
+            engine="claude",
+            permission=Permission(stream=True, output_format="json"),
+        )
+        assert result.body == '{"k": "v"}'
 
-    def test_stream_no_result_line_raises(self):
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_stream_no_result_line_raises(self, mock_run: MagicMock):
         """stream JSONL without a result line → LLMParseError"""
-        r = LLMResult(stdout='{"type":"system"}\n', stderr="", returncode=0)
+        mock_run.return_value = MagicMock(stdout='{"type":"system"}\n', stderr="", returncode=0)
         with pytest.raises(LLMParseError, match="no result line"):
-            r.validate(Permission(stream=True))
+            call("hello", engine="claude", permission=Permission(stream=True))
 
-    def test_claude_envelope_json_in_result_body(self):
-        """Claude JSON envelope with embedded JSON in result → parsed stdout (nexus #6246)."""
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_claude_envelope_json_in_result_body(self, mock_run: MagicMock):
+        """Claude JSON envelope with embedded JSON in result → parsed body (nexus #6246)."""
         envelope = (
             '{"type":"result","result":"Here: {\\"ok\\": true}","session_id":"s1"}'
         )
-        r = LLMResult(stdout=envelope, stderr="", returncode=0)
-        result = r.validate(JSON_ONLY, engine="claude")
-        assert json.loads(result.stdout) == {"ok": True}
+        mock_run.return_value = MagicMock(stdout=envelope, stderr="", returncode=0)
+        result = call("hello", engine="claude", permission=JSON_ONLY)
+        assert json.loads(result.body) == {"ok": True}
         assert result.raw_stdout == envelope
 
-    def test_claude_envelope_non_json_result_raises_with_body_raw(self):
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_claude_envelope_non_json_result_raises_with_body_raw(self, mock_run: MagicMock):
         """Non-JSON result text → LLMParseError.raw is adapter body, not envelope."""
         envelope = '{"type":"result","result":"I cannot do that.","session_id":"s1"}'
-        r = LLMResult(stdout=envelope, stderr="", returncode=0)
+        mock_run.return_value = MagicMock(stdout=envelope, stderr="", returncode=0)
         with pytest.raises(LLMParseError) as exc_info:
-            r.validate(JSON_ONLY, engine="claude")
+            call("hello", engine="claude", permission=JSON_ONLY)
         assert exc_info.value.raw == "I cannot do that."
 
-    def test_gemini_fenced_raw_stdout_preserved(self):
-        """Gemini passthrough stdout with fence → extracted JSON and raw_stdout."""
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_fenced_json_raw_stdout_preserved(self, mock_run: MagicMock):
+        """Fenced JSON in stdout → extracted body and raw_stdout preserved."""
         raw = '```json\n{"x": 1}\n```'
-        r = LLMResult(stdout=raw, stderr="", returncode=0)
-        result = r.validate(JSON_ONLY, engine="gemini")
-        assert json.loads(result.stdout) == {"x": 1}
+        mock_run.return_value = MagicMock(stdout=raw, stderr="", returncode=0)
+        result = call("hello", engine="claude", permission=JSON_ONLY)
+        assert json.loads(result.body) == {"x": 1}
         assert result.raw_stdout == raw
 
-    def test_failed_call_skips_json_validation(self):
-        """returncode != 0 with Claude envelope → validate returns self unchanged."""
-        r = LLMResult(stdout='{"type":"result","result":"x"}', stderr="", returncode=1)
-        result = r.validate(JSON_ONLY, engine="claude")
-        assert result is r
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_failed_call_skips_json_validation(self, mock_run: MagicMock):
+        """returncode != 0 with Claude envelope → no JSON parse."""
+        mock_run.return_value = MagicMock(
+            stdout='{"type":"result","result":"x"}', stderr="", returncode=1
+        )
+        result = call("hello", engine="claude", permission=JSON_ONLY)
+        assert result.returncode == 1
 
 
 class TestSupportsCapability:

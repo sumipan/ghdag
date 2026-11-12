@@ -112,10 +112,10 @@ Steps for Issues labelled `pipeline:develop-ready` are appended to `jobs/exec.js
 ### 3. Call an LLM from Python
 
 ```python
-from ghdag.llm import TEXT_ONLY, call_text
+from ghdag.llm import TEXT_ONLY, call
 
-result = call_text("Summarize this repo in one line.", engine="claude", permission=TEXT_ONLY)
-print(result.body if result.success else result.stderr)
+result = call("Summarize this repo in one line.", engine="claude", permission=TEXT_ONLY)
+print(result.body if result.ok else result.stderr)
 ```
 
 The same call from the shell:
@@ -263,9 +263,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
 | `issue_status` | `(issue_number, *, handler=None, workflow=None, exec_jsonl_path, state_dir, done_dir, running_uuids=None, audit_path=None, running_dir=None) -> IssueStatus` |
 | `running_tasks` | `(running_dir) -> list[RunningTask]` |
-| `ghdag.llm.call` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, permission=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=None) -> LLMResult` |
-| `ghdag.llm.call_text` | Same parameters as `call`; returns `TextResult` (`body`, `success`, `raw`, `error`) |
-| `ghdag.llm.call_managed` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, permission=TEXT_ONLY, fallback_candidates=(), additional_tags=None, quota_gate=None, fallback_on_timeout=False, isolation=None) -> ManagedResult` |
+| `ghdag.llm.call` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, permission=TEXT_ONLY, resume_session_id=None, isolation=None, fallback_candidates=(), permission_overrides=None, fallback_on_timeout=False, quota_gate=None, additional_tags=None) -> LLMResult` |
 | `ghdag.llm.build_llm_cmd` | `(engine, model, prompt, *, permission=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=False) -> list[str]` — when `isolation=True`, claude adds `--disable-slash-commands`; codex adds `-c skills.include_instructions=false`; cursor is unchanged |
 | `ghdag.core.command.render_exec_command` | `(spec, *, order_path, model, prompt=None, permission=None, resume_session_id=None, isolation=False) -> str` |
 | `ghdag.core.command.inject_resume` | `(spec, command, session_id) -> str` — insert resume into a command string produced by `render_exec_command` (no resume) |
@@ -303,19 +301,21 @@ Import other supported types from their definition packages (for example `ghdag.
 
 | Field / member | Type | Meaning |
 |---|---|---|
-| `stdout` | `str` | Process stdout after validation (for claude/cursor stream, the extracted or reconstructed body; for codex stream, the raw JSONL) |
+| `body` | `str` | Adapter-extracted or JSON-validated text for callers; empty when `error` is set |
+| `stdout` | `str` | Process stdout after validation (for claude/cursor stream, the extracted or reconstructed text; for codex stream, the raw JSONL) |
 | `stderr` | `str` | Raw process stderr |
 | `returncode` | `int` | Process exit code; `124` (`TIMEOUT_RETURNCODE`) on timeout, `127` when the binary is missing, `126` when it is not executable |
 | `latency_ms` | `float` | Wall-clock latency in milliseconds |
 | `session_id` | `str \| None` | Engine session ID, when the adapter can extract one |
 | `failure_class` | `FailureClass \| None` | Failure class set by `call()` itself (for example `FailureClass.TIMEOUT`); `None` when the caller has to classify stdout / stderr |
-| `raw_stdout` | `str \| None` | On successful claude or cursor stream calls, the subprocess JSONL before `stdout` is replaced; `None` for non-stream, codex stream, and failed calls. Use `TextResult.raw.raw_stdout` from `call_text()`. |
-| `ok` | property | `returncode == 0` |
+| `error` | `EngineError \| None` | Structured adapter error; when set, `body` is empty and `ok` is false |
+| `raw_stdout` | `str \| None` | On successful claude or cursor stream calls, the subprocess JSONL before normalization; `None` for many non-stream successes |
+| `ok` | property | `returncode == 0` and `error is None` |
 | `timed_out` | property | `failure_class is FailureClass.TIMEOUT` |
 
 `call()` never raises `subprocess.TimeoutExpired`. When the engine outlives `timeout`, the process is killed and `call()` returns the stdout / stderr captured so far, with a final `TIMEOUT: <cli> timed out after <n>s` line on stderr.
 
-`call_managed()` classifies failures through the engine's output adapter (after honouring `LLMResult.failure_class`), reports quota exhaustion to `QuotaGate`, and retries once with `fallback_candidates` on `QUOTA_EXHAUSTED` or `AUTH`. Timeouts get the fallback only with `fallback_on_timeout=True`, and a timeout never marks the engine paused.
+With `fallback_candidates` and `quota_gate`, `call()` classifies failures through the engine output adapter (after honouring `LLMResult.failure_class`), reports quota exhaustion, and retries once on `QUOTA_EXHAUSTED` or `AUTH`. Timeouts get the fallback only with `fallback_on_timeout=True`, and a timeout never marks the engine paused.
 
 ### Package `__all__`
 
@@ -332,7 +332,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
 | `ghdag.forge` | `DEFAULT_REPO`, `ForgePort`, `GitHubApiError`, `GitHubClient`, `LocalForge`, `get_forge` |
 | `ghdag.io` | `audit`, `audit_query`, `done`, `exec_jsonl`, `queue`, `redact`, `sessions` |
-| `ghdag.llm` | `_config`, `DEFAULT_ENGINE_MODELS`, `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PERMISSIONS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `EngineSpec`, `InputMode`, `PromptFlag`, `Permission`, `LLMParseError`, `LLMResult`, `ManagedResult`, `TextResult`, `SessionRecord`, `SessionStore`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `build_llm_cmd`, `call`, `call_managed`, `call_text`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model` |
+| `ghdag.llm` | `_config`, `DEFAULT_ENGINE_MODELS`, `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PERMISSIONS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `EngineSpec`, `InputMode`, `PromptFlag`, `Permission`, `LLMParseError`, `LLMResult`, `SessionRecord`, `SessionStore`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `build_llm_cmd`, `call`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model` |
 | `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
 | `ghdag.metrics` | `FailureClass`, `MetricsRecorder`, `TaskMetrics`, `TokenUsage` |
 | `ghdag.pipeline` | `AuditContext`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_command_adapter`, `resolve_models`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `write_task_exit_audit` |
@@ -635,8 +635,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `llm/_config.py` | `llm-models.yml` loading (`ConfigLoadError`) |
 | `llm/_constants.py` | `DEFAULT_ENGINE_MODELS` |
 | `llm/compaction.py` | Resume-session handoff summary compaction (JSON output mode) |
-| `llm/engines.py` | Engine / model allow-list, `call` / `call_text`, `supports_capability` (`EngineModelError`) |
-| `llm/managed.py` | `call_managed`: failure classification, quota report, fallback |
+| `llm/engines.py` | Engine / model allow-list, unified `call`, `supports_capability` (`EngineModelError`) |
 | `llm/session.py` | `SessionRecord`, `SessionStore` |
 | `llm/adapters/__init__.py` | `get_output_adapter` |
 | `llm/adapters/claude_json.py` | claude JSON / stream-json output adapter |
@@ -699,7 +698,7 @@ Every variable ghdag reads (`os.environ` / `os.getenv` in `src/ghdag/`). Most re
 | `GHDAG_LANGUAGE_PACK` | unset (bundled `EN`) | `config.env.ghdag_language_pack` (`config.language.get_language_pack`) | Path to a [language pack](#language-pack-ghdag_language_pack) YAML; an invalid pack raises `GhdagError` (`ghdag ui` fails at start-up) |
 | `GHDAG_STATE_DIR` | unset | `config.env.state_dir` | Directory for runtime state (`done/`, `running/`, `events/`, `.sessions/`, `cancel/`, `quota-gate.json`, `.pipeline-state/`); `exec.jsonl` and `audit.jsonl` stay in `jobs/`. Explicit CLI / API paths win |
 | `GHDAG_EXEC_JSONL` | `jobs/exec.jsonl` | `cli.commands.status` | Default `--exec-jsonl` of `ghdag status` |
-| `GHDAG_ENGINE_ISOLATION` | unset (off) | `config.env.engine_isolation_enabled` | `1` / `true` / `yes` / `on` enables engine isolation: claude gets `--disable-slash-commands`; codex `call()` uses `CODEX_HOME=/var/tmp/ghdag-dag-codex/` when `auth.json` exists there (otherwise a warning is printed) and command builders add `-c skills.include_instructions=false` (skills under `$HOME` such as `~/.agents/skills` are not disabled by `CODEX_HOME` alone). cursor has no CLI isolation flag — ghdag does not change cursor argv. An explicit `isolation=` argument wins over this env var; `call_managed(..., isolation=...)` forwards the same value to every `call()` attempt including quota/auth fallback |
+| `GHDAG_ENGINE_ISOLATION` | unset (off) | `config.env.engine_isolation_enabled` | `1` / `true` / `yes` / `on` enables engine isolation: claude gets `--disable-slash-commands`; codex `call()` uses `CODEX_HOME=/var/tmp/ghdag-dag-codex/` when `auth.json` exists there (otherwise a warning is printed) and command builders add `-c skills.include_instructions=false` (skills under `$HOME` such as `~/.agents/skills` are not disabled by `CODEX_HOME` alone). cursor has no CLI isolation flag — ghdag does not change cursor argv. An explicit `isolation=` argument wins over this env var; `call(..., isolation=...)` applies to the primary attempt and any quota/auth fallback |
 | `GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS` | `18000` | `llm.adapters.failure_classification` | Pause (seconds) when an engine reports quota exhaustion without a reset time; read once at import |
 | `GHDAG_FORGE` | `github` | `forge.get_forge`, `github_cli.get_forge` | Forge backend: `github` or `local` |
 | `GHDAG_FORGE_ROOT` | none | `forge.get_forge` | Data root of `LocalForge`; required when `GHDAG_FORGE=local` |

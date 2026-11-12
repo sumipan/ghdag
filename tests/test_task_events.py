@@ -21,7 +21,7 @@ from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import DagConfig
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter, extract_stream_result
-from ghdag.llm.engines import TextResult, _extract_stream_result
+from ghdag.llm.engines import LLMResult, _extract_stream_result
 from ghdag.ui.server import _build_snapshot, _latest_progress
 
 # --- Real-shape fixtures (captured 2026-09-09, slimmed) ---------------------
@@ -240,15 +240,18 @@ class TestExtractStreamResultShared:
         legacy_text = adapter.extract_result_text(_LEGACY_JSON_RESULT.encode(), b"")
         assert stream_text == legacy_text == b"pong"
 
-    def test_stream_json_session_id_for_text_result(self):
+    def test_stream_json_session_id_on_llm_result(self):
         adapter = ClaudeJsonAdapter()
         sid = adapter.extract_session_id(_STREAM_SUCCESS.encode(), b"")
         assert sid == "9664201d-a9c9-43d6-b070-6d7ee4183d55"
-        # TextResult.session_id comes via raw.session_id
-        from ghdag.llm.engines import LLMResult
-
-        raw = LLMResult(stdout=_STREAM_SUCCESS, stderr="", returncode=0, session_id=sid)
-        assert TextResult(body="pong", success=True, raw=raw).session_id == sid
+        result = LLMResult(
+            body="pong",
+            stdout=_STREAM_SUCCESS,
+            stderr="",
+            returncode=0,
+            session_id=sid,
+        )
+        assert result.session_id == sid
 
     def test_stream_error_extracts_engine_error(self):
         adapter = ClaudeJsonAdapter()

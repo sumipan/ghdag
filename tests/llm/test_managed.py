@@ -1,760 +1,126 @@
-"""tests/llm/test_managed.py — regression tests for call_managed() (Issue #2793)."""
+"""tests/llm/test_managed.py — fallback / quota on unified call() (Issue sumipan/nexus#6529)."""
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from ghdag.core.capabilities import JSON_ONLY
-from ghdag.core.models.metrics import FailureClass, TokenUsage
-from ghdag.llm.engines import LLMResult
-from ghdag.llm.managed import ManagedResult, call_managed
+from ghdag.core.capabilities import JSON_ONLY, TEXT_ONLY
+from ghdag.core.models.metrics import FailureClass
+from ghdag.llm import engines as engines_mod
+from ghdag.llm.engines import call
 from ghdag.quota import QuotaGate
 
 _QUOTA_OBSERVED_AT = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
 _QUOTA_NOW = datetime(2024, 1, 15, 12, 1, 0, tzinfo=timezone.utc)
 
 
-def _llm(stdout: str = "ok", stderr: str = "", returncode: int = 0) -> LLMResult:
-    return LLMResult(stdout=stdout, stderr=stderr, returncode=returncode)
-
-
-def _adapter(
-    *,
-    body: bytes = b"extracted",
-    usage: TokenUsage | None = None,
-    failure: FailureClass | None = None,
-) -> MagicMock:
+def _adapter(*, failure: FailureClass | None = None, body: bytes = b"extracted") -> MagicMock:
     adapter = MagicMock()
     adapter.extract_result_text.return_value = body
-    adapter.extract_token_usage.return_value = usage
+    adapter.extract_token_usage.return_value = None
+    adapter.extract_error.return_value = None
     adapter.classify_failure.return_value = failure
+    adapter.extract_session_id.return_value = None
     return adapter
 
 
-class TestManagedResult:
-    def test_frozen(self):
-        result = ManagedResult(
-            body="x",
-            usage=None,
-            returncode=0,
-            failure_class=None,
-            engine_used="claude",
-            model_used="claude-sonnet-4-6",
-            attempts=1,
-            quota_reported=False,
-            additional_tags={},
-        )
-        with pytest.raises(Exception):
-            result.body = "y"  # type: ignore[misc]
-
-
-class TestCallManagedSuccess:
-    def test_success_returns_extracted_body_and_usage(self):
-        usage = TokenUsage(token_count=42, cost_usd=0.01)
-        mock_adapter = _adapter(body=b"hello", usage=usage)
-        with (
-            patch("ghdag.llm.managed.call", return_value=_llm("raw")) as mock_call,
-            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
-            patch("ghdag.llm.managed.validate_engine_model", return_value="claude-sonnet-4-6"),
-        ):
-            result = call_managed("prompt", engine="claude", model=None)
-
-        assert isinstance(result, ManagedResult)
-        assert result.body == "hello"
-        assert result.usage is usage
-        assert result.returncode == 0
-        assert result.failure_class is None
-        assert result.engine_used == "claude"
-        assert result.model_used == "claude-sonnet-4-6"
-        assert result.attempts == 1
-        assert result.quota_reported is False
-        assert result.additional_tags == {}
-        mock_adapter.classify_failure.assert_not_called()
-        mock_call.assert_called_once()
-
-    def test_passes_kwargs_including_cwd(self, tmp_path: Path):
-        mock_adapter = _adapter(body=b"ok")
-        with (
-            patch("ghdag.llm.managed.call", return_value=_llm()) as mock_call,
-            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
-            patch("ghdag.llm.managed.validate_engine_model", return_value="m"),
-        ):
-            call_managed(
-                "p",
-                engine="claude",
-                model="m",
-                timeout=10,
-                stdin_text="in",
-                cwd=tmp_path,
-                additional_tags={"template": "b1"},
-            )
-
-        kwargs = mock_call.call_args.kwargs
-        assert kwargs["engine"] == "claude"
-        assert kwargs["model"] == "m"
-        assert kwargs["timeout"] == 10
-        assert kwargs["stdin_text"] == "in"
-        assert kwargs["cwd"] == tmp_path
-
-    def test_isolation_true_forwarded_to_call(self):
-        mock_adapter = _adapter()
-        with (
-            patch("ghdag.llm.managed.call", return_value=_llm()) as mock_call,
-            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
-            patch("ghdag.llm.managed.validate_engine_model", return_value="m"),
-        ):
-            call_managed("p", engine="codex", isolation=True)
-
-        assert mock_call.call_args.kwargs["isolation"] is True
-
-    def test_isolation_omitted_forwarded_as_none(self):
-        mock_adapter = _adapter()
-        with (
-            patch("ghdag.llm.managed.call", return_value=_llm()) as mock_call,
-            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
-            patch("ghdag.llm.managed.validate_engine_model", return_value="m"),
-        ):
-            call_managed("p", engine="claude")
-
-        assert mock_call.call_args.kwargs["isolation"] is None
-
-    def test_additional_tags_preserved(self):
-        mock_adapter = _adapter()
-        with (
-            patch("ghdag.llm.managed.call", return_value=_llm()),
-            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
-            patch("ghdag.llm.managed.validate_engine_model", return_value="m"),
-        ):
-            result = call_managed("p", additional_tags={"tier": "heavy"})
-        assert result.additional_tags == {"tier": "heavy"}
-
-    def test_json_only_claude_envelope_body_is_extracted_json_with_usage(self):
-        inner = json.dumps({"result": "done", "ok": True})
-        envelope = json.dumps(
-            {
-                "type": "result",
-                "result": f"```json\n{inner}\n```",
-                "session_id": "s1",
-                "usage": {"input_tokens": 3, "output_tokens": 7},
-            }
-        )
-        validated = LLMResult(stdout=envelope, stderr="", returncode=0).validate(
-            JSON_ONLY, engine="claude"
-        )
-        with (
-            patch("ghdag.llm.managed.call", return_value=validated),
-            patch(
-                "ghdag.llm.managed.validate_engine_model",
-                return_value="claude-sonnet-4-6",
-            ),
-        ):
-            result = call_managed("p", engine="claude", permission=JSON_ONLY)
-
-        assert json.loads(result.body) == {"result": "done", "ok": True}
-        assert result.body != "done"
-        assert result.usage is not None
-        assert result.usage.token_count == 10
-        assert result.returncode == 0
-
-
-class TestCallManagedClassification:
-    def test_classify_failure_receives_stdout_and_stderr(self):
-        mock_adapter = _adapter(failure=FailureClass.UNKNOWN_FAILURE)
-        with (
-            patch(
-                "ghdag.llm.managed.call",
-                return_value=_llm(stdout="OUT", stderr="ERR", returncode=1),
-            ),
-            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
-            patch("ghdag.llm.managed.validate_engine_model", return_value="m"),
-        ):
-            result = call_managed("p", engine="claude")
-
-        mock_adapter.classify_failure.assert_called_once_with(1, b"OUT", b"ERR")
-        assert result.failure_class == FailureClass.UNKNOWN_FAILURE.value
-        assert result.attempts == 1
-
-    def test_unknown_failure_does_not_fallback(self):
-        calls: list[str] = []
-
-        def fake_call(prompt, *, engine, **kwargs):
-            del prompt, kwargs
-            calls.append(engine)
-            return _llm(stdout="boom", returncode=1)
-
-        mock_adapter = _adapter(failure=FailureClass.UNKNOWN_FAILURE)
-        with (
-            patch("ghdag.llm.managed.call", side_effect=fake_call),
-            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
-            patch("ghdag.llm.managed.validate_engine_model", side_effect=lambda e, m: m or "default"),
-        ):
-            result = call_managed(
-                "p",
-                engine="claude",
-                fallback_candidates=[("codex", "gpt-5.6-sol")],
-            )
-
-        assert calls == ["claude"]
-        assert result.engine_used == "claude"
-        assert result.attempts == 1
-        assert result.quota_reported is False
-
-
-class TestCallManagedFallback:
-    def test_quota_exhausted_reports_and_fallbacks_once(self, tmp_path: Path):
-        gate = QuotaGate(tmp_path / "quota-gate.json")
-        calls: list[str] = []
-
-        def fake_call(prompt, *, engine, **kwargs):
-            del prompt, kwargs
-            calls.append(engine)
-            if engine == "claude":
-                return _llm(stdout="session limit", returncode=1)
-            return _llm(stdout='{"result":"ok"}', returncode=0)
-
-        def fake_adapter(engine: str):
-            adapter = MagicMock()
-            if engine == "claude":
-                adapter.extract_result_text.return_value = b"session limit"
-                adapter.extract_token_usage.return_value = None
-                adapter.classify_failure.return_value = FailureClass.QUOTA_EXHAUSTED
-            else:
-                adapter.extract_result_text.return_value = b"ok"
-                adapter.extract_token_usage.return_value = TokenUsage(token_count=1)
-                adapter.classify_failure.return_value = None
-            return adapter
-
-        with (
-            patch("ghdag.llm.managed.call", side_effect=fake_call),
-            patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
-            patch(
-                "ghdag.llm.managed.validate_engine_model",
-                side_effect=lambda e, m: m or f"{e}-default",
-            ),
-        ):
-            result = call_managed(
-                "p",
-                engine="claude",
-                model="claude-opus-4-6",
-                fallback_candidates=[("codex", "gpt-5.6-sol")],
-                quota_gate=gate,
-            )
-
-        assert calls == ["claude", "codex"]
-        assert result.returncode == 0
-        assert result.engine_used == "codex"
-        assert result.model_used == "gpt-5.6-sol"
-        assert result.attempts == 2
-        assert result.quota_reported is True
-        assert result.failure_class is None
-        assert result.body == "ok"
-        assert gate.snapshot().engines["claude"].status == "paused"
-
-    def test_fallback_propagates_isolation_to_both_calls(self, tmp_path: Path):
-        gate = QuotaGate(tmp_path / "quota-gate.json")
-        isolation_values: list[bool | None] = []
-
-        def fake_call(prompt, *, engine, isolation=None, **kwargs):
-            del prompt, kwargs
-            isolation_values.append(isolation)
-            if engine == "claude":
-                return _llm(stdout="session limit", returncode=1)
-            return _llm(returncode=0)
-
-        def fake_adapter(engine: str):
-            adapter = MagicMock()
-            adapter.extract_result_text.return_value = b"x"
-            adapter.extract_token_usage.return_value = None
-            adapter.classify_failure.return_value = (
-                FailureClass.QUOTA_EXHAUSTED if engine == "claude" else None
-            )
-            return adapter
-
-        with (
-            patch("ghdag.llm.managed.call", side_effect=fake_call),
-            patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
-            patch(
-                "ghdag.llm.managed.validate_engine_model",
-                side_effect=lambda e, m: m or "default",
-            ),
-        ):
-            call_managed(
-                "p",
-                engine="claude",
-                isolation=True,
-                fallback_candidates=[("codex", "gpt")],
-                quota_gate=gate,
-            )
-
-        assert isolation_values == [True, True]
-
-    def test_auth_also_triggers_fallback(self, tmp_path: Path):
-        gate = QuotaGate(tmp_path / "quota-gate.json")
-        calls: list[str] = []
-
-        def fake_call(prompt, *, engine, **kwargs):
-            del prompt, kwargs
-            calls.append(engine)
-            if engine == "claude":
-                return _llm(stdout="OAuth session expired", returncode=1)
-            return _llm(returncode=0)
-
-        def fake_adapter(engine: str):
-            adapter = MagicMock()
-            adapter.extract_result_text.return_value = b"x"
-            adapter.extract_token_usage.return_value = None
-            adapter.classify_failure.return_value = (
-                FailureClass.AUTH if engine == "claude" else None
-            )
-            return adapter
-
-        with (
-            patch("ghdag.llm.managed.call", side_effect=fake_call),
-            patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
-            patch(
-                "ghdag.llm.managed.validate_engine_model",
-                side_effect=lambda e, m: m or "default",
-            ),
-        ):
-            result = call_managed(
-                "p",
-                engine="claude",
-                fallback_candidates=[("codex", "gpt")],
-                quota_gate=gate,
-            )
-
-        assert calls == ["claude", "codex"]
-        assert result.engine_used == "codex"
-        assert result.quota_reported is False
-        assert gate.auth_strike_count(engine="claude") == 1
-        claude_state = gate.snapshot().engines.get("claude")
-        assert claude_state is None or claude_state.status != "paused"
-
-    def test_auth_second_strike_reports_pause(self, tmp_path: Path) -> None:
-        gate = QuotaGate(tmp_path / "quota-gate.json")
-
-        def fake_call(prompt, *, engine, **kwargs):
-            del prompt, kwargs
-            if engine == "claude":
-                return _llm(stdout="OAuth session expired", returncode=1)
-            return _llm(returncode=0)
-
-        def fake_adapter(engine: str):
-            adapter = MagicMock()
-            adapter.extract_result_text.return_value = b"x"
-            adapter.extract_token_usage.return_value = None
-            adapter.classify_failure.return_value = (
-                FailureClass.AUTH if engine == "claude" else None
-            )
-            return adapter
-
-        patches = (
-            patch("ghdag.llm.managed.call", side_effect=fake_call),
-            patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
-            patch(
-                "ghdag.llm.managed.validate_engine_model",
-                side_effect=lambda e, m: m or "default",
-            ),
-        )
-        with patches[0], patches[1], patches[2]:
-            first = call_managed(
-                "p",
-                engine="claude",
-                fallback_candidates=[("codex", "gpt")],
-                quota_gate=gate,
-            )
-        assert first.quota_reported is False
-        assert gate.auth_strike_count(engine="claude") == 1
-
-        with patches[0], patches[1], patches[2]:
-            second = call_managed(
-                "p",
-                engine="claude",
-                fallback_candidates=[("codex", "gpt")],
-                quota_gate=gate,
-            )
-        assert second.quota_reported is True
-        assert gate.snapshot().engines["claude"].status == "paused"
-
-    def test_auth_strike_resets_after_primary_success(self, tmp_path: Path) -> None:
-        gate = QuotaGate(tmp_path / "quota-gate.json")
-
-        def auth_then_ok(prompt, *, engine, **kwargs):
-            del prompt, kwargs
-            if engine != "claude":
-                return _llm(returncode=0)
-            if gate.auth_strike_count(engine="claude") == 0:
-                return _llm(stdout="OAuth session expired", returncode=1)
-            return _llm(stdout="ok", returncode=0)
-
-        def fake_adapter(engine: str):
-            adapter = MagicMock()
-            adapter.extract_result_text.return_value = b"x"
-            adapter.extract_token_usage.return_value = None
-            if engine == "claude" and gate.auth_strike_count(engine="claude") == 0:
-                adapter.classify_failure.return_value = FailureClass.AUTH
-            else:
-                adapter.classify_failure.return_value = None
-            return adapter
-
-        with (
-            patch("ghdag.llm.managed.call", side_effect=auth_then_ok),
-            patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
-            patch(
-                "ghdag.llm.managed.validate_engine_model",
-                side_effect=lambda e, m: m or "default",
-            ),
-        ):
-            call_managed(
-                "p",
-                engine="claude",
-                fallback_candidates=[("codex", "gpt")],
-                quota_gate=gate,
-            )
-            assert gate.auth_strike_count(engine="claude") == 1
-            call_managed("p", engine="claude", quota_gate=gate)
-        assert gate.auth_strike_count(engine="claude") == 0
-
-    def test_fallback_success_does_not_reset_primary_auth_strike(self, tmp_path: Path) -> None:
-        gate = QuotaGate(tmp_path / "quota-gate.json")
-
-        def fake_call(prompt, *, engine, **kwargs):
-            del prompt, kwargs
-            if engine == "claude":
-                return _llm(stdout="OAuth session expired", returncode=1)
-            return _llm(returncode=0)
-
-        def fake_adapter(engine: str):
-            adapter = MagicMock()
-            adapter.extract_result_text.return_value = b"x"
-            adapter.extract_token_usage.return_value = None
-            adapter.classify_failure.return_value = (
-                FailureClass.AUTH if engine == "claude" else None
-            )
-            return adapter
-
-        with (
-            patch("ghdag.llm.managed.call", side_effect=fake_call),
-            patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
-            patch(
-                "ghdag.llm.managed.validate_engine_model",
-                side_effect=lambda e, m: m or "default",
-            ),
-        ):
-            call_managed(
-                "p",
-                engine="claude",
-                fallback_candidates=[("codex", "gpt")],
-                quota_gate=gate,
-            )
-        assert gate.auth_strike_count(engine="claude") == 1
-
-    def test_no_double_fallback_on_alternate_failure(self, tmp_path: Path):
-        gate = QuotaGate(tmp_path / "quota-gate.json")
-        calls: list[str] = []
-
-        def fake_call(prompt, *, engine, **kwargs):
-            del prompt, kwargs
-            calls.append(engine)
-            return _llm(stdout="session limit", returncode=1)
-
-        mock_adapter = _adapter(failure=FailureClass.QUOTA_EXHAUSTED)
-        with (
-            patch("ghdag.llm.managed.call", side_effect=fake_call),
-            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
-            patch(
-                "ghdag.llm.managed.validate_engine_model",
-                side_effect=lambda e, m: m or "default",
-            ),
-        ):
-            result = call_managed(
-                "p",
-                engine="claude",
-                fallback_candidates=[("codex", "gpt"), ("cursor", "auto")],
-                quota_gate=gate,
-            )
-
-        assert calls == ["claude", "codex"]
-        assert result.attempts == 2
-        assert result.returncode == 1
-        assert result.engine_used == "codex"
-        assert result.failure_class == FailureClass.QUOTA_EXHAUSTED.value
-
-    def test_skips_paused_fallback_candidates(self, tmp_path: Path):
-        gate = QuotaGate(tmp_path / "quota-gate.json")
-        gate.report(
-            engine="codex",
-            status="paused",
-            observed_at=_QUOTA_OBSERVED_AT,
-            reason="pre-paused",
-        )
-        calls: list[str] = []
-
-        def fake_call(prompt, *, engine, **kwargs):
-            del prompt, kwargs
-            calls.append(engine)
-            if engine == "claude":
-                return _llm(stdout="session limit", returncode=1)
-            return _llm(returncode=0)
-
-        def fake_adapter(engine: str):
-            adapter = MagicMock()
-            adapter.extract_result_text.return_value = b"x"
-            adapter.extract_token_usage.return_value = None
-            adapter.classify_failure.return_value = (
-                FailureClass.QUOTA_EXHAUSTED if engine == "claude" else None
-            )
-            return adapter
-
-        with (
-            patch("ghdag.quota._aware_now", side_effect=lambda now=None: _QUOTA_NOW if now is None else now),
-            patch("ghdag.llm.managed.call", side_effect=fake_call),
-            patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
-            patch(
-                "ghdag.llm.managed.validate_engine_model",
-                side_effect=lambda e, m: m or "default",
-            ),
-        ):
-            result = call_managed(
-                "p",
-                engine="claude",
-                fallback_candidates=[("codex", "gpt"), ("cursor", "auto")],
-                quota_gate=gate,
-            )
-
-        assert calls == ["claude", "cursor"]
-        assert result.engine_used == "cursor"
-
-    def test_all_candidates_paused_returns_primary_failure(self, tmp_path: Path):
-        gate = QuotaGate(tmp_path / "quota-gate.json")
-        gate.report(engine="codex", status="paused", observed_at=_QUOTA_OBSERVED_AT)
-        calls: list[str] = []
-
-        def fake_call(prompt, *, engine, **kwargs):
-            del prompt, kwargs
-            calls.append(engine)
-            return _llm(stdout="session limit", returncode=1)
-
-        mock_adapter = _adapter(failure=FailureClass.QUOTA_EXHAUSTED)
-        with (
-            patch("ghdag.quota._aware_now", side_effect=lambda now=None: _QUOTA_NOW if now is None else now),
-            patch("ghdag.llm.managed.call", side_effect=fake_call),
-            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
-            patch(
-                "ghdag.llm.managed.validate_engine_model",
-                side_effect=lambda e, m: m or "default",
-            ),
-        ):
-            result = call_managed(
-                "p",
-                engine="claude",
-                fallback_candidates=[("codex", "gpt")],
-                quota_gate=gate,
-            )
-
-        assert calls == ["claude"]
-        assert result.engine_used == "claude"
-        assert result.attempts == 1
-        assert result.quota_reported is True
-        assert result.failure_class == FailureClass.QUOTA_EXHAUSTED.value
-
-
-class TestManagedBodySelectionWithJsonRequest:
-    """Issue sumipan/nexus#6279 — body follows trial result, not caller output_format alone."""
-
-    _STATUS_MARKER = "PIPELINE_STATUS: CP2_PASS"
-    _EXTRACTED = f"review passed\n\n{_STATUS_MARKER}"
-
-    def test_codex_effective_text_body_uses_adapter_output_with_json_request(self):
-        jsonl = '{"type":"item.completed","item":{"text":"ignored"}}\n'
-        mock_adapter = _adapter(body=self._EXTRACTED.encode())
-        llm = LLMResult(stdout=jsonl, stderr="", returncode=0, raw_stdout=None)
-        with (
-            patch("ghdag.llm.managed.call", return_value=llm),
-            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
-            patch("ghdag.llm.managed.validate_engine_model", return_value="codex-default"),
-        ):
-            result = call_managed("p", engine="codex", permission=JSON_ONLY)
-
-        assert result.body == self._EXTRACTED
-        assert self._STATUS_MARKER in result.body.splitlines()
-
-    def test_cursor_effective_text_body_uses_adapter_output_with_json_request(self):
-        raw = "stream line one\nstream line two\n"
-        mock_adapter = _adapter(body=self._EXTRACTED.encode())
-        llm = LLMResult(stdout=raw, stderr="", returncode=0, raw_stdout=None)
-        with (
-            patch("ghdag.llm.managed.call", return_value=llm),
-            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
-            patch("ghdag.llm.managed.validate_engine_model", return_value="auto"),
-        ):
-            result = call_managed("p", engine="cursor", permission=JSON_ONLY)
-
-        assert result.body == self._EXTRACTED
-        assert self._STATUS_MARKER in result.body.splitlines()
-
-    def test_claude_effective_json_body_uses_validated_stdout(self):
-        validated = json.dumps({"verdict": "pass"})
-        envelope = json.dumps({"type": "result", "result": validated})
-        mock_adapter = _adapter(body=b"adapter-should-not-win")
-        llm = LLMResult(
-            stdout=validated,
-            stderr="",
-            returncode=0,
-            raw_stdout=envelope,
-        )
-        with (
-            patch("ghdag.llm.managed.call", return_value=llm),
-            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
-            patch("ghdag.llm.managed.validate_engine_model", return_value="claude-sonnet-4-6"),
-        ):
-            result = call_managed("p", engine="claude", permission=JSON_ONLY)
-
-        assert result.body == validated
-        assert result.body != "adapter-should-not-win"
-
-    def test_fallback_to_codex_uses_adapter_output_with_json_request(self, tmp_path: Path):
-        gate = QuotaGate(tmp_path / "quota-gate.json")
-        jsonl = '{"type":"turn.completed"}\n'
-        calls: list[str] = []
-
-        def fake_call(prompt, *, engine, **kwargs):
-            del prompt, kwargs
-            calls.append(engine)
-            if engine == "claude":
-                return _llm(stdout="session limit", returncode=1)
-            return LLMResult(stdout=jsonl, stderr="", returncode=0, raw_stdout=None)
-
-        def fake_adapter(engine: str):
-            adapter = MagicMock()
-            if engine == "claude":
-                adapter.extract_result_text.return_value = b"session limit"
-                adapter.extract_token_usage.return_value = None
-                adapter.classify_failure.return_value = FailureClass.QUOTA_EXHAUSTED
-            else:
-                adapter.extract_result_text.return_value = self._EXTRACTED.encode()
-                adapter.extract_token_usage.return_value = TokenUsage(token_count=1)
-                adapter.classify_failure.return_value = None
-            return adapter
-
-        with (
-            patch("ghdag.llm.managed.call", side_effect=fake_call),
-            patch("ghdag.llm.managed.get_output_adapter", side_effect=fake_adapter),
-            patch(
-                "ghdag.llm.managed.validate_engine_model",
-                side_effect=lambda e, m: m or f"{e}-default",
-            ),
-        ):
-            result = call_managed(
-                "p",
-                engine="claude",
-                fallback_candidates=[("codex", "gpt-5.6-sol")],
-                permission=JSON_ONLY,
-                quota_gate=gate,
-            )
-
-        assert calls == ["claude", "codex"]
-        assert result.engine_used == "codex"
-        assert result.attempts == 2
-        assert result.body == self._EXTRACTED
-        assert self._STATUS_MARKER in result.body.splitlines()
-
-
-class TestCallManagedExport:
-    def test_import_from_ghdag_llm(self):
-        from ghdag.llm import ManagedResult as MR
-        from ghdag.llm import call_managed as cm
-
-        assert MR is ManagedResult
-        assert cm is call_managed
-
-
-class TestCallManagedTimeout:
-    """LLMResult.failure_class set by call() wins over adapter classification (sumipan/nexus#4304)."""
-
-    @staticmethod
-    def _timeout_llm() -> LLMResult:
-        return LLMResult(
-            stdout="partial",
-            stderr="TIMEOUT: agent timed out after 5s\n",
-            returncode=124,
-            failure_class=FailureClass.TIMEOUT,
+def _subprocess(stdout: str = "ok", *, returncode: int = 1, failure: FailureClass | None = None):
+    return engines_mod._SubprocessRun(
+        stdout=stdout,
+        stderr="",
+        returncode=returncode,
+        latency_ms=1.0,
+        failure_class=failure,
+    )
+
+
+def test_call_without_fallback_returns_primary_quota_failure(tmp_path: Path) -> None:
+    """Issue sumipan/nexus#6529 — quota exhaustion without candidate stays on primary."""
+    mock_adapter = _adapter(failure=FailureClass.QUOTA_EXHAUSTED)
+
+    with (
+        patch.object(engines_mod, "_call_once", return_value=_subprocess("limit", returncode=1)),
+        patch.object(engines_mod, "get_output_adapter", return_value=mock_adapter),
+        patch.object(engines_mod, "validate_engine_model", return_value="claude-sonnet-4-6"),
+    ):
+        result = call("p", engine="claude")
+
+    assert result.attempts == 1
+    assert result.ok is False
+    assert result.failure_class is FailureClass.QUOTA_EXHAUSTED
+
+
+def test_call_quota_fallback_uses_override_and_reports_primary(tmp_path: Path) -> None:
+    """Issue sumipan/nexus#6529 — fallback uses permission_overrides and reports pause."""
+    gate = QuotaGate(tmp_path / "quota.json")
+    calls: list[tuple[str, object]] = []
+
+    def fake_once(prompt, *, engine, permission, **kwargs):
+        del prompt, kwargs
+        calls.append((engine, permission))
+        if engine == "claude":
+            return _subprocess("limit", returncode=1, failure=FailureClass.QUOTA_EXHAUSTED)
+        stdout = '{"verdict": "ok"}' if permission.output_format == "json" else "ok"
+        return _subprocess(stdout, returncode=0)
+
+    codex_json = JSON_ONLY
+    mock_adapter = _adapter()
+
+    with (
+        patch("ghdag.quota._aware_now", side_effect=lambda now=None: _QUOTA_NOW if now is None else now),
+        patch.object(engines_mod, "_call_once", side_effect=fake_once),
+        patch.object(engines_mod, "get_output_adapter", return_value=mock_adapter),
+        patch.object(
+            engines_mod,
+            "validate_engine_model",
+            side_effect=lambda e, m: m or ("claude-sonnet-4-6" if e == "claude" else "gpt"),
+        ),
+    ):
+        result = call(
+            "p",
+            engine="claude",
+            permission=TEXT_ONLY,
+            fallback_candidates=[("codex", "gpt")],
+            permission_overrides={"codex": codex_json},
+            quota_gate=gate,
         )
 
-    def test_timeout_is_classified_without_adapter(self):
-        mock_adapter = _adapter(failure=FailureClass.UNKNOWN_FAILURE)
-        with (
-            patch("ghdag.llm.managed.call", return_value=self._timeout_llm()),
-            patch("ghdag.llm.managed.get_output_adapter", return_value=mock_adapter),
-            patch("ghdag.llm.managed.validate_engine_model", return_value="m"),
-        ):
-            result = call_managed("p", engine="cursor")
+    assert result.attempts == 2
+    assert result.engine_used == "codex"
+    assert result.quota_reported is True
+    assert calls[0][1] is TEXT_ONLY
+    assert calls[1][1] is codex_json
+    snap = gate.snapshot()
+    assert snap.engines["claude"].status == "paused"
 
-        mock_adapter.classify_failure.assert_not_called()
-        assert result.returncode == 124
-        assert result.failure_class == FailureClass.TIMEOUT.value
-        assert result.body == "extracted"
 
-    def test_timeout_does_not_fallback_by_default(self, tmp_path: Path):
-        gate = QuotaGate(tmp_path / "quota-gate.json")
-        calls: list[str] = []
+def test_call_timeout_does_not_fallback_or_pause_by_default(tmp_path: Path) -> None:
+    """Issue sumipan/nexus#6529 — TIMEOUT does not fallback or pause by default."""
+    gate = QuotaGate(tmp_path / "quota.json")
 
-        def fake_call(prompt, *, engine, **kwargs):
-            del prompt, kwargs
-            calls.append(engine)
-            return self._timeout_llm()
+    with (
+        patch.object(
+            engines_mod,
+            "_call_once",
+            return_value=_subprocess(
+                "partial",
+                returncode=engines_mod.TIMEOUT_RETURNCODE,
+                failure=FailureClass.TIMEOUT,
+            ),
+        ),
+        patch.object(engines_mod, "get_output_adapter", return_value=_adapter()),
+        patch.object(engines_mod, "validate_engine_model", return_value="claude-sonnet-4-6"),
+    ):
+        result = call(
+            "p",
+            engine="claude",
+            fallback_candidates=[("codex", "gpt")],
+            quota_gate=gate,
+        )
 
-        with (
-            patch("ghdag.llm.managed.call", side_effect=fake_call),
-            patch("ghdag.llm.managed.get_output_adapter", return_value=_adapter()),
-            patch("ghdag.llm.managed.validate_engine_model", side_effect=lambda e, m: m or "d"),
-        ):
-            result = call_managed(
-                "p",
-                engine="cursor",
-                fallback_candidates=[("claude", None)],
-                quota_gate=gate,
-            )
-
-        assert calls == ["cursor"]
-        assert result.failure_class == "TIMEOUT"
-        assert result.attempts == 1
-        assert result.quota_reported is False
-        assert gate.snapshot().engines.get("cursor") is None
-
-    def test_fallback_on_timeout_runs_alternate_without_quota_report(self, tmp_path: Path):
-        gate = QuotaGate(tmp_path / "quota-gate.json")
-        calls: list[str] = []
-
-        def fake_call(prompt, *, engine, **kwargs):
-            del prompt, kwargs
-            calls.append(engine)
-            if engine == "cursor":
-                return self._timeout_llm()
-            return _llm(stdout="ok")
-
-        with (
-            patch("ghdag.llm.managed.call", side_effect=fake_call),
-            patch("ghdag.llm.managed.get_output_adapter", return_value=_adapter(body=b"ok")),
-            patch("ghdag.llm.managed.validate_engine_model", side_effect=lambda e, m: m or "d"),
-        ):
-            result = call_managed(
-                "p",
-                engine="cursor",
-                fallback_candidates=[("claude", None)],
-                quota_gate=gate,
-                fallback_on_timeout=True,
-            )
-
-        assert calls == ["cursor", "claude"]
-        assert result.returncode == 0
-        assert result.failure_class is None
-        assert result.engine_used == "claude"
-        assert result.attempts == 2
-        assert result.quota_reported is False
-        assert gate.snapshot().engines.get("cursor") is None
+    assert result.returncode == engines_mod.TIMEOUT_RETURNCODE
+    assert result.failure_class is FailureClass.TIMEOUT
+    assert result.attempts == 1
+    assert gate.snapshot().engines == {}

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ghdag.core.capabilities import JSON_ONLY
-from ghdag.llm.engines import TextResult, call_text
+from ghdag.llm.engines import LLMResult, call
 from ghdag.llm.session import SessionRecord, SessionStore
 
 # genshijin is a handoff-summary style for compaction prompts only.
@@ -108,7 +108,7 @@ def compact_resume_session(
     compacted_key: str,
     policy: CompactionPolicy | None = None,
     token_usage: int | None = None,
-    call_text_fn: Callable[..., TextResult] | None = None,
+    call_fn: Callable[..., LLMResult] | None = None,
     cwd: Path | str | None = None,
     model: str | None = None,
 ) -> CompactionResult:
@@ -118,7 +118,7 @@ def compact_resume_session(
     so callers can continue with conventional ``--resume``.
     """
     policy = policy or CompactionPolicy()
-    call_fn = call_text_fn or call_text
+    llm_call = call_fn or call
     parent_session_id = parent_record.session_id if parent_record else None
 
     skip_reason = policy.decide_reason(parent_record, token_usage=token_usage)
@@ -136,7 +136,7 @@ def compact_resume_session(
     assert parent_record is not None  # for type checkers
 
     try:
-        summary_result = call_fn(
+        summary_result = llm_call(
             GENSHIJIN_HANDOFF_PROMPT,
             engine=parent_record.engine,
             model=model,
@@ -154,7 +154,7 @@ def compact_resume_session(
             tokens_after=token_usage,
         )
 
-    if not summary_result.success or not summary_result.body.strip():
+    if not summary_result.ok or not summary_result.body.strip():
         return CompactionResult(
             status="fallback",
             reason="prompt_error",
@@ -172,7 +172,7 @@ def compact_resume_session(
     )
 
     try:
-        seeded = call_fn(
+        seeded = llm_call(
             seed_prompt,
             engine=parent_record.engine,
             model=model,
@@ -191,7 +191,7 @@ def compact_resume_session(
         )
 
     new_session_id = seeded.session_id
-    if not seeded.success or not new_session_id:
+    if not seeded.ok or not new_session_id:
         return CompactionResult(
             status="fallback",
             reason="prompt_error",

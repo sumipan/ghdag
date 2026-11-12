@@ -1,7 +1,7 @@
 """Rebuild assistant turns from cursor stream-json with blank-line separators (nexus #3260).
 
 Confirm each turn at tool_call boundaries, that the deduplicated full text
-matches across result / call_text / DAG result, and that events remain raw JSONL.
+matches across result / call() / DAG result, and that events remain raw JSONL.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import threading
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,7 +20,7 @@ from ghdag.llm.adapters.cursor_stream import (
     CursorStreamAdapter,
     reconstruct_assistant_turns,
 )
-from ghdag.llm.engines import LLMResult
+from ghdag.llm.engines import call
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _FINAL_MESSAGE = (_FIXTURES / "cursor_stream_final_message.jsonl").read_text(encoding="utf-8")
@@ -269,30 +269,34 @@ class TestCursorStreamAdapterFinalMessage:
         assert adapter.extract_result_text(b"plain text", b"") == b"plain text"
 
 
-class TestLLMResultValidateCursor:
-    def test_validate_cursor_stream_stdout_becomes_joined_turns(self):
-        caps = Permission(stream=True)
-        result = LLMResult(stdout=_FINAL_MESSAGE, stderr="", returncode=0)
-        validated = result.validate(caps, engine="cursor")
-        assert validated.stdout == _JOINED
-        adapter = CursorStreamAdapter()
-        body = adapter.extract_result_text(validated.stdout.encode(), b"").decode()
-        assert body == _JOINED
+class TestCallStreamNormalization:
+    @pytest.fixture(autouse=True)
+    def _stall_guard_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("GHDAG_ENGINE_STALL_GUARD", "0")
 
-    def test_validate_claude_stream_keeps_result_field(self):
-        caps = Permission(stream=True)
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_cursor_stream_body_becomes_joined_turns(self, mock_run):
+        mock_run.return_value = MagicMock(stdout=_FINAL_MESSAGE, stderr="", returncode=0)
+        result = call("p", engine="cursor", permission=Permission(stream=True))
+        assert result.body == _JOINED
+        assert result.raw_stdout == _FINAL_MESSAGE
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_claude_stream_keeps_result_field(self, mock_run):
         stream = _jsonl(
             {"type": "assistant", "message": {"content": [{"type": "text", "text": "mid"}]}},
             _result("final-claude"),
         )
-        result = LLMResult(stdout=stream, stderr="", returncode=0)
-        assert result.validate(caps, engine="claude").stdout == "final-claude"
+        mock_run.return_value = MagicMock(stdout=stream, stderr="", returncode=0)
+        result = call("p", engine="claude", permission=Permission(stream=True))
+        assert result.body == "final-claude"
 
-    def test_validate_codex_stream_preserves_raw_stdout(self):
-        caps = Permission(stream=True)
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_call_codex_stream_preserves_raw_stdout(self, mock_run):
         raw = '{"type":"item.completed"}\n{"type":"result","result":"x"}\n'
-        result = LLMResult(stdout=raw, stderr="", returncode=0)
-        assert result.validate(caps, engine="codex").stdout == raw
+        mock_run.return_value = MagicMock(stdout=raw, stderr="", returncode=0)
+        result = call("p", engine="codex", permission=Permission(stream=True))
+        assert result.stdout == raw
 
 
 def _make_config(tmp_path: Path, records: list[dict]) -> DagConfig:
