@@ -7,41 +7,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## 0.129.0 - 2026-11-12
+## 0.130.0 - 2026-11-12
 
 ### Changed
 
 - Rename the LLM constraint value object to `Permission` and the preset registry to `PERMISSIONS`. Public call paths (`ghdag.llm.call`, `call_text`, `call_managed`, `build_llm_cmd`, `ghdag.core.command.render_exec_command`, `container_prefix`, and `EngineAdapter.build_exec_record`) take keyword argument `permission` instead of `capabilities`. Preset keys and workflow step field `permission` are unchanged (sumipan/nexus#6501).
-- CLI flags: `--exec-jsonl` (replaces `--exec-md` / `quota status` `--exec-path`), `--interval-sec` (replaces `--interval`), `--timeout-sec` (replaces `--timeout`), and `ghdag llm --permission PRESET` (replaces `--capabilities-preset`, `--permission-mode`, `--dangerously-skip-permissions`). Handler `argparse` attribute names are unchanged (`exec_jsonl`, `interval`, `timeout`, and related fields) (sumipan/nexus#6475).
-- `ghdag.__all__` exports only `GhdagError`; import `QueueTask` / `QueueTaskStore`, pipeline, DAG, workflow, quota, and status symbols from their definition packages (sumipan/nexus#6475).
-- `ghdag.pipeline` no longer re-exports `STATE_*`, `task_status`, `state_label`, or `status_rank`; import from `ghdag.pipeline.status` / `ghdag.pipeline.state` (sumipan/nexus#6475).
-- Internal DAG process record renamed to `_RunningProcess` in `ghdag.dag.models`; it is not exported from `ghdag.dag`. Snapshot type `ghdag.status.RunningTask` is unchanged (sumipan/nexus#6475).
 
 ### Removed
 
 - `LLMCapabilities`, `PRESETS`, and the `capabilities` keyword on public LLM / command APIs; use `Permission`, `PERMISSIONS`, and `permission` (sumipan/nexus#6501).
-- `ForgePort`, `get_forge`, `GitHubIssueClient`, and `create_github_client` from `ghdag.workflow.__all__`; import from `ghdag.core.ports.forge`, `ghdag.forge`, and `ghdag.github_client` (sumipan/nexus#6475).
 
 | Before | After |
 | --- | --- |
-| `ghdag watch … --exec-md PATH` | `ghdag watch … --exec-jsonl PATH` |
-| `ghdag trigger … --exec-md PATH` | `ghdag trigger … --exec-jsonl PATH` |
-| `ghdag dag recover … --exec-md PATH` | `ghdag dag recover … --exec-jsonl PATH` |
-| `ghdag quota status --exec-path PATH` | `ghdag quota status --exec-jsonl PATH` |
-| `ghdag run|watch|ui … --interval SEC` | `… --interval-sec SEC` |
-| `ghdag llm … --timeout SEC` | `ghdag llm … --timeout-sec SEC` |
-| `ghdag llm --capabilities-preset P` | `ghdag llm --permission P` |
 | `from ghdag.llm import LLMCapabilities, PRESETS` | `from ghdag.llm import Permission, PERMISSIONS` |
 | `ghdag.llm.call(..., capabilities=TEXT_ONLY)` | `ghdag.llm.call(..., permission=TEXT_ONLY)` |
-| `from ghdag import DagEngine` | `from ghdag.dag import DagEngine` |
-| `from ghdag.dag import RunningTask` | internal `_RunningProcess` (not public) |
-| `from ghdag.workflow import get_forge` | `from ghdag.forge import get_forge` |
 
 ### Host consumer migration (sumipan/nexus#6501)
 
-1. Merge this ghdag release first; do not add `LLMCapabilities` / `PRESETS` / `capabilities=` compatibility shims.
-2. Host consumers are pin-fixed (sumipan/nexus#6493). Follow-up issues tracking import / keyword / pin updates: sumipan/nexus#6466 (milestone migration step 3 — per-repo consumer PRs before pin bump), sumipan/nexus#6485 (issuesmith `ghdag` pin to v0.129.0), sumipan/nexus#6486 (nexus host pin; merged). Permission-specific nexus / issuesmith / mltgnt / slack-project updates land in follow-up Issues filed under #6466 before pins exceed this release.
-3. Until those follow-ups merge, `LLMCapabilities` / `capabilities=` in pinned consumers is expected and is not a blocker for this PR.
+1. Ship this rename in ghdag **v0.130.0**; do not restore `LLMCapabilities` / `PRESETS` / `capabilities=` compatibility shims.
+2. Pinned host consumers (sumipan/nexus#6493): file one tracking Issue per consumer repository (nexus host, issuesmith, mltgnt, slack-project). Each follow-up PR updates `Permission` / `PERMISSIONS` imports and the `permission` keyword together with the ghdag pin to **v0.130.0**.
+3. Record each per-consumer tracking Issue number on sumipan/nexus#6501 before any consumer pin exceeds v0.130.0.
 
 ### Regression test checklist (sumipan/nexus#6501)
 
@@ -53,6 +38,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 | Public LLM API keyword `permission` | `tests/llm/test_call_text.py::test_public_signatures_use_permission` |
 | `Permission` / `PERMISSIONS` exports | `tests/conventions/test_public_package_exports_runtime.py::test_permission_names_are_public` |
 | Preset registry identity | `tests/llm/test_capabilities.py::test_permission_registry_identity` |
+
+## 0.129.0 - 2026-11-12
+
+### Changed
+
+- CLI flags: `--exec-jsonl` (replaces `--exec-md` / `quota status` `--exec-path`), `--interval-sec` (replaces `--interval`), `--timeout-sec` (replaces `--timeout`), and `ghdag llm --permission PRESET` (replaces `--capabilities-preset`, `--permission-mode`, `--dangerously-skip-permissions`). Handler `argparse` attribute names are unchanged (`exec_jsonl`, `interval`, `timeout`, and related fields) (sumipan/nexus#6475).
+- `ghdag.__all__` exports only `GhdagError`; import `QueueTask` / `QueueTaskStore`, pipeline, DAG, workflow, quota, and status symbols from their definition packages (sumipan/nexus#6475).
+- `ghdag.pipeline` no longer re-exports `STATE_*`, `task_status`, `state_label`, or `status_rank`; import from `ghdag.pipeline.status` / `ghdag.pipeline.state` (sumipan/nexus#6475).
+- Internal DAG process record renamed to `_RunningProcess` in `ghdag.dag.models`; it is not exported from `ghdag.dag`. Snapshot type `ghdag.status.RunningTask` is unchanged (sumipan/nexus#6475).
+
+### Removed
+
+- `ForgePort`, `get_forge`, `GitHubIssueClient`, and `create_github_client` from `ghdag.workflow.__all__`; import from `ghdag.core.ports.forge`, `ghdag.forge`, and `ghdag.github_client` (sumipan/nexus#6475).
+
+| Before | After |
+| --- | --- |
+| `ghdag watch … --exec-md PATH` | `ghdag watch … --exec-jsonl PATH` |
+| `ghdag trigger … --exec-md PATH` | `ghdag trigger … --exec-jsonl PATH` |
+| `ghdag dag recover … --exec-md PATH` | `ghdag dag recover … --exec-jsonl PATH` |
+| `ghdag quota status --exec-path PATH` | `ghdag quota status --exec-jsonl PATH` |
+| `ghdag run|watch|ui … --interval SEC` | `… --interval-sec SEC` |
+| `ghdag llm … --timeout SEC` | `ghdag llm … --timeout-sec SEC` |
+| `ghdag llm --capabilities-preset P` | `ghdag llm --permission P` |
+| `from ghdag import DagEngine` | `from ghdag.dag import DagEngine` |
+| `from ghdag.dag import RunningTask` | internal `_RunningProcess` (not public) |
+| `from ghdag.workflow import get_forge` | `from ghdag.forge import get_forge` |
 
 ## 0.127.0 - 2026-11-11
 
