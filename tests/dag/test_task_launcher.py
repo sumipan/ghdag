@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -18,6 +19,7 @@ from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.vocabulary import DONE_SKIPPED_MISSING_INPUT
 from ghdag.dag.models import DagConfig, Task
 from ghdag.llm.compaction import CompactionResult
+from ghdag.quota import AdmissionDecision
 
 
 class TestTaskLauncherUnit:
@@ -301,6 +303,124 @@ def test_apply_resume_codex_search_command(tmp_path: Path) -> None:
     assert task.annotations["resumed_session_id"] == "sess-parent"
 
 
+def _log_message_count(records: list[logging.LogRecord], needle: str) -> int:
+    return sum(1 for record in records if needle in record.message)
+
+
+def test_quota_deferred_launch_does_not_log_launching(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Issue #6502 AC1: quota denial returns False with one deferred line and no Launching."""
+    launcher = _make_launcher(tmp_path)
+    task = Task(uuid="quota-uuid", command="claude -p ok", engine="claude")
+    denied = AdmissionDecision(
+        allowed=False,
+        status="PAUSED",
+        reason="budget: weekly cap",
+        resume_at=None,
+    )
+
+    with patch.object(launcher._quota_gate, "begin_run", return_value=denied), caplog.at_level(
+        logging.INFO, logger="ghdag.dag.task_launcher"
+    ):
+        assert launcher.launch("quota-uuid", task) is False
+
+    assert _log_message_count(caplog.records, "Launching [") == 0
+    assert (
+        _log_message_count(caplog.records, "launch deferred by quota gate") == 1
+    )
+
+
+def test_quota_deferred_log_is_emitted_once_for_same_reason(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Issue #6502 AC2: repeated quota denial for the same reason logs deferred once."""
+    launcher = _make_launcher(tmp_path)
+    task = Task(uuid="quota-uuid", command="claude -p ok", engine="claude")
+    denied = AdmissionDecision(
+        allowed=False,
+        status="PAUSED",
+        reason="budget: weekly cap",
+        resume_at=None,
+    )
+
+    with patch.object(launcher._quota_gate, "begin_run", return_value=denied), caplog.at_level(
+        logging.INFO, logger="ghdag.dag.task_launcher"
+    ):
+        assert launcher.launch("quota-uuid", task) is False
+        assert launcher.launch("quota-uuid", task) is False
+
+    assert _log_message_count(caplog.records, "launch deferred by quota gate") == 1
+
+
+def test_quota_deferred_log_is_emitted_again_when_reason_changes(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Issue #6502 AC3: changing deferral reason emits a new deferred line."""
+    launcher = _make_launcher(tmp_path)
+    task = Task(uuid="quota-uuid", command="claude -p ok", engine="claude")
+    denied_r1 = AdmissionDecision(
+        allowed=False,
+        status="PAUSED",
+        reason="budget: R1",
+        resume_at=None,
+    )
+    denied_r2 = AdmissionDecision(
+        allowed=False,
+        status="PAUSED",
+        reason="budget: R2",
+        resume_at=None,
+    )
+
+    with caplog.at_level(logging.INFO, logger="ghdag.dag.task_launcher"):
+        with patch.object(launcher._quota_gate, "begin_run", return_value=denied_r1):
+            assert launcher.launch("quota-uuid", task) is False
+        with patch.object(launcher._quota_gate, "begin_run", return_value=denied_r2):
+            assert launcher.launch("quota-uuid", task) is False
+
+    assert _log_message_count(caplog.records, "launch deferred by quota gate") == 2
+
+
+def test_successful_launch_resets_quota_deferred_log_state(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Issue #6502 AC4: after launch, the same deferral reason logs deferred again."""
+    launcher = _make_launcher(tmp_path)
+    task = Task(uuid="quota-uuid", command="true", engine="shell")
+    denied = AdmissionDecision(
+        allowed=False,
+        status="PAUSED",
+        reason="budget: weekly cap",
+        resume_at=None,
+    )
+    allowed = AdmissionDecision(
+        allowed=True,
+        status="ALLOWED",
+        reason=None,
+        resume_at=None,
+    )
+    dummy_proc = MagicMock()
+    dummy_proc.stdout = None
+    dummy_proc.stderr = io.BytesIO(b"")
+    dummy_proc.poll.return_value = None
+    dummy_proc.pid = 4242
+
+    with caplog.at_level(logging.INFO, logger="ghdag.dag.task_launcher"):
+        with patch.object(launcher._quota_gate, "begin_run", return_value=denied):
+            assert launcher.launch("quota-uuid", task) is False
+        with patch.object(launcher._quota_gate, "begin_run", return_value=allowed), patch(
+            "ghdag.dag.task_launcher.subprocess.Popen",
+            return_value=dummy_proc,
+        ):
+            assert launcher.launch("quota-uuid", task) is True
+        launcher._running.clear()
+        with patch.object(launcher._quota_gate, "begin_run", return_value=denied):
+            assert launcher.launch("quota-uuid", task) is False
+
+    assert _log_message_count(caplog.records, "Launching [quota-uuid]") == 1
+    assert _log_message_count(caplog.records, "launch deferred by quota gate") == 2
+
+
 def test_apply_resume_claude_matches_render(tmp_path: Path) -> None:
     """Issue #6084: claude resume injection matches render_exec_command placement."""
     launcher = _make_launcher(tmp_path)
@@ -341,3 +461,4 @@ def test_apply_resume_claude_matches_render(tmp_path: Path) -> None:
 
     assert task.command == expected_command
     assert task.annotations["_command_without_resume"] == original_command
+    assert task.annotations["resumed_session_id"] == "sess-parent"
