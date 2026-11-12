@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.133.0 - 2026-11-13
+
 ### Removed
 
 - Trim unused names from package-level `__all__` lists across audit, cleanup, config, core, dag, files, `github_cli`, io, llm, mcp, pipeline, schemas, status, tool, vcs, and workflow. Runtime behavior is unchanged; import the symbol from its defining module instead of the package re-export. See README Package `__all__` for the curated surface (sumipan/nexus#6587).
