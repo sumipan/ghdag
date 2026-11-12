@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ghdag.cleanup import cleanup_queue
+from ghdag.cleanup.orchestrator import cleanup_queue
 
 FIXED_NOW_TS = 1_762_600_000.0
 FIXED_NOW_DT = datetime.fromtimestamp(FIXED_NOW_TS, tz=timezone.utc)

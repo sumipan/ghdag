@@ -9,7 +9,7 @@ from ghdag.config.env import resolve_runtime_paths
 
 def cmd_cleanup(args) -> None:
     """ghdag cleanup: clean up queue/."""
-    from ghdag.cleanup import cleanup_queue
+    from ghdag.cleanup.orchestrator import cleanup_queue
 
     repo_root = Path(args.repo_root).resolve()
     paths = resolve_runtime_paths(repo_root / "jobs" / "exec.jsonl")

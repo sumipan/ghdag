@@ -7,6 +7,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.133.0 - 2026-11-13
+
+### Removed
+
+- Trim unused names from package-level `__all__` lists across audit, cleanup, config, core, dag, files, `github_cli`, io, llm, mcp, pipeline, schemas, status, tool, vcs, and workflow. Runtime behavior is unchanged; import the symbol from its defining module instead of the package re-export. See README Package `__all__` for the curated surface (sumipan/nexus#6587).
+- `ghdag.audit`: `emit_span`, `make_span_id`
+- `ghdag.cleanup`: `cleanup_queue`, `QUEUE_FILE_RE` (package re-exports; `CleanupResult` / `file_timestamp` remain on the package but are not in `__all__`)
+- `ghdag.dag`: `DefaultHooks`, `WAIT_QUOTA_COMPANION_RE`, `parse_jsonl`
+- `ghdag.files`: `AppendResult`, `AppendStatus`, `MdFile`, `PathTraversalError`, `PromoteResult`, `PromoteStatus`, `WriteResult`, `md_append`, `md_promote`
+- `ghdag.github_cli`: `API_BASE`, `DEFAULT_REPO`, `GRAPHQL_URL`, `GitHubClient` (package `__all__` is now empty; `get_forge` and `cli_main` remain importable)
+- `ghdag.llm`: `DEFAULT_ENGINE_MODELS`, `EngineSpec`, `InputMode`, `JSON_ONLY`, `LLMParseError`, `PromptFlag`, `SessionStore`, `WEB_RESEARCH`, `build_llm_cmd`, `list_models`
+- `ghdag.mcp`: `McpServer`, `McpToolRegistry`, `TOOL_NAMES`
+- `ghdag.pipeline`: `ModelValidationError`, `SubmittedStep`, `get_latest_status`, `parse_frontmatter`, `read_task_exit_events`
+- `ghdag.tool`: `FallbackEntry`, `TOOL_EXIT_CODES`, `ToolRegistry`, `write_tool_fallback_audit`
+- `ghdag.vcs`: `GitSink`
+- `ghdag.workflow`: `DispatchResult`, `OnTriggerConfig`
+
+### Added
+
+- `ghdag.quota.__all__` listing `QuotaGate`, `QuotaSnapshot`, `EngineQuotaState`, `AdmissionDecision`, and `Missing` (sumipan/nexus#6587).
+
 ## 0.132.1 - 2026-11-12
 
 ### Fixed

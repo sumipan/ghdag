@@ -16,22 +16,11 @@ import subprocess
 import sys
 from typing import Any
 
+from ghdag import github_client as _github_client
 from ghdag.core.ports.forge import ForgePort
 from ghdag.forge import get_forge as _package_get_forge
-from ghdag.github_client import (
-    API_BASE,
-    DEFAULT_REPO,
-    GRAPHQL_URL,
-    GitHubClient,
-)
 
-__all__ = [
-    "GitHubClient",
-    "DEFAULT_REPO",
-    "API_BASE",
-    "GRAPHQL_URL",
-    "get_forge",
-]
+__all__: list[str] = []
 
 _SIMPLE_JQ_RE = re.compile(
     r"^(\.[a-zA-Z_][\w]*"
@@ -51,14 +40,13 @@ _API_REPOS_RE = re.compile(
 def get_forge(repo: str | None = None) -> ForgePort:
     """Return a ForgePort for CLI handlers.
 
-    ``GitHubClient(`` appears only inside this factory so unit tests can
-    monkeypatch ``ghdag.github_cli.GitHubClient`` while production local mode
+    ``ghdag.github_client.GitHubClient`` is constructed here; production local mode
     delegates to :func:`ghdag.forge.get_forge`.
     """
     kind = (os.environ.get("GHDAG_FORGE") or "github").strip().lower()
     if kind == "local":
         return _package_get_forge(repo=repo)
-    return GitHubClient(repo=repo)
+    return _github_client.GitHubClient(repo=repo)
 
 
 # --- jq helpers ---

@@ -5,11 +5,8 @@ from __future__ import annotations
 import pytest
 
 from ghdag.core.command import render_exec_command
-from ghdag.llm import (
-    ENGINE_SPECS,
-    EngineSpec,
-    Permission,
-)
+from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec
+from ghdag.llm import Permission
 
 
 class TestEngineSpec:

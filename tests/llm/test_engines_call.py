@@ -7,18 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ghdag.llm import (
-    DANGEROUS_FULL_ACCESS,
-    ENGINE_DEFAULTS,
-    ENGINE_SPECS,
-    JSON_ONLY,
-    TEXT_ONLY,
-    WEB_RESEARCH,
-    EngineModelError,
-    Permission,
-    build_llm_cmd,
-    call,
-)
+from ghdag.core.capabilities import JSON_ONLY, TEXT_ONLY, WEB_RESEARCH
+from ghdag.core.engine_spec import ENGINE_SPECS
+from ghdag.llm import DANGEROUS_FULL_ACCESS, Permission, call
+from ghdag.llm.engines import ENGINE_DEFAULTS, EngineModelError, build_llm_cmd
 
 
 @pytest.fixture(autouse=True)

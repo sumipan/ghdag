@@ -1,13 +1,5 @@
 """ghdag.tool — Tool definition schema and registry"""
 
-from ghdag.tool.audit import write_tool_fallback_audit
-from ghdag.tool.registry import ToolRegistry
-from ghdag.tool.schema import TOOL_EXIT_CODES, FallbackEntry, ToolDef
+from ghdag.tool.schema import ToolDef
 
-__all__ = [
-    "FallbackEntry",
-    "TOOL_EXIT_CODES",
-    "ToolDef",
-    "ToolRegistry",
-    "write_tool_fallback_audit",
-]
+__all__ = ["ToolDef"]

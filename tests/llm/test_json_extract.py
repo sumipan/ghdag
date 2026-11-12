@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from ghdag.llm import LLMParseError
+from ghdag.core.exceptions import LLMParseError
 from ghdag.llm.json_extract import extract_json, extract_json_text
 
 

@@ -21,7 +21,7 @@ from ghdag_cleanup_conftest_helpers import (
     _setup_dirs,
 )
 
-from ghdag.cleanup import cleanup_queue
+from ghdag.cleanup.orchestrator import cleanup_queue
 
 
 class TestArchivedDone:
@@ -377,7 +377,7 @@ class TestStderrKind:
 
     def test_gemini_stderr_matches_as_valid_kind(self, tmp_path):
         """gemini-stderr files match QUEUE_FILE_RE"""
-        from ghdag.cleanup import QUEUE_FILE_RE
+        from ghdag.core.vocabulary import QUEUE_FILE_RE
         fname = f"{TS}-gemini-stderr-{UUID_C}.md"
         assert QUEUE_FILE_RE.match(fname) is not None
 

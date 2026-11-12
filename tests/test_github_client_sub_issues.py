@@ -229,7 +229,7 @@ def test_github_cli_issue_view_json_sub_issues_summary(
         lambda *a, **k: FakeClient(),
     )
     monkeypatch.setattr(
-        "ghdag.github_cli.GitHubClient",
+        "ghdag.github_client.GitHubClient",
         lambda *a, **k: FakeClient(),
     )
     rc = cli_main(

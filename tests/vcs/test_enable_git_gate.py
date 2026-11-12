@@ -9,7 +9,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from ghdag.vcs import GitSink, LocalGitSink, NullSink, get_sink, git_enabled
+from ghdag.vcs import LocalGitSink, NullSink, get_sink, git_enabled
+from ghdag.vcs.sink import GitSink
 
 
 def _count(repo: Path) -> int:

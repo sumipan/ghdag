@@ -18,7 +18,7 @@ from ghdag_cleanup_conftest_helpers import (
     _setup_dirs,
 )
 
-from ghdag.cleanup import cleanup_queue
+from ghdag.cleanup.orchestrator import cleanup_queue
 
 
 class TestSweepExtras:

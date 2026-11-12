@@ -13,8 +13,9 @@ from ghdag.core.command import render_exec_command
 from ghdag.core.container import container_prefix
 from ghdag.core.exceptions import LLMParseError
 from ghdag.core.ports.output import EngineErrorKind
-from ghdag.llm import build_llm_cmd, call
+from ghdag.llm import call
 from ghdag.llm import engines as engines_mod
+from ghdag.llm.engines import build_llm_cmd
 
 
 def test_public_signatures_use_permission() -> None:

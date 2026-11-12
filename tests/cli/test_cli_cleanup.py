@@ -32,7 +32,7 @@ class TestCleanupNormal:
             captured.update(kwargs)
             return self._make_mock_result(archived_done=1, pruned_exec=1)
 
-        with patch("ghdag.cleanup.cleanup_queue", side_effect=fake_cleanup):
+        with patch("ghdag.cleanup.orchestrator.cleanup_queue", side_effect=fake_cleanup):
             from ghdag.cli import main
             main(["cleanup", str(tmp_path)])
 
@@ -48,7 +48,7 @@ class TestCleanupNormal:
             captured.update(kwargs)
             return self._make_mock_result(archived_orphan=1, pruned_exec=1)
 
-        with patch("ghdag.cleanup.cleanup_queue", side_effect=fake_cleanup):
+        with patch("ghdag.cleanup.orchestrator.cleanup_queue", side_effect=fake_cleanup):
             from ghdag.cli import main
             main(["cleanup", str(tmp_path), "--auto-repair"])
 
@@ -61,7 +61,7 @@ class TestCleanupNormal:
             captured.update(kwargs)
             return self._make_mock_result()
 
-        with patch("ghdag.cleanup.cleanup_queue", side_effect=fake_cleanup):
+        with patch("ghdag.cleanup.orchestrator.cleanup_queue", side_effect=fake_cleanup):
             from ghdag.cli import main
             main(["cleanup", str(tmp_path), "--dry-run"])
 
@@ -74,7 +74,7 @@ class TestCleanupNormal:
             captured.update(kwargs)
             return self._make_mock_result()
 
-        with patch("ghdag.cleanup.cleanup_queue", side_effect=fake_cleanup):
+        with patch("ghdag.cleanup.orchestrator.cleanup_queue", side_effect=fake_cleanup):
             from ghdag.cli import main
             main(["cleanup", str(tmp_path), "--cutoff-days", "3", "--orphan-days", "14"])
 
@@ -97,7 +97,7 @@ class TestCleanupNormal:
         jobs.mkdir(parents=True)
         (jobs / "exec.jsonl").write_text("", encoding="utf-8")
 
-        with patch("ghdag.cleanup.cleanup_queue", side_effect=fake_cleanup):
+        with patch("ghdag.cleanup.orchestrator.cleanup_queue", side_effect=fake_cleanup):
             from ghdag.cli import main
 
             main(["cleanup", str(tmp_path)])

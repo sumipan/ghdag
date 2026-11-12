@@ -8,8 +8,6 @@ from pathlib import Path
 import pytest
 
 from ghdag.io.audit_query import get_latest_status, read_task_exit_events
-from ghdag.pipeline import get_latest_status as public_get
-from ghdag.pipeline import read_task_exit_events as public_read
 
 
 def _write_events(path: Path, events: list[dict]) -> None:
@@ -197,7 +195,7 @@ class TestPublicAPI:
             {"event_type": "task_complete", "uuid": "u1", "status": "success",
              "correlation_id": "cid", "timestamp": "2026-01-01T00:00:00+09:00"},
         ])
-        result = public_read(audit_path, correlation_id="cid")
+        result = read_task_exit_events(audit_path, correlation_id="cid")
         assert len(result) == 1
 
     def test_get_latest_status_importable(self, audit_path):
@@ -205,7 +203,7 @@ class TestPublicAPI:
             {"event_type": "task_complete", "uuid": "u1", "status": "success",
              "correlation_id": "cid", "timestamp": "2026-01-01T00:00:00+09:00"},
         ])
-        result = public_get(audit_path, "cid")
+        result = get_latest_status(audit_path, "cid")
         assert result == "success"
 
 

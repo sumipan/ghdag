@@ -70,7 +70,7 @@ def test_cli_issue_view_json_jq(monkeypatch, capsys):
             return {"body": "design text"}
 
     monkeypatch.setattr(
-        "ghdag.github_cli.GitHubClient",
+        "ghdag.github_client.GitHubClient",
         lambda *a, **k: FakeClient(),
     )
     rc = cli_main(["issue", "view", "1360", "--json", "body", "--jq", ".body"])
@@ -106,7 +106,7 @@ def test_cli_issue_edit_title_only(monkeypatch):
 
     monkeypatch.setattr(client, "_request", fake_request)
     monkeypatch.setattr(
-        "ghdag.github_cli.GitHubClient",
+        "ghdag.github_client.GitHubClient",
         lambda *a, **k: client,
     )
     with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):
@@ -138,7 +138,7 @@ def test_cli_issue_edit_title_and_body_file(monkeypatch, tmp_path):
             captured["kwargs"] = kwargs
 
     monkeypatch.setattr(
-        "ghdag.github_cli.GitHubClient",
+        "ghdag.github_client.GitHubClient",
         lambda *a, **k: FakeClient(),
     )
     with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):
@@ -161,7 +161,7 @@ def test_cli_issue_edit_unknown_arg_warning_excludes_title(monkeypatch, capsys):
             pass
 
     monkeypatch.setattr(
-        "ghdag.github_cli.GitHubClient",
+        "ghdag.github_client.GitHubClient",
         lambda *a, **k: FakeClient(),
     )
     with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):
@@ -186,7 +186,7 @@ def test_cli_pr_edit_body(monkeypatch):
             captured["kwargs"] = kwargs
 
     monkeypatch.setattr(
-        "ghdag.github_cli.GitHubClient",
+        "ghdag.github_client.GitHubClient",
         lambda *a, **k: FakeClient(),
     )
     with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):
@@ -210,7 +210,7 @@ def test_cli_pr_edit_number_and_title(monkeypatch):
             captured["kwargs"] = kwargs
 
     monkeypatch.setattr(
-        "ghdag.github_cli.GitHubClient",
+        "ghdag.github_client.GitHubClient",
         lambda *a, **k: FakeClient(),
     )
     with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):

@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from ghdag.vcs import ConflictError, GitSink, LocalGitSink, NullSink, OwnershipError
+from ghdag.vcs import ConflictError, LocalGitSink, NullSink, OwnershipError
+from ghdag.vcs.sink import GitSink
 
 
 def _git(cwd: Path, *args: str) -> str:

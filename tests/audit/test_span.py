@@ -36,13 +36,6 @@ class TestPublicApi:
         assert callable(emit_span)
         assert callable(make_span_id)
 
-    def test_package_reexports(self) -> None:
-        from ghdag.audit import emit_span, make_span_id
-
-        assert callable(emit_span)
-        assert callable(make_span_id)
-
-
 class TestEmitSpanSchema:
     def test_writes_valid_json(self, tmp_path: Path) -> None:
         log = tmp_path / "latency_span.jsonl"

@@ -1,9 +1,7 @@
 """ghdag.workflow — Layer 2 workflow engine public API"""
 
 from ghdag.core.models.workflow import (
-    DispatchResult,
     HandlerConfig,
-    OnTriggerConfig,
     StepConfig,
     TriggerConfig,
     WorkflowConfig,
@@ -15,9 +13,7 @@ from ghdag.workflow.typecheck import ConsumeEntry, SkillIOSpec, typecheck_dag
 
 __all__ = [
     "ConsumeEntry",
-    "DispatchResult",
     "HandlerConfig",
-    "OnTriggerConfig",
     "SkillIOSpec",
     "StepConfig",
     "TriggerConfig",

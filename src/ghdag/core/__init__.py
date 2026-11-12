@@ -1,5 +1,5 @@
 """ghdag.core — shared vocabulary and cross-tower primitives."""
 
-from ghdag.core import command as command  # noqa: F401
+from . import command as command
 
-__all__ = ["command"]
+__all__: list[str] = []

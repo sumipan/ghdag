@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from ghdag.files import AppendResult, AppendStatus, PathTraversalError, md_append
+from ghdag.core.models.files import AppendResult, AppendStatus, PathTraversalError
+from ghdag.files.append import md_append
 
 
 @pytest.fixture

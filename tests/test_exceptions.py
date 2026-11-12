@@ -9,6 +9,7 @@ from ghdag.core.exceptions import (
     CliUsageError,
     ConfigError,
     GitHubApiError,
+    LLMParseError,
     NetworkError,
     PermissionDeniedError,
     RateLimitError,
@@ -20,7 +21,6 @@ from ghdag.core.exceptions import LLMParseError as LLMParseErrorCanonical
 from ghdag.core.models.files import PathTraversalError
 from ghdag.dag.fanout import FanoutError
 from ghdag.files.append import AppendRecoverError
-from ghdag.llm import LLMParseError
 from ghdag.llm._config import ConfigLoadError
 from ghdag.llm.engines import EngineModelError
 from ghdag.pipeline.config import ModelValidationError

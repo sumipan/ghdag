@@ -22,7 +22,7 @@ def write_file(path: Path, content: str) -> None:
 class TestMdPromoteBasic:
     def test_p1_promote_returns_promoted(self, repo_root: Path) -> None:
         """P1: successful promote returns PromoteResult(status=PROMOTED)"""
-        from ghdag.files import md_promote
+        from ghdag.files.promote import md_promote
 
         write_file(repo_root / "result" / "r1.md", "# Result\nsome content\n")
         write_file(repo_root / "notes" / "summary.md", "# Summary\n")
@@ -41,7 +41,7 @@ class TestMdPromoteBasic:
 
     def test_p2_content_appended_to_target(self, repo_root: Path) -> None:
         """P2: source content is appended under ## Promoted in the target file"""
-        from ghdag.files import md_promote
+        from ghdag.files.promote import md_promote
 
         source_content = "# Result\nsome content\n"
         write_file(repo_root / "result" / "r1.md", source_content)
@@ -55,7 +55,7 @@ class TestMdPromoteBasic:
 
     def test_p3_idempotency_marker_written(self, repo_root: Path) -> None:
         """P3: an idempotency marker is recorded after promote"""
-        from ghdag.files import md_promote
+        from ghdag.files.promote import md_promote
 
         write_file(repo_root / "result" / "r1.md", "content\n")
         write_file(repo_root / "notes" / "summary.md", "# Summary\n")
@@ -67,7 +67,7 @@ class TestMdPromoteBasic:
 
     def test_p4_audit_log_written(self, repo_root: Path) -> None:
         """P4: md_promote event is recorded in the target directory audit.jsonl"""
-        from ghdag.files import md_promote
+        from ghdag.files.promote import md_promote
 
         write_file(repo_root / "result" / "r1.md", "content\n")
         write_file(repo_root / "notes" / "summary.md", "# Summary\n")
@@ -89,7 +89,7 @@ class TestMdPromoteBasic:
 class TestMdPromoteIdempotency:
     def test_p5_second_call_returns_noop(self, repo_root: Path) -> None:
         """P5: second md_promote with the same source_path returns NOOP"""
-        from ghdag.files import md_promote
+        from ghdag.files.promote import md_promote
 
         write_file(repo_root / "result" / "r1.md", "content\n")
         write_file(repo_root / "notes" / "summary.md", "# Summary\n")
@@ -101,7 +101,7 @@ class TestMdPromoteIdempotency:
 
     def test_p6_second_call_no_double_append(self, repo_root: Path) -> None:
         """P6: after a second md_promote, target file content matches the first"""
-        from ghdag.files import md_promote
+        from ghdag.files.promote import md_promote
 
         write_file(repo_root / "result" / "r1.md", "unique-body\n")
         write_file(repo_root / "notes" / "summary.md", "# Summary\n")
@@ -119,7 +119,7 @@ class TestMdPromoteIdempotency:
 class TestMdPromoteCustomSection:
     def test_p7_custom_section(self, repo_root: Path) -> None:
         """P7: specifying section appends under that section name"""
-        from ghdag.files import md_promote
+        from ghdag.files.promote import md_promote
 
         write_file(repo_root / "result" / "r1.md", "body\n")
         write_file(repo_root / "notes" / "summary.md", "# Summary\n")
@@ -137,7 +137,7 @@ class TestMdPromoteCustomSection:
 
     def test_p8_custom_idempotency_key(self, repo_root: Path) -> None:
         """P8: an explicit idempotency_key is used on the idempotency marker"""
-        from ghdag.files import md_promote
+        from ghdag.files.promote import md_promote
 
         write_file(repo_root / "result" / "r1.md", "body\n")
         write_file(repo_root / "notes" / "summary.md", "# Summary\n")
@@ -156,7 +156,7 @@ class TestMdPromoteCustomSection:
 class TestMdPromoteErrors:
     def test_p9_source_not_found(self, repo_root: Path) -> None:
         """P9: missing source_path raises FileNotFoundError"""
-        from ghdag.files import md_promote
+        from ghdag.files.promote import md_promote
 
         write_file(repo_root / "notes" / "summary.md", "# Summary\n")
 
@@ -165,7 +165,7 @@ class TestMdPromoteErrors:
 
     def test_p10_path_traversal_source(self, repo_root: Path) -> None:
         """P10: path traversal in source_path raises ValueError"""
-        from ghdag.files import md_promote
+        from ghdag.files.promote import md_promote
 
         write_file(repo_root / "notes" / "summary.md", "# Summary\n")
 
@@ -174,7 +174,7 @@ class TestMdPromoteErrors:
 
     def test_p11_path_traversal_target(self, repo_root: Path) -> None:
         """P11: path traversal in target_path raises ValueError"""
-        from ghdag.files import md_promote
+        from ghdag.files.promote import md_promote
 
         write_file(repo_root / "result" / "r1.md", "content\n")
 
@@ -185,7 +185,7 @@ class TestMdPromoteErrors:
         """P12: promote still succeeds when audit write fails"""
         from unittest.mock import patch
 
-        from ghdag.files import md_promote
+        from ghdag.files.promote import md_promote
 
         write_file(repo_root / "result" / "r1.md", "content\n")
         write_file(repo_root / "notes" / "summary.md", "# Summary\n")
@@ -302,7 +302,7 @@ class TestDagHooksIntegration:
         engine._launcher._running["t2"] = rt
 
         with patch("ghdag.dag.task_launcher.state_mark_done"):
-            with patch("ghdag.files.md_promote") as mock_promote:
+            with patch("ghdag.files.promote.md_promote") as mock_promote:
                 engine._launcher.check_completions()
 
         mock_promote.assert_not_called()
@@ -347,7 +347,7 @@ class TestDagHooksIntegration:
         engine._launcher._running["t3"] = rt
 
         with patch("ghdag.dag.task_launcher.state_mark_done"):
-            with patch("ghdag.files.md_promote", side_effect=RuntimeError("boom")):
+            with patch("ghdag.files.promote.md_promote", side_effect=RuntimeError("boom")):
                 engine._launcher.check_completions()
 
         hooks.on_task_success.assert_called_once()

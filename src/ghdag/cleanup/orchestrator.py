@@ -5,12 +5,12 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from ghdag.cleanup import QUEUE_FILE_RE, CleanupResult, file_timestamp
+from ghdag.cleanup import CleanupResult, file_timestamp
 from ghdag.cleanup.archiver import QueueArchiver
 from ghdag.cleanup.link_rewriter import LinkRewriter
 from ghdag.cleanup.orphan_detector import OrphanDetector
 from ghdag.cleanup.pruner import ExecJsonlPruner
-from ghdag.core.vocabulary import DONE_ORPHAN_ARCHIVED
+from ghdag.core.vocabulary import DONE_ORPHAN_ARCHIVED, QUEUE_FILE_RE
 
 _TS14_RE = re.compile(r"^\d{14}$")
 _HEX8_RE = re.compile(r"^[0-9a-fA-F]{8}$")

@@ -83,5 +83,9 @@ class TestCompatAuditQuery:
         import ghdag.pipeline as pipeline_pkg
         from ghdag.io.audit_query import get_latest_status, read_task_exit_events
 
-        assert pipeline_pkg.read_task_exit_events is read_task_exit_events
-        assert pipeline_pkg.get_latest_status is get_latest_status
+        assert "read_task_exit_events" not in pipeline_pkg.__all__
+        assert "get_latest_status" not in pipeline_pkg.__all__
+        assert not hasattr(pipeline_pkg, "read_task_exit_events")
+        assert not hasattr(pipeline_pkg, "get_latest_status")
+        assert callable(read_task_exit_events)
+        assert callable(get_latest_status)

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from ghdag.core.models.files import PathTraversalError
-from ghdag.files import MdFile, md_read
+from ghdag.core.models.files import MdFile, PathTraversalError
+from ghdag.files import md_read
 
 
 @pytest.fixture
