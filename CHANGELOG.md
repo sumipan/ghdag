@@ -37,6 +37,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 | `from ghdag.dag import RunningTask` | internal `_RunningProcess` (not public) |
 | `from ghdag.workflow import get_forge` | `from ghdag.forge import get_forge` |
 
+### Host consumer migration (sumipan/nexus#6501)
+
+1. Merge this ghdag release first; do not add `LLMCapabilities` / `PRESETS` / `capabilities=` compatibility shims.
+2. Host consumers are pin-fixed (sumipan/nexus#6493). Follow-up issues tracking import / keyword / pin updates: sumipan/nexus#6466 (milestone migration step 3 — per-repo consumer PRs before pin bump), sumipan/nexus#6485 (issuesmith `ghdag` pin to v0.129.0), sumipan/nexus#6486 (nexus host pin; merged). Permission-specific nexus / issuesmith / mltgnt / slack-project updates land in follow-up Issues filed under #6466 before pins exceed this release.
+3. Until those follow-ups merge, `LLMCapabilities` / `capabilities=` in pinned consumers is expected and is not a blocker for this PR.
+
+### Regression test checklist (sumipan/nexus#6501)
+
+| Area | Test |
+| --- | --- |
+| workflow step `permission` key / exec record shape | `tests/workflow/test_engine.py::test_exec_record_permission_argument_preserves_schema` |
+| MCP tool `permission` enum vs `PERMISSIONS` | `tests/conventions/test_schemas_in_sync.py::test_permission_registry_matches_workflow_and_mcp_schema` |
+| exec.jsonl record keys vs schema | `tests/conventions/test_schemas_in_sync.py::test_exec_record_keys_subset_of_schema` |
+| Public LLM API keyword `permission` | `tests/llm/test_call_text.py::test_public_signatures_use_permission` |
+| `Permission` / `PERMISSIONS` exports | `tests/conventions/test_public_package_exports_runtime.py::test_permission_names_are_public` |
+| Preset registry identity | `tests/llm/test_capabilities.py::test_permission_registry_identity` |
+
 ## 0.127.0 - 2026-11-11
 
 ### Removed
