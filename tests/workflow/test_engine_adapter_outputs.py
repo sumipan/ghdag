@@ -68,4 +68,4 @@ def test_get_command_adapter_preserves_engine_commands(
     """Issue sumipan/nexus#6535 — renamed API preserves per-engine command tokens."""
     adapter = get_command_adapter(engine)
     record = adapter.build_exec_record(**kwargs)
-    command_assertions(record["command"])
+    assert command_assertions(record["command"])

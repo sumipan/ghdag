@@ -97,7 +97,7 @@ def test_workflow_import_keeps_builtin_adapter_resolution() -> None:
 # shell adapter via get_command_adapter
 # ---------------------------------------------------------------------------
 
-class TestShellAdapterViaGetAdapter:
+class TestShellAdapterViaGetCommandAdapter:
     def setup_method(self):
         self.adapter = get_command_adapter("shell")
         self.base_kwargs = dict(
