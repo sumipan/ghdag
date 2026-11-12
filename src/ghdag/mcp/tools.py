@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ghdag.core.capabilities import PRESETS
+from ghdag.core.capabilities import PERMISSIONS
 from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.exceptions import ConfigError
 from ghdag.core.models.workflow import StepConfig
@@ -56,7 +56,7 @@ def _schema_object(
 
 def _enqueue_schema() -> dict[str, Any]:
     engine_enum = sorted(ENGINE_SPECS)
-    perm_enum = sorted(PRESETS)
+    perm_enum = sorted(PERMISSIONS)
     step_schema = _schema_object(
         {
             "id": {"type": "string", "description": "Step id referenced by depends"},
@@ -362,9 +362,9 @@ class McpToolRegistry:
                 raise self._mcp_invalid("depends must be an array of step id strings")
             permission = raw.get("permission")
             if permission is not None and (
-                not isinstance(permission, str) or permission not in PRESETS
+                not isinstance(permission, str) or permission not in PERMISSIONS
             ):
-                raise self._mcp_invalid(f"permission must be one of {sorted(PRESETS)}")
+                raise self._mcp_invalid(f"permission must be one of {sorted(PERMISSIONS)}")
             model = raw.get("model")
             if model is not None and not isinstance(model, str):
                 raise self._mcp_invalid("model must be a string")

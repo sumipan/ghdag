@@ -61,10 +61,10 @@ def cmd_llm(args) -> None:
     if args.read_stdin and not sys.stdin.isatty():
         stdin_text = sys.stdin.read()
 
-    capabilities = None
+    perm = None
     if args.permission is not None:
-        from ghdag.core.capabilities import PRESETS
-        capabilities = PRESETS[args.permission]
+        from ghdag.core.capabilities import PERMISSIONS
+        perm = PERMISSIONS[args.permission]
 
     call_kwargs: dict = dict(
         engine=args.engine,
@@ -72,8 +72,8 @@ def cmd_llm(args) -> None:
         timeout=args.timeout,
         stdin_text=stdin_text,
     )
-    if capabilities is not None:
-        call_kwargs["capabilities"] = capabilities
+    if perm is not None:
+        call_kwargs["permission"] = perm
 
     result = call(prompt, **call_kwargs)
 

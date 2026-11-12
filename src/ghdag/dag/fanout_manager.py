@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from ghdag.core.capabilities import PRESETS
+from ghdag.core.capabilities import PERMISSIONS
 from ghdag.core.command import get_adapter
 from ghdag.core.models.metrics import FailureClass, TaskMetrics
 from ghdag.core.vocabulary import DONE_FANOUT_CHILD_FAILED, FANOUT_SEPARATOR
@@ -150,7 +150,7 @@ class FanOutManager:
         result_path = str(queue_dir / result_name)
         depends = _resolve_depends_uuids(parent_uuid, child.depends)
         preset = child.permission or "text_only"
-        capabilities = PRESETS[preset]
+        perm = PERMISSIONS[preset]
 
         record = get_adapter(effective_engine).build_exec_record(
             uuid=child_uuid,
@@ -159,7 +159,7 @@ class FanOutManager:
             model=record_model,
             depends=depends,
             prompt=None,
-            capabilities=capabilities,
+            permission=perm,
         )
         annotations = dict(record.get("annotations") or {})
         annotations["fanout_parent"] = parent_uuid

@@ -234,7 +234,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_json_flag(mcp_parser)
 
     # ghdag llm
-    from ghdag.core.capabilities import PRESETS
+    from ghdag.core.capabilities import PERMISSIONS
 
     llm_parser = subparsers.add_parser(
         "llm",
@@ -269,7 +269,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--permission",
         default=None,
         dest="permission",
-        choices=sorted(PRESETS),
+        choices=sorted(PERMISSIONS),
         help="Capabilities preset (permission profile)",
     )
     llm_parser.add_argument(

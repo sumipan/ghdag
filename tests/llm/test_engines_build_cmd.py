@@ -7,7 +7,7 @@ from ghdag.llm import (
     JSON_ONLY,
     TEXT_ONLY,
     WEB_RESEARCH,
-    LLMCapabilities,
+    Permission,
     build_llm_cmd,
 )
 
@@ -41,7 +41,7 @@ class TestBuildLLMCmd:
 class TestBuildLLMCmdCapabilities:
     def test_text_only_default(self):
         """TEXT_ONLY: --permission-mode default --disallowed-tools Bash,Edit,Write,NotebookEdit,WebFetch,WebSearch"""
-        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=TEXT_ONLY)
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", permission=TEXT_ONLY)
         assert "--permission-mode" in cmd
         assert "default" in cmd
         assert "--disallowed-tools" in cmd
@@ -54,7 +54,7 @@ class TestBuildLLMCmdCapabilities:
 
     def test_json_only(self):
         """JSON_ONLY: --output-format json and disallowed-tools"""
-        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=JSON_ONLY)
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", permission=JSON_ONLY)
         assert "--output-format" in cmd
         assert "json" in cmd
         assert "--disallowed-tools" in cmd
@@ -62,7 +62,7 @@ class TestBuildLLMCmdCapabilities:
 
     def test_web_research(self):
         """WEB_RESEARCH: --allowed-tools and --disallowed-tools both present"""
-        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=WEB_RESEARCH)
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", permission=WEB_RESEARCH)
         assert "--allowed-tools" in cmd
         allowed_idx = cmd.index("--allowed-tools")
         allowed_val = cmd[allowed_idx + 1]
@@ -71,17 +71,17 @@ class TestBuildLLMCmdCapabilities:
         assert "--disallowed-tools" in cmd
 
     def test_claude_web_search_merges_explicit_allowed_tools(self):
-        caps = LLMCapabilities(
+        caps = Permission(
             web_search=True,
             allowed_tools=("Read", "WebSearch"),
         )
-        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=caps)
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", permission=caps)
         allowed_idx = cmd.index("--allowed-tools")
         assert cmd[allowed_idx + 1] == "Read,WebSearch,WebFetch"
 
     def test_dangerous_full_access(self):
         """DANGEROUS_FULL_ACCESS: --permission-mode bypassPermissions, no allowed/disallowed"""
-        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=DANGEROUS_FULL_ACCESS)
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", permission=DANGEROUS_FULL_ACCESS)
         assert "--permission-mode" in cmd
         perm_idx = cmd.index("--permission-mode")
         assert cmd[perm_idx + 1] == "bypassPermissions"
@@ -90,23 +90,23 @@ class TestBuildLLMCmdCapabilities:
 
     def test_custom_permission_mode(self):
         """Custom permission_mode"""
-        caps = LLMCapabilities(permission_mode="plan")
-        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=caps)
+        caps = Permission(permission_mode="plan")
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", permission=caps)
         assert "--permission-mode" in cmd
         perm_idx = cmd.index("--permission-mode")
         assert cmd[perm_idx + 1] == "plan"
 
     def test_gemini_ignores_capabilities_flags(self):
         """gemini does not attach capabilities flags"""
-        caps = LLMCapabilities(permission_mode="default", output_format="text")
-        cmd = build_llm_cmd("gemini", "gemini-2.5-flash", "hello", capabilities=caps)
+        caps = Permission(permission_mode="default", output_format="text")
+        cmd = build_llm_cmd("gemini", "gemini-2.5-flash", "hello", permission=caps)
         assert "--permission-mode" not in cmd
         assert "--disallowed-tools" not in cmd
 
     def test_stream_true_adds_stream_json(self):
         """stream=True → --output-format stream-json --verbose (overrides output_format)"""
-        caps = LLMCapabilities(stream=True)
-        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=caps)
+        caps = Permission(stream=True)
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", permission=caps)
         assert "--output-format" in cmd
         fmt_idx = cmd.index("--output-format")
         assert cmd[fmt_idx + 1] == "stream-json"
@@ -114,8 +114,8 @@ class TestBuildLLMCmdCapabilities:
 
     def test_stream_true_overrides_json_output_format(self):
         """With stream=True, stream-json takes precedence over output_format=json"""
-        caps = LLMCapabilities(output_format="json", stream=True)
-        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", capabilities=caps)
+        caps = Permission(output_format="json", stream=True)
+        cmd = build_llm_cmd("claude", "claude-sonnet-4-6", "hello", permission=caps)
         fmt_idx = cmd.index("--output-format")
         assert cmd[fmt_idx + 1] == "stream-json"
         assert cmd.count("--output-format") == 1

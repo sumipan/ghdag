@@ -5,8 +5,6 @@ from __future__ import annotations
 import types
 from typing import Any
 
-import pytest
-
 
 def _assert_public_exports(
     package: types.ModuleType,
@@ -107,7 +105,8 @@ def test_llm_public_exports_match_requested_contract() -> None:
 
     names = frozenset(
         {
-            "PRESETS",
+            "PERMISSIONS",
+            "Permission",
             "supports_capability",
             "EngineError",
             "classify_common_failure",
@@ -115,7 +114,8 @@ def test_llm_public_exports_match_requested_contract() -> None:
         }
     )
     sources = {
-        "PRESETS": capabilities.PRESETS,
+        "PERMISSIONS": capabilities.PERMISSIONS,
+        "Permission": capabilities.Permission,
         "supports_capability": engines.supports_capability,
         "EngineError": output.EngineError,
         "classify_common_failure": failure_classification.classify_common_failure,
@@ -145,6 +145,16 @@ def test_audit_hooks_public_home_is_dag_only() -> None:
     assert not hasattr(pipeline, "AuditHooks")
 
 
-def test_legacy_permission_exports_are_absent() -> None:
-    """Issue sumipan/nexus#6501 — Permission rename AC placeholder until P1 lands."""
-    pytest.skip("Permission/PERMISSIONS rename not implemented yet (sumipan/nexus#6501)")
+def test_permission_names_are_public() -> None:
+    """Issue sumipan/nexus#6501 — Permission and PERMISSIONS are public on llm and core."""
+    import ghdag.core.capabilities as capabilities_mod
+    import ghdag.llm as llm
+
+    for package, canonical in (
+        (llm, (capabilities_mod.Permission, capabilities_mod.PERMISSIONS)),
+        (capabilities_mod, (capabilities_mod.Permission, capabilities_mod.PERMISSIONS)),
+    ):
+        assert "Permission" in package.__all__
+        assert "PERMISSIONS" in package.__all__
+        assert getattr(package, "Permission") is canonical[0]
+        assert getattr(package, "PERMISSIONS") is canonical[1]

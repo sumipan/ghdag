@@ -366,10 +366,10 @@ class TestGenericAdapterCapabilities:
     )
 
     def test_claude_text_only_capabilities_add_permission_mode_flag(self):
-        """AC4: _GenericAdapter(claude) + capabilities=TEXT_ONLY → command includes --permission-mode default"""
+        """AC4: _GenericAdapter(claude) + permission=TEXT_ONLY → command includes --permission-mode default"""
         from ghdag.core.capabilities import TEXT_ONLY
         adapter = _GenericAdapter(ENGINE_SPECS["claude"])
-        record = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=TEXT_ONLY)
+        record = adapter.build_exec_record(**self.BASE_KWARGS, permission=TEXT_ONLY)
         assert "--permission-mode" in record["command"]
         assert "default" in record["command"]
 
@@ -377,23 +377,52 @@ class TestGenericAdapterCapabilities:
         """AC4: TEXT_ONLY → no --dangerously-skip-permissions"""
         from ghdag.core.capabilities import TEXT_ONLY
         adapter = _GenericAdapter(ENGINE_SPECS["claude"])
-        record = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=TEXT_ONLY)
+        record = adapter.build_exec_record(**self.BASE_KWARGS, permission=TEXT_ONLY)
         assert "--dangerously-skip-permissions" not in record["command"]
 
     def test_claude_capabilities_none_keeps_default_dangerously_skip(self):
         """AC9: no capabilities arg → same dict as before"""
         adapter = _GenericAdapter(ENGINE_SPECS["claude"])
         record_default = adapter.build_exec_record(**self.BASE_KWARGS)
-        record_none = adapter.build_exec_record(**self.BASE_KWARGS, capabilities=None)
+        record_none = adapter.build_exec_record(**self.BASE_KWARGS, permission=None)
         assert record_default == record_none
         assert "--dangerously-skip-permissions" in record_default["command"]
 
     def test_cursor_capabilities_text_only_no_force(self):
-        """cursor + capabilities=TEXT_ONLY → no --force"""
+        """cursor + permission=TEXT_ONLY → no --force"""
         from ghdag.core.capabilities import TEXT_ONLY
         adapter = _GenericAdapter(ENGINE_SPECS["cursor"])
         record = adapter.build_exec_record(
             uuid="u1", order_path="queue/order.md", result_path="queue/result.md",
-            prompt="", model="auto", depends=[], capabilities=TEXT_ONLY,
+            prompt="", model="auto", depends=[], permission=TEXT_ONLY,
         )
         assert "--force" not in record["command"]
+
+
+def test_exec_record_permission_argument_preserves_schema() -> None:
+    """Issue sumipan/nexus#6501 — build_exec_record(permission=) shape is unchanged."""
+    from ghdag.core.capabilities import TEXT_ONLY
+
+    adapter = _GenericAdapter(ENGINE_SPECS["claude"])
+    baseline = adapter.build_exec_record(
+        uuid="abc-123",
+        order_path="queue/order.md",
+        result_path="queue/result.md",
+        prompt="Execute the received content",
+        depends=[],
+        model="claude-sonnet-4-6",
+    )
+    with_permission = adapter.build_exec_record(
+        uuid="abc-123",
+        order_path="queue/order.md",
+        result_path="queue/result.md",
+        prompt="Execute the received content",
+        depends=[],
+        model="claude-sonnet-4-6",
+        permission=TEXT_ONLY,
+    )
+    assert set(with_permission) == set(baseline)
+    assert set(with_permission["annotations"]) == set(baseline["annotations"])
+    assert with_permission["command"] != baseline["command"]
+    assert "permission" not in with_permission
+    assert "capabilities" not in with_permission

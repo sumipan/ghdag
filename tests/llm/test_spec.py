@@ -8,7 +8,7 @@ from ghdag.core.command import render_exec_command
 from ghdag.llm import (
     ENGINE_SPECS,
     EngineSpec,
-    LLMCapabilities,
+    Permission,
 )
 
 
@@ -119,12 +119,12 @@ class TestRenderExecCommand:
 
 class TestRenderExecCommandCapabilities:
     def test_render_exec_claude_text_only_adds_permission_and_disallowed_tools(self):
-        """AC1: capabilities=TEXT_ONLY → --permission-mode default --disallowed-tools ...; no --dangerously-skip-permissions"""
+        """AC1: permission=TEXT_ONLY → --permission-mode default --disallowed-tools ...; no --dangerously-skip-permissions"""
         from ghdag.core.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
             spec, order_path="queue/order.md", model="claude-opus-4-6",
-            capabilities=TEXT_ONLY,
+            permission=TEXT_ONLY,
         )
         assert "--permission-mode" in cmd
         assert "default" in cmd
@@ -134,33 +134,33 @@ class TestRenderExecCommandCapabilities:
         assert "--dangerously-skip-permissions" not in cmd
 
     def test_render_exec_claude_dangerous_uses_bypass_permissions(self):
-        """AC2: capabilities=DANGEROUS_FULL_ACCESS → --permission-mode bypassPermissions"""
+        """AC2: permission=DANGEROUS_FULL_ACCESS → --permission-mode bypassPermissions"""
         from ghdag.core.capabilities import DANGEROUS_FULL_ACCESS
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
             spec, order_path="queue/order.md", model=None,
-            capabilities=DANGEROUS_FULL_ACCESS,
+            permission=DANGEROUS_FULL_ACCESS,
         )
         assert "--permission-mode" in cmd
         assert "bypassPermissions" in cmd
         assert "--dangerously-skip-permissions" not in cmd
 
     def test_render_exec_cursor_text_only_omits_force(self):
-        """AC3: cursor + capabilities=TEXT_ONLY → does not include --force"""
+        """AC3: cursor + permission=TEXT_ONLY → does not include --force"""
         from ghdag.core.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(
             spec, order_path="queue/order.md", model="auto",
-            capabilities=TEXT_ONLY,
+            permission=TEXT_ONLY,
         )
         assert "--force" not in cmd
 
     def test_render_exec_claude_default_keeps_dangerously_skip_permissions(self):
-        """AC8: capabilities=None (default) → --dangerously-skip-permissions as before"""
+        """AC8: permission=None (default) → --dangerously-skip-permissions as before"""
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
             spec, order_path="queue/order.md", model="claude-opus-4-6",
-            capabilities=None,
+            permission=None,
         )
         assert "--dangerously-skip-permissions" in cmd
         assert "--permission-mode" not in cmd
@@ -171,7 +171,7 @@ class TestRenderExecCommandCapabilities:
         spec = ENGINE_SPECS["gemini"]
         cmd = render_exec_command(
             spec, order_path="queue/order.md", model="gemini-2.5-flash",
-            capabilities=TEXT_ONLY,
+            permission=TEXT_ONLY,
         )
         assert "--permission-mode" not in cmd
         assert "--approval-mode yolo" in cmd  # extra_args kept
@@ -181,16 +181,16 @@ class TestRenderExecCommandCapabilities:
         from ghdag.core.capabilities import TEXT_ONLY
         spec = ENGINE_SPECS["shell"]
         cmd_no_caps = render_exec_command(spec, order_path="queue/order.sh", model=None)
-        cmd_with_caps = render_exec_command(spec, order_path="queue/order.sh", model=None, capabilities=TEXT_ONLY)
+        cmd_with_caps = render_exec_command(spec, order_path="queue/order.sh", model=None, permission=TEXT_ONLY)
         assert cmd_no_caps == cmd_with_caps
 
     def test_claude_stream_capabilities(self):
         """stream=True → render_exec_command includes stream-json flags"""
-        caps = LLMCapabilities(stream=True)
+        caps = Permission(stream=True)
         spec = ENGINE_SPECS["claude"]
         cmd = render_exec_command(
             spec, order_path="queue/order.md", model="claude-opus-4-6",
-            capabilities=caps,
+            permission=caps,
         )
         assert "--output-format" in cmd
         assert "stream-json" in cmd
@@ -198,11 +198,11 @@ class TestRenderExecCommandCapabilities:
 
     def test_cursor_stream_prefers_stream_json_without_duplicate(self):
         """With cursor stream, stream-json wins and --output-format appears once."""
-        caps = LLMCapabilities(stream=True)
+        caps = Permission(stream=True)
         spec = ENGINE_SPECS["cursor"]
         cmd = render_exec_command(
             spec, order_path="queue/order.md", model="auto",
-            capabilities=caps,
+            permission=caps,
         )
         assert cmd.split().count("--output-format") == 1
         assert "--output-format stream-json" in cmd

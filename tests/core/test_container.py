@@ -6,13 +6,13 @@ import os
 
 import pytest
 
-from ghdag.core.capabilities import LLMCapabilities
+from ghdag.core.capabilities import Permission
 from ghdag.core.container import container_prefix
 
 
-def _caps(**kwargs: object) -> LLMCapabilities:
+def _caps(**kwargs: object) -> Permission:
     kwargs.setdefault("container_image", "img:1")
-    return LLMCapabilities(sandbox="container", **kwargs)  # type: ignore[arg-type]
+    return Permission(sandbox="container", **kwargs)  # type: ignore[arg-type]
 
 
 def test_full_prefix_with_docker_path() -> None:

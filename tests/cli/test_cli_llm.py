@@ -187,7 +187,7 @@ def test_permission_preset_is_forwarded():
             with pytest.raises(SystemExit) as exc:
                 main(["llm", "hello", "--permission", "text_only"])
             assert exc.value.code == 0
-    assert captured["capabilities"] == TEXT_ONLY
+    assert captured["permission"] == TEXT_ONLY
 
 
 def test_removed_permission_flags_are_rejected():

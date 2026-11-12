@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from ghdag.core.capabilities import PRESETS
+from ghdag.core.capabilities import PERMISSIONS
 from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.exceptions import ConfigError
 from ghdag.core.models.workflow import (
@@ -190,12 +190,12 @@ def _validate(data: dict, filename: str) -> None:
                     hint=f"every non-shell step needs model: {step_id}",
                 )
             permission = step.get("permission")
-            if permission is not None and permission not in PRESETS:
+            if permission is not None and permission not in PERMISSIONS:
                 raise ValidationError(
                     f"handler '{handler_name}' step[{i}] has unknown permission "
                     f"preset {permission!r}: {filename}",
                     code="STEP_PERMISSION_UNKNOWN",
-                    hint=f"available presets: {', '.join(sorted(PRESETS))}",
+                    hint=f"available presets: {', '.join(sorted(PERMISSIONS))}",
                 )
             render = step.get("render", "frozen")
             if render not in ("frozen", "live"):

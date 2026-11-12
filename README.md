@@ -114,7 +114,7 @@ Steps for Issues labelled `pipeline:develop-ready` are appended to `jobs/exec.js
 ```python
 from ghdag.llm import TEXT_ONLY, call_text
 
-result = call_text("Summarize this repo in one line.", engine="claude", capabilities=TEXT_ONLY)
+result = call_text("Summarize this repo in one line.", engine="claude", permission=TEXT_ONLY)
 print(result.body if result.success else result.stderr)
 ```
 
@@ -263,11 +263,11 @@ Import other supported types from their definition packages (for example `ghdag.
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
 | `issue_status` | `(issue_number, *, handler=None, workflow=None, exec_jsonl_path, state_dir, done_dir, running_uuids=None, audit_path=None, running_dir=None) -> IssueStatus` |
 | `running_tasks` | `(running_dir) -> list[RunningTask]` |
-| `ghdag.llm.call` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, capabilities=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=None) -> LLMResult` |
+| `ghdag.llm.call` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, permission=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=None) -> LLMResult` |
 | `ghdag.llm.call_text` | Same parameters as `call`; returns `TextResult` (`body`, `success`, `raw`, `error`) |
-| `ghdag.llm.call_managed` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, capabilities=TEXT_ONLY, fallback_candidates=(), additional_tags=None, quota_gate=None, fallback_on_timeout=False, isolation=None) -> ManagedResult` |
-| `ghdag.llm.build_llm_cmd` | `(engine, model, prompt, *, capabilities=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=False) -> list[str]` — when `isolation=True`, claude adds `--disable-slash-commands`; codex adds `-c skills.include_instructions=false`; cursor is unchanged |
-| `ghdag.core.command.render_exec_command` | `(spec, *, order_path, model, prompt=None, capabilities=None, resume_session_id=None, isolation=False) -> str` |
+| `ghdag.llm.call_managed` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, permission=TEXT_ONLY, fallback_candidates=(), additional_tags=None, quota_gate=None, fallback_on_timeout=False, isolation=None) -> ManagedResult` |
+| `ghdag.llm.build_llm_cmd` | `(engine, model, prompt, *, permission=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=False) -> list[str]` — when `isolation=True`, claude adds `--disable-slash-commands`; codex adds `-c skills.include_instructions=false`; cursor is unchanged |
+| `ghdag.core.command.render_exec_command` | `(spec, *, order_path, model, prompt=None, permission=None, resume_session_id=None, isolation=False) -> str` |
 | `ghdag.core.command.inject_resume` | `(spec, command, session_id) -> str` — insert resume into a command string produced by `render_exec_command` (no resume) |
 | `ghdag.core.container.container_prefix` | `(capabilities, *, workdir='"$PWD"') -> list[str]` |
 | `ghdag.workflow.load_workflows` | `(directory) -> list[WorkflowConfig]` |
@@ -332,7 +332,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
 | `ghdag.forge` | `DEFAULT_REPO`, `ForgePort`, `GitHubApiError`, `GitHubClient`, `LocalForge`, `get_forge` |
 | `ghdag.io` | `audit`, `audit_query`, `done`, `exec_jsonl`, `queue`, `redact`, `sessions` |
-| `ghdag.llm` | `_config`, `DEFAULT_ENGINE_MODELS`, `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PRESETS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `EngineSpec`, `InputMode`, `PromptFlag`, `LLMCapabilities`, `LLMParseError`, `LLMResult`, `ManagedResult`, `TextResult`, `SessionRecord`, `SessionStore`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `build_llm_cmd`, `call`, `call_managed`, `call_text`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model` |
+| `ghdag.llm` | `_config`, `DEFAULT_ENGINE_MODELS`, `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PERMISSIONS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `EngineSpec`, `InputMode`, `PromptFlag`, `Permission`, `LLMParseError`, `LLMResult`, `ManagedResult`, `TextResult`, `SessionRecord`, `SessionStore`, `TEXT_ONLY`, `JSON_ONLY`, `WEB_RESEARCH`, `DANGEROUS_FULL_ACCESS`, `build_llm_cmd`, `call`, `call_managed`, `call_text`, `get_engine_models`, `list_engines`, `list_models`, `validate_engine_model` |
 | `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
 | `ghdag.metrics` | `FailureClass`, `MetricsRecorder`, `TaskMetrics`, `TokenUsage` |
 | `ghdag.pipeline` | `AuditContext`, `ModelValidationError`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_adapter`, `resolve_models`, `parse_frontmatter`, `LLMPipelineAPI`, `SubmittedStep`, `wait_for_result`, `read_task_exit_events`, `get_latest_status`, `write_task_exit_audit` |
@@ -352,13 +352,13 @@ Modules without a package-level export, importable directly as implementation de
 | `ghdag.core.vocabulary` | Done-marker constants (`DONE_*`), `QUEUE_FILE_RE`, `PIPELINE_STATUS_RE`, `FANOUT_SEPARATOR`, `FANOUT_ANCHOR`, `FANOUT_KEY` |
 | `ghdag.llm.adapters.failure_classification` | `classify_common_failure`, `looks_like_question` |
 
-### Capability presets
+### Permission presets
 
-`LLMCapabilities` (frozen dataclass in `ghdag.core.capabilities`) has these fields and defaults: `permission_mode="default"`, `output_format="text"` (or `"json"`), `allowed_tools=()`, `disallowed_tools=()`, `stream=False`, `sandbox="off"` (or `"readonly"` / `"container"`), `resume=False`, `container_image=""`, `container_readonly=False`, `container_mounts=()`, `container_env=()`, `docker_bin="docker"`, `web_search=False`.
+`Permission` (frozen dataclass in `ghdag.core.capabilities`) has these fields and defaults: `permission_mode="default"`, `output_format="text"` (or `"json"`), `allowed_tools=()`, `disallowed_tools=()`, `stream=False`, `sandbox="off"` (or `"readonly"` / `"container"`), `resume=False`, `container_image=""`, `container_readonly=False`, `container_mounts=()`, `container_env=()`, `docker_bin="docker"`, `web_search=False`.
 
 `web_search=True` requests Web search in an engine-neutral way: claude adds the Web tool allow-list (`WebFetch`, `WebSearch`, plus read/search helpers), codex adds the top-level `--search` flag before `exec`, and cursor relies on harness Web tools without extra argv. gemini and shell reject `web_search=True` in `call()`.
 
-Presets live in `PRESETS`. Workflow steps pick one with `StepConfig.permission`, falling back to `GHDAG_SAFE_DEFAULT_PERMISSION`.
+Presets live in `PERMISSIONS`. Workflow steps pick one with `StepConfig.permission`, falling back to `GHDAG_SAFE_DEFAULT_PERMISSION`.
 
 | Name | Constant | Settings |
 |---|---|---|
@@ -581,7 +581,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `config/env.py` | Environment variable accessors and `state_dir` resolution |
 | `config/language.py` | Language packs (`EN`, `GHDAG_LANGUAGE_PACK`): state labels, UI strings, question suffixes |
 | `core/__init__.py` | Shared cross-tower primitives |
-| `core/capabilities.py` | `LLMCapabilities` and presets |
+| `core/capabilities.py` | `Permission` and `PERMISSIONS` presets |
 | `core/command.py` | Engine command lines (`render_exec_command`, `build_llm_cmd`) and engine adapters (`AdapterNotFoundError`) |
 | `core/container.py` | `container_prefix`: `docker run` prefix for `sandbox="container"` |
 | `core/engine_spec.py` | `EngineSpec`, `InputMode`, `PromptFlag`, `ENGINE_SPECS` |

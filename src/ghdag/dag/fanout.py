@@ -8,7 +8,7 @@ from typing import Any
 
 import yaml
 
-from ghdag.core.capabilities import PRESETS
+from ghdag.core.capabilities import PERMISSIONS
 from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.exceptions import ConfigError
 from ghdag.core.reply_block import find_reply_block, parse_reply_block
@@ -139,8 +139,8 @@ def _parse_flat_child(c: dict[str, Any], index: int) -> FanOutItem:
             )
 
     if permission is not None:
-        if not isinstance(permission, str) or permission not in PRESETS:
-            available = ", ".join(sorted(PRESETS))
+        if not isinstance(permission, str) or permission not in PERMISSIONS:
+            available = ", ".join(sorted(PERMISSIONS))
             raise FanoutError(
                 f"child #{index}: unknown permission {permission!r}",
                 hint=f"available presets: {available}",

@@ -11,9 +11,9 @@ from ghdag.llm import (
     JSON_ONLY,
     TEXT_ONLY,
     EngineModelError,
-    LLMCapabilities,
     LLMParseError,
     LLMResult,
+    Permission,
     list_engines,
     list_models,
     validate_engine_model,
@@ -120,7 +120,7 @@ class TestValidateEngineModel:
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# LLMCapabilities
+# Permission
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
@@ -172,7 +172,7 @@ class TestLLMResultValidate:
             '{"type":"result","subtype":"success","result":"final answer"}\n'
         )
         r = LLMResult(stdout=jsonl, stderr="", returncode=0)
-        result = r.validate(LLMCapabilities(stream=True))
+        result = r.validate(Permission(stream=True))
         assert result.stdout == "final answer"
 
     def test_stream_json_output_validated_after_extraction(self):
@@ -181,14 +181,14 @@ class TestLLMResultValidate:
             '{"type":"result","subtype":"success","result":"{\\"k\\": \\"v\\"}"}\n'
         )
         r = LLMResult(stdout=jsonl, stderr="", returncode=0)
-        result = r.validate(LLMCapabilities(stream=True, output_format="json"))
+        result = r.validate(Permission(stream=True, output_format="json"))
         assert result.stdout == '{"k": "v"}'
 
     def test_stream_no_result_line_raises(self):
         """stream JSONL without a result line → LLMParseError"""
         r = LLMResult(stdout='{"type":"system"}\n', stderr="", returncode=0)
         with pytest.raises(LLMParseError, match="no result line"):
-            r.validate(LLMCapabilities(stream=True))
+            r.validate(Permission(stream=True))
 
     def test_claude_envelope_json_in_result_body(self):
         """Claude JSON envelope with embedded JSON in result → parsed stdout (nexus #6246)."""

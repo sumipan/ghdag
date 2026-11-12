@@ -118,7 +118,7 @@ def test_compact_resume_passes_json_capabilities_to_both_calls(tmp_path):
 
     assert len(calls) == 2
     for call_kwargs in calls:
-        caps = call_kwargs.get("capabilities")
+        caps = call_kwargs.get("permission")
         assert caps is not None
         assert caps.output_format == "json"
 

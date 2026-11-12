@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Rename the LLM constraint value object to `Permission` and the preset registry to `PERMISSIONS`. Public call paths (`ghdag.llm.call`, `call_text`, `call_managed`, `build_llm_cmd`, `ghdag.core.command.render_exec_command`, `container_prefix`, and `EngineAdapter.build_exec_record`) take keyword argument `permission` instead of `capabilities`. Preset keys and workflow step field `permission` are unchanged (sumipan/nexus#6501).
 - CLI flags: `--exec-jsonl` (replaces `--exec-md` / `quota status` `--exec-path`), `--interval-sec` (replaces `--interval`), `--timeout-sec` (replaces `--timeout`), and `ghdag llm --permission PRESET` (replaces `--capabilities-preset`, `--permission-mode`, `--dangerously-skip-permissions`). Handler `argparse` attribute names are unchanged (`exec_jsonl`, `interval`, `timeout`, and related fields) (sumipan/nexus#6475).
 - `ghdag.__all__` exports only `GhdagError`; import `QueueTask` / `QueueTaskStore`, pipeline, DAG, workflow, quota, and status symbols from their definition packages (sumipan/nexus#6475).
 - `ghdag.pipeline` no longer re-exports `STATE_*`, `task_status`, `state_label`, or `status_rank`; import from `ghdag.pipeline.status` / `ghdag.pipeline.state` (sumipan/nexus#6475).
@@ -18,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- `LLMCapabilities`, `PRESETS`, and the `capabilities` keyword on public LLM / command APIs; use `Permission`, `PERMISSIONS`, and `permission` (sumipan/nexus#6501).
 - `ForgePort`, `get_forge`, `GitHubIssueClient`, and `create_github_client` from `ghdag.workflow.__all__`; import from `ghdag.core.ports.forge`, `ghdag.forge`, and `ghdag.github_client` (sumipan/nexus#6475).
 
 | Before | After |
@@ -29,6 +31,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 | `ghdag run|watch|ui … --interval SEC` | `… --interval-sec SEC` |
 | `ghdag llm … --timeout SEC` | `ghdag llm … --timeout-sec SEC` |
 | `ghdag llm --capabilities-preset P` | `ghdag llm --permission P` |
+| `from ghdag.llm import LLMCapabilities, PRESETS` | `from ghdag.llm import Permission, PERMISSIONS` |
+| `ghdag.llm.call(..., capabilities=TEXT_ONLY)` | `ghdag.llm.call(..., permission=TEXT_ONLY)` |
 | `from ghdag import DagEngine` | `from ghdag.dag import DagEngine` |
 | `from ghdag.dag import RunningTask` | internal `_RunningProcess` (not public) |
 | `from ghdag.workflow import get_forge` | `from ghdag.forge import get_forge` |

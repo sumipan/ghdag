@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class LLMCapabilities:
+class Permission:
     """Value object bundling the capability constraints of an LLM call."""
     permission_mode: str = "default"
     output_format: str = "text"  # "text" | "json"
@@ -24,26 +24,26 @@ class LLMCapabilities:
     web_search: bool = False  # request Web search (engine-specific argv; see core.command)
 
 
-TEXT_ONLY = LLMCapabilities(
+TEXT_ONLY = Permission(
     permission_mode="default",
     output_format="text",
     disallowed_tools=("Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch"),
 )
 
-JSON_ONLY = LLMCapabilities(
+JSON_ONLY = Permission(
     permission_mode="default",
     output_format="json",
     disallowed_tools=("Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch"),
 )
 
-WEB_RESEARCH = LLMCapabilities(
+WEB_RESEARCH = Permission(
     permission_mode="default",
     output_format="text",
     web_search=True,
     disallowed_tools=("Bash", "Edit", "Write", "NotebookEdit"),
 )
 
-DANGEROUS_FULL_ACCESS = LLMCapabilities(
+DANGEROUS_FULL_ACCESS = Permission(
     permission_mode="bypassPermissions",
     output_format="text",
 )
@@ -55,15 +55,25 @@ DANGEROUS_FULL_ACCESS = LLMCapabilities(
 # Write is not disallowed: in claude's plan mode (sandbox=readonly) the harness has
 # Write the plan file (~/.claude/plans/*.md), and plan mode itself rejects Write to
 # anything other than the plan file (sumipan/nexus#3188).
-READONLY_OBSERVE = LLMCapabilities(
+READONLY_OBSERVE = Permission(
     sandbox="readonly",
     disallowed_tools=("Edit", "NotebookEdit"),
 )
 
-PRESETS: dict[str, LLMCapabilities] = {
+PERMISSIONS: dict[str, Permission] = {
     "text_only": TEXT_ONLY,
     "json_only": JSON_ONLY,
     "web_research": WEB_RESEARCH,
     "dangerous_full_access": DANGEROUS_FULL_ACCESS,
     "readonly_observe": READONLY_OBSERVE,
 }
+
+__all__ = [
+    "DANGEROUS_FULL_ACCESS",
+    "JSON_ONLY",
+    "PERMISSIONS",
+    "Permission",
+    "READONLY_OBSERVE",
+    "TEXT_ONLY",
+    "WEB_RESEARCH",
+]

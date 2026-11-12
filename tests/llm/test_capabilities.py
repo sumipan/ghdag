@@ -4,26 +4,43 @@ from __future__ import annotations
 
 import pytest
 
+from ghdag.core.capabilities import PERMISSIONS, TEXT_ONLY, Permission
 from ghdag.llm import (
     DANGEROUS_FULL_ACCESS,
     JSON_ONLY,
-    TEXT_ONLY,
     WEB_RESEARCH,
-    LLMCapabilities,
     build_llm_cmd,
 )
+from ghdag.llm import (
+    TEXT_ONLY as TEXT_ONLY_EXPORT,
+)
+
+
+def test_permission_registry_identity() -> None:
+    """Issue sumipan/nexus#6501 — Permission defaults and PERMISSIONS preset keys."""
+    assert Permission().permission_mode == "default"
+    assert Permission().output_format == "text"
+    assert Permission().web_search is False
+    assert PERMISSIONS["text_only"] is TEXT_ONLY
+    assert set(PERMISSIONS) == {
+        "text_only",
+        "json_only",
+        "web_research",
+        "dangerous_full_access",
+        "readonly_observe",
+    }
 
 
 class TestCapabilities:
     def test_text_only_preset(self):
-        assert TEXT_ONLY.permission_mode == "default"
-        assert TEXT_ONLY.output_format == "text"
-        assert "Bash" in TEXT_ONLY.disallowed_tools
-        assert "Edit" in TEXT_ONLY.disallowed_tools
-        assert "Write" in TEXT_ONLY.disallowed_tools
-        assert "NotebookEdit" in TEXT_ONLY.disallowed_tools
-        assert "WebFetch" in TEXT_ONLY.disallowed_tools
-        assert "WebSearch" in TEXT_ONLY.disallowed_tools
+        assert TEXT_ONLY_EXPORT.permission_mode == "default"
+        assert TEXT_ONLY_EXPORT.output_format == "text"
+        assert "Bash" in TEXT_ONLY_EXPORT.disallowed_tools
+        assert "Edit" in TEXT_ONLY_EXPORT.disallowed_tools
+        assert "Write" in TEXT_ONLY_EXPORT.disallowed_tools
+        assert "NotebookEdit" in TEXT_ONLY_EXPORT.disallowed_tools
+        assert "WebFetch" in TEXT_ONLY_EXPORT.disallowed_tools
+        assert "WebSearch" in TEXT_ONLY_EXPORT.disallowed_tools
 
     def test_json_only_preset(self):
         assert JSON_ONLY.permission_mode == "default"
@@ -38,8 +55,8 @@ class TestCapabilities:
         assert "Bash" in WEB_RESEARCH.disallowed_tools
         assert "Edit" in WEB_RESEARCH.disallowed_tools
 
-    def test_default_capabilities_web_search_false(self):
-        assert LLMCapabilities().web_search is False
+    def test_default_permission_web_search_false(self):
+        assert Permission().web_search is False
 
     def test_dangerous_full_access_preset(self):
         assert DANGEROUS_FULL_ACCESS.permission_mode == "bypassPermissions"
@@ -51,8 +68,8 @@ class TestCapabilities:
         with pytest.raises((dataclasses.FrozenInstanceError, AttributeError)):
             TEXT_ONLY.permission_mode = "bypassPermissions"  # type: ignore
 
-    def test_custom_capabilities(self):
-        caps = LLMCapabilities(permission_mode="plan", output_format="json")
+    def test_custom_permission(self):
+        caps = Permission(permission_mode="plan", output_format="json")
         assert caps.permission_mode == "plan"
         assert caps.output_format == "json"
 
