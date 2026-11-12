@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.131.0 - 2026-11-12
+
+### Changed
+
+- **Breaking:** Rename command adapter registry APIs: `get_adapter` → `get_command_adapter`, `register_adapter` → `register_command_adapter`. Import from `ghdag.core.command` or `get_command_adapter` from `ghdag.pipeline` (sumipan/nexus#6535).
+
+| Before | After |
+| --- | --- |
+| `from ghdag.core.command import get_adapter, register_adapter` | `from ghdag.core.command import get_command_adapter, register_command_adapter` |
+| `from ghdag.pipeline import get_adapter` | `from ghdag.pipeline import get_command_adapter` |
+
 ## 0.130.0 - 2026-11-12
 
 ### Changed

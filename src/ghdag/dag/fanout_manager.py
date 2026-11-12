@@ -9,7 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from ghdag.core.capabilities import PERMISSIONS
-from ghdag.core.command import get_adapter
+from ghdag.core.command import get_command_adapter
 from ghdag.core.models.metrics import FailureClass, TaskMetrics
 from ghdag.core.vocabulary import DONE_FANOUT_CHILD_FAILED, FANOUT_SEPARATOR
 from ghdag.io.done import mark_done as state_mark_done
@@ -152,7 +152,7 @@ class FanOutManager:
         preset = child.permission or "text_only"
         perm = PERMISSIONS[preset]
 
-        record = get_adapter(effective_engine).build_exec_record(
+        record = get_command_adapter(effective_engine).build_exec_record(
             uuid=child_uuid,
             order_path=str(order_path),
             result_path=result_path,

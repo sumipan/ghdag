@@ -1,6 +1,6 @@
 """ghdag.pipeline — Layer 1 pipeline public API."""
 
-from ghdag.core.command import get_adapter
+from ghdag.core.command import get_command_adapter
 from ghdag.io.audit import AuditContext, write_task_exit_audit
 from ghdag.io.audit_query import get_latest_status, read_task_exit_events
 from ghdag.io.exec_jsonl import build_idempotency_key
@@ -29,7 +29,7 @@ __all__ = [
     "InlineOrderBuilder",
     "TemplateVariableError",
     "build_idempotency_key",
-    "get_adapter",
+    "get_command_adapter",
     "resolve_models",
     "parse_frontmatter",
     "LLMPipelineAPI",
