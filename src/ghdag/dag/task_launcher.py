@@ -427,6 +427,7 @@ class TaskLauncher:
             audit_path=Path(config.quota_audit_path or self._queue_dir() / "audit.jsonl"),
         )
         self._engine_quarantine = EngineQuarantine()
+        self._last_quota_deferred: dict[str, tuple[str | None, str | None]] = {}
 
     @property
     def quota_gate(self) -> QuotaGate:
@@ -434,7 +435,6 @@ class TaskLauncher:
 
     def launch(self, uuid: str, task: Task) -> bool:
         """Start a subprocess for the given task and register it in _running."""
-        logger.info("Launching [%s]: %s", uuid, task.command)
         cwd = str(self._config.cwd) if self._config.cwd else None
         launch_engine = task.engine
         if launch_engine is None:
@@ -475,13 +475,19 @@ class TaskLauncher:
             **_quota_role_kwargs(task),
         )
         if not decision.allowed:
-            logger.info(
-                "Task [%s] launch deferred by quota gate: engine=%s reason=%s",
-                uuid,
-                launch_engine,
-                decision.reason,
-            )
+            defer_key = (launch_engine, decision.reason)
+            if self._last_quota_deferred.get(uuid) != defer_key:
+                logger.info(
+                    "Task [%s] launch deferred by quota gate: engine=%s reason=%s",
+                    uuid,
+                    launch_engine,
+                    decision.reason,
+                )
+                self._last_quota_deferred[uuid] = defer_key
             return False
+
+        self._last_quota_deferred.pop(uuid, None)
+        logger.info("Launching [%s]: %s", uuid, task.command)
 
         command_before_resume = task.command
         self._apply_resume_if_available(uuid, task)
