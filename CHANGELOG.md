@@ -18,6 +18,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 | `from ghdag.github_client import DEFAULT_REPO` | Set `GITHUB_REPOSITORIES` or pass `repo=` |
 | `from ghdag.forge import DEFAULT_REPO` | Same |
 
+### Changed
+
+- Align README release badge, Status table, and git-tag install pins with `[project].version` for this release (version, release, README).
+- Keep intake / execution / recording identity messaging and the GitHub-free LocalForge quick start (identity, positioning, LocalForge, without GitHub).
+- Document execution review via queue artifacts and `ghdag status` / MCP `ghdag_status` (review, artifact).
+
 ## 0.133.4 - 2026-11-14
 
 ### Changed
