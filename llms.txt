@@ -1,6 +1,6 @@
 # ghdag
 
-> ghdag runs labelled GitHub Issues through workflow handlers into a local exec.jsonl queue, then executes the DAG with claude, cursor, codex, gemini, or shell. Intake (`ghdag watch` / `ghdag trigger`) and execution (`ghdag run`) are separate processes that coordinate through files and locks.
+> ghdag is a local workflow foundation: intake from labelled Issues, `ghdag trigger`, append-only `exec.jsonl`, or MCP enqueue; dependency-ordered execution on your machine (`ghdag run` with claude, cursor, codex, gemini, or shell); file-based recording in `jobs/exec.jsonl`, `done/<uuid>`, `audit.jsonl`, and per-task result files.
 
 ## Docs
 

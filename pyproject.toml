@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghdag"
-version = "0.133.3"
-description = "Generic DAG execution engine extracted from graph-watcher"
+version = "0.133.4"
+description = "Local workflow foundation: intake from Issues, triggers, exec.jsonl, or MCP; dependency-ordered execution via ghdag run; file-based recording in queue, done, audit, and result artifacts."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
