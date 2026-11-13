@@ -204,19 +204,21 @@ def _unreleased_block(text: str) -> str:
 
 
 def _current_change_block(text: str) -> str:
-    """Return pending notes, or the current-version notes after publish automation runs."""
+    """Return pending notes, or the shipped changelog section that cites #6610 (0.133.4)."""
     unreleased = _unreleased_block(text)
     if unreleased.strip():
         return unreleased
 
-    version = re.escape(_project_version())
-    match = re.search(
-        rf"^## {version}(?:\s+-[^\n]*)?\n(?P<body>.*?)(?=^## |\Z)",
+    issue_marker = "sumipan/nexus#6610"
+    for match in re.finditer(
+        r"^## [^\n]+\n(?P<body>.*?)(?=^## |\Z)",
         text,
         re.MULTILINE | re.DOTALL,
-    )
-    assert match is not None, f"CHANGELOG missing notes for current version {_project_version()}"
-    return match.group("body")
+    ):
+        if issue_marker in match.group("body"):
+            return match.group("body")
+
+    assert False, f"CHANGELOG missing a release section containing {issue_marker}"
 
 
 def test_unreleased_changelog_records_identity_docs_update() -> None:
