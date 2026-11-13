@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.133.4 - 2026-11-14
+
 ### Changed
 
 - Align project messaging in `README.md`, `llms.txt`, and `[project].description` on work intake, dependency-ordered local execution, and file-based execution recording; remove legacy `graph-watcher` wording (sumipan/nexus#6610).
