@@ -12,7 +12,10 @@ import pytest
 from ghdag.core.models.metrics import FailureClass
 from ghdag.core.ports.output import EngineErrorKind
 from ghdag.llm.adapters import get_output_adapter
+from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
+from ghdag.llm.adapters.codex import CodexAdapter
 from ghdag.llm.adapters.cursor import CursorAdapter
+from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
 from ghdag.llm.adapters.failure_classification import (
     QUOTA_DEFAULT_PAUSE_SECONDS,
     classify_common_failure,
@@ -266,6 +269,93 @@ def test_legacy_cursor_adapter_classifies_binary_missing():
         )
         == FailureClass.ENGINE_ENVIRONMENT_ERROR
     )
+
+
+def test_codex_capacity_classifies_as_engine_error() -> None:
+    """Refs sumipan/nexus#6602: capacity error event maps to ENGINE_ERROR via extract_error."""
+    adapter = CodexAdapter()
+    stdout = (
+        b'{"type":"error","message":"Selected model is at capacity. '
+        b'Please try a different model."}\n'
+    )
+    assert adapter.classify_failure(1, stdout, b"") is FailureClass.ENGINE_ERROR
+
+
+def test_claude_capacity_classifies_as_engine_error() -> None:
+    """Refs sumipan/nexus#6602: overloaded maps to ENGINE_ERROR via extract_error."""
+    adapter = ClaudeJsonAdapter()
+    stdout = b'{"is_error":true,"error":{"message":"overloaded"}}'
+    assert adapter.classify_failure(1, stdout, b"") is FailureClass.ENGINE_ERROR
+
+
+def test_cursor_capacity_classifies_as_engine_error() -> None:
+    """Refs sumipan/nexus#6602: result error capacity maps to ENGINE_ERROR via extract_error."""
+    adapter = CursorStreamAdapter()
+    stdout = (
+        b'{"type":"result","subtype":"error","is_error":true,'
+        b'"result":"Selected model is at capacity."}\n'
+    )
+    assert adapter.classify_failure(1, stdout, b"") is FailureClass.ENGINE_ERROR
+
+
+@pytest.mark.parametrize(
+    ("adapter", "stdout"),
+    [
+        (
+            CodexAdapter(),
+            b'{"type":"error","message":"Selected model is at capacity."}\n',
+        ),
+        (
+            ClaudeJsonAdapter(),
+            b'{"is_error":true,"error":{"message":"overloaded"}}',
+        ),
+        (
+            CursorStreamAdapter(),
+            b'{"type":"result","subtype":"error","is_error":true,'
+            b'"result":"Selected model is at capacity."}\n',
+        ),
+    ],
+    ids=["codex", "claude", "cursor"],
+)
+def test_capacity_with_zero_returncode_is_not_failure(
+    adapter, stdout: bytes
+) -> None:
+    """Refs sumipan/nexus#6602: success exit must not classify capacity as failure."""
+    assert adapter.classify_failure(0, stdout, b"") is None
+
+
+def test_interactive_prompt_precedes_capacity() -> None:
+    """Refs sumipan/nexus#6602: question detection wins over capacity on non-zero exit."""
+    adapter = CodexAdapter()
+    stdout = b"\n".join(
+        [
+            b'{"type":"error","message":"Selected model is at capacity. '
+            b'Please try a different model."}',
+            b'{"type":"item.completed","item":{"type":"agent_message","text":"Which option?"}}',
+        ]
+    )
+    assert adapter.classify_failure(1, stdout, b"") is FailureClass.INTERACTIVE_PROMPT
+
+
+@pytest.mark.parametrize(
+    ("adapter", "stdout"),
+    [
+        (CodexAdapter(), b'{"type":"turn.failed","error":"Rate limit exceeded"}\n'),
+        (
+            ClaudeJsonAdapter(),
+            b'{"is_error":true,"error":{"message":"rate limit exceeded"}}',
+        ),
+        (
+            CursorStreamAdapter(),
+            b'{"type": "result", "subtype": "error", "is_error": true, '
+            b'"result": "Rate limit exceeded"}\n',
+        ),
+    ],
+    ids=["codex", "claude", "cursor"],
+)
+def test_rate_limit_is_not_mapped_to_engine_error(adapter, stdout: bytes) -> None:
+    """Refs sumipan/nexus#6602: RATE_LIMIT stays outside the new CAPACITY branch."""
+    assert adapter.classify_failure(1, stdout, b"") is not FailureClass.ENGINE_ERROR
 
 
 def test_failure_class_values_unchanged():

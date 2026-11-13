@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Reuse `extract_error` capacity/overloaded classification in `classify_failure` for codex, claude, and cursor stream adapters so non-zero exits surface `FailureClass.ENGINE_ERROR` (sumipan/nexus#6602).
+
 ## 0.133.1 - 2026-11-13
 
 ### Fixed
