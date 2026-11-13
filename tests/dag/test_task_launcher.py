@@ -6,16 +6,12 @@ import io
 import json
 import logging
 import subprocess
-import time
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from ghdag_dag_conftest_helpers import (
-    MemoryHooks,
-    _make_config,
-    _run_engine_with_timeout,
-)
+from ghdag_dag_conftest_helpers import MemoryHooks, _make_config
 
 from ghdag.core.capabilities import WEB_RESEARCH
 from ghdag.core.command import render_exec_command
@@ -501,6 +497,23 @@ def _audit_record(audit_path: Path, event_type: str) -> dict:
     raise AssertionError(f"no {event_type} in audit")
 
 
+def _run_engine_to_completion(
+    engine: DagEngine,
+    *,
+    done_dir: Path,
+    task_uuids: tuple[str, ...],
+) -> None:
+    """Run engine.run() on a daemon thread until listed tasks have done markers."""
+    thread = threading.Thread(target=engine.run, daemon=True)
+    thread.start()
+    while thread.is_alive():
+        if all((done_dir / uid).exists() for uid in task_uuids):
+            engine._shutdown = True
+        thread.join(0.05)
+    engine._shutdown = True
+    thread.join()
+
+
 def test_failed_shell_task_persists_stderr_and_audit_path(tmp_path: Path) -> None:
     """Issue #6607: non-zero shell task saves stderr and audit stderr_path."""
     uuid = "stderr-fail-uuid"
@@ -514,7 +527,7 @@ def test_failed_shell_task_persists_stderr_and_audit_path(tmp_path: Path) -> Non
             "annotations": {},
         },
     )
-    _run_engine_with_timeout(engine, timeout=5.0)
+    _run_engine_to_completion(engine, done_dir=jobs / "done", task_uuids=(uuid,))
 
     artifacts = list((jobs / "stderr" / uuid).glob("*.log"))
     assert len(artifacts) == 1
@@ -536,7 +549,7 @@ def test_success_does_not_persist_stderr(tmp_path: Path) -> None:
             "annotations": {},
         },
     )
-    _run_engine_with_timeout(engine, timeout=5.0)
+    _run_engine_to_completion(engine, done_dir=jobs / "done", task_uuids=(uuid,))
 
     assert not (jobs / "stderr").exists()
     complete = _audit_record(audit_path, "task_complete")
@@ -569,8 +582,8 @@ def test_failure_with_empty_stderr_does_not_persist_artifact(tmp_path: Path) -> 
         uuid="empty-stderr",
         task=task,
         proc=proc,
-        started_at=time.time() - 0.1,
-        started_at_mono=time.monotonic() - 0.1,
+        started_at=1.0,
+        started_at_mono=1.0,
         stderr_buf=io.BytesIO(b""),
         retry_depth=0,
     )
@@ -652,7 +665,7 @@ def test_empty_result_persists_stderr_artifact(tmp_path: Path) -> None:
             "result_path": result_path,
         },
     )
-    _run_engine_with_timeout(engine, timeout=5.0)
+    _run_engine_to_completion(engine, done_dir=jobs / "done", task_uuids=(uuid,))
 
     artifacts = list((jobs / "stderr" / uuid).glob("*.log"))
     assert len(artifacts) == 1
