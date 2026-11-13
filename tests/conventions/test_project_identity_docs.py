@@ -130,7 +130,8 @@ def test_readme_release_references_match_project_version() -> None:
 
 
 def test_localforge_quick_start_runs_documented_shell_block(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Refs sumipan/nexus#6610 — documented LocalForge block runs one shell step without GitHub auth."""
     script = _extract_localforge_bash(_README.read_text(encoding="utf-8"))
@@ -202,9 +203,25 @@ def _unreleased_block(text: str) -> str:
     return tail[: match.start()] if match else tail
 
 
+def _current_change_block(text: str) -> str:
+    """Return pending notes, or the current-version notes after publish automation runs."""
+    unreleased = _unreleased_block(text)
+    if unreleased.strip():
+        return unreleased
+
+    version = re.escape(_project_version())
+    match = re.search(
+        rf"^## {version}(?:\s+-[^\n]*)?\n(?P<body>.*?)(?=^## |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert match is not None, f"CHANGELOG missing notes for current version {_project_version()}"
+    return match.group("body")
+
+
 def test_unreleased_changelog_records_identity_docs_update() -> None:
-    """Refs sumipan/nexus#6610 — [Unreleased] notes identity, version alignment, LocalForge, review table."""
-    block = _unreleased_block(_CHANGELOG.read_text(encoding="utf-8"))
+    """Refs sumipan/nexus#6610 — pending/current notes cover identity, version, LocalForge, review."""
+    block = _current_change_block(_CHANGELOG.read_text(encoding="utf-8"))
 
     themes = (
         re.compile(r"identity|messaging|positioning", re.IGNORECASE),
@@ -213,4 +230,4 @@ def test_unreleased_changelog_records_identity_docs_update() -> None:
         re.compile(r"review|retrospect|artifact", re.IGNORECASE),
     )
     for pattern in themes:
-        assert pattern.search(block), f"[Unreleased] missing theme matching {pattern.pattern}"
+        assert pattern.search(block), f"current change notes missing theme matching {pattern.pattern}"
