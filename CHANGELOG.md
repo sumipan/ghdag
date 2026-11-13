@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Align project messaging in `README.md`, `llms.txt`, and `[project].description` on work intake, dependency-ordered local execution, and file-based execution recording; remove legacy `graph-watcher` wording (sumipan/nexus#6610).
+- Sync README release badge, Status table, and git-tag install example with `[project].version` without bumping the package version (sumipan/nexus#6610).
+- Add a GitHub-free LocalForge Quick Start shell walkthrough and an execution review table mapping queue artifacts to `ghdag status` / MCP `ghdag_status` (sumipan/nexus#6610).
+
 ## 0.133.3 - 2026-11-14
 
 ### Fixed

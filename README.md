@@ -1,24 +1,24 @@
 # ghdag
 
-ghdag is a local orchestrator for LLM and shell task graphs. Labelled GitHub Issues (or a file-backed `LocalForge`) pick a workflow handler; the handler's steps become JSON lines in `jobs/exec.jsonl`, and `ghdag run` executes the dependency DAG on your machine.
+ghdag is a local workflow foundation. It **intakes** work from labelled GitHub Issues (or a file-backed `LocalForge`), one-shot `ghdag trigger`, append-only `exec.jsonl` lines, and MCP enqueue tools; **runs** tasks in dependency order on your machine through `ghdag run`; and **records** execution in queue files, `done/<uuid>` markers, `audit.jsonl` lifecycle events, and per-task result files.
 
-Two processes share only files on disk:
+Two cooperating processes share only files on disk:
 
-- **Intake** — `ghdag watch` polls Issues and `ghdag trigger` dispatches one Issue; both append tasks through `LLMPipelineAPI.submit`.
-- **Execution** — `ghdag run` watches `exec.jsonl`, starts tasks when dependencies succeed, and writes `done/<uuid>` markers.
+- **Intake** — `ghdag watch` polls Issues and `ghdag trigger` dispatches one Issue; both append tasks through `LLMPipelineAPI.submit` (or MCP `ghdag_enqueue`).
+- **Execution** — `ghdag run` watches `exec.jsonl`, starts tasks when dependencies succeed, and writes `done/<uuid>` markers while appending to `audit.jsonl`.
 
 Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-agent`, `codex`, `gemini`, or `bash` for shell steps). Coordination uses the queue file, runtime directories, and `fcntl` locks.
 
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.125.3-blue)
+![version](https://img.shields.io/badge/version-v0.133.3-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.125.3** (`pyproject.toml` `version = "0.125.1"`) |
+| Current release | **v0.133.3** (`pyproject.toml` `version = "0.133.3"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.125.3"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.133.3"
 ```
 
 Install from a checkout with the development tools:
@@ -66,6 +66,67 @@ ghdag version
 ```
 
 ## Quick Start
+
+### LocalForge quick start (no GitHub credentials)
+
+`GITHUB_TOKEN`, `GH_TOKEN`, and `GITHUB_REPOSITORIES` are not required. The script uses `GHDAG_FORGE=local` with a git checkout under a temp directory as the forge data root, wires a one-step shell workflow, enqueues through `ghdag watch --once`, and runs the DAG with a background `ghdag run` process you stop yourself.
+
+<!-- ghdag-localforge-quick-start -->
+```bash
+set -euo pipefail
+unset GITHUB_TOKEN GH_TOKEN GITHUB_REPOSITORIES
+ROOT="${GHDAG_QUICKSTART_WORKDIR:-$(mktemp -d)}"
+cd "$ROOT"
+export GHDAG_FORGE=local
+export GHDAG_FORGE_ROOT="$ROOT"
+
+git init -q
+git config user.email "quickstart@example.com"
+git config user.name "ghdag quickstart"
+printf 'init\n' > README.md
+git add README.md
+git commit -q -m init
+git branch -M main
+
+mkdir -p workflows/templates jobs
+cat > workflows/sample.yml <<'YAML'
+name: local-quickstart
+template_dir: templates
+triggers:
+  - label: "pipeline:develop-ready"
+    handler: run
+handlers:
+  run:
+    steps:
+      - id: write-out
+        template: write-out
+        engine: shell
+YAML
+cat > workflows/templates/write-out.md <<'MD'
+printf 'quickstart-ok\n' > quickstart.out
+printf 'quickstart-ok\n' > "jobs/${result_filename}"
+MD
+touch jobs/exec.jsonl
+
+ISSUE="$(python -m ghdag.github_cli issue create --title quickstart --body body)"
+python -m ghdag.github_cli issue edit "$ISSUE" --add-label pipeline:develop-ready
+
+python -m ghdag run jobs/exec.jsonl &
+RUNNER_PID=$!
+python -m ghdag watch workflows --exec-jsonl jobs/exec.jsonl --once
+
+for _ in $(seq 1 300); do
+  if compgen -G "jobs/done/*" > /dev/null && [[ "$(cat jobs/done/*)" == "0" ]]; then
+    break
+  fi
+  sleep 0.05
+done
+kill "$RUNNER_PID" 2>/dev/null || true
+wait "$RUNNER_PID" 2>/dev/null || true
+
+test -f quickstart.out
+test "$(grep -cve '^[[:space:]]*$' jobs/exec.jsonl || true)" -eq 1
+```
 
 ### 1. Run a task graph from a queue file
 
@@ -1017,6 +1078,20 @@ Standard exceptions raised by the public API: `ValueError` (unknown `GHDAG_FORGE
 | `WaitQuotaParseError` | `ghdag.dag._util` | Frozen dataclass (`reason`) when `parse_wait_quota_signal` or `parse_wait_quota_result_path` cannot parse `PIPELINE_STATUS: WAIT_QUOTA` output; the runner treats it like a normal failed result |
 | `CommitResult` | `ghdag.vcs.sink` | Outcome of a sink call (`committed`, `pushed`, `skipped`, `reason`, `sha`, `paths`) |
 
+## Reviewing task runs
+
+Use the table below to see what each on-disk artifact or status interface tells you about a handler run (Issue + workflow name + handler id) or a single task UUID. For failure diagnostics stored on disk, see [Failure stderr artifacts](#failure-stderr-artifacts) (paths also appear as `stderr_path` in `audit.jsonl`).
+
+| Artifact or interface | Look up by | What you can verify |
+|---|---|---|
+| `exec.jsonl` | task UUID (line field `uuid`) or scan recent lines for Issue/handler metadata | Enqueued command or engine step, `depends` edges, and intake metadata for the run |
+| `done/<uuid>` | task UUID | Exit outcome: `0` for success, or a vocabulary constant / `PIPELINE_FAILED:` marker for failures |
+| `audit.jsonl` | task UUID and event type (`task_exit`, `task_failed`, …) | Lifecycle timeline, durations, correlation ids, and `stderr_path` when a failure artifact exists |
+| result file | path recorded on the task line (`result_path` when present) or workflow conventions under the queue directory | Task output text the engine or shell step produced |
+| `stderr/<uuid>/...` | task UUID (queue-relative path; details in Failure stderr artifacts) | Redacted subprocess stderr tail for failed or empty-result tasks |
+| `ghdag status` | Issue number, handler, and workflow name (or UUID list flags) | Aggregated step states, done values, and failure classification for a run |
+| `ghdag_status` (MCP) | same keys as CLI status, via MCP stdio tools | Programmatic status snapshots for agents without shell access |
+
 ### Failure stderr artifacts
 
 When a task fails or finishes with an empty result, `TaskLauncher` may persist the diagnostic text passed to lifecycle hooks (typically subprocess stderr) under the queue directory:
@@ -1083,7 +1158,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.125.3"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.133.3"
 ```
 
 and read `CHANGELOG.md` before upgrading.
