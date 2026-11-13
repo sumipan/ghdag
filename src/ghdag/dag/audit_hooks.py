@@ -42,6 +42,7 @@ class AuditHooks(DefaultHooks):
                 correlation_id=metrics.correlation_id,
                 failure_class=metrics.failure_class,
                 request_id=metrics.request_id,
+                stderr_path=metrics.stderr_path,
                 tz_name=self._tz_name,
             )
 
@@ -56,6 +57,7 @@ class AuditHooks(DefaultHooks):
                 correlation_id=metrics.correlation_id,
                 failure_class=metrics.failure_class,
                 request_id=metrics.request_id,
+                stderr_path=metrics.stderr_path,
                 tz_name=self._tz_name,
             )
 
@@ -70,6 +72,7 @@ class AuditHooks(DefaultHooks):
                 correlation_id=metrics.correlation_id,
                 failure_class=metrics.failure_class,
                 request_id=metrics.request_id,
+                stderr_path=metrics.stderr_path,
                 tz_name=self._tz_name,
             )
 
@@ -81,6 +84,7 @@ class AuditHooks(DefaultHooks):
                 event_type="task_dep_failed", uuid=uuid, status="dep_failed",
                 correlation_id=task.idempotency_key,
                 failure_class=FailureClass.DEP_FAILED,
+                stderr_path=None,
                 tz_name=self._tz_name,
             )
 
@@ -95,6 +99,7 @@ class AuditHooks(DefaultHooks):
                 correlation_id=metrics.correlation_id,
                 failure_class=metrics.failure_class,
                 request_id=metrics.request_id,
+                stderr_path=metrics.stderr_path,
                 tz_name=self._tz_name,
             )
 
@@ -105,5 +110,6 @@ class AuditHooks(DefaultHooks):
                 self._audit_path,
                 event_type="task_cancelled", uuid=uuid, status="cancelled",
                 correlation_id=task.idempotency_key,
+                stderr_path=None,
                 tz_name=self._tz_name,
             )

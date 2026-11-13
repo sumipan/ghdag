@@ -264,3 +264,24 @@ class TestAuditHooks:
     def test_on_task_start_no_args_init_no_error(self):
         hooks = AuditHooks()
         hooks.on_task_start(UUID, _make_task())
+
+    def test_failure_forwards_stderr_path(self, tmp_path):
+        """TaskMetrics.stderr_path reaches the audit writer."""
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = AuditHooks(audit_path=audit_path)
+        rel = "stderr/test-uuid/diag-r0.log"
+        metrics = TaskMetrics(
+            uuid=UUID,
+            engine="shell",
+            model=None,
+            wall_time_sec=1.0,
+            token_count=None,
+            status="failure",
+            started_at=_FIXED_STARTED_AT,
+            finished_at=_FIXED_STARTED_AT + 1.0,
+            stderr_path=rel,
+        )
+        hooks.on_task_failure(UUID, _make_task(), 3, "diagnostic", metrics)
+
+        r = json.loads(audit_path.read_text().strip())
+        assert r["stderr_path"] == rel

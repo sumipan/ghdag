@@ -198,6 +198,7 @@ def write_task_exit_audit(
     parent_correlation_id: str | None = None,
     orchestration_id: str | None = None,
     env_denied_count: int | None = None,
+    stderr_path: str | None = None,
     tz_name: str = "UTC",
 ) -> None:
     denied = env_denied_count
@@ -218,6 +219,7 @@ def write_task_exit_audit(
         "request_id": request_id,
         "parent_correlation_id": parent_correlation_id,
         "orchestration_id": orchestration_id,
+        "stderr_path": stderr_path,
     }
     if denied is not None and denied > 0:
         record["env_denied_count"] = denied

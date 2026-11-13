@@ -3,21 +3,24 @@
 from __future__ import annotations
 
 import io
+import json
 import logging
+import subprocess
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from ghdag_dag_conftest_helpers import (
-    MemoryHooks,
-    _make_config,
-)
+from ghdag_dag_conftest_helpers import MemoryHooks, _make_config
 
 from ghdag.core.capabilities import WEB_RESEARCH
 from ghdag.core.command import render_exec_command
 from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.vocabulary import DONE_SKIPPED_MISSING_INPUT
-from ghdag.dag.models import DagConfig, Task
+from ghdag.dag.audit_hooks import AuditHooks
+from ghdag.dag.engine import DagEngine
+from ghdag.dag.models import DagConfig, Task, _RunningProcess
+from ghdag.dag.task_launcher import TaskLauncher, _stderr_payload_bytes
 from ghdag.llm.compaction import CompactionResult
 from ghdag.quota import AdmissionDecision
 
@@ -462,3 +465,210 @@ def test_apply_resume_claude_matches_render(tmp_path: Path) -> None:
     assert task.command == expected_command
     assert task.annotations["_command_without_resume"] == original_command
     assert task.annotations["resumed_session_id"] == "sess-parent"
+
+
+# --- Failure stderr artifacts ---
+
+
+def _stderr_run_config(tmp_path: Path, task: dict):
+    jobs = tmp_path / "jobs"
+    done = jobs / "done"
+    done.mkdir(parents=True)
+    audit_path = jobs / "audit.jsonl"
+    exec_jsonl = tmp_path / "exec.jsonl"
+    exec_jsonl.write_text(json.dumps(task) + "\n", encoding="utf-8")
+    config = DagConfig(
+        exec_jsonl_path=str(exec_jsonl),
+        exec_done_dir=str(done),
+        poll_interval=0.05,
+        launch_stagger=0.0,
+        lock_file=str(tmp_path / "lock"),
+    )
+    hooks = AuditHooks(audit_path=audit_path)
+    engine = DagEngine(config, hooks)
+    return jobs, audit_path, engine
+
+
+def _audit_record(audit_path: Path, event_type: str) -> dict:
+    for line in audit_path.read_text().splitlines():
+        record = json.loads(line)
+        if record.get("event_type") == event_type:
+            return record
+    raise AssertionError(f"no {event_type} in audit")
+
+
+def _run_engine_to_completion(
+    engine: DagEngine,
+    *,
+    done_dir: Path,
+    task_uuids: tuple[str, ...],
+) -> None:
+    """Run engine.run() on a daemon thread until listed tasks have done markers."""
+    thread = threading.Thread(target=engine.run, daemon=True)
+    thread.start()
+    while thread.is_alive():
+        if all((done_dir / uid).exists() for uid in task_uuids):
+            engine._shutdown = True
+        thread.join(0.05)
+    engine._shutdown = True
+    thread.join()
+
+
+def test_failed_shell_task_persists_stderr_and_audit_path(tmp_path: Path) -> None:
+    """A non-zero shell task saves stderr and audit stderr_path."""
+    uuid = "stderr-fail-uuid"
+    jobs, audit_path, engine = _stderr_run_config(
+        tmp_path,
+        {
+            "uuid": uuid,
+            "command": "echo diagnostic >&2; exit 3",
+            "depends": [],
+            "retry": 0,
+            "annotations": {},
+        },
+    )
+    _run_engine_to_completion(engine, done_dir=jobs / "done", task_uuids=(uuid,))
+
+    artifacts = list((jobs / "stderr" / uuid).glob("*.log"))
+    assert len(artifacts) == 1
+    assert "diagnostic" in artifacts[0].read_text(encoding="utf-8")
+    failed = _audit_record(audit_path, "task_failed")
+    assert failed["stderr_path"] == artifacts[0].relative_to(jobs).as_posix()
+
+
+def test_success_does_not_persist_stderr(tmp_path: Path) -> None:
+    """Success leaves no stderr artifact and audit stderr_path null."""
+    uuid = "stderr-ok-uuid"
+    jobs, audit_path, engine = _stderr_run_config(
+        tmp_path,
+        {
+            "uuid": uuid,
+            "command": "echo ok",
+            "depends": [],
+            "retry": 0,
+            "annotations": {},
+        },
+    )
+    _run_engine_to_completion(engine, done_dir=jobs / "done", task_uuids=(uuid,))
+
+    assert not (jobs / "stderr").exists()
+    complete = _audit_record(audit_path, "task_complete")
+    assert complete["stderr_path"] is None
+
+
+def test_failure_with_empty_stderr_does_not_persist_artifact(tmp_path: Path) -> None:
+    """Failure with an empty diagnostic creates no artifact."""
+    from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
+
+    jobs = tmp_path / "jobs"
+    done = jobs / "done"
+    done.mkdir(parents=True)
+    config = DagConfig(
+        exec_jsonl_path=str(tmp_path / "exec.jsonl"),
+        exec_done_dir=str(done),
+    )
+    hooks = MemoryHooks()
+    launcher = TaskLauncher(
+        config,
+        hooks,
+        CircuitBreakerPolicy(float("inf"), 2**31),
+        MagicMock(),
+        lambda _: None,
+    )
+    proc = subprocess.Popen(["false"], stderr=subprocess.PIPE)
+    proc.wait()
+    task = Task(uuid="empty-stderr", command="false")
+    rt = _RunningProcess(
+        uuid="empty-stderr",
+        task=task,
+        proc=proc,
+        started_at=1.0,
+        started_at_mono=1.0,
+        stderr_buf=io.BytesIO(b""),
+        retry_depth=0,
+    )
+    launcher._running["empty-stderr"] = rt
+    with patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None):
+        launcher.check_completions()
+
+    assert not (jobs / "stderr").exists()
+    assert hooks.failures[0][4].stderr_path is None
+
+
+def test_persisted_stderr_is_redacted(tmp_path: Path) -> None:
+    """Secrets in stderr are redacted in the artifact."""
+    from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
+
+    secret = "xoxb-1-abc"
+    jobs = tmp_path / "jobs"
+    done = jobs / "done"
+    done.mkdir(parents=True)
+    config = DagConfig(exec_jsonl_path=str(tmp_path / "x"), exec_done_dir=str(done))
+    launcher = TaskLauncher(
+        config,
+        MagicMock(),
+        CircuitBreakerPolicy(float("inf"), 2**31),
+        MagicMock(),
+        lambda _: None,
+    )
+    rel = launcher._persist_failure_stderr("redact-uuid", 0, f"leak {secret} tail")
+    assert rel is not None
+    body = (jobs / rel).read_bytes().decode("utf-8")
+    assert secret not in body
+    assert "[REDACTED:" in body
+
+
+def test_persisted_stderr_keeps_one_mib_tail() -> None:
+    """Oversized stderr keeps a <=1 MiB tail with an end marker."""
+    marker = "TAIL_MARKER_END"
+    prefix = "x" * 1_048_576
+    payload = _stderr_payload_bytes(prefix + marker)
+    assert len(payload) <= 1_048_576
+    assert payload.endswith(marker.encode("utf-8"))
+
+
+def test_rerun_preserves_previous_stderr_artifact(tmp_path: Path) -> None:
+    """Two failures at the same retry depth keep separate files."""
+    from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
+
+    jobs = tmp_path / "jobs"
+    done = jobs / "done"
+    done.mkdir(parents=True)
+    config = DagConfig(exec_jsonl_path=str(tmp_path / "x"), exec_done_dir=str(done))
+    launcher = TaskLauncher(
+        config,
+        MagicMock(),
+        CircuitBreakerPolicy(float("inf"), 2**31),
+        MagicMock(),
+        lambda _: None,
+    )
+    first = launcher._persist_failure_stderr("rerun-uuid", 0, "first-run")
+    second = launcher._persist_failure_stderr("rerun-uuid", 0, "second-run")
+    assert first is not None and second is not None
+    assert first != second
+    assert (jobs / first).read_text(encoding="utf-8") == "first-run"
+    assert (jobs / second).read_text(encoding="utf-8") == "second-run"
+
+
+def test_empty_result_persists_stderr_artifact(tmp_path: Path) -> None:
+    """An empty result with stderr saves an artifact and audit path."""
+    uuid = "stderr-empty-result"
+    result_path = str(tmp_path / "empty.md")
+    jobs, audit_path, engine = _stderr_run_config(
+        tmp_path,
+        {
+            "uuid": uuid,
+            "command": "echo empty-stderr-line >&2; true",
+            "depends": [],
+            "retry": 0,
+            "annotations": {},
+            "result_path": result_path,
+        },
+    )
+    _run_engine_to_completion(engine, done_dir=jobs / "done", task_uuids=(uuid,))
+
+    artifacts = list((jobs / "stderr" / uuid).glob("*.log"))
+    assert len(artifacts) == 1
+    assert "empty-stderr-line" in artifacts[0].read_text(encoding="utf-8")
+    empty = _audit_record(audit_path, "task_empty_result")
+    assert empty["stderr_path"] == artifacts[0].relative_to(jobs).as_posix()
