@@ -54,7 +54,7 @@ DANGEROUS_FULL_ACCESS = Permission(
 # preset definition stays engine-agnostic.
 # Write is not disallowed: in claude's plan mode (sandbox=readonly) the harness has
 # Write the plan file (~/.claude/plans/*.md), and plan mode itself rejects Write to
-# anything other than the plan file (sumipan/nexus#3188).
+# anything other than the plan file.
 READONLY_OBSERVE = Permission(
     sandbox="readonly",
     disallowed_tools=("Edit", "NotebookEdit"),

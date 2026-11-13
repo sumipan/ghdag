@@ -1,4 +1,4 @@
-"""ghdag.io.exec_jsonl — unified exec.jsonl read/write (nexus Issue #2674)."""
+"""ghdag.io.exec_jsonl — unified exec.jsonl read/write."""
 
 from __future__ import annotations
 

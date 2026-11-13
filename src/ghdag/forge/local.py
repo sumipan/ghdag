@@ -1,4 +1,4 @@
-"""LocalForge — file-backed ForgePort implementation (nexus #3100).
+"""LocalForge — file-backed ForgePort implementation.
 
 Data layout under ``<root>/.forge/``:
 

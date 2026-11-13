@@ -1,4 +1,4 @@
-"""ghdag.vcs — single git sink for commit/push (nexus Issue #3831)."""
+"""ghdag.vcs — single git sink for commit/push."""
 
 from ghdag.vcs.factory import get_sink, git_enabled
 from ghdag.vcs.local import LocalGitSink

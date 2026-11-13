@@ -1,4 +1,4 @@
-"""ghdag.io.queue — queue directory scan / result lookup (nexus Issue #2675)."""
+"""ghdag.io.queue — queue directory scan / result lookup."""
 
 from __future__ import annotations
 

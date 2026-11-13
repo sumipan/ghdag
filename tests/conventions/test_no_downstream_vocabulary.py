@@ -8,30 +8,16 @@ from pathlib import Path
 import pytest
 
 _VOCAB = re.compile(r"issuesmith|mltgnt|nexus|diary|persona", re.IGNORECASE)
-_ISSUE_REF = re.compile(r"(?:sumipan/)?nexus(?:\s+[Ii]ssue)?\s*#\d+")
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SRC = _REPO_ROOT / "src" / "ghdag"
 
-_KNOWN_VIOLATIONS: frozenset[str] = frozenset({
-    "audit/span.py",
-    "config/env.py",
-    "core/models/workflow.py",
-    "dag/task_launcher.py",
-    "pipeline/order.py",
-})
-
 
 def downstream_vocabulary(source: str) -> list[int]:
-    """Return 1-indexed line numbers containing downstream vocabulary.
-
-    Issue references matching ``(sumipan/)?nexus #N`` are stripped before
-    checking so that cross-repo citations do not trigger a violation.
-    """
+    """Return 1-indexed line numbers containing downstream vocabulary."""
     lines: list[int] = []
     for i, line in enumerate(source.splitlines(), 1):
-        cleaned = _ISSUE_REF.sub("", line)
-        if _VOCAB.search(cleaned):
+        if _VOCAB.search(line):
             lines.append(i)
     return lines
 
@@ -42,15 +28,7 @@ def _source_files() -> list[Path]:
 
 @pytest.mark.parametrize(
     "path",
-    [
-        pytest.param(
-            p,
-            marks=pytest.mark.xfail(strict=True, reason="sumipan/nexus#3572 baseline")
-            if str(p.relative_to(_SRC)) in _KNOWN_VIOLATIONS
-            else [],
-        )
-        for p in _source_files()
-    ],
+    _source_files(),
     ids=lambda p: str(p.relative_to(_SRC)),
 )
 def test_no_downstream_vocabulary(path: Path) -> None:
@@ -60,39 +38,22 @@ def test_no_downstream_vocabulary(path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "# see sumipan/nexus#3572",
+        "# see nexus Issue #1234",
+    ],
+)
+def test_downstream_vocabulary_detects_host_issue_reference(source: str) -> None:
+    assert downstream_vocabulary(source) == [1]
+
+
 def test_downstream_vocabulary_detects_issuesmith_label() -> None:
     source = 'label = "issuesmith:draft-ready"'
     assert downstream_vocabulary(source) == [1]
 
 
-def test_downstream_vocabulary_allows_nexus_issue_ref() -> None:
-    source = "# see sumipan/nexus#3572"
-    assert downstream_vocabulary(source) == []
-
-
-def test_downstream_vocabulary_allows_nexus_hash_ref() -> None:
-    source = "# see nexus #1234"
-    assert downstream_vocabulary(source) == []
-
-
 def test_downstream_vocabulary_detects_standalone_nexus() -> None:
     source = "# connects to nexus pipeline"
     assert downstream_vocabulary(source) == [1]
-
-
-def test_github_client_has_no_downstream_vocabulary_or_host_issue_refs() -> None:
-    path = _SRC / "github_client.py"
-    source = path.read_text(encoding="utf-8")
-    assert "sumipan/nexus" not in source
-    issue_ref_lines = [
-        i
-        for i, line in enumerate(source.splitlines(), 1)
-        if _ISSUE_REF.search(line) or re.search(r"nexus\s*#\d+", line, re.IGNORECASE)
-    ]
-    assert issue_ref_lines == [], (
-        f"github_client.py: host issue references on lines {issue_ref_lines}"
-    )
-    violations = downstream_vocabulary(source)
-    assert violations == [], (
-        f"github_client.py: downstream vocabulary on lines {violations}"
-    )

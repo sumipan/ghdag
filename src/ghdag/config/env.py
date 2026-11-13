@@ -60,7 +60,7 @@ def ghdag_audit_path() -> str | None:
 
 
 def latency_span_path() -> str | None:
-    """Return ``LATENCY_SPAN_PATH`` if set (nexus-compatible span JSONL override)."""
+    """Return ``LATENCY_SPAN_PATH`` if set (optional span JSONL output override)."""
     return os.environ.get("LATENCY_SPAN_PATH")
 
 

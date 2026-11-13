@@ -1,4 +1,4 @@
-"""ghdag.io.done — unified done-marker I/O (nexus Issue #2675)."""
+"""ghdag.io.done — unified done-marker I/O."""
 
 from __future__ import annotations
 

@@ -152,7 +152,7 @@ def _build_claude_flags(
     if permission.disallowed_tools:
         flags += ["--disallowed-tools", ",".join(permission.disallowed_tools)]
     # --disable-slash-commands is added by build_llm_cmd / render_exec_command
-    # only when isolation=True (nexus #3174).
+    # only when isolation=True (GHDAG_ENGINE_ISOLATION).
     if dangerously_skip_permissions:
         flags += ["--dangerously-skip-permissions"]
     return flags
@@ -228,7 +228,7 @@ def render_exec_command(
     When permission is None, EngineSpec.danger_flag is used as before.
     When permission is given, flags are generated via _CAPABILITY_FLAG_BUILDERS and
     flags emitted by the builder are removed from extra_args (_dedupe_extra_args).
-    When isolation=True and the engine is claude, --disable-slash-commands is added (nexus #3174).
+    When isolation=True and the engine is claude, --disable-slash-commands is added.
     When isolation=True and the engine is codex, -c skills.include_instructions=false is added (#5541).
     sandbox="container" wraps the engine CLI with container_prefix (engine flags are
     the same as sandbox="off"; stdin is redirected on the host and forwarded via -i).
@@ -387,7 +387,7 @@ def build_llm_cmd(
         permission: Capability-constraint value object (default: TEXT_ONLY)
         dangerously_skip_permissions: Add --dangerously-skip-permissions for the claude engine
         resume_session_id: Session ID to resume (supported engines only)
-        isolation: When True, claude gets --disable-slash-commands (nexus #3174); codex gets
+        isolation: When True, claude gets --disable-slash-commands; codex gets
             -c skills.include_instructions=false (#5541).
     Returns:
         Command list for subprocess
@@ -423,7 +423,7 @@ def build_llm_cmd(
             and spec.prompt_flag_token
         ):
             # STDIN engines never put the prompt body on argv (the caller passes it via
-            # stdin; avoids Linux MAX_ARG_STRLEN). Same rule as render_exec_command, nexus #3805.
+            # stdin; avoids Linux MAX_ARG_STRLEN). Same rule as render_exec_command.
             cmd += [spec.prompt_flag_token]
         elif spec.prompt_flag_token:
             cmd += [spec.prompt_flag_token, prompt]

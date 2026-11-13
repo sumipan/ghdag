@@ -1,4 +1,4 @@
-"""ghdag.status — public API returning the current state per Issue x handler (nexus #3084)."""
+"""ghdag.status — public API returning the current state per Issue x handler."""
 
 from __future__ import annotations
 

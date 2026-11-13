@@ -94,7 +94,7 @@ class WorkflowConfig:
     handlers: dict[str, HandlerConfig]     # handler name → HandlerConfig
     polling_interval: int = 30             # polling interval (seconds)
     template_dir: str | None = None        # template directory (relative paths resolve from the workflow file)
-    label_namespace: str | None = None     # label prefix (e.g. "issuesmith")
+    label_namespace: str | None = None     # label prefix (e.g. "pipeline")
     transitions: dict[str, list[str]] | None = None  # state transition map
     reset_label: str | None = None         # special label that can be transitioned to from any state
     roles: dict[str, list[str]] = field(default_factory=dict)  # role name → list of engine names

@@ -47,7 +47,7 @@ ENGINE_SPECS: dict[str, EngineSpec] = {
         default_model="claude-sonnet-4-6",
         danger_flag="--dangerously-skip-permissions",
         danger_flag_position="trailing",
-        # --disable-slash-commands is added only when isolation=True (GHDAG_ENGINE_ISOLATION) (nexus #3174)
+        # --disable-slash-commands is added only when isolation=True (GHDAG_ENGINE_ISOLATION)
         extra_args=("--output-format", "stream-json", "--verbose"),
     ),
     "gemini": EngineSpec(

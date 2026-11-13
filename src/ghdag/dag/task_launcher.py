@@ -321,7 +321,7 @@ def _task_env(uuid: str, task: Task, previous_attempt: str | None = None) -> dic
     """Environment for a launched task: the parent's plus the task identity.
 
     ``GHDAG_TASK_UUID`` identifies the attempt in task and audit records so downstream
-    dispatchers such as issuesmith can correlate it; ``GHDAG_RESULT_PATH`` is the result
+    dispatchers such as a workflow consumer can correlate it; ``GHDAG_RESULT_PATH`` is the result
     file ghdag will write for the attempt.
     """
     env, denied_count = _build_task_env(uuid, task, previous_attempt)
