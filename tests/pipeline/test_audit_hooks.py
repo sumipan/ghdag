@@ -266,7 +266,7 @@ class TestAuditHooks:
         hooks.on_task_start(UUID, _make_task())
 
     def test_failure_forwards_stderr_path(self, tmp_path):
-        """Issue #6607: TaskMetrics.stderr_path reaches audit writer."""
+        """TaskMetrics.stderr_path reaches the audit writer."""
         audit_path = tmp_path / "audit.jsonl"
         hooks = AuditHooks(audit_path=audit_path)
         rel = "stderr/test-uuid/diag-r0.log"

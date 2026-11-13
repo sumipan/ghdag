@@ -467,7 +467,7 @@ def test_apply_resume_claude_matches_render(tmp_path: Path) -> None:
     assert task.annotations["resumed_session_id"] == "sess-parent"
 
 
-# --- Issue #6607: failure stderr artifacts ---
+# --- Failure stderr artifacts ---
 
 
 def _stderr_run_config(tmp_path: Path, task: dict):
@@ -515,7 +515,7 @@ def _run_engine_to_completion(
 
 
 def test_failed_shell_task_persists_stderr_and_audit_path(tmp_path: Path) -> None:
-    """Issue #6607: non-zero shell task saves stderr and audit stderr_path."""
+    """A non-zero shell task saves stderr and audit stderr_path."""
     uuid = "stderr-fail-uuid"
     jobs, audit_path, engine = _stderr_run_config(
         tmp_path,
@@ -537,7 +537,7 @@ def test_failed_shell_task_persists_stderr_and_audit_path(tmp_path: Path) -> Non
 
 
 def test_success_does_not_persist_stderr(tmp_path: Path) -> None:
-    """Issue #6607: success leaves no stderr artifact and audit stderr_path null."""
+    """Success leaves no stderr artifact and audit stderr_path null."""
     uuid = "stderr-ok-uuid"
     jobs, audit_path, engine = _stderr_run_config(
         tmp_path,
@@ -557,7 +557,7 @@ def test_success_does_not_persist_stderr(tmp_path: Path) -> None:
 
 
 def test_failure_with_empty_stderr_does_not_persist_artifact(tmp_path: Path) -> None:
-    """Issue #6607: failure with empty diagnostic creates no artifact."""
+    """Failure with an empty diagnostic creates no artifact."""
     from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 
     jobs = tmp_path / "jobs"
@@ -596,7 +596,7 @@ def test_failure_with_empty_stderr_does_not_persist_artifact(tmp_path: Path) -> 
 
 
 def test_persisted_stderr_is_redacted(tmp_path: Path) -> None:
-    """Issue #6607: secrets in stderr are redacted in the artifact."""
+    """Secrets in stderr are redacted in the artifact."""
     from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 
     secret = "xoxb-1-abc"
@@ -619,7 +619,7 @@ def test_persisted_stderr_is_redacted(tmp_path: Path) -> None:
 
 
 def test_persisted_stderr_keeps_one_mib_tail() -> None:
-    """Issue #6607: oversized stderr keeps a <=1 MiB tail with end marker."""
+    """Oversized stderr keeps a <=1 MiB tail with an end marker."""
     marker = "TAIL_MARKER_END"
     prefix = "x" * 1_048_576
     payload = _stderr_payload_bytes(prefix + marker)
@@ -628,7 +628,7 @@ def test_persisted_stderr_keeps_one_mib_tail() -> None:
 
 
 def test_rerun_preserves_previous_stderr_artifact(tmp_path: Path) -> None:
-    """Issue #6607: two failures at same retry depth keep separate files."""
+    """Two failures at the same retry depth keep separate files."""
     from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 
     jobs = tmp_path / "jobs"
@@ -651,7 +651,7 @@ def test_rerun_preserves_previous_stderr_artifact(tmp_path: Path) -> None:
 
 
 def test_empty_result_persists_stderr_artifact(tmp_path: Path) -> None:
-    """Issue #6607: empty result with stderr saves artifact and audit path."""
+    """An empty result with stderr saves an artifact and audit path."""
     uuid = "stderr-empty-result"
     result_path = str(tmp_path / "empty.md")
     jobs, audit_path, engine = _stderr_run_config(
