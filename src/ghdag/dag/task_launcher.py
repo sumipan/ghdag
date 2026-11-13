@@ -15,7 +15,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
@@ -92,6 +92,7 @@ logger = logging.getLogger(__name__)
 init_redact_patterns(ghdag_redact_patterns_path())
 
 _MAX_INTERRUPTED_RERUNS = 1
+_STDERR_ARTIFACT_MAX_BYTES = 1_048_576
 
 _BASE_TASK_ENV_KEYS = frozenset({"PATH", "HOME", "LANG", "TMPDIR"})
 
@@ -389,6 +390,18 @@ def _stdout_line_reader_redacting(
                 proc.stdout.close()
         except (OSError, ValueError):
             pass
+
+
+def _stderr_payload_bytes(text: str) -> bytes:
+    """Redact and cap diagnostic text at 1 MiB, keeping the UTF-8 tail."""
+    redacted = redact_text(text).text
+    payload = redacted.encode("utf-8")
+    if len(payload) <= _STDERR_ARTIFACT_MAX_BYTES:
+        return payload
+    tail = payload[-_STDERR_ARTIFACT_MAX_BYTES:]
+    while tail and (tail[0] & 0xC0) == 0x80:
+        tail = tail[1:]
+    return tail
 
 
 @dataclass
@@ -806,7 +819,7 @@ class TaskLauncher:
                     timeout_msg = (
                         f"TIMEOUT: task exceeded task_timeout={self._config.task_timeout}s"
                     )
-                    self._hooks.on_task_failure(uuid, task, returncode, timeout_msg, metrics)
+                    self._call_on_task_failure(uuid, task, returncode, timeout_msg, metrics)
                     self._circuit_breaker.record_failure()
                     continue
 
@@ -850,7 +863,7 @@ class TaskLauncher:
                         cache_read_tokens=cache_read_tokens,
                         cache_creation_tokens=cache_creation_tokens,
                     )
-                    self._hooks.on_task_failure(
+                    self._call_on_task_failure(
                         uuid, task, returncode, error_summary, metrics
                     )
                     self._circuit_breaker.record_failure()
@@ -925,7 +938,7 @@ class TaskLauncher:
                                     cache_read_tokens=cache_read_tokens,
                                     cache_creation_tokens=cache_creation_tokens,
                                 )
-                                self._hooks.on_task_failure(
+                                self._call_on_task_failure(
                                     uuid, task, 0, parsed.reason, metrics
                                 )
                                 self._circuit_breaker.record_failure()
@@ -985,7 +998,7 @@ class TaskLauncher:
                                 cache_read_tokens=cache_read_tokens,
                                 cache_creation_tokens=cache_creation_tokens,
                             )
-                            self._hooks.on_task_failure(
+                            self._call_on_task_failure(
                                 uuid,
                                 task,
                                 0,
@@ -1027,7 +1040,7 @@ class TaskLauncher:
                                 cache_read_tokens=cache_read_tokens,
                                 cache_creation_tokens=cache_creation_tokens,
                             )
-                            self._hooks.on_task_failure(
+                            self._call_on_task_failure(
                                 uuid, task, 0, pipeline_failed, metrics
                             )
                             self._circuit_breaker.record_failure()
@@ -1049,7 +1062,7 @@ class TaskLauncher:
                                 cache_read_tokens=cache_read_tokens,
                                 cache_creation_tokens=cache_creation_tokens,
                             )
-                            self._hooks.on_task_failure(
+                            self._call_on_task_failure(
                                 uuid, task, 0, pipeline_failed, metrics
                             )
                             self._circuit_breaker.record_failure()
@@ -1072,7 +1085,7 @@ class TaskLauncher:
                                 cache_read_tokens=cache_read_tokens,
                                 cache_creation_tokens=cache_creation_tokens,
                             )
-                            self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
+                            self._call_on_task_empty_result(uuid, task, stderr_text, metrics)
 
                         else:
                             metrics = TaskMetrics(
@@ -1116,7 +1129,7 @@ class TaskLauncher:
                                 state_mark_done(
                                     self._config.exec_done_dir, uuid, DONE_FANOUT_PARSE_FAILED
                                 )
-                                self._hooks.on_task_failure(uuid, task, 0, str(exc), failure_metrics)
+                                self._call_on_task_failure(uuid, task, 0, str(exc), failure_metrics)
                                 continue
                             if fanout_spec:
                                 try:
@@ -1157,7 +1170,7 @@ class TaskLauncher:
                                     state_mark_done(
                                         self._config.exec_done_dir, uuid, DONE_FANOUT_PARSE_FAILED
                                     )
-                                    self._hooks.on_task_failure(
+                                    self._call_on_task_failure(
                                         uuid, task, 0, str(exc), failure_metrics
                                     )
                                     continue
@@ -1234,7 +1247,7 @@ class TaskLauncher:
                             cache_read_tokens=cache_read_tokens,
                             cache_creation_tokens=cache_creation_tokens,
                         )
-                        self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
+                        self._call_on_task_failure(uuid, task, returncode, stderr_text, metrics)
                         self._circuit_breaker.record_failure()
                         continue
 
@@ -1258,7 +1271,7 @@ class TaskLauncher:
                             cache_read_tokens=cache_read_tokens,
                             cache_creation_tokens=cache_creation_tokens,
                         )
-                        self._hooks.on_task_failure(uuid, task, returncode, question_text, metrics)
+                        self._call_on_task_failure(uuid, task, returncode, question_text, metrics)
                         self._circuit_breaker.record_failure()
                         continue
 
@@ -1290,7 +1303,7 @@ class TaskLauncher:
                             cache_read_tokens=cache_read_tokens,
                             cache_creation_tokens=cache_creation_tokens,
                         )
-                        self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
+                        self._call_on_task_failure(uuid, task, returncode, stderr_text, metrics)
                         self._circuit_breaker.record_failure()
                         continue
 
@@ -1308,7 +1321,7 @@ class TaskLauncher:
                             cache_read_tokens=cache_read_tokens,
                             cache_creation_tokens=cache_creation_tokens,
                         )
-                        self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
+                        self._call_on_task_failure(uuid, task, returncode, stderr_text, metrics)
                         self._circuit_breaker.record_failure()
                         continue
 
@@ -1325,7 +1338,7 @@ class TaskLauncher:
                         cache_read_tokens=cache_read_tokens,
                         cache_creation_tokens=cache_creation_tokens,
                     )
-                    self._hooks.on_task_failure(uuid, task, returncode, stderr_text, metrics)
+                    self._call_on_task_failure(uuid, task, returncode, stderr_text, metrics)
                     self._circuit_breaker.record_failure()
 
             except Exception as exc:
@@ -1345,7 +1358,7 @@ class TaskLauncher:
                     cache_read_tokens=cache_read_tokens,
                     cache_creation_tokens=cache_creation_tokens,
                 )
-                self._hooks.on_task_failure(uuid, task, -1, str(exc), metrics)
+                self._call_on_task_failure(uuid, task, -1, str(exc), metrics)
 
     def _run_success_postprocess(
         self,
@@ -1390,6 +1403,74 @@ class TaskLauncher:
 
     def _queue_dir(self) -> Path:
         return Path(self._config.exec_done_dir).parent
+
+    def _persist_failure_stderr(
+        self,
+        uuid: str,
+        retry_depth: int,
+        diagnostic: str,
+    ) -> str | None:
+        if not diagnostic:
+            return None
+        try:
+            payload = _stderr_payload_bytes(diagnostic)
+            if not payload:
+                return None
+            queue_dir = self._queue_dir()
+            dest_dir = queue_dir / "stderr" / uuid
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+            stem = f"{ts}-r{retry_depth}"
+            dest_path = dest_dir / f"{stem}.log"
+            suffix = 0
+            while dest_path.exists():
+                suffix += 1
+                dest_path = dest_dir / f"{stem}-{suffix}.log"
+            fd, tmp = tempfile.mkstemp(dir=dest_dir, prefix=".tmp-", suffix=".log")
+            try:
+                with os.fdopen(fd, "wb") as f:
+                    f.write(payload)
+                os.replace(tmp, dest_path)
+            except BaseException:
+                Path(tmp).unlink(missing_ok=True)
+                raise
+            return dest_path.relative_to(queue_dir).as_posix()
+        except OSError as exc:
+            logger.warning("Failed to persist stderr artifact for [%s]: %s", uuid, exc)
+            return None
+
+    def _enrich_metrics_stderr_path(
+        self,
+        uuid: str,
+        task: Task,
+        diagnostic: str,
+        metrics: TaskMetrics,
+    ) -> TaskMetrics:
+        rel = self._persist_failure_stderr(uuid, task.retry, diagnostic)
+        if rel is None:
+            return metrics
+        return replace(metrics, stderr_path=rel)
+
+    def _call_on_task_failure(
+        self,
+        uuid: str,
+        task: Task,
+        returncode: int,
+        diagnostic: str,
+        metrics: TaskMetrics,
+    ) -> None:
+        metrics = self._enrich_metrics_stderr_path(uuid, task, diagnostic, metrics)
+        self._hooks.on_task_failure(uuid, task, returncode, diagnostic, metrics)
+
+    def _call_on_task_empty_result(
+        self,
+        uuid: str,
+        task: Task,
+        stderr_text: str,
+        metrics: TaskMetrics,
+    ) -> None:
+        metrics = self._enrich_metrics_stderr_path(uuid, task, stderr_text, metrics)
+        self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
 
     def _running_path(self, uuid: str) -> Path:
         return self._queue_dir() / "running" / f"{uuid}.json"
@@ -1897,7 +1978,7 @@ class TaskLauncher:
             cache_read_tokens=None,
             cache_creation_tokens=None,
         )
-        self._hooks.on_task_failure(uuid, task, -1, "orphaned_on_restart", metrics)
+        self._call_on_task_failure(uuid, task, -1, "orphaned_on_restart", metrics)
         self._cleanup_control_files(uuid)
         try:
             self._quota_gate.finish_run(task_uuid=uuid)

@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Persist task failure diagnostics to `stderr/<uuid>/…` under the queue directory (1 MiB tail, redaction, non-destructive re-runs) and record the queue-relative path as `stderr_path` on task exit audit events (`task_failed`, `task_empty_result`, and related lifecycle lines). See README *Failure stderr artifacts* (sumipan/nexus#6607).
+
 ## 0.133.0 - 2026-11-13
 
 ### Removed

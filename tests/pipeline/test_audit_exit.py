@@ -322,3 +322,28 @@ class TestWriteTaskExitAudit:
 
         r = json.loads(audit_path.read_text().strip())
         assert r["failure_class"] is None
+
+    def test_task_exit_audit_records_stderr_path(self, tmp_path):
+        """Issue #6607: stderr_path is stored as given or null."""
+        audit_path = tmp_path / "audit.jsonl"
+        rel = "stderr/8cad156e-0000-0000-0000-000000000001/20261113T120000Z-r0.log"
+        write_task_exit_audit(
+            audit_path,
+            event_type="task_failed",
+            uuid=UUID,
+            status="failure",
+            stderr_path=rel,
+        )
+        r = json.loads(audit_path.read_text().strip())
+        assert r["stderr_path"] == rel
+
+        write_task_exit_audit(
+            audit_path,
+            event_type="task_complete",
+            uuid=UUID,
+            status="success",
+            stderr_path=None,
+        )
+        lines = audit_path.read_text().strip().splitlines()
+        success = json.loads(lines[1])
+        assert success["stderr_path"] is None

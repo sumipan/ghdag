@@ -1017,6 +1017,19 @@ Standard exceptions raised by the public API: `ValueError` (unknown `GHDAG_FORGE
 | `WaitQuotaParseError` | `ghdag.dag._util` | Frozen dataclass (`reason`) when `parse_wait_quota_signal` or `parse_wait_quota_result_path` cannot parse `PIPELINE_STATUS: WAIT_QUOTA` output; the runner treats it like a normal failed result |
 | `CommitResult` | `ghdag.vcs.sink` | Outcome of a sink call (`committed`, `pushed`, `skipped`, `reason`, `sha`, `paths`) |
 
+### Failure stderr artifacts
+
+When a task fails or finishes with an empty result, `TaskLauncher` may persist the diagnostic text passed to lifecycle hooks (typically subprocess stderr) under the queue directory:
+
+| Item | Detail |
+|---|---|
+| Path | `stderr/<uuid>/<UTC-timestamp>-r<retry_depth>.log` (queue-relative path recorded as `stderr_path` in `audit.jsonl`) |
+| Size cap | 1 MiB (1,048,576 bytes); when truncated, the **tail** of the redacted text is kept (UTF-8 safe) |
+| Redaction | Same built-in patterns as audit/event redaction (`[REDACTED:<name>]`) |
+| Collisions | If the same name exists, a numeric suffix is appended; existing files are not overwritten |
+| Success / cancel / dep failure | No artifact; `stderr_path` is `null` in task exit audit lines |
+| Empty diagnostic | No artifact; `stderr_path` is `null` |
+
 ### Done markers
 
 Contents of `done/<uuid>` (constants in `ghdag.core.vocabulary`). Marker bodies are described by the bundled schema `done-marker` (`ghdag schema show done-marker`):
