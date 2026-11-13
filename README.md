@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.133.4-blue)
+![version](https://img.shields.io/badge/version-v0.134.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.133.4** (`pyproject.toml` `version = "0.133.4"`) |
+| Current release | **v0.134.0** (`pyproject.toml` `version = "0.134.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.133.4"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.134.0"
 ```
 
 Install from a checkout with the development tools:
@@ -387,7 +387,7 @@ With `fallback_candidates` and `quota_gate`, `call()` classifies failures throug
 | `ghdag.dag` | `AuditHooks`, `DagConfig`, `DagEngine`, `DagHooks`, `DONE_SUCCESS`, `FanOutSpec`, `LEGACY_DONE_DEFERRED`, `PIPELINE_WAIT_QUOTA`, `Task`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
 | `ghdag.files` | `md_read`, `md_write` |
 | `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
-| `ghdag.forge` | `DEFAULT_REPO`, `ForgePort`, `GitHubApiError`, `GitHubClient`, `LocalForge`, `get_forge` |
+| `ghdag.forge` | `ForgePort`, `GitHubApiError`, `GitHubClient`, `LocalForge`, `get_forge` |
 | `ghdag.io` | `done`, `exec_jsonl`, `queue`, `redact`, `sessions` |
 | `ghdag.llm` | `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PERMISSIONS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `Permission`, `LLMResult`, `SessionRecord`, `TEXT_ONLY`, `DANGEROUS_FULL_ACCESS`, `call`, `get_engine_models`, `list_engines`, `validate_engine_model` |
 | `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
@@ -1158,7 +1158,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.133.4"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.134.0"
 ```
 
 and read `CHANGELOG.md` before upgrading.

@@ -13,7 +13,6 @@ import pytest
 
 from ghdag.github_client import (
     API_BASE,
-    DEFAULT_REPO,
     GRAPHQL_URL,
     GitHubClient,
     _resolve_repo,
@@ -26,7 +25,21 @@ def test_module_exports_importable() -> None:
 
     assert API_BASE == "https://api.github.com"
     assert GRAPHQL_URL == "https://api.github.com/graphql"
-    assert DEFAULT_REPO == "sumipan/nexus"
+
+
+def test_default_repo_is_not_exposed() -> None:
+    import ghdag.forge
+    import ghdag.github_client
+
+    with pytest.raises(ImportError):
+        from ghdag.github_client import DEFAULT_REPO  # noqa: F401
+
+    with pytest.raises(ImportError):
+        from ghdag.forge import DEFAULT_REPO  # noqa: F401
+
+    assert not hasattr(ghdag.github_client, "DEFAULT_REPO")
+    assert "DEFAULT_REPO" not in ghdag.forge.__all__
+    assert not hasattr(ghdag.forge, "DEFAULT_REPO")
 
 
 def test_client_repo_property() -> None:
@@ -55,7 +68,7 @@ def test_resolve_repo_invalid_format() -> None:
 
 
 def test_resolve_repo_missing_env_raises_ghdag_error() -> None:
-    """GITHUB_REPOSITORIES unset and repo=None → GhdagError (no silent fallback to DEFAULT_REPO)."""
+    """GITHUB_REPOSITORIES unset and repo=None → GhdagError (no implicit default repository)."""
     from ghdag.core.exceptions import GhdagError
 
     with mock.patch.dict(os.environ, {}, clear=True):

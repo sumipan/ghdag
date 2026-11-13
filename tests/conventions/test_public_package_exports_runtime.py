@@ -105,7 +105,6 @@ REMOVED_REEXPORTS: tuple[tuple[str, str, str], ...] = (
     ("ghdag.files", "md_append", "ghdag.files.append"),
     ("ghdag.files", "md_promote", "ghdag.files.promote"),
     ("ghdag.github_cli", "API_BASE", "ghdag.github_client"),
-    ("ghdag.github_cli", "DEFAULT_REPO", "ghdag.github_client"),
     ("ghdag.github_cli", "GRAPHQL_URL", "ghdag.github_client"),
     ("ghdag.github_cli", "GitHubClient", "ghdag.github_client"),
     ("ghdag.llm", "DEFAULT_ENGINE_MODELS", "ghdag.llm._constants"),

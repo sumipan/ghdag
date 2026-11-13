@@ -8,10 +8,9 @@ from pathlib import Path
 from ghdag.core.exceptions import GitHubApiError
 from ghdag.core.ports.forge import ForgePort
 from ghdag.forge.local import LocalForge
-from ghdag.github_client import DEFAULT_REPO, GitHubClient
+from ghdag.github_client import GitHubClient
 
 __all__ = [
-    "DEFAULT_REPO",
     "ForgePort",
     "GitHubApiError",
     "GitHubClient",
