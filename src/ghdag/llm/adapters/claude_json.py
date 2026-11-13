@@ -134,6 +134,9 @@ class ClaudeJsonAdapter:
             text = self.extract_result_text(stdout, stderr).decode("utf-8", errors="replace")
             if looks_like_question(text):
                 return FailureClass.INTERACTIVE_PROMPT
+            engine_error = self.extract_error(stdout, stderr)
+            if engine_error is not None and engine_error.kind is EngineErrorKind.CAPACITY:
+                return FailureClass.ENGINE_ERROR
         return None
 
 

@@ -235,6 +235,9 @@ class CursorStreamAdapter:
                 result = data.get("result", "")
                 if isinstance(result, str) and looks_like_question(result):
                     return FailureClass.INTERACTIVE_PROMPT
+            engine_error = self.extract_error(stdout, stderr)
+            if engine_error is not None and engine_error.kind is EngineErrorKind.CAPACITY:
+                return FailureClass.ENGINE_ERROR
         return None
 
     def is_terminal_result_event(self, event: dict[str, Any]) -> bool:

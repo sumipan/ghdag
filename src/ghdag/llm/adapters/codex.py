@@ -128,6 +128,9 @@ class CodexAdapter:
             last_agent_message = _last_agent_message_text(stdout)
             if looks_like_question(last_agent_message):
                 return FailureClass.INTERACTIVE_PROMPT
+            engine_error = self.extract_error(stdout, stderr)
+            if engine_error is not None and engine_error.kind is EngineErrorKind.CAPACITY:
+                return FailureClass.ENGINE_ERROR
         text = _decode_streams(stdout, stderr)
         lower = text.lower()
         if "failed to load models cache" in lower:
