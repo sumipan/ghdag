@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.134.0 - 2026-11-14
+
+### Removed
+
+- **Breaking:** Remove `DEFAULT_REPO` from `ghdag.github_client` and `ghdag.forge`. Repository selection is unchanged: pass `repo="owner/repo"` to `GitHubClient` / `get_forge`, or set `GITHUB_REPOSITORIES` (comma-separated `owner/repo` list). When both are absent, `_resolve_repo()` and `GitHubClient` without `repo` still raise `GhdagError`.
+
+| Before | After |
+| --- | --- |
+| `from ghdag.github_client import DEFAULT_REPO` | Set `GITHUB_REPOSITORIES` or pass `repo=` |
+| `from ghdag.forge import DEFAULT_REPO` | Same |
+
 ## 0.133.4 - 2026-11-14
 
 ### Changed

@@ -42,9 +42,8 @@ _LINK_NEXT_RE = re.compile(r'<([^>]+)>\s*;\s*rel="next"', re.IGNORECASE)
 
 API_BASE = "https://api.github.com"
 GRAPHQL_URL = "https://api.github.com/graphql"
-DEFAULT_REPO = "sumipan/nexus"
 
-# Bounded retry for transient failures (nexus#2563: a single RemoteDisconnected stopped the pipeline).
+# Bounded retry for transient failures (a single RemoteDisconnected stopped the pipeline).
 # Permanent errors (auth, permission, invalid input, etc.) are not retried.
 _TRANSIENT_HTTP_STATUS = frozenset({502, 503, 504})
 _TRANSIENT_EXCEPTIONS = (
@@ -437,7 +436,7 @@ class GitHubClient:
                     raise GitHubApiError(error_msg, status_code=exc.code) from exc
                 except _TRANSIENT_EXCEPTIONS as exc:
                     # urlopen may let connection drops through without wrapping them in URLError
-                    # (nexus#2563: a raw RemoteDisconnected was actually raised)
+                    # (a raw RemoteDisconnected was actually raised)
                     if attempt < _MAX_ATTEMPTS - 1:
                         _backoff_sleep(attempt)
                         continue
@@ -608,7 +607,7 @@ class GitHubClient:
         *,
         attempts: int = 2,
     ) -> None:
-        """Converge a label transition idempotently (nexus#2563).
+        """Converge a label transition idempotently.
 
         DELETE + POST is not atomic, so on a lost response (NetworkError) the current labels
         are re-fetched and only the remaining work is re-run. The "applied on the server but

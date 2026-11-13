@@ -18,7 +18,6 @@ _KNOWN_VIOLATIONS: frozenset[str] = frozenset({
     "config/env.py",
     "core/models/workflow.py",
     "dag/task_launcher.py",
-    "github_client.py",
     "pipeline/order.py",
 })
 
@@ -79,3 +78,21 @@ def test_downstream_vocabulary_allows_nexus_hash_ref() -> None:
 def test_downstream_vocabulary_detects_standalone_nexus() -> None:
     source = "# connects to nexus pipeline"
     assert downstream_vocabulary(source) == [1]
+
+
+def test_github_client_has_no_downstream_vocabulary_or_host_issue_refs() -> None:
+    path = _SRC / "github_client.py"
+    source = path.read_text(encoding="utf-8")
+    assert "sumipan/nexus" not in source
+    issue_ref_lines = [
+        i
+        for i, line in enumerate(source.splitlines(), 1)
+        if _ISSUE_REF.search(line) or re.search(r"nexus\s*#\d+", line, re.IGNORECASE)
+    ]
+    assert issue_ref_lines == [], (
+        f"github_client.py: host issue references on lines {issue_ref_lines}"
+    )
+    violations = downstream_vocabulary(source)
+    assert violations == [], (
+        f"github_client.py: downstream vocabulary on lines {violations}"
+    )
