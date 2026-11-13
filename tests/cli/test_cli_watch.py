@@ -8,9 +8,14 @@ Test approach:
 
 from __future__ import annotations
 
-from unittest.mock import patch
+import subprocess
+from pathlib import Path
+from unittest import mock
+from unittest.mock import MagicMock, patch
 
 import pytest
+
+from ghdag.forge.local import LocalForge
 
 
 class TestWatchNormal:
@@ -163,3 +168,136 @@ class TestWatchOrderBuilderConstruction:
             main(["watch", str(workflows_dir)])
 
         assert llm_kwargs["order_builders"] is fake_mapping
+
+
+def _git(cwd: Path, *args: str) -> None:
+    subprocess.check_call(
+        ["git", *args],
+        cwd=cwd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def _init_git_repo(root: Path) -> None:
+    _git(root, "init")
+    _git(root, "config", "user.email", "watch-cli@test")
+    _git(root, "config", "user.name", "Watch CLI Test")
+    (root / "README").write_text("base\n", encoding="utf-8")
+    _git(root, "add", "README")
+    _git(root, "commit", "-m", "initial")
+    try:
+        _git(root, "branch", "-M", "main")
+    except subprocess.CalledProcessError:
+        pass
+
+
+def _write_local_shell_workflow(workflows_dir: Path) -> None:
+    yaml_content = """\
+name: sample
+template_dir: templates
+triggers:
+  - label: "pipeline:develop-ready"
+    handler: run
+handlers:
+  run:
+    steps:
+      - id: hello
+        template: hello
+        engine: shell
+"""
+    (workflows_dir / "sample.yml").write_text(yaml_content, encoding="utf-8")
+    tdir = workflows_dir / "templates"
+    tdir.mkdir()
+    (tdir / "hello.md").write_text('echo "ok"\n', encoding="utf-8")
+
+
+def _clear_github_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("GHDAG_FORGE", raising=False)
+    for key in ("GITHUB_TOKEN", "GH_TOKEN", "GITHUB_REPOSITORIES"):
+        monkeypatch.delenv(key, raising=False)
+
+
+class TestWatchForgeBackend:
+    def test_watch_local_forge_dispatches_without_github_credentials(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Refs sumipan/nexus#6606 — watch uses LocalForge when GHDAG_FORGE=local."""
+        forge_root = tmp_path / "forge"
+        forge_root.mkdir()
+        _init_git_repo(forge_root)
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        _write_local_shell_workflow(workflows_dir)
+        exec_jsonl = tmp_path / "exec.jsonl"
+        exec_jsonl.write_text("", encoding="utf-8")
+
+        _clear_github_env(monkeypatch)
+        monkeypatch.setenv("GHDAG_FORGE", "local")
+        monkeypatch.setenv("GHDAG_FORGE_ROOT", str(forge_root))
+
+        forge = LocalForge(forge_root)
+        forge.issue_create("title", "body", labels=["pipeline:develop-ready"])
+
+        with mock.patch("urllib.request.urlopen") as urlopen:
+            urlopen.side_effect = AssertionError("GitHub network must not be used")
+            from ghdag.cli import main
+            main([
+                "watch",
+                str(workflows_dir),
+                "--exec-jsonl",
+                str(exec_jsonl),
+                "--once",
+            ])
+
+        lines = [ln for ln in exec_jsonl.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        assert len(lines) == 1
+
+    def test_watch_github_mode_preserves_multi_repo_factory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Refs sumipan/nexus#6606 — default github mode keeps multi-client factory."""
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        _clear_github_env(monkeypatch)
+        monkeypatch.setenv("GITHUB_TOKEN", "token")
+        monkeypatch.setenv("GITHUB_REPOSITORIES", "a/r1,b/r2")
+
+        client_a, client_b = MagicMock(), MagicMock()
+        captured_clients: list = []
+
+        class FakeDispatcher:
+            def __init__(self, **kwargs):
+                captured_clients.append(kwargs.get("github_client"))
+
+            def run(self, *args, **kwargs):
+                pass
+
+        with patch("ghdag.workflow.loader.load_workflows", return_value=[]), \
+             patch(
+                 "ghdag.github_client.create_github_clients",
+                 return_value=[client_a, client_b],
+             ) as mock_create, \
+             patch("ghdag.workflow.dispatcher.WorkflowDispatcher", FakeDispatcher), \
+             patch("ghdag.pipeline.state.PipelineState"), \
+             patch("ghdag.pipeline.order.TemplateOrderBuilder"):
+            from ghdag.cli import main
+            main(["watch", str(workflows_dir)])
+
+        mock_create.assert_called_once_with(rate_limit_max_wait_sec=0)
+        assert captured_clients == [[client_a, client_b]]
+
+    def test_watch_unset_forge_without_token_reports_github_auth(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+    ) -> None:
+        """Refs sumipan/nexus#6606 — unset forge stays on GitHub auth, not local."""
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        _clear_github_env(monkeypatch)
+
+        from ghdag.cli import main
+        with pytest.raises(SystemExit) as exc:
+            main(["watch", str(workflows_dir), "--once"])
+        assert exc.value.code == 4
+        err = capsys.readouterr().err
+        assert err.splitlines()[0].startswith("error[GITHUB_AUTH]:")

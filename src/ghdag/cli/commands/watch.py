@@ -8,9 +8,22 @@ from ghdag.config.env import state_dir as resolve_state_dir
 from ghdag.core.exceptions import CliUsageError
 
 
+def _resolve_watch_clients():
+    """Select issue clients from GHDAG_FORGE (github vs local)."""
+    import os
+
+    from ghdag.forge import get_forge
+
+    kind = (os.environ.get("GHDAG_FORGE") or "github").strip().lower()
+    if kind == "github":
+        from ghdag.github_client import create_github_clients
+
+        return create_github_clients(rate_limit_max_wait_sec=0)
+    return [get_forge()]
+
+
 def cmd_watch(args) -> None:
     """Thin wrapper that builds a WorkflowDispatcher and calls run()."""
-    from ghdag.github_client import create_github_clients
     from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
     from ghdag.pipeline.order import TemplateOrderBuilder
     from ghdag.pipeline.state import PipelineState
@@ -29,7 +42,7 @@ def cmd_watch(args) -> None:
     for wf in workflows:
         wf.polling_interval = args.interval
 
-    github_clients = create_github_clients(rate_limit_max_wait_sec=0)
+    github_clients = _resolve_watch_clients()
     exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
     queue_dir = str(exec_jsonl_resolved.parent)
     if isinstance(args.state_dir, str):
