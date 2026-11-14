@@ -68,7 +68,7 @@ echo ok
 exit 0
 """,
     )
-    gate = QuotaGate(tmp_path / "quota.json")
+    gate = QuotaGate(tmp_path / "quota.json", pause_ttl_seconds=None)
     gate.report(
         engine="claude",
         status="paused",
@@ -197,7 +197,7 @@ exit 0
 
 def test_call_all_paused_launches_nothing(tmp_path: Path) -> None:
     """Issue sumipan/nexus#6679 — AC6 all candidates paused."""
-    gate = QuotaGate(tmp_path / "quota.json")
+    gate = QuotaGate(tmp_path / "quota.json", pause_ttl_seconds=None)
     observed = _quota_now()
     gate.report(
         engine="claude",
