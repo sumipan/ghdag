@@ -323,7 +323,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `build_order_builders` | `(workflows) -> dict[str, OrderBuilder]` — build per-workflow `TemplateOrderBuilder` map (`ghdag.pipeline.llm_pipeline`) |
 | `LLMPipelineAPI.submit` | `(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None) -> list[str]` |
 | `PipelineState` | `(state_dir, exec_jsonl_path)`; also `PipelineState.from_repo_root(repo_root)` |
-| `QuotaGate` | `(state_path, audit_path=None, pause_ttl_seconds=3600, limits=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `wait_idle` |
+| `QuotaGate` | `(state_path, audit_path=None, pause_ttl_seconds=3600, limits=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `wait_idle`, `observe` |
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
 | `issue_status` | `(issue_number, *, handler=None, workflow=None, exec_jsonl_path, state_dir, done_dir, running_uuids=None, audit_path=None, running_dir=None) -> IssueStatus` |
 | `running_tasks` | `(running_dir) -> list[RunningTask]` |
@@ -658,7 +658,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `core/models/__init__.py` | Shared dataclass package |
 | `core/models/dag.py` | `Task`, `DagConfig` |
 | `core/models/files.py` | Markdown file models and `PathTraversalError` |
-| `core/models/metrics.py` | `TaskMetrics`, `TokenUsage`, `FailureClass` |
+| `core/models/metrics.py` | `TaskMetrics`, `TokenUsage`, `FailureClass`, `QuotaWindow` |
 | `core/models/workflow.py` | Workflow YAML dataclasses |
 | `core/ports/__init__.py` | Exports `ForgePort` |
 | `core/ports/dag_hooks.py` | `DagHooks` Protocol |
@@ -940,7 +940,9 @@ sinks:
 
 Managed by `QuotaGate` and `ghdag quota`. Top-level keys: `engines`, `draining_engines`, `running_tasks`, optional `limits`, and optional `usage` (latest per-engine utilization windows from Claude `rate_limit_event` output).
 
-Each `engines.<name>` entry stores derived fields (`status`, `observed_at`, `resume_at`, `reason`, `override_until`) plus a `sources` array. Each source object has `kind` (`budget`, `failure`, `manual`, or `drain`), `reason`, `until`, `set_by`, `observed_at`, and `available`. Pauses are merged from active sources; `QuotaGate.report(kind=...)` appends or updates the source for that `kind` (default `failure`). `ghdag quota report` has no `--kind` option and always records a `failure` source. An engine is unavailable while it is draining (`draining_engines`) or any active source keeps it `paused`. Budget-side pauses use `QuotaGate.report(kind="budget")`. `ghdag quota status` adds per-engine `queued` / `running` / `idle` counts and optional `usage` (`observed_at` plus `windows` with `window_minutes`, `used_percent`, `resets_at`; `null` when never observed).
+Each `engines.<name>` entry stores derived fields (`status`, `observed_at`, `resume_at`, `reason`, `override_until`) plus a `sources` array. Each source object has `kind` (`budget`, `failure`, `manual`, or `drain`), `reason`, `until`, `set_by`, `observed_at`, and `available`. Pauses are merged from active sources; `QuotaGate.report(kind=...)` appends or updates the source for that `kind` (default `failure`). `ghdag quota report` has no `--kind` option and always records a `failure` source. An engine is unavailable while it is draining (`draining_engines`) or any active source keeps it `paused`. Budget-side pauses use `QuotaGate.report(kind="budget")`.
+
+Utilization windows (Claude `rate_limit_event` JSON lines) are parsed by `EngineOutputAdapter.extract_quota_windows` into frozen `QuotaWindow` records (`window_minutes`, `used_percent`, `resets_at` in `ghdag.core.models.metrics`). `DagEngine` and `ghdag.llm.call` call `QuotaGate.observe(engine=..., windows=..., observed_at=...)` to persist the latest snapshot under `usage.<engine>` without changing pause `sources`. `ghdag quota status` adds per-engine `queued` / `running` / `idle` counts and optional `usage` (`observed_at` plus `windows` with `window_minutes`, `used_percent`, `resets_at`; `null` when never observed).
 
 ### Language pack (`GHDAG_LANGUAGE_PACK`)
 
@@ -1085,6 +1087,7 @@ Standard exceptions raised by the public API: `ValueError` (unknown `GHDAG_FORGE
 | `EngineErrorKind` | `ghdag.core.ports.output` | Enum of engine error kinds (`RATE_LIMIT`, `CAPACITY`, ...) |
 | `EngineError` | `ghdag.core.ports.output` | Dataclass returned by `EngineOutputAdapter.extract_error` (`kind`, `message`, `retryable`, `resume_at`) |
 | `FailureClass` | `ghdag.core.models.metrics` | Enum of task failure classes (for example `INTERACTIVE_PROMPT`, `QUOTA_EXHAUSTED`, `TIMEOUT`, `PROCESS_ERROR`) |
+| `QuotaWindow` | `ghdag.core.models.metrics` | Frozen dataclass for one utilization window (`window_minutes`, `used_percent`, `resets_at`); built by `extract_quota_windows` and stored via `QuotaGate.observe` |
 | `TypeCheckError` | `ghdag.workflow.typecheck` | Dataclass describing a skill I/O mismatch |
 | `WaitQuotaParseError` | `ghdag.dag._util` | Frozen dataclass (`reason`) when `parse_wait_quota_signal` or `parse_wait_quota_result_path` cannot parse `PIPELINE_STATUS: WAIT_QUOTA` output; the runner treats it like a normal failed result |
 | `CommitResult` | `ghdag.vcs.sink` | Outcome of a sink call (`committed`, `pushed`, `skipped`, `reason`, `sha`, `paths`) |
