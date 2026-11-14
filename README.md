@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.134.1-blue)
+![version](https://img.shields.io/badge/version-v0.134.2-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.134.1** (`pyproject.toml` `version = "0.134.1"`) |
+| Current release | **v0.134.2** (`pyproject.toml` `version = "0.134.2"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.134.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.134.2"
 ```
 
 Install from a checkout with the development tools:
@@ -172,14 +172,16 @@ Steps for Issues labelled `pipeline:develop-ready` are appended to `jobs/exec.js
 
 ### 3. Call an LLM from Python
 
-```python
-from ghdag.llm import TEXT_ONLY, call
+Validate engine and model IDs without launching an engine CLI (the same check `ghdag llm` uses):
 
-result = call("Summarize this repo in one line.", engine="claude", permission=TEXT_ONLY)
-print(result.body if result.ok else result.stderr)
+```python
+from ghdag.llm.engines import validate_engine_model
+
+model = validate_engine_model("claude", None)
+assert model
 ```
 
-The same call from the shell:
+To run inference from Python, use `ghdag.llm.call` with a `Permission` preset; the same prompt from the shell:
 
 ```bash
 ghdag llm --engine claude --permission text_only "Summarize this repo in one line."
@@ -238,6 +240,7 @@ Every leaf subcommand accepts `--json` (`dest="output_json"`). With `--json`, su
 | `ghdag quota resume` | Take an engine out of drain mode |
 | `ghdag quota status` | Print a per-engine quota / drain / queue snapshot as JSON |
 | `ghdag validate` | Validate every workflow YAML file in a directory |
+| `ghdag schema` | Bundled JSON Schema utilities |
 | `ghdag schema list` | List bundled JSON Schema names |
 | `ghdag schema show` | Print one bundled JSON Schema |
 | `ghdag mcp` | Run stdio MCP server (`ghdag_enqueue`, `ghdag_status` tools) |
@@ -613,6 +616,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `github_client.py` | `GitHubClient` REST / GraphQL client (ETag cache, pagination, rate limits) |
 | `maintenance.py` | Queue validation and repair (`exec.jsonl`, done markers) |
 | `quota.py` | `QuotaGate`: engine quota, pause sources, drain mode, role admission |
+| `schemas/__init__.py` | Bundled JSON Schema asset package |
 | `status.py` | `issue_status` / `running_tasks` and their dataclasses |
 | `audit/__init__.py` | Audit span API package |
 | `audit/span.py` | `emit_span` / `make_span_id` latency span writer |
@@ -629,12 +633,15 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `cli/commands/cancel.py` | `ghdag dag cancel` |
 | `cli/commands/cleanup.py` | `ghdag cleanup` |
 | `cli/commands/llm.py` | `ghdag llm` |
+| `cli/commands/mcp.py` | `ghdag mcp` stdio server command |
 | `cli/commands/quota.py` | `ghdag quota` subcommands |
 | `cli/commands/recover.py` | `ghdag dag recover` |
 | `cli/commands/run.py` | `ghdag run` and `--hooks` loading |
+| `cli/commands/schema_show.py` | `ghdag schema list` / `ghdag schema show` |
 | `cli/commands/status.py` | `ghdag status` |
 | `cli/commands/trigger.py` | `ghdag trigger` |
 | `cli/commands/ui.py` | `ghdag ui` |
+| `cli/commands/validate.py` | `ghdag validate` |
 | `cli/commands/watch.py` | `ghdag watch` |
 | `config/__init__.py` | Exports `env` |
 | `config/env.py` | Environment variable accessors and `state_dir` resolution |
@@ -659,6 +666,8 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `core/ports/github.py` | `GitHubIssuePort` Protocol |
 | `core/ports/order.py` | `OrderBuilder` Protocol |
 | `core/ports/output.py` | `EngineOutputAdapter` Protocol, `EngineError`, `EngineErrorKind` |
+| `core/ports/quota.py` | `QuotaPort` Protocol for launch admission |
+| `core/reply_block.py` | Reply-block YAML parsing from engine result fences |
 | `dag/__init__.py` | DAG runner public API |
 | `dag/_util.py` | Internal DAG helpers |
 | `dag/audit_hooks.py` | `AuditHooks`: `DefaultHooks` plus `audit.jsonl` writes |
@@ -695,6 +704,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `llm/_constants.py` | `DEFAULT_ENGINE_MODELS` |
 | `llm/compaction.py` | Resume-session handoff summary compaction (JSON output mode) |
 | `llm/engines.py` | Engine / model allow-list, unified `call`, `supports_capability` (`EngineModelError`) |
+| `llm/json_extract.py` | JSON extraction helpers for engine stdout |
 | `llm/session.py` | `SessionRecord`, `SessionStore` |
 | `llm/adapters/__init__.py` | `get_output_adapter` |
 | `llm/adapters/claude_json.py` | claude JSON / stream-json output adapter |
@@ -706,6 +716,9 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `metrics/__init__.py` | `MetricsRecorder`, `TaskMetrics` |
 | `metrics/parsers.py` | Engine / model detection and token count parsing |
 | `metrics/recorder.py` | `MetricsRecorder`: locked JSONL append |
+| `mcp/__init__.py` | MCP server package |
+| `mcp/server.py` | JSON-RPC 2.0 stdio MCP server |
+| `mcp/tools.py` | `ghdag_enqueue` / `ghdag_status` tool handlers |
 | `pipeline/__init__.py` | Intake pipeline public API |
 | `pipeline/config.py` | `PipelineConfig`, `resolve_models` (`ModelValidationError`) |
 | `pipeline/llm_pipeline.py` | `LLMPipelineAPI`, `SubmittedStep` (`DependencyError`) |
@@ -1158,7 +1171,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.134.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.134.2"
 ```
 
 and read `CHANGELOG.md` before upgrading.
