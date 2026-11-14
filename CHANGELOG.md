@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Defer relaunching tasks that returned `WAIT_QUOTA` until at least one named engine is available; README Quota wait messaging documents pending-task positioning and reduces execution artifact review churn without GitHub API load (sumipan/nexus#6632).
+
 ## 0.134.1 - 2026-11-14
 
 ### Changed

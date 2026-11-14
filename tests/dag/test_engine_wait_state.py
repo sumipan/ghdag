@@ -198,6 +198,110 @@ def test_engine_restarts_waiting_task_when_engine_available(tmp_path: Path) -> N
     mock_popen.assert_called()
 
 
+def _shell_task_wait_quota_recorded(engine: DagEngine, tmp_path: Path) -> Task:
+    """Refs sumipan/nexus#6632."""
+    result_file = tmp_path / "wait_quota_result.md"
+    result_file.write_text(
+        "PIPELINE_STATUS: WAIT_QUOTA\n"
+        "WAIT_QUOTA: after=2099-01-01T00:00:00+00:00 engines=claude,codex\n",
+        encoding="utf-8",
+    )
+    task = Task(
+        uuid="task-1",
+        command="true",
+        engine="shell",
+        result_path=str(result_file),
+    )
+    proc = MagicMock()
+    proc.poll.return_value = 0
+    proc.returncode = 0
+    engine._launcher._running[task.uuid] = _RunningProcess(
+        uuid=task.uuid,
+        task=task,
+        proc=proc,
+        started_at=time.time(),
+        started_at_mono=time.monotonic(),
+        stderr_buf=io.BytesIO(b""),
+        stdout_buf=io.BytesIO(b""),
+    )
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="shell")
+    engine._launcher.check_completions()
+    engine._quota_gate.finish_run(task_uuid=task.uuid)
+    return task
+
+
+def test_wait_quota_task_is_not_relaunched_while_its_engines_are_paused(
+    tmp_path: Path,
+) -> None:
+    """Refs sumipan/nexus#6632."""
+    engine, _, _ = _make_engine(tmp_path)
+    task = _shell_task_wait_quota_recorded(engine, tmp_path)
+    gate = engine._quota_gate.snapshot()
+    assert gate.engines["claude"].status == "paused"
+    assert gate.engines["codex"].status == "paused"
+
+    proc = MagicMock()
+    proc.poll.return_value = None
+    proc.stdout = io.BytesIO(b"")
+    proc.stderr = io.BytesIO(b"")
+    with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=proc) as mock_popen:
+        for _ in range(3):
+            assert engine._launcher.launch("task-1", task) is False
+    mock_popen.assert_not_called()
+
+
+def test_wait_quota_task_relaunches_when_one_engine_becomes_available(
+    tmp_path: Path,
+) -> None:
+    """Refs sumipan/nexus#6632."""
+    engine, _, _ = _make_engine(tmp_path)
+    task = _shell_task_wait_quota_recorded(engine, tmp_path)
+
+    proc = MagicMock()
+    proc.poll.return_value = None
+    proc.stdout = io.BytesIO(b"")
+    proc.stderr = io.BytesIO(b"")
+    with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=proc) as mock_popen:
+        assert engine._launcher.launch("task-1", task) is False
+        mock_popen.assert_not_called()
+
+        engine._quota_gate.clear(
+            engine="codex",
+            observed_at=datetime(2099, 6, 1, tzinfo=timezone.utc),
+        )
+        assert engine._launcher.launch("task-1", task) is True
+    mock_popen.assert_called_once()
+
+
+def test_wait_quota_task_relaunches_once_after_runner_restart(tmp_path: Path) -> None:
+    """Refs sumipan/nexus#6632."""
+    engine, _, _ = _make_engine(tmp_path)
+    past = datetime(2026, 9, 22, 11, tzinfo=JST)
+    future = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    for eng in ("claude", "codex"):
+        engine._quota_gate.report(
+            engine=eng,
+            status="paused",
+            observed_at=past,
+            resume_at=future,
+        )
+
+    engine2, _, _ = _make_engine(tmp_path)
+    task = Task(
+        uuid="task-1",
+        command="true",
+        engine="shell",
+        result_path=str(tmp_path / "result.md"),
+    )
+    proc = MagicMock()
+    proc.poll.return_value = None
+    proc.stdout = io.BytesIO(b"")
+    proc.stderr = io.BytesIO(b"")
+    with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=proc) as mock_popen:
+        assert engine2._launcher.launch("task-1", task) is True
+    mock_popen.assert_called_once()
+
+
 def test_legacy_deferred_done_marker_migrated_on_load(tmp_path: Path) -> None:
     engine, done_dir, audit_path = _make_engine(tmp_path)
     (done_dir / "task-1").write_text("DEFERRED", encoding="utf-8")
