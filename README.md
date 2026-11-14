@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.134.3-blue)
+![version](https://img.shields.io/badge/version-v0.134.4-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.134.3** (`pyproject.toml` `version = "0.134.3"`) |
+| Current release | **v0.134.4** (`pyproject.toml` `version = "0.134.4"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.134.3"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.134.4"
 ```
 
 Install from a checkout with the development tools:
@@ -291,7 +291,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 
 | Command | Purpose |
 |---|---|
-| `python -m ghdag.github_cli <command> ...` | `gh`-style client over `get_forge()`: `issue {view,edit,comment,close,create}`, `pr {list,view,edit,diff,create,merge,checks,ready}`, `run {view,rerun}`, `repo view`, `api` |
+| `python -m ghdag.github_cli <command> ...` | `gh`-style client over `get_forge()`: `issue {view,edit,comment,close,create}`, `pr {list,view,edit,diff,create,merge,checks,ready}`, `run {view,rerun}`, `repo view`, `api`. Unknown arguments and unknown or missing subcommands exit with code 2 and print `error[CLI_USAGE]:` plus a `hint:` line listing accepted arguments or subcommands. `pr create` accepts `--body-file` (same semantics as `issue create` / `issue edit`). |
 | `python -m ghdag.workflow.state_machine transition --workflow YAML ISSUE TARGET_LABEL` | Check a label transition against `transitions` / `reset_label` and apply it |
 | `python -m ghdag.workflow.render TEMPLATE [key=value ...]` | Expand a `render: live` template at run time and run it with `bash -o pipefail` (exit `2` on template errors) |
 | `python -m ghdag.workflow.conditional_step [--engine {claude,cursor}] [--model M] TEMPLATE [KEY=VALUE ...]` | Substitute template variables and invoke claude or cursor |
@@ -1171,7 +1171,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.134.3"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.134.4"
 ```
 
 and read `CHANGELOG.md` before upgrading.

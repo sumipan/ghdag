@@ -14,9 +14,11 @@ import re
 import shutil
 import subprocess
 import sys
-from typing import Any
+from collections.abc import Callable
+from typing import Any, NoReturn
 
 from ghdag import github_client as _github_client
+from ghdag.core.exceptions import CliUsageError
 from ghdag.core.ports.forge import ForgePort
 from ghdag.forge import get_forge as _package_get_forge
 
@@ -127,13 +129,35 @@ def apply_jq(data: Any, query: str | None) -> Any:
         return out
 
 
-def _parse_with_warning(
-    parser: argparse.ArgumentParser, args: list[str]
-) -> argparse.Namespace:
-    ns, unknown = parser.parse_known_args(args)
-    if unknown:
-        print(f"warning: unknown args ignored: {unknown!r}", file=sys.stderr)
-    return ns
+class _StrictParser(argparse.ArgumentParser):
+    def error(self, message: str) -> NoReturn:
+        raise CliUsageError(f"{self.prog}: {message}", hint=self.accepted_hint())
+
+    def accepted_hint(self) -> str:
+        parts: list[str] = []
+        for action in self._actions:
+            opts = action.option_strings
+            if opts:
+                if "--help" in opts or "-h" in opts:
+                    continue
+                long_opts = [o for o in opts if o.startswith("--")]
+                token = long_opts[0] if long_opts else opts[0]
+                if token not in parts:
+                    parts.append(token)
+            elif action.dest not in (
+                "help",
+                "optional arguments",
+                "positional arguments",
+            ):
+                if action.dest not in parts:
+                    parts.append(action.dest)
+        return "accepted arguments: " + " ".join(parts)
+
+
+def _print_cli_usage_error(exc: CliUsageError) -> None:
+    print(f"error[{exc.code}]: {exc.message}", file=sys.stderr)
+    if exc.hint:
+        print(f"  hint: {exc.hint}", file=sys.stderr)
 
 
 def _emit_json(data: Any, jq_query: str | None = None) -> None:
@@ -264,12 +288,12 @@ def _api_via_typed(
 
 
 def _cli_issue_view(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="issue view", add_help=False)
+    parser = _StrictParser(prog="issue view", add_help=False)
     parser.add_argument("number", type=int)
     parser.add_argument("--json")
     parser.add_argument("--jq")
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     fields = _parse_fields(ns.json)
     data = client.issue_get(ns.number, fields)
@@ -281,7 +305,7 @@ def _cli_issue_view(client: ForgePort, args: list[str]) -> int:
 
 
 def _cli_issue_edit(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="issue edit", add_help=False)
+    parser = _StrictParser(prog="issue edit", add_help=False)
     parser.add_argument("number", type=int)
     parser.add_argument("--title")
     parser.add_argument("--body")
@@ -289,7 +313,7 @@ def _cli_issue_edit(client: ForgePort, args: list[str]) -> int:
     parser.add_argument("--add-label", action="append", default=[])
     parser.add_argument("--remove-label", action="append", default=[])
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     body = ns.body
     if ns.body_file:
@@ -306,33 +330,33 @@ def _cli_issue_edit(client: ForgePort, args: list[str]) -> int:
 
 
 def _cli_issue_comment(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="issue comment", add_help=False)
+    parser = _StrictParser(prog="issue comment", add_help=False)
     parser.add_argument("number", type=int)
     parser.add_argument("--body", required=True)
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     client.issue_comment(ns.number, ns.body)
     return 0
 
 
 def _cli_issue_close(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="issue close", add_help=False)
+    parser = _StrictParser(prog="issue close", add_help=False)
     parser.add_argument("number", type=int)
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client.issue_close(ns.number)
     return 0
 
 
 def _cli_issue_create(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="issue create", add_help=False)
+    parser = _StrictParser(prog="issue create", add_help=False)
     parser.add_argument("--title", required=True)
     parser.add_argument("--body", default="")
     parser.add_argument("--body-file")
     parser.add_argument("--json")
     parser.add_argument("--jq")
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     body = ns.body
     if ns.body_file:
@@ -347,12 +371,12 @@ def _cli_issue_create(client: ForgePort, args: list[str]) -> int:
 
 
 def _cli_pr_edit(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="pr edit", add_help=False)
+    parser = _StrictParser(prog="pr edit", add_help=False)
     parser.add_argument("number")
     parser.add_argument("--title")
     parser.add_argument("--body")
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     num = int(ns.number.lstrip("#").split("/")[-1])
     client.pr_update(num, title=ns.title, body=ns.body)
@@ -360,7 +384,7 @@ def _cli_pr_edit(client: ForgePort, args: list[str]) -> int:
 
 
 def _cli_pr_list(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="pr list", add_help=False)
+    parser = _StrictParser(prog="pr list", add_help=False)
     parser.add_argument("--head")
     parser.add_argument("--state")
     parser.add_argument("--search")
@@ -368,7 +392,7 @@ def _cli_pr_list(client: ForgePort, args: list[str]) -> int:
     parser.add_argument("--jq")
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     data = client.pr_list(
         head=ns.head,
@@ -382,12 +406,12 @@ def _cli_pr_list(client: ForgePort, args: list[str]) -> int:
 
 
 def _cli_pr_view(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="pr view", add_help=False)
+    parser = _StrictParser(prog="pr view", add_help=False)
     parser.add_argument("number")
     parser.add_argument("--json")
     parser.add_argument("--jq")
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     num = int(ns.number.lstrip("#").split("/")[-1])
     data = client.pr_get(num, repo=ns.repo)
@@ -402,10 +426,10 @@ def _cli_pr_view(client: ForgePort, args: list[str]) -> int:
 
 
 def _cli_pr_diff(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="pr diff", add_help=False)
+    parser = _StrictParser(prog="pr diff", add_help=False)
     parser.add_argument("number")
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     num = int(ns.number.lstrip("#"))
     print(client.pr_diff(num, repo=ns.repo), end="")
@@ -413,26 +437,34 @@ def _cli_pr_diff(client: ForgePort, args: list[str]) -> int:
 
 
 def _cli_pr_create(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="pr create", add_help=False)
+    parser = _StrictParser(prog="pr create", add_help=False)
     parser.add_argument("--base", required=True)
     parser.add_argument("--head", required=True)
     parser.add_argument("--title", required=True)
-    parser.add_argument("--body", default="")
+    body_group = parser.add_mutually_exclusive_group()
+    body_group.add_argument("--body")
+    body_group.add_argument("--body-file")
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
-    url = client.pr_create(ns.base, ns.head, ns.title, ns.body, repo=ns.repo)
+    body = ""
+    if ns.body_file:
+        with open(ns.body_file, encoding="utf-8") as f:
+            body = f.read()
+    elif ns.body is not None:
+        body = ns.body
+    url = client.pr_create(ns.base, ns.head, ns.title, body, repo=ns.repo)
     print(url)
     return 0
 
 
 def _cli_pr_merge(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="pr merge", add_help=False)
+    parser = _StrictParser(prog="pr merge", add_help=False)
     parser.add_argument("number")
     parser.add_argument("--merge", action="store_true")
     parser.add_argument("--delete-branch", action="store_true", default=False)
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     num = int(str(ns.number).lstrip("#"))
     delete = ns.delete_branch or "--delete-branch" in args
@@ -441,11 +473,11 @@ def _cli_pr_merge(client: ForgePort, args: list[str]) -> int:
 
 
 def _cli_pr_checks(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="pr checks", add_help=False)
+    parser = _StrictParser(prog="pr checks", add_help=False)
     parser.add_argument("number")
     parser.add_argument("--watch", default="true")
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     num = int(str(ns.number).lstrip("#"))
     checks = client.pr_checks(num, repo=ns.repo)
@@ -455,10 +487,10 @@ def _cli_pr_checks(client: ForgePort, args: list[str]) -> int:
 
 
 def _cli_pr_ready(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="pr ready", add_help=False)
+    parser = _StrictParser(prog="pr ready", add_help=False)
     parser.add_argument("number")
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     num = int(str(ns.number).lstrip("#"))
     client.pr_ready(num, repo=ns.repo)
@@ -466,14 +498,14 @@ def _cli_pr_ready(client: ForgePort, args: list[str]) -> int:
 
 
 def _cli_api(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="api", add_help=False)
+    parser = _StrictParser(prog="api", add_help=False)
     parser.add_argument("path")
     parser.add_argument("-X", "--method", default="GET")
     parser.add_argument("-f", "--field", action="append", default=[])
     parser.add_argument("--jq")
     parser.add_argument("--paginate", action="store_true")
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     fields: dict[str, str] = {}
     for item in ns.field:
@@ -507,11 +539,11 @@ def _cli_api(client: ForgePort, args: list[str]) -> int:
 
 
 def _cli_run_view(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="run view", add_help=False)
+    parser = _StrictParser(prog="run view", add_help=False)
     parser.add_argument("run_id", type=int)
     parser.add_argument("--log-failed", action="store_true")
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     if ns.log_failed:
         print(client.run_logs_failed(ns.run_id, repo=ns.repo), end="")
@@ -521,11 +553,11 @@ def _cli_run_view(client: ForgePort, args: list[str]) -> int:
 
 
 def _cli_run_rerun(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="run rerun", add_help=False)
+    parser = _StrictParser(prog="run rerun", add_help=False)
     parser.add_argument("run_id", type=int)
     parser.add_argument("--failed", action="store_true")
     parser.add_argument("--repo")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     client = _with_repo(client, ns.repo)
     if ns.failed:
         client.run_rerun_failed(ns.run_id, repo=ns.repo)
@@ -533,9 +565,9 @@ def _cli_run_rerun(client: ForgePort, args: list[str]) -> int:
 
 
 def _cli_repo_view(client: ForgePort, args: list[str]) -> int:
-    parser = argparse.ArgumentParser(prog="repo view", add_help=False)
+    parser = _StrictParser(prog="repo view", add_help=False)
     parser.add_argument("repo", nargs="?")
-    ns = _parse_with_warning(parser, args)
+    ns = parser.parse_args(args)
     target = ns.repo or client.repo
     if not get_forge(repo=target).repo_exists(target):
         print(f"repository {target} not found", file=sys.stderr)
@@ -544,16 +576,47 @@ def _cli_repo_view(client: ForgePort, args: list[str]) -> int:
     return 0
 
 
+_COMMAND_HANDLERS: dict[str, dict[str, Callable[[ForgePort, list[str]], int]]] = {
+    "issue": {
+        "view": _cli_issue_view,
+        "edit": _cli_issue_edit,
+        "comment": _cli_issue_comment,
+        "close": _cli_issue_close,
+        "create": _cli_issue_create,
+    },
+    "pr": {
+        "list": _cli_pr_list,
+        "view": _cli_pr_view,
+        "edit": _cli_pr_edit,
+        "diff": _cli_pr_diff,
+        "create": _cli_pr_create,
+        "merge": _cli_pr_merge,
+        "checks": _cli_pr_checks,
+        "ready": _cli_pr_ready,
+    },
+    "run": {
+        "view": _cli_run_view,
+        "rerun": _cli_run_rerun,
+    },
+    "repo": {"view": _cli_repo_view},
+}
+
+
 def cli_main(argv: list[str] | None = None) -> int:
+    from ghdag.core.exceptions import CliUsageError, GhdagError
+
     argv = list(argv if argv is not None else sys.argv[1:])
     if not argv:
-        print("Usage: python -m ghdag.github_cli <command> ...", file=sys.stderr)
-        return 1
+        exc = CliUsageError(
+            "missing command",
+            hint="available commands: api issue pr repo run",
+        )
+        _print_cli_usage_error(exc)
+        return exc.exit_code
 
     try:
         client = get_forge()
     except Exception as exc:
-        from ghdag.core.exceptions import GhdagError
         if isinstance(exc, (GhdagError, ValueError)):
             print(str(exc), file=sys.stderr)
             return 1
@@ -562,55 +625,43 @@ def cli_main(argv: list[str] | None = None) -> int:
     cmd = argv[0]
     rest = argv[1:]
 
-    handlers: dict[str, Any] = {
-        "issue": {
-            "view": _cli_issue_view,
-            "edit": _cli_issue_edit,
-            "comment": _cli_issue_comment,
-            "close": _cli_issue_close,
-            "create": _cli_issue_create,
-        },
-        "pr": {
-            "list": _cli_pr_list,
-            "view": _cli_pr_view,
-            "edit": _cli_pr_edit,
-            "diff": _cli_pr_diff,
-            "create": _cli_pr_create,
-            "merge": _cli_pr_merge,
-            "checks": _cli_pr_checks,
-            "ready": _cli_pr_ready,
-        },
-        "api": lambda c, a: _cli_api(c, ["api", *a] if a and a[0] != "api" else a),
-        "run": {
-            "view": _cli_run_view,
-            "rerun": _cli_run_rerun,
-        },
-        "repo": {"view": _cli_repo_view},
-    }
-
     try:
-        if cmd == "issue" and rest:
-            return int(handlers["issue"][rest[0]](client, rest[1:]))
-        if cmd == "pr" and rest:
-            return int(handlers["pr"][rest[0]](client, rest[1:]))
         if cmd == "api":
             return _cli_api(client, rest)
-        if cmd == "run" and rest:
-            return int(handlers["run"][rest[0]](client, rest[1:]))
-        if cmd == "repo" and rest:
-            return int(handlers["repo"][rest[0]](client, rest[1:]))
-    except KeyError as exc:
-        print(f"Unknown subcommand: {exc}", file=sys.stderr)
-        return 1
+
+        sub_map = _COMMAND_HANDLERS.get(cmd)
+        if sub_map is None:
+            raise CliUsageError(
+                f"unknown command: {cmd}",
+                hint="available commands: api issue pr repo run",
+            )
+
+        if not rest:
+            names = ", ".join(sorted(sub_map))
+            raise CliUsageError(
+                f"missing subcommand: {cmd}",
+                hint=f"available subcommands: {cmd} {{{names}}}",
+            )
+
+        sub = rest[0]
+        handler = sub_map.get(sub)
+        if handler is None:
+            names = ", ".join(sorted(sub_map))
+            raise CliUsageError(
+                f"unknown subcommand: {cmd} {sub}",
+                hint=f"available subcommands: {cmd} {{{names}}}",
+            )
+
+        return int(handler(client, rest[1:]))
+
+    except CliUsageError as exc:
+        _print_cli_usage_error(exc)
+        return exc.exit_code
     except Exception as exc:
-        from ghdag.core.exceptions import GhdagError
         if not isinstance(exc, (GhdagError, RuntimeError, ValueError, KeyError)):
             raise
         print(str(exc), file=sys.stderr)
         return 1
-
-    print(f"Unknown command: {cmd}", file=sys.stderr)
-    return 1
 
 
 def main() -> None:

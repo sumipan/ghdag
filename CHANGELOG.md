@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.134.4 - 2026-11-14
+
+### Changed
+
+- **Breaking:** Unknown arguments and unknown or missing subcommands on `python -m ghdag.github_cli` now fail with `CLI_USAGE` (exit code 2); the prior warning-and-continue path is removed.
+- README module-entry messaging for strict `github_cli` usage; pending notes still cover LocalForge GitHub-free quick start and execution review artifacts (unchanged since 0.133.4).
+
+### Added
+
+- `pr create --body-file` (same file-read semantics as `issue create` / `issue edit`).
+
 ## 0.134.3 - 2026-11-14
 
 ### Fixed
