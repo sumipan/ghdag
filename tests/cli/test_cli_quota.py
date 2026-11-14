@@ -224,3 +224,47 @@ class TestQuotaCli:
         with pytest.raises(SystemExit) as exc:
             main(["quota", "drain", "", "--state-path", str(tmp_path / "quota-gate.json")])
         assert exc.value.code == 1
+
+    def test_quota_status_includes_engine_usage(self, tmp_path, capsys):
+        """Refs sumipan/nexus#6717 — status JSON exposes latest usage windows."""
+        from datetime import datetime, timezone
+
+        from ghdag.cli import main
+        from ghdag.core.models.metrics import QuotaWindow
+        from ghdag.quota import QuotaGate
+
+        state_path = tmp_path / "quota-gate.json"
+        gate = QuotaGate(state_path)
+        observed = datetime(2026, 11, 14, 12, 0, tzinfo=timezone.utc)
+        gate.observe(
+            engine="claude",
+            windows=(
+                QuotaWindow(
+                    window_minutes=300,
+                    used_percent=34.0,
+                    resets_at=datetime(2026, 11, 14, 17, 0, tzinfo=timezone.utc),
+                ),
+            ),
+            observed_at=observed,
+        )
+        exec_path = tmp_path / "exec.jsonl"
+        exec_path.write_text("", encoding="utf-8")
+        done_dir = tmp_path / "done"
+        done_dir.mkdir()
+        main([
+            "quota",
+            "status",
+            "--state-path",
+            str(state_path),
+            "--exec-jsonl",
+            str(exec_path),
+            "--done-dir",
+            str(done_dir),
+        ])
+        payload = json.loads(capsys.readouterr().out.strip())
+        claude_usage = payload["engines"]["claude"]["usage"]
+        assert claude_usage["observed_at"] == observed.isoformat()
+        assert claude_usage["windows"][0]["window_minutes"] == 300
+        for name, entry in payload["engines"].items():
+            if name != "claude":
+                assert entry["usage"] is None

@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
+from pathlib import Path
 
 from ghdag.core.models.metrics import TokenUsage
+from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.adapters.codex import CodexAdapter
+
+_FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 
 SAMPLE_JSONL = "\n".join([
     json.dumps({"type": "thread.started", "thread_id": "019fee6d-9bdd-75e3-bcf6-4f760ab4fa66"}),
@@ -61,6 +66,102 @@ class TestCodexAdapterExtractText:
         adapter = CodexAdapter()
         result = adapter.extract_result_text(jsonl.encode(), b"")
         assert result == b"Answer"
+
+
+class TestClaudeJsonAdapterExtractQuotaWindows:
+    def test_extracts_five_hour_and_seven_day_from_fixture(self):
+        """Refs sumipan/nexus#6717 — fixture stream-json rate_limit_event."""
+        stdout = (_FIXTURES / "claude_stream_rate_limit_event.jsonl").read_bytes()
+        windows = ClaudeJsonAdapter().extract_quota_windows(stdout, b"")
+        assert len(windows) == 2
+        by_minutes = {w.window_minutes: w for w in windows}
+        five = by_minutes[300]
+        assert five.used_percent == 34.0
+        assert five.resets_at == datetime.fromtimestamp(1794667200, tz=timezone.utc)
+        seven = by_minutes[10080]
+        assert seven.used_percent == 95.0
+        assert seven.resets_at == datetime.fromtimestamp(1794682800, tz=timezone.utc)
+
+    def test_uses_last_rate_limit_event_line(self):
+        """Refs sumipan/nexus#6717 — later rate_limit_event wins."""
+        later_five = 1794667300
+        lines = [
+            json.dumps(
+                {
+                    "type": "rate_limit_event",
+                    "rate_limit_info": {
+                        "unifiedWindows": {
+                            "five_hour": {
+                                "utilization": 0.1,
+                                "resetsAt": 1,
+                            },
+                        },
+                    },
+                }
+            ),
+            json.dumps(
+                {
+                    "type": "rate_limit_event",
+                    "rate_limit_info": {
+                        "unifiedWindows": {
+                            "five_hour": {
+                                "utilization": 0.5,
+                                "resetsAt": later_five,
+                            },
+                        },
+                    },
+                }
+            ),
+        ]
+        windows = ClaudeJsonAdapter().extract_quota_windows(
+            "\n".join(lines).encode(),
+            b"",
+        )
+        assert len(windows) == 1
+        assert windows[0].used_percent == 50.0
+        assert windows[0].resets_at == datetime.fromtimestamp(later_five, tz=timezone.utc)
+
+    def test_drops_invalid_windows_and_keeps_valid_one(self):
+        """Refs sumipan/nexus#6717 — invalid utilization or resetsAt are skipped."""
+        payload = {
+            "type": "rate_limit_event",
+            "rate_limit_info": {
+                "unifiedWindows": {
+                    "five_hour": {"utilization": 1.5, "resetsAt": 1794667200},
+                    "seven_day": {"utilization": 0.2, "resetsAt": "not-an-int"},
+                },
+            },
+        }
+        extra_valid = {
+            "type": "rate_limit_event",
+            "rate_limit_info": {
+                "unifiedWindows": {
+                    "five_hour": {"utilization": 1.5, "resetsAt": 1794667200},
+                    "seven_day": {"utilization": 0.25, "resetsAt": 1794682800},
+                },
+            },
+        }
+        windows = ClaudeJsonAdapter().extract_quota_windows(
+            json.dumps(extra_valid).encode(),
+            b"",
+        )
+        assert len(windows) == 1
+        assert windows[0].window_minutes == 10080
+        assert windows[0].used_percent == 25.0
+        windows_invalid = ClaudeJsonAdapter().extract_quota_windows(
+            json.dumps(payload).encode(),
+            b"",
+        )
+        assert windows_invalid == ()
+
+    def test_returns_empty_without_rate_limit_event(self):
+        """Refs sumipan/nexus#6717 — no event line yields empty tuple."""
+        adapter = ClaudeJsonAdapter()
+        assert adapter.extract_quota_windows(b"not json\n", b"") == ()
+        assert adapter.extract_quota_windows(
+            json.dumps({"type": "result", "result": "x"}).encode(),
+            b"",
+        ) == ()
 
 
 class TestCodexAdapterExtractUsage:

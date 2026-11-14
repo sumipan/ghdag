@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Record Claude `rate_limit_event` utilization windows via `EngineOutputAdapter.extract_quota_windows`, `QuotaGate.observe`, and `ghdag quota status` `usage` (sumipan/nexus#6717).
+
 ## 0.135.0 - 2026-11-14
 
 ### Removed

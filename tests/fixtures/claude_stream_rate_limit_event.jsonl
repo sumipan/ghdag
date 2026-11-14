@@ -1,0 +1,3 @@
+{"type":"system","subtype":"init"}
+{"type":"rate_limit_event","rate_limit_info":{"status":"allowed_warning","resetsAt":1794682800,"rateLimitType":"seven_day","utilization":0.95,"overageStatus":"rejected","overageDisabledReason":"org_level_disabled","isUsingOverage":false,"surpassedThreshold":0.75,"unifiedWindows":{"five_hour":{"utilization":0.34,"resetsAt":1794667200,"status":"allowed"},"seven_day":{"utilization":0.95,"resetsAt":1794682800,"status":"allowed_warning","surpassedThreshold":0.75}},"overageEnabled":false}}
+{"type":"result","result":"ok","session_id":"sess-fixture"}
