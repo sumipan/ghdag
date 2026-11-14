@@ -816,15 +816,14 @@ def call(
     quota_reported = False
     last_result: LLMResult | None = None
     skipped_paused: list[str] = []
-    primary = route[0]
 
-    for engine, model in route:
+    for index, (engine, model) in enumerate(route):
         if _engine_paused(quota_gate, engine):
             skipped_paused.append(engine)
             continue
 
         candidate_permission = _resolve_permission(engine, permission, permission_overrides)
-        session = resume_session_id if (engine, model) == primary else None
+        session = resume_session_id if index == 0 else None
         result = _run_completed_attempt(
             prompt,
             engine=engine,
