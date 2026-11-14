@@ -138,8 +138,7 @@ def compact_resume_session(
     try:
         summary_result = llm_call(
             GENSHIJIN_HANDOFF_PROMPT,
-            engine=parent_record.engine,
-            model=model,
+            route=[(parent_record.engine, model)],
             resume_session_id=parent_record.session_id,
             cwd=cwd,
             permission=JSON_ONLY,
@@ -174,8 +173,7 @@ def compact_resume_session(
     try:
         seeded = llm_call(
             seed_prompt,
-            engine=parent_record.engine,
-            model=model,
+            route=[(parent_record.engine, model)],
             cwd=cwd,
             permission=JSON_ONLY,
         )

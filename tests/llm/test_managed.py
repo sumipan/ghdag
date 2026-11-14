@@ -1,176 +1,263 @@
-"""tests/llm/test_managed.py — fallback / quota on unified call() (Issue sumipan/nexus#6529)."""
+"""tests/llm/test_managed.py — route-based call() (Issue sumipan/nexus#6679)."""
 
 from __future__ import annotations
 
+import os
+import stat
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-from ghdag.core.capabilities import JSON_ONLY, TEXT_ONLY
+import pytest
+
+from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.models.metrics import FailureClass
-from ghdag.core.ports.output import EngineError, EngineErrorKind
-from ghdag.llm import engines as engines_mod
-from ghdag.llm.engines import call
+from ghdag.llm.engines import TIMEOUT_RETURNCODE, call
 from ghdag.quota import QuotaGate
 
-_QUOTA_OBSERVED_AT = datetime(2024, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
-_QUOTA_NOW = datetime(2024, 1, 15, 12, 1, 0, tzinfo=timezone.utc)
+
+def _quota_now() -> datetime:
+    return datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 
-def _adapter(*, failure: FailureClass | None = None, body: bytes = b"extracted") -> MagicMock:
-    adapter = MagicMock()
-    adapter.extract_result_text.return_value = body
-    adapter.extract_token_usage.return_value = None
-    adapter.extract_error.return_value = None
-    adapter.classify_failure.return_value = failure
-    adapter.extract_session_id.return_value = None
-    return adapter
+def _cli_binary(engine: str) -> str:
+    spec = ENGINE_SPECS.get(engine)
+    return spec.cli if spec else engine
 
 
-def _subprocess(stdout: str = "ok", *, returncode: int = 1, failure: FailureClass | None = None):
-    return engines_mod._SubprocessRun(
-        stdout=stdout,
-        stderr="",
-        returncode=returncode,
-        latency_ms=1.0,
-        failure_class=failure,
+def _install_script(tmp_path: Path, engine: str, body: str) -> None:
+    path = tmp_path / _cli_binary(engine)
+    path.write_text(body, encoding="utf-8")
+    path.chmod(path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def _prepend_bin_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    stamps = tmp_path / "stamps"
+    stamps.mkdir()
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}")
+    return stamps
+
+
+def test_call_empty_route_raises_value_error() -> None:
+    """Issue sumipan/nexus#6679 — AC1 empty route."""
+    with pytest.raises(ValueError, match="route must not be empty"):
+        call("p", route=[])
+
+
+def test_call_skips_paused_first_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue sumipan/nexus#6679 — AC2 skip paused head, run second engine."""
+    stamps = _prepend_bin_dir(monkeypatch, tmp_path)
+    claude_stamp = stamps / "claude"
+    codex_stamp = stamps / "codex"
+    _install_script(
+        tmp_path,
+        "claude",
+        f"""#!/bin/sh
+touch "{claude_stamp}"
+echo "session limit" >&2
+exit 1
+""",
+    )
+    _install_script(
+        tmp_path,
+        "codex",
+        f"""#!/bin/sh
+touch "{codex_stamp}"
+echo ok
+exit 0
+""",
+    )
+    gate = QuotaGate(tmp_path / "quota.json", pause_ttl_seconds=None)
+    gate.report(
+        engine="claude",
+        status="paused",
+        observed_at=_quota_now(),
+        reason="test",
+        kind="failure",
     )
 
-
-def test_call_without_fallback_returns_primary_quota_failure(tmp_path: Path) -> None:
-    """Issue sumipan/nexus#6529 — quota exhaustion without candidate stays on primary."""
-    mock_adapter = _adapter(failure=FailureClass.QUOTA_EXHAUSTED)
-
-    with (
-        patch.object(engines_mod, "_call_once", return_value=_subprocess("limit", returncode=1)),
-        patch.object(engines_mod, "get_output_adapter", return_value=mock_adapter),
-        patch.object(engines_mod, "validate_engine_model", return_value="claude-sonnet-4-6"),
-    ):
-        result = call("p", engine="claude")
-
-    assert result.attempts == 1
-    assert result.ok is False
-    assert result.failure_class is FailureClass.QUOTA_EXHAUSTED
-
-
-def test_call_quota_fallback_uses_override_and_reports_primary(tmp_path: Path) -> None:
-    """Issue sumipan/nexus#6529 — fallback uses permission_overrides and reports pause."""
-    gate = QuotaGate(tmp_path / "quota.json")
-    calls: list[tuple[str, object]] = []
-
-    def fake_once(prompt, *, engine, permission, **kwargs):
-        del prompt, kwargs
-        calls.append((engine, permission))
-        if engine == "claude":
-            return _subprocess("limit", returncode=1, failure=FailureClass.QUOTA_EXHAUSTED)
-        stdout = '{"verdict": "ok"}' if permission.output_format == "json" else "ok"
-        return _subprocess(stdout, returncode=0)
-
-    codex_json = JSON_ONLY
-    mock_adapter = _adapter()
-
-    with (
-        patch("ghdag.quota._aware_now", side_effect=lambda now=None: _QUOTA_NOW if now is None else now),
-        patch.object(engines_mod, "_call_once", side_effect=fake_once),
-        patch.object(engines_mod, "get_output_adapter", return_value=mock_adapter),
-        patch.object(
-            engines_mod,
-            "validate_engine_model",
-            side_effect=lambda e, m: m or ("claude-sonnet-4-6" if e == "claude" else "gpt"),
-        ),
-    ):
-        result = call(
-            "p",
-            engine="claude",
-            permission=TEXT_ONLY,
-            fallback_candidates=[("codex", "gpt")],
-            permission_overrides={"codex": codex_json},
-            quota_gate=gate,
-        )
-
-    assert result.attempts == 2
-    assert result.engine_used == "codex"
-    assert result.quota_reported is True
-    assert calls[0][1] is TEXT_ONLY
-    assert calls[1][1] is codex_json
-    snap = gate.snapshot()
-    assert snap.engines["claude"].status == "paused"
-
-
-def test_call_structured_quota_error_is_classified_before_fallback(tmp_path: Path) -> None:
-    """A structured error must not bypass failure classification and fallback."""
-    gate = QuotaGate(tmp_path / "quota.json")
-    calls: list[str] = []
-
-    def fake_once(prompt, *, engine, **kwargs):
-        del prompt, kwargs
-        calls.append(engine)
-        if engine == "claude":
-            return _subprocess("quota error", returncode=1)
-        return _subprocess("ok", returncode=0)
-
-    primary_adapter = _adapter(failure=FailureClass.QUOTA_EXHAUSTED)
-    primary_adapter.extract_error.return_value = EngineError(
-        kind=EngineErrorKind.QUOTA_EXHAUSTED,
-        message="quota exhausted",
-        retryable=False,
+    result = call(
+        "p",
+        route=[("claude", None), ("codex", None)],
+        quota_gate=gate,
     )
-    fallback_adapter = _adapter(body=b"ok")
 
-    with (
-        patch.object(engines_mod, "_call_once", side_effect=fake_once),
-        patch.object(
-            engines_mod,
-            "get_output_adapter",
-            side_effect=lambda engine: (
-                primary_adapter if engine == "claude" else fallback_adapter
-            ),
-        ),
-        patch.object(
-            engines_mod,
-            "validate_engine_model",
-            side_effect=lambda engine, model: model or f"{engine}-default",
-        ),
-    ):
-        result = call(
-            "p",
-            engine="claude",
-            fallback_candidates=[("codex", None)],
-            quota_gate=gate,
-        )
-
-    assert calls == ["claude", "codex"]
     assert result.ok is True
     assert result.engine_used == "codex"
-    assert result.attempts == 2
-    assert result.quota_reported is True
+    assert result.attempts == 1
+    assert not claude_stamp.exists()
+    assert codex_stamp.exists()
 
 
-def test_call_timeout_does_not_fallback_or_pause_by_default(tmp_path: Path) -> None:
-    """Issue sumipan/nexus#6529 — TIMEOUT does not fallback or pause by default."""
+def test_call_walks_route_past_two_quota_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue sumipan/nexus#6679 — AC3 two QUOTA_EXHAUSTED then success."""
+    stamps = _prepend_bin_dir(monkeypatch, tmp_path)
+    quota_body = """#!/bin/sh
+echo "session limit" >&2
+exit 1
+"""
+    _install_script(tmp_path, "claude", quota_body)
+    _install_script(tmp_path, "codex", quota_body)
+    _install_script(
+        tmp_path,
+        "cursor",
+        f"""#!/bin/sh
+touch "{stamps / 'cursor'}"
+echo ok
+exit 0
+""",
+    )
+
+    result = call(
+        "p",
+        route=[("claude", None), ("codex", None), ("cursor", None)],
+    )
+
+    assert result.ok is True
+    assert result.attempts == 3
+    assert result.engine_used == "cursor"
+
+
+def test_call_engine_environment_error_moves_to_next(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue sumipan/nexus#6679 — AC4 ENGINE_ENVIRONMENT_ERROR advances route."""
+    stamps = _prepend_bin_dir(monkeypatch, tmp_path)
+    _install_script(
+        tmp_path,
+        "claude",
+        f"""#!/bin/sh
+touch "{stamps / 'claude'}"
+echo "claude: command not found" >&2
+exit 127
+""",
+    )
+    _install_script(
+        tmp_path,
+        "codex",
+        f"""#!/bin/sh
+touch "{stamps / 'codex'}"
+echo ok
+exit 0
+""",
+    )
     gate = QuotaGate(tmp_path / "quota.json")
 
-    with (
-        patch.object(
-            engines_mod,
-            "_call_once",
-            return_value=_subprocess(
-                "partial",
-                returncode=engines_mod.TIMEOUT_RETURNCODE,
-                failure=FailureClass.TIMEOUT,
-            ),
-        ),
-        patch.object(engines_mod, "get_output_adapter", return_value=_adapter()),
-        patch.object(engines_mod, "validate_engine_model", return_value="claude-sonnet-4-6"),
-    ):
-        result = call(
-            "p",
-            engine="claude",
-            fallback_candidates=[("codex", "gpt")],
-            quota_gate=gate,
-        )
+    result = call(
+        "p",
+        route=[("claude", None), ("codex", None)],
+        quota_gate=gate,
+    )
 
-    assert result.returncode == engines_mod.TIMEOUT_RETURNCODE
+    assert result.ok is True
+    assert result.engine_used == "codex"
+    assert gate.snapshot().engines.get("claude") is None
+
+
+def test_call_timeout_stops_route(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue sumipan/nexus#6679 — AC5 TIMEOUT does not advance route."""
+    stamps = _prepend_bin_dir(monkeypatch, tmp_path)
+    codex_stamp = stamps / "codex"
+    _install_script(
+        tmp_path,
+        "claude",
+        """#!/bin/sh
+while :
+do
+  :
+done
+""",
+    )
+    _install_script(
+        tmp_path,
+        "codex",
+        f"""#!/bin/sh
+touch "{codex_stamp}"
+echo ok
+exit 0
+""",
+    )
+
+    result = call(
+        "p",
+        route=[("claude", None), ("codex", None)],
+        timeout=1,
+    )
+
     assert result.failure_class is FailureClass.TIMEOUT
     assert result.attempts == 1
-    assert gate.snapshot().engines == {}
+    assert result.returncode == TIMEOUT_RETURNCODE
+    assert not codex_stamp.exists()
+
+
+def test_call_all_paused_launches_nothing(tmp_path: Path) -> None:
+    """Issue sumipan/nexus#6679 — AC6 all candidates paused."""
+    gate = QuotaGate(tmp_path / "quota.json", pause_ttl_seconds=None)
+    observed = _quota_now()
+    gate.report(
+        engine="claude",
+        status="paused",
+        observed_at=observed,
+        reason="test",
+        kind="failure",
+    )
+    gate.report(
+        engine="codex",
+        status="paused",
+        observed_at=observed,
+        reason="test",
+        kind="failure",
+    )
+
+    result = call(
+        "p",
+        route=[("claude", None), ("codex", None)],
+        quota_gate=gate,
+    )
+
+    assert result.attempts == 0
+    assert result.failure_class is FailureClass.QUOTA_EXHAUSTED
+    assert result.engine_used == ""
+    assert "all route candidates paused: claude, codex" in result.stderr
+
+
+def test_call_resume_session_only_for_first_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue sumipan/nexus#6679 — AC7 resume only on route head launch."""
+    stamps = _prepend_bin_dir(monkeypatch, tmp_path)
+    claude_args = stamps / "claude-args"
+    codex_args = stamps / "codex-args"
+    _install_script(
+        tmp_path,
+        "claude",
+        f"""#!/bin/sh
+echo "$@" > "{claude_args}"
+echo "session limit" >&2
+exit 1
+""",
+    )
+    _install_script(
+        tmp_path,
+        "codex",
+        f"""#!/bin/sh
+echo "$@" > "{codex_args}"
+echo ok
+exit 0
+""",
+    )
+
+    call(
+        "p",
+        route=[("claude", None), ("codex", None)],
+        resume_session_id="s1",
+    )
+
+    assert "s1" in claude_args.read_text(encoding="utf-8")
+    assert codex_args.exists()
+    assert "s1" not in codex_args.read_text(encoding="utf-8")

@@ -1,4 +1,4 @@
-"""call() guards cursor's stuck shell-state ``cat`` readers (sumipan/nexus#5141)."""
+"""call(route=[("claude", None)]) guards cursor's stuck shell-state ``cat`` readers (sumipan/nexus#5141)."""
 
 from __future__ import annotations
 
@@ -95,7 +95,7 @@ def test_guard_fires_and_kills_cat_once(guard_env: list[tuple[int, int]]) -> Non
         lambda cmd: FakeProc(cmd, timeouts_before_done=2, returncode=3)
     )
     with popen, patch("ghdag.llm.engines.subprocess.run") as mock_run:
-        r = call("p", engine="cursor", timeout=600)
+        r = call("p", timeout=600, route=[("cursor", None)])
 
     mock_run.assert_not_called()
     assert guard_env == [(CAT_PID, signal.SIGTERM)]
@@ -109,7 +109,7 @@ def test_guard_fires_and_kills_cat_once(guard_env: list[tuple[int, int]]) -> Non
 def test_input_passed_only_on_first_communicate(guard_env: list[tuple[int, int]]) -> None:
     popen, holder = _patch_popen(lambda cmd: FakeProc(cmd, timeouts_before_done=2))
     with popen:
-        call("p", engine="cursor", timeout=600, stdin_text="extra")
+        call("p", timeout=600, stdin_text="extra", route=[("cursor", None)])
 
     calls = holder["proc"].calls
     assert len(calls) == 3
@@ -124,7 +124,7 @@ def test_no_fire_when_cat_has_cpu_time(
     monkeypatch.setattr(engines, "_stall_ps", lambda: _BUSY_PS)
     popen, _ = _patch_popen(lambda cmd: FakeProc(cmd, timeouts_before_done=4))
     with popen:
-        r = call("p", engine="cursor", timeout=600)
+        r = call("p", timeout=600, route=[("cursor", None)])
 
     assert guard_env == []
     assert "[stall-guard]" not in r.stderr
@@ -143,7 +143,7 @@ def test_guard_off_uses_subprocess_run(
     with patch("ghdag.llm.engines.subprocess.run", return_value=done) as mock_run, patch(
         "ghdag.llm.engines.subprocess.Popen"
     ) as mock_popen:
-        r = call("p", engine="cursor", timeout=600)
+        r = call("p", timeout=600, route=[("cursor", None)])
 
     assert mock_run.call_count == 1
     mock_popen.assert_not_called()
@@ -161,7 +161,7 @@ def test_claude_uses_subprocess_run(
     with patch("ghdag.llm.engines.subprocess.run", return_value=done) as mock_run, patch(
         "ghdag.llm.engines.subprocess.Popen"
     ) as mock_popen:
-        call("p", engine="claude", timeout=600)
+        call("p", timeout=600, route=[("claude", None)])
 
     assert mock_run.call_count == 1
     mock_popen.assert_not_called()
@@ -176,7 +176,7 @@ def test_timeout_kills_process_and_maps_to_124(
         lambda cmd: FakeProc(cmd, timeouts_before_done=None, result=("partial", "e"))
     )
     with popen:
-        r = call("p", engine="cursor", timeout=1)
+        r = call("p", timeout=1, route=[("cursor", None)])
 
     proc = holder["proc"]
     assert proc.kill.call_count == 1
@@ -206,7 +206,7 @@ def test_launch_failure_maps_like_before(
         raise exc_type(errno_, "x", cmd[0])
 
     with patch("ghdag.llm.engines.subprocess.Popen", side_effect=boom) as mock_popen:
-        r = call("p", engine="cursor", timeout=600)
+        r = call("p", timeout=600, route=[("cursor", None)])
 
     exe = mock_popen.call_args.args[0][0]
     assert r.returncode == returncode

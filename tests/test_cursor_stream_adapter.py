@@ -256,11 +256,8 @@ class TestCursorStreamCapability:
             stderr="",
             returncode=0,
         )
-        result = call(
-            "hello",
-            engine="cursor",
-            permission=Permission(stream=True),
-        )
+        result = call("hello",
+            permission=Permission(stream=True), route=[("cursor", None)])
         assert result.ok
         assert result.stdout == "pong"
         assert result.session_id == "5e7ca003-6637-4c42-b168-e2a4c05f1c8c"

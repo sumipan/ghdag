@@ -1,4 +1,4 @@
-"""Tests for LLMResult.latency_ms and call() latency measurement — Issue #1275."""
+"""Tests for LLMResult.latency_ms and call(route=[("claude", None)]) latency measurement — Issue #1275."""
 
 from __future__ import annotations
 
@@ -26,9 +26,9 @@ class TestLLMResultLatencyMs:
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_measures_latency(self, mock_run: MagicMock):
-        """call() returns latency_ms > 0."""
+        """call(route=[("claude", None)]) returns latency_ms > 0."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        result = call("hello", engine="claude")
+        result = call("hello", route=[("claude", None)])
         assert result.latency_ms > 0
 
 
@@ -139,7 +139,7 @@ class TestBuildLlmCmdCodex:
 class TestCallCodexPromptRouting:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_codex_prompt_to_stdin(self, mock_run: MagicMock):
-        """call(engine="codex", prompt="hello") passes prompt as subprocess.run input."""
+        """call(, prompt="hello", route=[("codex", None)]) passes prompt as subprocess.run input."""
         captured: dict = {}
 
         def _run(*_args, **kwargs):
@@ -147,7 +147,7 @@ class TestCallCodexPromptRouting:
             return MagicMock(stdout="jsonl", stderr="", returncode=0)
 
         mock_run.side_effect = _run
-        call("hello", engine="codex", permission=Permission())
+        call("hello", permission=Permission(), route=[("codex", None)])
         assert captured["input"] == "hello"
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -160,7 +160,7 @@ class TestCallCodexPromptRouting:
             return MagicMock(stdout="jsonl", stderr="", returncode=0)
 
         mock_run.side_effect = _run
-        call("hello", engine="codex", stdin_text="override", permission=Permission())
+        call("hello", stdin_text="override", permission=Permission(), route=[("codex", None)])
         assert captured["input"] == "hello\n\noverride"
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -173,7 +173,7 @@ class TestCallCodexPromptRouting:
             return MagicMock(stdout="ok", stderr="", returncode=0)
 
         mock_run.side_effect = _run
-        call("hello", engine="claude", stdin_text=None)
+        call("hello", stdin_text=None, route=[("claude", None)])
         assert captured["input"] == "hello"
 
 
@@ -199,8 +199,7 @@ class TestCallPromptViaStdin:
         with patch("ghdag.llm.engines.subprocess.run", side_effect=_side_effect):
             call(
                 prompt,
-                engine=engine,
-                model=_STDIN_ENGINE_MODELS[engine],
+                route=[(engine, _STDIN_ENGINE_MODELS[engine])],
                 stdin_text=stdin_text,
                 permission=Permission(),
             )
@@ -239,12 +238,9 @@ class TestCallResumeSessionId:
     def test_call_with_resume_unsupported_engine_raises(self):
         """gemini + resume_session_id raises NotImplementedError."""
         with pytest.raises(NotImplementedError, match="resume"):
-            call(
-                "hello",
-                engine="gemini",
+            call("hello",
                 permission=Permission(),
-                resume_session_id="sess-1",
-            )
+                resume_session_id="sess-1", route=[("gemini", None)])
 
     @patch("ghdag.llm.engines.get_output_adapter")
     @patch("ghdag.llm.engines.subprocess.run")
@@ -255,7 +251,7 @@ class TestCallResumeSessionId:
         adapter.extract_session_id.return_value = "sess-abc"
         mock_get_adapter.return_value = adapter
 
-        result = call("hello", engine="claude")
+        result = call("hello", route=[("claude", None)])
 
         assert result.session_id == "sess-abc"
 
@@ -269,12 +265,12 @@ class TestCallResumeSessionId:
             '"usage":{"inputTokens":7144,"outputTokens":73}}'
         )
         mock_run.return_value = MagicMock(stdout=stdout, stderr="", returncode=0)
-        result = call("hello", engine="cursor", permission=Permission())
+        result = call("hello", permission=Permission(), route=[("cursor", None)])
         assert result.session_id == "85105031-11df-48a2-a791-812a0128b4cf"
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_cursor_extracts_result_from_json(self, mock_run: MagicMock):
-        """call(cursor) puts JSON result in body and keeps session_id."""
+        """call(cursor, route=[("claude", None)]) puts JSON result in body and keeps session_id."""
         from ghdag.llm.adapters.cursor import CursorAdapter
 
         stdout = (
@@ -284,7 +280,7 @@ class TestCallResumeSessionId:
             '"usage":{"inputTokens":7144,"outputTokens":73}}'
         )
         mock_run.return_value = MagicMock(stdout=stdout, stderr="", returncode=0)
-        result = call("hello", engine="cursor", permission=Permission())
+        result = call("hello", permission=Permission(), route=[("cursor", None)])
         assert result.body == "pong"
         assert result.session_id == "85105031-11df-48a2-a791-812a0128b4cf"
         usage = CursorAdapter().extract_token_usage(stdout.encode("utf-8"), b"")
@@ -297,7 +293,7 @@ class TestCodexUnsupportedCapabilities:
     def test_codex_stream_accepted(self, mock_run: MagicMock):
         """stream=True is accepted and uses the --json path (#2967)."""
         mock_run.return_value = MagicMock(stdout="{}", stderr="", returncode=0)
-        result = call("test", engine="codex", permission=Permission(stream=True))
+        result = call("test", permission=Permission(stream=True), route=[("codex", None)])
         assert result.returncode == 0
         cmd = build_llm_cmd("codex", ENGINE_SPECS["codex"].default_model or "auto", "test")
         assert "--json" in cmd
@@ -305,16 +301,13 @@ class TestCodexUnsupportedCapabilities:
     def test_codex_unsupported_output_format_json(self):
         """output_format="json" raises NotImplementedError."""
         with pytest.raises(NotImplementedError, match="output_format"):
-            call("test", engine="codex", permission=Permission(output_format="json"))
+            call("test", permission=Permission(output_format="json"), route=[("codex", None)])
 
     def test_codex_unsupported_permission_mode(self):
         """A permission_mode codex cannot express raises NotImplementedError."""
         with pytest.raises(NotImplementedError, match="permission_mode"):
-            call(
-                "test",
-                engine="codex",
-                permission=Permission(permission_mode="acceptEdits"),
-            )
+            call("test",
+                permission=Permission(permission_mode="acceptEdits"), route=[("codex", None)])
 
 
 class TestCodexIgnoredCapabilities:
@@ -325,29 +318,23 @@ class TestCodexIgnoredCapabilities:
         """Passing TEXT_ONLY (with disallowed_tools) to codex does not raise NotImplementedError."""
         from ghdag.core.capabilities import TEXT_ONLY
         mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
-        result = call("test", engine="codex", permission=TEXT_ONLY)
+        result = call("test", permission=TEXT_ONLY, route=[("codex", None)])
         assert result.returncode == 0
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_codex_with_disallowed_tools_does_not_raise(self, mock_run: MagicMock):
         """Explicit disallowed_tools is a noop for codex."""
         mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
-        result = call(
-            "test",
-            engine="codex",
-            permission=Permission(disallowed_tools=("Bash", "Edit")),
-        )
+        result = call("test",
+            permission=Permission(disallowed_tools=("Bash", "Edit")), route=[("codex", None)])
         assert result.returncode == 0
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_codex_with_allowed_tools_does_not_raise(self, mock_run: MagicMock):
         """Explicit allowed_tools is a noop for codex."""
         mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
-        result = call(
-            "test",
-            engine="codex",
-            permission=Permission(allowed_tools=("Read", "Grep")),
-        )
+        result = call("test",
+            permission=Permission(allowed_tools=("Read", "Grep")), route=[("codex", None)])
         assert result.returncode == 0
 
     def test_codex_tool_flags_not_emitted_in_argv(self):
@@ -613,21 +600,14 @@ class TestSandboxCapability:
     def test_gemini_sandbox_readonly_raises(self):
         """gemini + sandbox=readonly → NotImplementedError."""
         with pytest.raises(NotImplementedError, match="sandbox"):
-            call(
-                "test",
-                engine="gemini",
-                permission=Permission(sandbox="readonly"),
-            )
+            call("test",
+                permission=Permission(sandbox="readonly"), route=[("gemini", None)])
 
     def test_shell_sandbox_readonly_raises(self):
         """shell + sandbox=readonly → NotImplementedError."""
         with pytest.raises(NotImplementedError, match="sandbox"):
-            call(
-                "test",
-                engine="shell",
-                model="bash",
-                permission=Permission(sandbox="readonly"),
-            )
+            call("test",
+                permission=Permission(sandbox="readonly"), route=[("shell", "bash")])
 
     def test_cursor_disallowed_tools_in_ignored_capabilities(self):
         """cursor disallowed_tools is declared noop via _IGNORED_CAPABILITIES."""
@@ -649,11 +629,8 @@ class TestSandboxCapability:
             return MagicMock(stdout="ok", stderr="", returncode=0)
 
         mock_run.side_effect = _run
-        result = call(
-            "test",
-            engine="cursor",
-            permission=Permission(disallowed_tools=("Edit", "Write")),
-        )
+        result = call("test",
+            permission=Permission(disallowed_tools=("Edit", "Write")), route=[("cursor", None)])
         assert result.returncode == 0
         assert "--disallowed-tools" not in captured["cmd"]
 
@@ -680,23 +657,23 @@ class TestWebSearchCapability:
             return MagicMock(stdout="ok", stderr="", returncode=0)
 
         mock_run.side_effect = _run
-        call("hello", engine="cursor", permission=WEB_RESEARCH)
+        call("hello", permission=WEB_RESEARCH, route=[("cursor", None)])
         assert "--search" not in captured["cmd"]
         assert "--allowed-tools" not in captured["cmd"]
 
     def test_gemini_web_search_raises_before_subprocess(self):
         with pytest.raises(NotImplementedError, match="web_search"):
-            call("hello", engine="gemini", permission=Permission(web_search=True))
+            call("hello", permission=Permission(web_search=True), route=[("gemini", None)])
 
     def test_shell_web_search_raises_before_subprocess(self):
         with pytest.raises(NotImplementedError, match="web_search"):
-            call("hello", engine="shell", model="bash", permission=Permission(web_search=True))
+            call("hello", permission=Permission(web_search=True), route=[("shell", "bash")])
 
 
 class TestCallCwd:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_passes_cwd_to_subprocess(self, mock_run: MagicMock, tmp_path):
-        """call(..., cwd=...) passes cwd to subprocess.run."""
+        """call(..., cwd=..., route=[("claude", None)]) passes cwd to subprocess.run."""
         captured: dict = {}
 
         def _run(*_args, **kwargs):
@@ -704,7 +681,7 @@ class TestCallCwd:
             return MagicMock(stdout="ok", stderr="", returncode=0)
 
         mock_run.side_effect = _run
-        call("hello", engine="claude", cwd=tmp_path)
+        call("hello", cwd=tmp_path, route=[("claude", None)])
         assert captured["cwd"] == tmp_path
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -717,7 +694,7 @@ class TestCallCwd:
             return MagicMock(stdout="ok", stderr="", returncode=0)
 
         mock_run.side_effect = _run
-        call("hello", engine="claude")
+        call("hello", route=[("claude", None)])
         assert captured.get("cwd") is None
 
 
@@ -729,7 +706,7 @@ class TestCallLaunchFailure:
         mock_run.side_effect = FileNotFoundError(
             2, "No such file or directory", "cursor-agent",
         )
-        result = call("hello", engine="cursor")
+        result = call("hello", route=[("cursor", None)])
         assert result.returncode == 127
         assert "cursor-agent: command not found" in result.stderr
         assert result.stdout == ""
@@ -743,7 +720,7 @@ class TestCallLaunchFailure:
         mock_run.side_effect = FileNotFoundError(
             2, "No such file or directory", "cursor-agent",
         )
-        result = call("hello", engine="cursor")
+        result = call("hello", route=[("cursor", None)])
         assert result.returncode == 127
         assert "cursor-agent: command not found" in result.stderr
         assert result.failure_class == FailureClass.ENGINE_ENVIRONMENT_ERROR
@@ -751,7 +728,7 @@ class TestCallLaunchFailure:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_permission_error_becomes_126(self, mock_run: MagicMock):
         mock_run.side_effect = PermissionError(13, "Permission denied", "cursor-agent")
-        result = call("hello", engine="cursor")
+        result = call("hello", route=[("cursor", None)])
         assert result.returncode == 126
         assert "cursor-agent: permission denied" in result.stderr
 
@@ -759,7 +736,7 @@ class TestCallLaunchFailure:
     def test_missing_cwd_still_raises(self, mock_run: MagicMock):
         mock_run.side_effect = FileNotFoundError(2, "No such file or directory", "/no/such/dir")
         with pytest.raises(FileNotFoundError):
-            call("hello", engine="cursor", cwd="/no/such/dir")
+            call("hello", cwd="/no/such/dir", route=[("cursor", None)])
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_classifies_missing_binary(self, mock_run: MagicMock):
@@ -768,7 +745,7 @@ class TestCallLaunchFailure:
         mock_run.side_effect = FileNotFoundError(
             2, "No such file or directory", "cursor-agent",
         )
-        result = call("hello", engine="cursor")
+        result = call("hello", route=[("cursor", None)])
         assert result.returncode == 127
         assert result.failure_class == FailureClass.ENGINE_ENVIRONMENT_ERROR
 
@@ -786,7 +763,7 @@ class TestCallTimeout:
         mock_run.side_effect = subprocess.TimeoutExpired(
             ["cursor-agent", "--model", "composer-2.5", "-p", "--force"], 3599
         )
-        result = call("hello", engine="cursor", timeout=3599)
+        result = call("hello", timeout=3599, route=[("cursor", None)])
         assert result.returncode == TIMEOUT_RETURNCODE == 124
         assert result.failure_class is FailureClass.TIMEOUT
         assert result.timed_out is True
@@ -804,7 +781,7 @@ class TestCallTimeout:
         mock_run.side_effect = subprocess.TimeoutExpired(
             ["claude"], 10, output=b'{"type":"assistant"}\n', stderr=b"warn"
         )
-        result = call("hello", engine="claude", timeout=10)
+        result = call("hello", timeout=10, route=[("claude", None)])
         assert result.stdout == '{"type":"assistant"}\n'
         assert result.stderr == "warn\nTIMEOUT: claude timed out after 10s\n"
 
@@ -815,7 +792,7 @@ class TestCallTimeout:
         mock_run.side_effect = subprocess.TimeoutExpired(
             ["claude"], 10, output="partial", stderr="err\n"
         )
-        result = call("hello", engine="claude", timeout=10)
+        result = call("hello", timeout=10, route=[("claude", None)])
         assert result.stdout == "partial"
         assert result.stderr == "err\nTIMEOUT: claude timed out after 10s\n"
 
@@ -827,12 +804,9 @@ class TestCallTimeout:
         mock_run.side_effect = subprocess.TimeoutExpired(
             ["claude"], 10, output=b'{"unterminated'
         )
-        result = call(
-            "hello",
-            engine="claude",
+        result = call("hello",
             timeout=10,
-            permission=Permission(output_format="json"),
-        )
+            permission=Permission(output_format="json"), route=[("claude", None)])
         assert result.returncode == 124
 
     def test_llm_result_failure_class_defaults_to_none(self):
@@ -847,7 +821,7 @@ class TestCallTimeout:
         from ghdag.core.models.metrics import FailureClass
 
         mock_run.side_effect = subprocess.TimeoutExpired(["cursor-agent"], 5)
-        result = call("hello", engine="cursor", timeout=5)
+        result = call("hello", timeout=5, route=[("cursor", None)])
         assert result.returncode == 124
         assert result.failure_class == FailureClass.TIMEOUT
         assert result.attempts == 1

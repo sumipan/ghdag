@@ -50,19 +50,6 @@ def test_public_api_exports_only_call_and_llm_result() -> None:
         from ghdag.llm import ManagedResult  # noqa: F401
 
 
-def test_call_signature_has_unified_options() -> None:
-    """Issue sumipan/nexus#6529 — single call() exposes fallback / quota kwargs."""
-    params = inspect.signature(call).parameters
-    for name in (
-        "permission",
-        "resume_session_id",
-        "fallback_candidates",
-        "permission_overrides",
-        "fallback_on_timeout",
-        "quota_gate",
-    ):
-        assert name in params, f"call() missing {name}"
-    assert "dangerously_skip_permissions" not in params
 
 
 def test_call_success_returns_body_raw_output_and_metadata() -> None:
@@ -87,7 +74,7 @@ def test_call_success_returns_body_raw_output_and_metadata() -> None:
             latency_ms=5.0,
             session_id="s1",
         )
-        result = call("hello", engine="claude", model="claude-sonnet-4-6")
+        result = call("hello", route=[("claude", "claude-sonnet-4-6")])
 
     assert result.ok is True
     assert result.body == "extracted"
@@ -118,7 +105,7 @@ def test_call_adapter_error_sets_error_and_empty_body() -> None:
             returncode=0,
             latency_ms=1.0,
         )
-        result = call("test", engine="codex")
+        result = call("test", route=[("codex", None)])
 
     assert result.ok is False
     assert result.error is not None
@@ -145,7 +132,7 @@ def test_call_json_permission_extracts_json_or_raises_parse_error() -> None:
             returncode=0,
             latency_ms=1.0,
         )
-        result = call("p", engine="claude", permission=JSON_ONLY)
+        result = call("p", permission=JSON_ONLY, route=[("claude", None)])
 
     assert result.body == '{"k": "v"}'
 
@@ -167,4 +154,4 @@ def test_call_json_permission_extracts_json_or_raises_parse_error() -> None:
             latency_ms=1.0,
         )
         with pytest.raises(LLMParseError):
-            call("p", engine="claude", permission=JSON_ONLY)
+            call("p", permission=JSON_ONLY, route=[("claude", None)])

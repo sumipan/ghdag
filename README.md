@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.134.4-blue)
+![version](https://img.shields.io/badge/version-v0.134.5-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.134.4** (`pyproject.toml` `version = "0.134.4"`) |
+| Current release | **v0.134.5** (`pyproject.toml` `version = "0.134.5"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.134.4"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.134.5"
 ```
 
 Install from a checkout with the development tools:
@@ -327,7 +327,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
 | `issue_status` | `(issue_number, *, handler=None, workflow=None, exec_jsonl_path, state_dir, done_dir, running_uuids=None, audit_path=None, running_dir=None) -> IssueStatus` |
 | `running_tasks` | `(running_dir) -> list[RunningTask]` |
-| `ghdag.llm.call` | `(prompt, *, engine="claude", model=None, timeout=None, stdin_text=None, cwd=None, permission=TEXT_ONLY, resume_session_id=None, isolation=None, fallback_candidates=(), permission_overrides=None, fallback_on_timeout=False, quota_gate=None, additional_tags=None) -> LLMResult` |
+| `ghdag.llm.call` | `(prompt, *, route, timeout=None, stdin_text=None, cwd=None, permission=TEXT_ONLY, resume_session_id=None, isolation=None, permission_overrides=None, quota_gate=None, additional_tags=None) -> LLMResult` — `route` is an ordered list of `(engine, model)` pairs; `model=None` selects the engine default |
 | `ghdag.llm.build_llm_cmd` | `(engine, model, prompt, *, permission=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=False) -> list[str]` — when `isolation=True`, claude adds `--disable-slash-commands`; codex adds `-c skills.include_instructions=false`; cursor is unchanged |
 | `ghdag.core.command.render_exec_command` | `(spec, *, order_path, model, prompt=None, permission=None, resume_session_id=None, isolation=False) -> str` |
 | `ghdag.core.command.inject_resume` | `(spec, command, session_id) -> str` — insert resume into a command string produced by `render_exec_command` (no resume) |
@@ -379,7 +379,7 @@ Import other supported types from their definition packages (for example `ghdag.
 
 `call()` never raises `subprocess.TimeoutExpired`. When the engine outlives `timeout`, the process is killed and `call()` returns the stdout / stderr captured so far, with a final `TIMEOUT: <cli> timed out after <n>s` line on stderr.
 
-With `fallback_candidates` and `quota_gate`, `call()` classifies failures through the engine output adapter (after honouring `LLMResult.failure_class`), reports quota exhaustion, and retries once on `QUOTA_EXHAUSTED` or `AUTH`. Timeouts get the fallback only with `fallback_on_timeout=True`, and a timeout never marks the engine paused.
+With a `quota_gate`, `call()` walks `route` from front to back: engines marked paused in the gate snapshot are skipped without launching; each launched candidate is classified through the output adapter (after honouring `LLMResult.failure_class`). On `QUOTA_EXHAUSTED` or `AUTH`, the gate may record a pause and the next route entry is tried; on `ENGINE_ENVIRONMENT_ERROR` the next entry is tried without pausing; on `TIMEOUT`, `ENGINE_ERROR`, or other classes the walk stops and that result is returned. `attempts` counts launched candidates; `engine_used` / `model_used` refer to the last launch. `resume_session_id` is passed only when the first route entry is launched (not to alternates).
 
 ### Package `__all__`
 
@@ -1171,7 +1171,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.134.4"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.134.5"
 ```
 
 and read `CHANGELOG.md` before upgrading.
