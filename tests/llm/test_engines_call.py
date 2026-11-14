@@ -33,12 +33,12 @@ class TestValidateCapabilitiesForEngine:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_gemini_with_disallowed_tools_raises(self, mock_run):
         with pytest.raises(NotImplementedError, match="disallowed_tools"):
-            call("hello", engine="gemini", permission=TEXT_ONLY)
+            call("hello", permission=TEXT_ONLY, route=[("gemini", None)])
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_gemini_with_permission_mode_raises(self, mock_run):
         with pytest.raises(NotImplementedError, match="permission_mode"):
-            call("hello", engine="gemini", permission=DANGEROUS_FULL_ACCESS)
+            call("hello", permission=DANGEROUS_FULL_ACCESS, route=[("gemini", None)])
 
     @pytest.mark.parametrize(
         ("engine", "flag"),
@@ -49,13 +49,13 @@ class TestValidateCapabilitiesForEngine:
         self, mock_run, engine, flag
     ):
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("hello", engine=engine, permission=DANGEROUS_FULL_ACCESS)
+        call("hello", permission=DANGEROUS_FULL_ACCESS, route=[(engine, None)])
         assert flag in _last_subprocess_cmd(mock_run)
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_cursor_with_web_research_ok(self, mock_run):
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        result = call("hello", engine="cursor", permission=WEB_RESEARCH)
+        result = call("hello", permission=WEB_RESEARCH, route=[("cursor", None)])
         assert result.ok
         cmd = _last_subprocess_cmd(mock_run)
         assert "--search" not in cmd
@@ -64,29 +64,26 @@ class TestValidateCapabilitiesForEngine:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_cursor_with_allowed_tools_raises(self, mock_run):
         with pytest.raises(NotImplementedError):
-            call(
-                "hello",
-                engine="cursor",
-                permission=Permission(allowed_tools=("Read",)),
-            )
+            call("hello",
+                permission=Permission(allowed_tools=("Read")), route=[("cursor", None)])
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_cursor_with_text_only_ok(self, mock_run):
         """cursor engine accepts TEXT_ONLY (with disallowed_tools)"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        result = call("hello", engine="cursor", permission=TEXT_ONLY)
+        result = call("hello", permission=TEXT_ONLY, route=[("cursor", None)])
         assert result.ok
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_claude_with_text_only_ok(self, mock_run):
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        result = call("hello", engine="claude", permission=TEXT_ONLY)
+        result = call("hello", permission=TEXT_ONLY, route=[("claude", None)])
         assert result.ok
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_gemini_with_stream_raises(self, mock_run):
         with pytest.raises(NotImplementedError, match="stream"):
-            call("hello", engine="gemini", permission=Permission(stream=True))
+            call("hello", permission=Permission(stream=True), route=[("gemini", None)])
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_cursor_with_stream_builds_flags(self, mock_run):
@@ -99,7 +96,7 @@ class TestValidateCapabilitiesForEngine:
             stderr="",
             returncode=0,
         )
-        result = call("hello", engine="cursor", permission=Permission(stream=True))
+        result = call("hello", permission=Permission(stream=True), route=[("cursor", None)])
         assert result.ok
         assert result.stdout == "pong"
         cmd = _last_subprocess_cmd(mock_run)
@@ -108,7 +105,7 @@ class TestValidateCapabilitiesForEngine:
 
 
 # ---------------------------------------------------------------------------
-# call() — mock subprocess
+# call(route=[("claude", None)]) — mock subprocess
 # ---------------------------------------------------------------------------
 
 
@@ -119,7 +116,7 @@ class TestCall:
         mock_run.return_value = MagicMock(
             stdout="response", stderr="", returncode=0,
         )
-        result = call("hello", engine="claude")
+        result = call("hello", route=[("claude", None)])
         assert result.ok
         assert result.stdout == "response"
         cmd = _last_subprocess_cmd(mock_run)
@@ -132,7 +129,7 @@ class TestCall:
         mock_run.return_value = MagicMock(
             stdout="ok", stderr="", returncode=0,
         )
-        result = call("hello", engine="claude", model="claude-opus-4-6")
+        result = call("hello", route=[("claude", "claude-opus-4-6")])
         assert result.ok
         cmd = _last_subprocess_cmd(mock_run)
         assert "claude-opus-4-6" in cmd
@@ -140,7 +137,7 @@ class TestCall:
     def test_call_invalid_model(self):
         """Disallowed model → EngineModelError (before subprocess call)"""
         with pytest.raises(EngineModelError):
-            call("hello", engine="claude", model="bad-model")
+            call("hello", route=[("claude", "bad-model")])
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_with_stdin(self, mock_run: MagicMock):
@@ -148,7 +145,7 @@ class TestCall:
         mock_run.return_value = MagicMock(
             stdout="ok", stderr="", returncode=0,
         )
-        call("hello", engine="claude", stdin_text="input data")
+        call("hello", stdin_text="input data", route=[("claude", None)])
         kwargs = _last_subprocess_kwargs(mock_run)
         assert kwargs["input"] == "hello\n\ninput data"
 
@@ -158,7 +155,7 @@ class TestCall:
         mock_run.return_value = MagicMock(
             stdout="ok", stderr="", returncode=0,
         )
-        call("hello", engine="claude", timeout=30)
+        call("hello", timeout=30, route=[("claude", None)])
         kwargs = _last_subprocess_kwargs(mock_run)
         assert kwargs["timeout"] == 30
 
@@ -166,7 +163,7 @@ class TestCall:
     def test_call_action_none_default_no_dangerously(self, mock_run: MagicMock):
         """Default capabilities do not attach --dangerously-skip-permissions"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("test prompt", engine="claude")
+        call("test prompt", route=[("claude", None)])
         cmd = _last_subprocess_cmd(mock_run)
         assert "--dangerously-skip-permissions" not in cmd
 
@@ -174,7 +171,7 @@ class TestCall:
     def test_call_dangerous_full_access_bypasspermissions(self, mock_run: MagicMock):
         """DANGEROUS_FULL_ACCESS attaches --permission-mode bypassPermissions"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("test prompt", engine="claude", permission=DANGEROUS_FULL_ACCESS)
+        call("test prompt", permission=DANGEROUS_FULL_ACCESS, route=[("claude", None)])
         cmd = _last_subprocess_cmd(mock_run)
         assert "--permission-mode" in cmd
         perm_idx = cmd.index("--permission-mode")
@@ -184,9 +181,9 @@ class TestCall:
 class TestCallCapabilities:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_default_uses_text_only(self, mock_run):
-        """call() defaults to TEXT_ONLY"""
+        """call(route=[("claude", None)]) defaults to TEXT_ONLY"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("hello")
+        call("hello", route=[("claude", None)])
         cmd = _last_subprocess_cmd(mock_run)
         assert "--permission-mode" in cmd
         assert "--disallowed-tools" in cmd
@@ -194,7 +191,7 @@ class TestCallCapabilities:
     def test_call_action_raises_type_error(self):
         """Legacy action arg → TypeError"""
         with pytest.raises(TypeError):
-            call("hello", action="skill")  # type: ignore
+            call("hello", action="skill", route=[("claude", None)])  # type: ignore
 
     def test_build_llm_cmd_cursor_dangerous_full_access_force(self):
         """DANGEROUS_FULL_ACCESS on cursor argv adds --force (build_llm_cmd path)."""
@@ -205,7 +202,7 @@ class TestCallCapabilities:
     def test_call_with_json_only(self, mock_run):
         """JSON_ONLY capabilities are passed correctly"""
         mock_run.return_value = MagicMock(stdout='{"k":"v"}', stderr="", returncode=0)
-        result = call("hello", permission=JSON_ONLY)
+        result = call("hello", permission=JSON_ONLY, route=[("claude", None)])
         assert result.ok
         cmd = _last_subprocess_cmd(mock_run)
         assert "--output-format" in cmd
@@ -215,7 +212,7 @@ class TestCallCapabilities:
         """Custom capabilities"""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
         caps = Permission(permission_mode="plan")
-        call("hello", permission=caps)
+        call("hello", permission=caps, route=[("claude", None)])
         cmd = _last_subprocess_cmd(mock_run)
         assert "--permission-mode" in cmd
         perm_idx = cmd.index("--permission-mode")
@@ -244,7 +241,7 @@ class TestEngineIsolation:
         """Issue sumipan/nexus#6085: GHDAG_ENGINE_ISOLATION=0 must not enable isolation."""
         monkeypatch.setenv("GHDAG_ENGINE_ISOLATION", "0")
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("hello", engine="claude", permission=TEXT_ONLY, isolation=None)
+        call("hello", permission=TEXT_ONLY, isolation=None, route=[("claude", None)])
         cmd = _last_subprocess_cmd(mock_run)
         assert "--disable-slash-commands" not in cmd
 
@@ -255,7 +252,7 @@ class TestEngineIsolation:
         """Issue sumipan/nexus#6085: GHDAG_ENGINE_ISOLATION=1 enables isolation."""
         monkeypatch.setenv("GHDAG_ENGINE_ISOLATION", "1")
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("hello", engine="claude", permission=TEXT_ONLY, isolation=None)
+        call("hello", permission=TEXT_ONLY, isolation=None, route=[("claude", None)])
         cmd = _last_subprocess_cmd(mock_run)
         assert "--disable-slash-commands" in cmd
 
@@ -269,7 +266,7 @@ class TestEngineIsolation:
         monkeypatch.setattr(engines_mod, "_CODEX_DAG_HOME", str(tmp_path) + "/")
         (tmp_path / "auth.json").write_text("{}", encoding="utf-8")
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("hello", engine="codex", permission=TEXT_ONLY, isolation=True)
+        call("hello", permission=TEXT_ONLY, isolation=True, route=[("codex", None)])
         assert mock_run.called
         kwargs = _last_subprocess_kwargs(mock_run)
         assert "env" in kwargs
@@ -284,7 +281,7 @@ class TestEngineIsolation:
 
         monkeypatch.setattr(engines_mod, "_CODEX_DAG_HOME", str(tmp_path) + "/")
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("hello", engine="codex", permission=TEXT_ONLY, isolation=True)
+        call("hello", permission=TEXT_ONLY, isolation=True, route=[("codex", None)])
         kwargs = _last_subprocess_kwargs(mock_run)
         assert "env" not in kwargs or "CODEX_HOME" not in kwargs.get("env", {})
         err = capsys.readouterr().err
@@ -297,7 +294,7 @@ class TestEngineIsolation:
         """With isolation=None and GHDAG_ENGINE_ISOLATION unset, do not inject CODEX_HOME."""
         monkeypatch.delenv("GHDAG_ENGINE_ISOLATION", raising=False)
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        call("hello", engine="codex", permission=TEXT_ONLY, isolation=None)
+        call("hello", permission=TEXT_ONLY, isolation=None, route=[("codex", None)])
         kwargs = _last_subprocess_kwargs(mock_run)
         assert "env" not in kwargs or "CODEX_HOME" not in kwargs.get("env", {})
 
@@ -307,7 +304,7 @@ class TestEngineIsolation:
     ) -> None:
         """isolation is not an Permission attr, so cursor call stays intact."""
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        result = call("hello", engine="cursor", permission=TEXT_ONLY)
+        result = call("hello", permission=TEXT_ONLY, route=[("cursor", None)])
         assert result.ok
 
 
@@ -336,11 +333,8 @@ class TestLLMResultRawStdout:
             stderr="",
             returncode=0,
         )
-        result = call(
-            "hello",
-            engine="claude",
-            permission=Permission(stream=True),
-        )
+        result = call("hello",
+            permission=Permission(stream=True), route=[("claude", None)])
         assert result.stdout == "final answer"
         assert result.raw_stdout == self._CLAUDE_STREAM_JSONL
 
@@ -353,11 +347,8 @@ class TestLLMResultRawStdout:
             stderr="",
             returncode=0,
         )
-        result = call(
-            "hello",
-            engine="cursor",
-            permission=Permission(stream=True),
-        )
+        result = call("hello",
+            permission=Permission(stream=True), route=[("cursor", None)])
         assert result.stdout == "llamas are great."
         assert result.raw_stdout == self._CURSOR_STREAM_JSONL
 
@@ -381,7 +372,7 @@ class TestLLMResultRawStdout:
         stdout: str,
     ):
         mock_run.return_value = MagicMock(stdout=stdout, stderr="", returncode=0)
-        result = call("hello", engine=engine, permission=permission)
+        result = call("hello", permission=permission, route=[(engine, None)])
         assert result.raw_stdout is None
         assert result.stdout == stdout
 
@@ -395,10 +386,7 @@ class TestLLMResultRawStdout:
             stderr="",
             returncode=1,
         )
-        result = call(
-            "hello",
-            engine="claude",
-            permission=Permission(stream=True),
-        )
+        result = call("hello",
+            permission=Permission(stream=True), route=[("claude", None)])
         assert result.raw_stdout is None
         assert result.stdout == error_stdout

@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **Breaking:** `ghdag.llm.call` no longer accepts `engine`, `model`, `fallback_candidates`, or `fallback_on_timeout`. Pass an ordered `route: Sequence[tuple[str, str | None]]` instead (sumipan/nexus#6679).
+
+### Changed
+
+- **Breaking:** `call()` walks `route` from front to back, skipping paused engines when `quota_gate` is set, advancing on `QUOTA_EXHAUSTED`, `AUTH`, and `ENGINE_ENVIRONMENT_ERROR`, and stopping on other failure classes including `TIMEOUT` (sumipan/nexus#6679).
+
 ## 0.134.4 - 2026-11-14
 
 ### Changed

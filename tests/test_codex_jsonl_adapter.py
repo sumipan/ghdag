@@ -69,11 +69,8 @@ class TestCodexStreamCapability:
             stderr="",
             returncode=0,
         )
-        result = call(
-            "hello",
-            engine="codex",
-            permission=Permission(stream=True),
-        )
+        result = call("hello",
+            permission=Permission(stream=True), route=[("codex", None)])
         assert result.ok
         # codex keeps raw JSONL on LLMResult; adapters extract text
         assert "item.completed" in result.stdout

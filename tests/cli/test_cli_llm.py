@@ -283,3 +283,38 @@ class TestLlmStructuredOutput:
             main(["llm"])
         assert exc.value.code == 2
         assert capsys.readouterr().err.splitlines()[0].startswith("error[LLM_PROMPT_REQUIRED]:")
+
+
+def test_llm_engine_model_flags_run_single_candidate_route(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    """Issue sumipan/nexus#6679 — AC8 CLI runs one fake claude from route head."""
+    import os
+    import stat
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    stamp = tmp_path / "launched"
+    script = bin_dir / "claude"
+    script.write_text(
+        f"""#!/bin/sh
+touch "{stamp}"
+echo "cli-ok"
+exit 0
+""",
+        encoding="utf-8",
+    )
+    script.chmod(script.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    monkeypatch.delenv("GHDAG_AUDIT_PATH", raising=False)
+    monkeypatch.setattr("ghdag.config.env.ghdag_audit_path", lambda: None)
+
+    from ghdag.cli import main
+
+    with pytest.raises(SystemExit) as exc:
+        main(["llm", "p", "--engine", "claude", "--model", "claude-sonnet-4-6"])
+    assert exc.value.code == 0
+    assert stamp.exists()
+    assert capsys.readouterr().out.strip() == "cli-ok"

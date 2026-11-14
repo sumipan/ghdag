@@ -1,7 +1,7 @@
 """Rebuild assistant turns from cursor stream-json with blank-line separators (nexus #3260).
 
 Confirm each turn at tool_call boundaries, that the deduplicated full text
-matches across result / call() / DAG result, and that events remain raw JSONL.
+matches across result / call(route=[("claude", None)]) / DAG result, and that events remain raw JSONL.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def _assistant(
     return obj
 
 
-def _tool_call(subtype: str = "started") -> dict:
+def _tool_call(subtype: str = "started", route=[("claude", None)]) -> dict:
     return {"type": "tool_call", "subtype": subtype, "call_id": "t1"}
 
 
@@ -180,10 +180,10 @@ class TestReconstructAssistantTurns:
         events = [
             *_deltas("o", "o", "ps"),
             _assistant("oops"),
-            _tool_call("started"),
-            _tool_call("completed"),
+            _tool_call("started", route=[("claude", None)]),
+            _tool_call("completed", route=[("claude", None)]),
             *_deltas("x", "x", "y"),
-            _tool_call("started"),
+            _tool_call("started", route=[("claude", None)]),
             *_deltas("z", "z"),
             _assistant("zz", model_call_id="c3"),
             _result("oopsxxyzz"),
@@ -193,8 +193,8 @@ class TestReconstructAssistantTurns:
     def test_reconstruct_tool_calls_do_not_add_empty_turns(self):
         events = [
             *_partials("ABCD", 2),
-            _tool_call("started"),
-            _tool_call("completed"),
+            _tool_call("started", route=[("claude", None)]),
+            _tool_call("completed", route=[("claude", None)]),
             *_partials("WXYZ", 2),
             _assistant("WXYZ"),
             _result("ABCDWXYZ"),
@@ -277,7 +277,7 @@ class TestCallStreamNormalization:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_cursor_stream_body_becomes_joined_turns(self, mock_run):
         mock_run.return_value = MagicMock(stdout=_FINAL_MESSAGE, stderr="", returncode=0)
-        result = call("p", engine="cursor", permission=Permission(stream=True))
+        result = call("p", permission=Permission(stream=True), route=[("cursor", None)])
         assert result.body == _JOINED
         assert result.raw_stdout == _FINAL_MESSAGE
 
@@ -288,14 +288,14 @@ class TestCallStreamNormalization:
             _result("final-claude"),
         )
         mock_run.return_value = MagicMock(stdout=stream, stderr="", returncode=0)
-        result = call("p", engine="claude", permission=Permission(stream=True))
+        result = call("p", permission=Permission(stream=True), route=[("claude", None)])
         assert result.body == "final-claude"
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_codex_stream_preserves_raw_stdout(self, mock_run):
         raw = '{"type":"item.completed"}\n{"type":"result","result":"x"}\n'
         mock_run.return_value = MagicMock(stdout=raw, stderr="", returncode=0)
-        result = call("p", engine="codex", permission=Permission(stream=True))
+        result = call("p", permission=Permission(stream=True), route=[("codex", None)])
         assert result.stdout == raw
 
 

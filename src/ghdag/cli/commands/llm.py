@@ -64,8 +64,7 @@ def cmd_llm(args) -> None:
         perm = PERMISSIONS[args.permission]
 
     call_kwargs: dict = dict(
-        engine=args.engine,
-        model=args.model,
+        route=[(args.engine, args.model)],
         timeout=args.timeout,
         stdin_text=stdin_text,
     )

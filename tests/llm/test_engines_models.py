@@ -148,7 +148,7 @@ class TestCallOutputNormalization:
     def test_json_ok_valid_json(self, mock_run: MagicMock):
         """JSON_ONLY + valid JSON → body holds parsed JSON text."""
         mock_run.return_value = MagicMock(stdout='{"k": "v"}', stderr="", returncode=0)
-        result = call("hello", permission=JSON_ONLY)
+        result = call("hello", permission=JSON_ONLY, route=[("claude", None)])
         assert result.body == '{"k": "v"}'
         assert result.ok
 
@@ -157,21 +157,21 @@ class TestCallOutputNormalization:
         """JSON_ONLY + non-JSON → LLMParseError"""
         mock_run.return_value = MagicMock(stdout="not json", stderr="", returncode=0)
         with pytest.raises(LLMParseError) as exc_info:
-            call("hello", permission=JSON_ONLY)
+            call("hello", permission=JSON_ONLY, route=[("claude", None)])
         assert exc_info.value.raw == "not json"
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_json_fail_skips_validation(self, mock_run: MagicMock):
         """returncode != 0 → skip JSON extraction"""
         mock_run.return_value = MagicMock(stdout="err", stderr="", returncode=1)
-        result = call("hello", permission=JSON_ONLY)
+        result = call("hello", permission=JSON_ONLY, route=[("claude", None)])
         assert not result.ok
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_text_ok_no_validation(self, mock_run: MagicMock):
         """TEXT_ONLY → no JSON validation"""
         mock_run.return_value = MagicMock(stdout="not json", stderr="", returncode=0)
-        result = call("hello", permission=TEXT_ONLY)
+        result = call("hello", permission=TEXT_ONLY, route=[("claude", None)])
         assert result.body == "not json"
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -183,7 +183,7 @@ class TestCallOutputNormalization:
             '{"type":"result","subtype":"success","result":"final answer"}\n'
         )
         mock_run.return_value = MagicMock(stdout=jsonl, stderr="", returncode=0)
-        result = call("hello", engine="claude", permission=Permission(stream=True))
+        result = call("hello", permission=Permission(stream=True), route=[("claude", None)])
         assert result.body == "final answer"
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -193,11 +193,8 @@ class TestCallOutputNormalization:
             '{"type":"result","subtype":"success","result":"{\\"k\\": \\"v\\"}"}\n'
         )
         mock_run.return_value = MagicMock(stdout=jsonl, stderr="", returncode=0)
-        result = call(
-            "hello",
-            engine="claude",
-            permission=Permission(stream=True, output_format="json"),
-        )
+        result = call("hello",
+            permission=Permission(stream=True, output_format="json"), route=[("claude", None)])
         assert result.body == '{"k": "v"}'
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -205,7 +202,7 @@ class TestCallOutputNormalization:
         """stream JSONL without a result line → LLMParseError"""
         mock_run.return_value = MagicMock(stdout='{"type":"system"}\n', stderr="", returncode=0)
         with pytest.raises(LLMParseError, match="no result line"):
-            call("hello", engine="claude", permission=Permission(stream=True))
+            call("hello", permission=Permission(stream=True), route=[("claude", None)])
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_claude_envelope_json_in_result_body(self, mock_run: MagicMock):
@@ -214,7 +211,7 @@ class TestCallOutputNormalization:
             '{"type":"result","result":"Here: {\\"ok\\": true}","session_id":"s1"}'
         )
         mock_run.return_value = MagicMock(stdout=envelope, stderr="", returncode=0)
-        result = call("hello", engine="claude", permission=JSON_ONLY)
+        result = call("hello", permission=JSON_ONLY, route=[("claude", None)])
         assert json.loads(result.body) == {"ok": True}
         assert result.raw_stdout == envelope
 
@@ -224,7 +221,7 @@ class TestCallOutputNormalization:
         envelope = '{"type":"result","result":"I cannot do that.","session_id":"s1"}'
         mock_run.return_value = MagicMock(stdout=envelope, stderr="", returncode=0)
         with pytest.raises(LLMParseError) as exc_info:
-            call("hello", engine="claude", permission=JSON_ONLY)
+            call("hello", permission=JSON_ONLY, route=[("claude", None)])
         assert exc_info.value.raw == "I cannot do that."
 
     @patch("ghdag.llm.engines.subprocess.run")
@@ -232,7 +229,7 @@ class TestCallOutputNormalization:
         """Fenced JSON in stdout → extracted body and raw_stdout preserved."""
         raw = '```json\n{"x": 1}\n```'
         mock_run.return_value = MagicMock(stdout=raw, stderr="", returncode=0)
-        result = call("hello", engine="claude", permission=JSON_ONLY)
+        result = call("hello", permission=JSON_ONLY, route=[("claude", None)])
         assert json.loads(result.body) == {"x": 1}
         assert result.raw_stdout == raw
 
@@ -242,7 +239,7 @@ class TestCallOutputNormalization:
         mock_run.return_value = MagicMock(
             stdout='{"type":"result","result":"x"}', stderr="", returncode=1
         )
-        result = call("hello", engine="claude", permission=JSON_ONLY)
+        result = call("hello", permission=JSON_ONLY, route=[("claude", None)])
         assert result.returncode == 1
 
 

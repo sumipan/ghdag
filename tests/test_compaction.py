@@ -79,7 +79,7 @@ def _llm_result(body: str, *, session_id: str | None, ok: bool = True) -> LLMRes
 
 
 def _claude_json_llm_result(payload: dict) -> LLMResult:
-    """Build an LLMResult as call() would from claude --output-format json stdout."""
+    """Build an LLMResult as call(route=[("claude", None)]) would from claude --output-format json stdout."""
     stdout = json.dumps(payload)
     adapter = ClaudeJsonAdapter()
     body = adapter.extract_result_text(stdout.encode(), b"").decode()

@@ -42,7 +42,15 @@ from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.json_extract import extract_json_text
 from ghdag.quota import QuotaGate
 
-_FALLBACK_CLASSES = frozenset(
+_NEXT_CANDIDATE_CLASSES = frozenset(
+    {
+        FailureClass.QUOTA_EXHAUSTED,
+        FailureClass.AUTH,
+        FailureClass.ENGINE_ENVIRONMENT_ERROR,
+    }
+)
+
+_QUOTA_REPORT_CLASSES = frozenset(
     {
         FailureClass.QUOTA_EXHAUSTED,
         FailureClass.AUTH,
@@ -434,27 +442,6 @@ def _resolve_permission(
     return default
 
 
-def _select_fallback(
-    candidates: Sequence[tuple[str, str | None]],
-    quota_gate: QuotaGate | None,
-) -> tuple[str, str | None] | None:
-    if not candidates:
-        return None
-    paused: set[str] = set()
-    if quota_gate is not None:
-        snapshot = quota_gate.snapshot()
-        paused = {
-            name
-            for name, state in snapshot.engines.items()
-            if state.status == "paused"
-        }
-    for candidate_engine, candidate_model in candidates:
-        if candidate_engine in paused:
-            continue
-        return candidate_engine, candidate_model
-    return None
-
-
 def extract_stream_result(stdout: str) -> str:
     """Extract the final result text from stream-json JSONL (shared with claude_json)."""
     from ghdag.llm.adapters.claude_json import extract_stream_result as _impl
@@ -762,114 +749,139 @@ def _run_completed_attempt(
     )
 
 
+def _engine_paused(quota_gate: QuotaGate | None, engine: str) -> bool:
+    if quota_gate is None:
+        return False
+    snapshot = quota_gate.snapshot()
+    state = snapshot.engines.get(engine)
+    return state is not None and state.status == "paused"
+
+
+def _report_quota_failure(
+    *,
+    quota_gate: QuotaGate,
+    engine: str,
+    failure_class: FailureClass,
+) -> bool:
+    """Report quota pause for ``failure_class``; return whether pause was recorded."""
+    now = datetime.now(timezone.utc)
+    if failure_class is FailureClass.AUTH:
+        strikes = quota_gate.increment_auth_strike(engine=engine, observed_at=now)
+        if strikes >= 2:
+            quota_gate.report(
+                engine=engine,
+                status="paused",
+                observed_at=now,
+                reason="call classified as AUTH",
+                kind="failure",
+                set_by="call",
+            )
+            return True
+        return False
+    quota_gate.report(
+        engine=engine,
+        status="paused",
+        observed_at=now,
+        reason=f"call classified as {failure_class.value}",
+        kind="failure",
+        set_by="call",
+    )
+    return True
+
+
 def call(
     prompt: str,
     *,
-    engine: str = "claude",
-    model: str | None = None,
+    route: Sequence[tuple[str, str | None]],
     timeout: int | None = None,
     stdin_text: str | None = None,
     cwd: Path | str | None = None,
     permission: Permission = TEXT_ONLY,
     resume_session_id: str | None = None,
     isolation: bool | None = None,
-    fallback_candidates: Sequence[tuple[str, str | None]] = (),
     permission_overrides: Mapping[str, Permission] | None = None,
-    fallback_on_timeout: bool = False,
     quota_gate: QuotaGate | None = None,
     additional_tags: Mapping[str, str] | None = None,
 ) -> LLMResult:
     """Call the LLM one-shot and return a completed ``LLMResult``.
 
-    Without fallback / quota arguments, runs the primary engine once. With
-    ``fallback_candidates`` and matching failure classes, retries at most once on
-    a non-paused alternate engine and optionally reports quota state.
+    Walks ``route`` from front to back, skipping paused engines when a
+    ``quota_gate`` is provided, and stopping on the first non-retriable failure.
     """
+    if not route:
+        raise ValueError("route must not be empty")
+
     tags = dict(additional_tags or {})
-    primary_engine = engine
-    primary_permission = _resolve_permission(engine, permission, permission_overrides)
-
-    result = _run_completed_attempt(
-        prompt,
-        engine=engine,
-        model=model,
-        timeout=timeout,
-        stdin_text=stdin_text,
-        cwd=cwd,
-        permission=primary_permission,
-        resume_session_id=resume_session_id,
-        isolation=isolation,
-    )
-    attempts = 1
+    attempts = 0
     quota_reported = False
+    last_result: LLMResult | None = None
+    skipped_paused: list[str] = []
+    primary = route[0]
 
-    if result.ok:
-        if quota_gate is not None:
-            quota_gate.reset_auth_strike(engine=primary_engine)
-        result.attempts = attempts
-        result.additional_tags = tags
-        return result
+    for engine, model in route:
+        if _engine_paused(quota_gate, engine):
+            skipped_paused.append(engine)
+            continue
 
-    fallback_classes: frozenset[FailureClass] = _FALLBACK_CLASSES
-    if fallback_on_timeout:
-        fallback_classes = fallback_classes | {FailureClass.TIMEOUT}
-
-    failure_class = result.failure_class
-    if (
-        failure_class is not None
-        and failure_class in fallback_classes
-        and quota_gate is not None
-        and failure_class in _FALLBACK_CLASSES
-    ):
-        now = datetime.now(timezone.utc)
-        if failure_class is FailureClass.AUTH:
-            strikes = quota_gate.increment_auth_strike(
-                engine=primary_engine,
-                observed_at=now,
-            )
-            if strikes >= 2:
-                quota_gate.report(
-                    engine=primary_engine,
-                    status="paused",
-                    observed_at=now,
-                    reason="call classified as AUTH",
-                    kind="failure",
-                    set_by="call",
-                )
-                quota_reported = True
-        else:
-            quota_gate.report(
-                engine=primary_engine,
-                status="paused",
-                observed_at=now,
-                reason=f"call classified as {failure_class.value}",
-                kind="failure",
-                set_by="call",
-            )
-            quota_reported = True
-
-    alt = (
-        _select_fallback(fallback_candidates, quota_gate)
-        if failure_class in fallback_classes
-        else None
-    )
-    if alt is not None:
-        alt_engine, alt_model = alt
-        alt_permission = _resolve_permission(alt_engine, permission, permission_overrides)
+        candidate_permission = _resolve_permission(engine, permission, permission_overrides)
+        session = resume_session_id if (engine, model) == primary else None
         result = _run_completed_attempt(
             prompt,
-            engine=alt_engine,
-            model=alt_model,
+            engine=engine,
+            model=model,
             timeout=timeout,
             stdin_text=stdin_text,
             cwd=cwd,
-            permission=alt_permission,
-            resume_session_id=None,
+            permission=candidate_permission,
+            resume_session_id=session,
             isolation=isolation,
         )
-        attempts = 2
+        attempts += 1
+        last_result = result
 
-    result.attempts = attempts
-    result.quota_reported = quota_reported
-    result.additional_tags = tags
-    return result
+        if result.ok:
+            if quota_gate is not None:
+                quota_gate.reset_auth_strike(engine=engine)
+            result.attempts = attempts
+            result.quota_reported = quota_reported
+            result.additional_tags = tags
+            return result
+
+        failure_class = result.failure_class
+        if (
+            failure_class is not None
+            and failure_class in _QUOTA_REPORT_CLASSES
+            and quota_gate is not None
+        ):
+            if _report_quota_failure(
+                quota_gate=quota_gate,
+                engine=engine,
+                failure_class=failure_class,
+            ):
+                quota_reported = True
+
+        if failure_class not in _NEXT_CANDIDATE_CLASSES:
+            result.attempts = attempts
+            result.quota_reported = quota_reported
+            result.additional_tags = tags
+            return result
+
+    if last_result is None:
+        paused_names = ", ".join(skipped_paused)
+        return LLMResult(
+            body="",
+            stdout="",
+            stderr=f"all route candidates paused: {paused_names}\n",
+            returncode=1,
+            failure_class=FailureClass.QUOTA_EXHAUSTED,
+            attempts=0,
+            engine_used="",
+            model_used="",
+            quota_reported=quota_reported,
+            additional_tags=tags,
+        )
+
+    last_result.attempts = attempts
+    last_result.quota_reported = quota_reported
+    last_result.additional_tags = tags
+    return last_result
