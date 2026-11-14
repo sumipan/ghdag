@@ -26,7 +26,6 @@ from ghdag.core.models.workflow import (
     StepConfig,
     TriggerConfig,
     WorkflowConfig,
-    validate_workflow_roles,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,7 +74,6 @@ def load_workflow_file(path: str | Path) -> WorkflowConfig:
     filename = path.name
     _validate(data, filename)
     config = _parse(data, workflow_dir=workflow_dir)
-    validate_workflow_roles(config)
     _validate_handler_depends(config, filename)
     _validate_references(config, workflow_dir=workflow_dir)
     return config
@@ -367,7 +365,6 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
                     permission=s.get("permission"),
                     skill_name=s.get("skill_name"),
                     render=s.get("render", "frozen"),
-                    role=s.get("role"),
                     env_passthrough=list(s.get("env_passthrough") or []),
                 )
             )
@@ -404,6 +401,5 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
         label_namespace=data.get("label_namespace"),
         transitions=data.get("transitions"),
         reset_label=data.get("reset_label"),
-        roles=data.get("roles") or {},
         nonterminal_closed=nonterminal_closed,
     )

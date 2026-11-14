@@ -16,6 +16,4 @@ class QuotaAdmissionPort(Protocol):
         task_uuid: str,
         engine: str | None,
         phase: AdmissionPhase,
-        role: str | None = None,
-        role_engines: list[str] | None = None,
     ) -> object: ...

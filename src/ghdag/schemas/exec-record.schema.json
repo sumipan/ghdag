@@ -49,15 +49,6 @@
           "type": "string",
           "description": "UUID of the parent session to resume."
         },
-        "role": {
-          "type": "string",
-          "description": "Quota role name."
-        },
-        "role_engines": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Engines allowed by the selected quota role."
-        },
         "env_passthrough": {
           "type": "array",
           "items": { "type": "string" },

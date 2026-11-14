@@ -66,6 +66,17 @@ def _write_workflow(tmp_path: Path, text: str) -> Path:
             _workflow_yaml("nonterminal_closed:\n  action: reopen\n  terminal_labels: [done]\n  stale: true\n"),
             "nonterminal_closed.stale",
         ),
+        (
+            _workflow_yaml("roles:\n  impl: [claude]\n"),
+            "workflow.roles",
+        ),
+        (
+            _workflow_yaml().replace(
+                "        model: test-model",
+                "        model: test-model\n        role: impl",
+            ),
+            "handlers.impl.steps[0].role",
+        ),
     ],
 )
 def test_load_workflows_rejects_unknown_keys(
@@ -165,7 +176,6 @@ def test_parse_reads_exactly_the_declared_allowed_keys() -> None:
             "permission": None,
             "skill_name": None,
             "render": "frozen",
-            "role": None,
         },
         accessed=accessed["step"],
     )
@@ -195,7 +205,6 @@ def test_parse_reads_exactly_the_declared_allowed_keys() -> None:
             "label_namespace": "example",
             "transitions": {"ready": ["done"]},
             "reset_label": "reset",
-            "roles": {},
             "nonterminal_closed": _TrackingDict(
                 {"action": "reopen", "terminal_labels": ["done"], "trigger": None},
                 accessed=accessed["nonterminal_closed"],
@@ -214,29 +223,38 @@ def test_parse_reads_exactly_the_declared_allowed_keys() -> None:
     assert accessed["nonterminal_closed"] == NONTERMINAL_CLOSED_KEYS
 
 
+def test_top_level_roles_map_key_is_rejected(tmp_path: Path) -> None:
+    """Refs sumipan/nexus#6680."""
+    _write_workflow(tmp_path, _workflow_yaml("roles:\n  impl: [claude]\n"))
+    with pytest.raises(ValidationError, match=r"workflow\.roles"):
+        load_workflows(tmp_path)
+
+
+def test_step_role_key_is_rejected(tmp_path: Path) -> None:
+    """Refs sumipan/nexus#6680."""
+    text = _workflow_yaml().replace(
+        "        model: test-model",
+        "        model: test-model\n        role: impl",
+    )
+    _write_workflow(tmp_path, text)
+    with pytest.raises(ValidationError, match=r"handlers\.impl\.steps\[0\]\.role"):
+        load_workflows(tmp_path)
+
+
 def test_existing_workflow_fixtures_still_load(tmp_path: Path) -> None:
     fixture_dir = Path(__file__).parents[1] / "fixtures"
-    loaded = []
-    for fixture_name in (
-        "sample-workflow.yml",
-        "issuesmith_workflow_roles.yml",
-    ):
-        workflow_dir = tmp_path / fixture_name
-        workflow_dir.mkdir()
-        source = fixture_dir / fixture_name
-        path = workflow_dir / source.name
-        path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        template_dir = workflow_dir / data.get("template_dir", "templates")
-        template_dir.mkdir(parents=True)
-        for handler in data["handlers"].values():
-            for step in handler.get("steps", []):
-                (template_dir / f"{step['template']}.md").write_text(
-                    "# fixture\n", encoding="utf-8"
-                )
-        loaded.append(load_workflow_file(path))
-
-    sample, roles = loaded
-
-    assert sample.name
-    assert roles.name == "issuesmith"
+    source = fixture_dir / "sample-workflow.yml"
+    workflow_dir = tmp_path / "sample-workflow.yml"
+    workflow_dir.mkdir()
+    path = workflow_dir / source.name
+    path.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    template_dir = workflow_dir / data.get("template_dir", "templates")
+    template_dir.mkdir(parents=True)
+    for handler in data["handlers"].values():
+        for step in handler.get("steps", []):
+            (template_dir / f"{step['template']}.md").write_text(
+                "# fixture\n", encoding="utf-8"
+            )
+    config = load_workflow_file(path)
+    assert config.name

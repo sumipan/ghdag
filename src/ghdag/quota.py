@@ -55,7 +55,6 @@ class AdmissionDecision:
     status: str
     reason: str | None
     resume_at: datetime | None
-    admitted_engine: str | None = None
 
 
 @dataclass(frozen=True)
@@ -377,18 +376,16 @@ class QuotaGate:
         task_uuid: str,
         engine: str | None,
         phase: AdmissionPhase,
-        role: str | None = None,
-        role_engines: list[str] | None = None,
         now: datetime | None = None,
         reason: str | None = None,
     ) -> AdmissionDecision:
         _require_non_empty(task_uuid, "task_uuid")
         if phase not in {"enqueue", "launch", "runtime"}:
             raise ValueError("phase must be enqueue/launch/runtime")
-        if engine is None and role is None:
+        if engine is None:
             return AdmissionDecision(True, "ALLOWED", None, None)
 
-        engine_name = _require_non_empty(engine, "engine") if engine is not None else ""
+        engine_name = _require_non_empty(engine, "engine")
         current = _aware_now(now)
 
         with self._lock(exclusive=True):
@@ -398,8 +395,6 @@ class QuotaGate:
                 engine=engine_name,
                 now=current,
                 fallback_reason=reason,
-                role=role,
-                role_engines=role_engines,
                 task_uuid=task_uuid,
             )
             if decision.allowed:
@@ -412,15 +407,13 @@ class QuotaGate:
         *,
         task_uuid: str,
         engine: str | None,
-        role: str | None = None,
-        role_engines: list[str] | None = None,
         now: datetime | None = None,
     ) -> AdmissionDecision:
         _require_non_empty(task_uuid, "task_uuid")
-        if engine is None and role is None:
+        if engine is None:
             return AdmissionDecision(True, "ALLOWED", None, None)
 
-        engine_name = _require_non_empty(engine, "engine") if engine is not None else ""
+        engine_name = _require_non_empty(engine, "engine")
         current = _aware_now(now)
         changed = False
 
@@ -431,25 +424,15 @@ class QuotaGate:
                 engine=engine_name,
                 now=current,
                 fallback_reason=None,
-                role=role,
-                role_engines=role_engines,
                 task_uuid=task_uuid,
                 check_engine_limits=True,
             )
             if decision.allowed:
                 previous_running = state["running_tasks"].get(task_uuid)
-                if decision.admitted_engine is not None:
-                    record_engine = decision.admitted_engine
-                elif engine is not None:
-                    record_engine = engine_name
-                else:
-                    record_engine = "unknown"
                 running_payload: dict[str, Any] = {
-                    "engine": record_engine,
+                    "engine": engine_name,
                     "started_at": _iso(current),
                 }
-                if role is not None:
-                    running_payload["role"] = role
                 limits_changed = False
                 if self._limits is not None and state.get("limits") != self._limits:
                     state["limits"] = dict(self._limits)
@@ -460,14 +443,9 @@ class QuotaGate:
                     self._write_state_unlocked(state)
 
         if changed and decision.allowed:
-            audit_engine = (
-                decision.admitted_engine
-                if decision.admitted_engine is not None
-                else (engine_name or (role_engines[0] if role_engines else "unknown"))
-            )
             self._audit_task_running_started(
                 task_uuid=task_uuid,
-                engine=audit_engine,
+                engine=engine_name,
                 observed_at=current,
             )
         return decision
@@ -684,22 +662,9 @@ class QuotaGate:
         engine: str,
         now: datetime,
         fallback_reason: str | None,
-        role: str | None = None,
-        role_engines: list[str] | None = None,
         task_uuid: str = "",
         check_engine_limits: bool = False,
     ) -> AdmissionDecision:
-        if role is not None and role_engines:
-            return self._evaluate_role_admission_unlocked(
-                state=state,
-                role=role,
-                role_engines=role_engines,
-                now=now,
-                fallback_reason=fallback_reason,
-                task_uuid=task_uuid,
-                check_engine_limits=check_engine_limits,
-            )
-
         engine_state = _to_engine_state(state["engines"].get(engine), now=now)
         if engine_state is not None and _is_paused(engine_state, now):
             deferred_reason = fallback_reason or engine_state.reason or "quota paused"
@@ -729,57 +694,6 @@ class QuotaGate:
                     resume_at=None,
                 )
         return AdmissionDecision(True, "ALLOWED", None, None)
-
-    def _evaluate_role_admission_unlocked(
-        self,
-        *,
-        state: dict,
-        role: str,
-        role_engines: list[str],
-        now: datetime,
-        fallback_reason: str | None,
-        task_uuid: str,
-        check_engine_limits: bool,
-    ) -> AdmissionDecision:
-        resume_candidates: list[datetime] = []
-        saw_unavailable = False
-        saw_limit_block = False
-        for role_engine in role_engines:
-            if not _engine_effective_available(state, role_engine, now):
-                saw_unavailable = True
-                engine_state = _to_engine_state(state["engines"].get(role_engine), now=now)
-                if engine_state is not None and engine_state.resume_at is not None:
-                    resume_candidates.append(engine_state.resume_at)
-                continue
-            if check_engine_limits and self._limits is not None and role_engine in self._limits:
-                if self._count_running_for_engine(state, role_engine, task_uuid) >= self._limits[
-                    role_engine
-                ]:
-                    saw_limit_block = True
-                    continue
-            return AdmissionDecision(
-                True,
-                "ALLOWED",
-                None,
-                None,
-                admitted_engine=role_engine,
-            )
-
-        if saw_limit_block and not saw_unavailable:
-            return AdmissionDecision(
-                allowed=False,
-                status="DEFERRED",
-                reason="engine_limit",
-                resume_at=None,
-            )
-        deferred_reason = fallback_reason or f"all engines paused for role {role}"
-        earliest_resume = min(resume_candidates) if resume_candidates else None
-        return AdmissionDecision(
-            allowed=False,
-            status="DEFERRED",
-            reason=deferred_reason,
-            resume_at=earliest_resume,
-        )
 
     def _count_running_for_engine(self, state: dict, engine: str, exclude_uuid: str) -> int:
         count = 0

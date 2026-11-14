@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.134.5-blue)
+![version](https://img.shields.io/badge/version-v0.135.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.134.5** (`pyproject.toml` `version = "0.134.5"`) |
+| Current release | **v0.135.0** (`pyproject.toml` `version = "0.135.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.134.5"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.135.0"
 ```
 
 Install from a checkout with the development tools:
@@ -321,7 +321,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `LLMPipelineAPI` | `(pipeline_state, order_builder, queue_dir="queue", *, order_builders=None)` |
 | `LLMPipelineAPI.set_order_builders` | `(mapping) -> None` — replace per-workflow builders; default `order_builder` unchanged |
 | `build_order_builders` | `(workflows) -> dict[str, OrderBuilder]` — build per-workflow `TemplateOrderBuilder` map (`ghdag.pipeline.llm_pipeline`) |
-| `LLMPipelineAPI.submit` | `(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None, workflow_roles=None) -> list[str]` |
+| `LLMPipelineAPI.submit` | `(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None) -> list[str]` |
 | `PipelineState` | `(state_dir, exec_jsonl_path)`; also `PipelineState.from_repo_root(repo_root)` |
 | `QuotaGate` | `(state_path, audit_path=None, pause_ttl_seconds=3600, limits=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `wait_idle` |
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
@@ -825,7 +825,6 @@ Load-time step validation error codes (each `ValidationError` uses the code in t
 | | `label_namespace` | `str \| None` | no | `None` | Label prefix |
 | | `transitions` | `dict[str, list[str]] \| None` | no | `None` | Allowed label transitions |
 | | `reset_label` | `str \| None` | no | `None` | Label reachable from any state |
-| | `roles` | `dict[str, list[str]]` | no | `{}` | Role name -> engine list for quota admission |
 | | `nonterminal_closed` | `NonterminalClosedConfig \| None` | no | `None` | What to do with CLOSED Issues that have no terminal label |
 | `NonterminalClosedConfig` | `action` | `str` | yes | none | `"reopen"` or `"trigger"` |
 | | `terminal_labels` | `list[str]` | yes | none | CLOSED Issues with any of these labels are ignored |
@@ -846,7 +845,6 @@ Load-time step validation error codes (each `ValidationError` uses the code in t
 | | `permission` | `str \| None` | no | `None` | Capability preset name; `None` uses `GHDAG_SAFE_DEFAULT_PERMISSION` or `text_only` |
 | | `skill_name` | `str \| None` | no | `None` | Skill the step invokes (checked by `workflow.typecheck`) |
 | | `render` | `str` | no | `"frozen"` | `"frozen"` (expand at enqueue) or `"live"` (expand at run time) |
-| | `role` | `str \| None` | no | `None` | `QuotaGate` role; must be declared in `roles` |
 | | `env_passthrough` | `list[str]` | no | `[]` | Host env var names exempt from `GHDAG_TASK_ENV_DENY`; non-empty values are copied to `annotations.env_passthrough` on enqueue so `TaskLauncher` can apply them |
 
 ### exec.jsonl task fields
@@ -859,7 +857,7 @@ Each line is parsed into `Task` (`ghdag.core.models.dag`). Field names match the
 | `command` | `str` | yes | none | Shell command |
 | `depends` | `list[str]` | no | `[]` | Upstream task UUIDs |
 | `retry` | `int` | no | `0` | Retry depth |
-| `annotations` | `dict[str, str]` | no | `{}` | Metadata (`timeout_sec`, `step_name`, `role`, `role_engines`, `stream_fallback`, ...) |
+| `annotations` | `dict[str, str]` | no | `{}` | Metadata (`timeout_sec`, `step_name`, `stream_fallback`, ...) |
 | `result_path` | `str \| None` | no | `None` | Result file written from the engine output |
 | `idempotency_key` | `str \| None` | no | `None` | De-duplication key across enqueues |
 | `engine` | `str \| None` | no | `None` | Engine name (output adapter, quota) |
@@ -1171,7 +1169,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.134.5"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.135.0"
 ```
 
 and read `CHANGELOG.md` before upgrading.

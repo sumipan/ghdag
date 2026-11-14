@@ -143,11 +143,11 @@ class TestPerWorkflowOrderBuilder:
 
 
 # ---------------------------------------------------------------------------
-# Issue #3029: submit(order_builder=..., workflow_roles=...) public kwargs
+# Issue #3029: submit(order_builder=...) public kwargs
 # ---------------------------------------------------------------------------
 
 
-class TestSubmitOrderBuilderAndWorkflowRoles:
+class TestSubmitOrderBuilder:
     def test_submit_order_builder_kwarg_skips_resolve(self):
         """With submit(order_builder=wrapped), _resolve_order_builder is not called."""
         api, pipeline_state, _ = _make_api()
@@ -180,98 +180,6 @@ class TestSubmitOrderBuilderAndWorkflowRoles:
         assert resolve_called is False
         assert written_orders[-1] == "wrapped order"
         assert len(exec_lines) == 1
-
-    def test_workflow_roles_set_role_annotations(self):
-        """With workflow_roles, step.role is set in annotations."""
-        import json as _json
-
-        api, pipeline_state, _ = _make_api()
-        steps = [
-            StepConfig(
-                id="cp2",
-                template="brushup",
-                model="claude-opus-4-6",
-                role="design",
-            )
-        ]
-        lines = api.submit(
-            steps,
-            {"workflow_name": "issuesmith", "issue_number": "1"},
-            audit_context=_TEST_AUDIT_CTX,
-            workflow_roles={"design": ["claude", "codex"]},
-        )
-        parsed = _json.loads(lines[0])
-        assert parsed["annotations"]["role"] == "design"
-        assert parsed["annotations"]["role_engines"] == ["claude", "codex"]
-
-    def test_role_annotations_drive_quota_gate_admit(self, tmp_path):
-        """AC-2: annotations from loaded roles affect QuotaGate.admit(role, role_engines)."""
-        from datetime import datetime, timedelta, timezone
-
-        from ghdag.io import exec_jsonl
-        from ghdag.quota import QuotaGate
-
-        api, pipeline_state, _ = _make_api(queue_dir=str(tmp_path / "queue"))
-        captured: list[dict] = []
-
-        def _capture_append(records, **kwargs):
-            captured.extend(records)
-
-        pipeline_state.append_exec_records.side_effect = _capture_append
-
-        steps = [
-            StepConfig(
-                id="cp2",
-                template="brushup",
-                model="claude-opus-4-6",
-                engine="claude",
-                role="design",
-            )
-        ]
-        api.submit(
-            steps,
-            {"workflow_name": "issuesmith"},
-            audit_context=_TEST_AUDIT_CTX,
-            workflow_roles={"design": ["claude", "codex"]},
-        )
-        assert captured[0]["annotations"]["role"] == "design"
-
-        jst = timezone(timedelta(hours=9))
-        gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
-        gate.report(
-            engine="claude",
-            status="paused",
-            observed_at=datetime(2026, 9, 5, 12, tzinfo=jst),
-        )
-        gate.report(
-            engine="codex",
-            status="paused",
-            observed_at=datetime(2026, 9, 5, 12, tzinfo=jst),
-        )
-        exec_path = tmp_path / "jobs" / "exec.jsonl"
-        exec_jsonl.append(
-            exec_path,
-            [
-                {
-                    "uuid": "task-1",
-                    "command": "claude -p hi",
-                    "engine": "claude",
-                    "depends": [],
-                    "annotations": captured[0]["annotations"],
-                }
-            ],
-            _TEST_AUDIT_CTX,
-            audit_path=tmp_path / "audit.jsonl",
-            quota_gate=gate,
-        )
-        decision = gate.begin_run(
-            task_uuid="task-1",
-            engine="claude",
-            role="design",
-            role_engines=["claude", "codex"],
-            now=datetime(2026, 9, 5, 12, 1, tzinfo=jst),
-        )
-        assert decision.allowed is False
 
 
 class TestSetOrderBuilders:

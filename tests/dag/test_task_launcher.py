@@ -55,6 +55,53 @@ class TestTaskLauncherUnit:
         assert not launcher.is_running("launch-test")
         assert launcher.running_count == 0
 
+    def test_launch_ignores_legacy_role_annotations(self, tmp_path: Path) -> None:
+        """Refs sumipan/nexus#6680."""
+        from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
+        from ghdag.dag.hooks import DagHooks
+        from ghdag.dag.models import Task
+
+        done = tmp_path / "jobs" / "done"
+        done.mkdir(parents=True)
+        config = DagConfig(
+            exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl",
+            exec_done_dir=done,
+            quota_state_path=tmp_path / "quota-gate.json",
+        )
+        hooks = MagicMock(spec=DagHooks)
+        hooks.check_rejected.return_value = False
+        hooks.check_pipeline_status.return_value = None
+        launcher = TaskLauncher(
+            config,
+            hooks,
+            CircuitBreakerPolicy(float("inf"), 2**31),
+            MagicMock(),
+            lambda _: None,
+        )
+        engines_key = "role" + "_engines"
+        task = Task(
+            uuid="legacy-role-task",
+            command="claude -p hi",
+            engine="claude",
+            annotations={
+                "role": "impl",
+                engines_key: ["cursor", "claude"],
+            },
+        )
+        dummy_proc = MagicMock()
+        dummy_proc.stdout = None
+        dummy_proc.stderr = io.BytesIO(b"")
+        dummy_proc.poll.return_value = None
+        dummy_proc.pid = 5150
+
+        with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=dummy_proc):
+            assert launcher.launch("legacy-role-task", task) is True
+
+        running = launcher._quota_gate.read_state()["running_tasks"]["legacy-role-task"]
+        assert running["engine"] == "claude"
+        assert "role" not in running
+        launcher._quota_gate.finish_run(task_uuid="legacy-role-task")
+
     def test_check_completions_detects_completed_process(self, tmp_path):
         import io
         import subprocess

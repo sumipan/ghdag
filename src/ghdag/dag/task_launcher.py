@@ -18,7 +18,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TypedDict
 
 from ghdag.config.env import (
     ghdag_redact_patterns_path,
@@ -169,25 +168,6 @@ def _should_use_line_reader(engine: str | None, command: str, annotations: dict)
 
 def _task_request_id(task: Task) -> str | None:
     return task.annotations.get("_request_id")
-
-
-class _QuotaRoleKwargs(TypedDict, total=False):
-    role: str
-    role_engines: list[str] | None
-
-
-def _quota_role_kwargs(task: Task) -> _QuotaRoleKwargs:
-    role = task.annotations.get("role")
-    role_engines = task.annotations.get("role_engines")
-    if role is not None and not isinstance(role, str):
-        role = str(role)
-    if isinstance(role_engines, list):
-        role_engines = [str(engine) for engine in role_engines]
-    else:
-        role_engines = None
-    if role is None:
-        return {}
-    return {"role": role, "role_engines": role_engines}
 
 
 def _resolve_task_timeout(task: Task, default: float | None) -> float | None:
@@ -485,21 +465,26 @@ class TaskLauncher:
 
         waiting = self._waiting_engines.get(uuid)
         if waiting:
-            decision = self._quota_gate.admit(
-                task_uuid=uuid,
-                engine=None,
-                phase="launch",
-                role="wait_quota",
-                role_engines=list(waiting),
-            )
-            if not decision.allowed:
-                defer_key = (",".join(waiting), decision.reason)
+            allowed = False
+            defer_reason: str | None = None
+            for eng in waiting:
+                decision = self._quota_gate.admit(
+                    task_uuid=uuid,
+                    engine=eng,
+                    phase="launch",
+                )
+                if decision.allowed:
+                    allowed = True
+                    break
+                defer_reason = decision.reason
+            if not allowed:
+                defer_key = (",".join(waiting), defer_reason)
                 if self._last_quota_deferred.get(uuid) != defer_key:
                     logger.info(
                         "Task [%s] launch deferred by quota gate: engine=%s reason=%s",
                         uuid,
                         ",".join(waiting),
-                        decision.reason,
+                        defer_reason,
                     )
                     self._last_quota_deferred[uuid] = defer_key
                 return False
@@ -508,7 +493,6 @@ class TaskLauncher:
         decision = self._quota_gate.begin_run(
             task_uuid=uuid,
             engine=launch_engine,
-            **_quota_role_kwargs(task),
         )
         if not decision.allowed:
             defer_key = (launch_engine, decision.reason)

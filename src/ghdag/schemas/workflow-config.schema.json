@@ -48,17 +48,6 @@
       "type": "string",
       "description": "Special label that may be reached from any state."
     },
-    "roles": {
-      "type": "object",
-      "description": "Quota role name to allowed engine names.",
-      "additionalProperties": {
-        "type": "array",
-        "items": {
-          "type": "string",
-          "enum": ["claude", "codex", "cursor", "gemini", "shell"]
-        }
-      }
-    },
     "nonterminal_closed": {
       "$ref": "#/$defs/nonterminal_closed",
       "description": "Policy for closed issues that have no terminal label."
@@ -163,10 +152,6 @@
           "type": "string",
           "enum": ["frozen", "live"],
           "description": "When the order template is expanded."
-        },
-        "role": {
-          "type": "string",
-          "description": "Quota role checked before launch."
         },
         "env_passthrough": {
           "type": "array",
