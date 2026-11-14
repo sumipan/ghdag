@@ -7,12 +7,13 @@ import json
 import os
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, cast
 
+from ghdag.core.models.metrics import QuotaWindow
 from ghdag.io.audit import append_audit_record
 
 QuotaStatus = Literal["available", "paused"]
@@ -68,11 +69,18 @@ class EngineQuotaState:
 
 
 @dataclass(frozen=True)
+class EngineUsage:
+    observed_at: datetime
+    windows: tuple[QuotaWindow, ...]
+
+
+@dataclass(frozen=True)
 class QuotaSnapshot:
     engines: dict[str, EngineQuotaState]
     draining_engines: dict[str, "DrainState"]
     running_tasks: dict[str, "RunningTaskState"]
     limits: dict[str, int]
+    usage: dict[str, EngineUsage]
 
 
 @dataclass(frozen=True)
@@ -584,6 +592,36 @@ class QuotaGate:
                 return 0
             return int(strikes.get(engine_name, 0))
 
+    def observe(
+        self,
+        *,
+        engine: str,
+        windows: Sequence[QuotaWindow],
+        observed_at: datetime,
+    ) -> None:
+        if not windows:
+            return
+        engine_name = _require_non_empty(engine, "engine")
+        observed = _require_aware(observed_at, "observed_at")
+        with self._lock(exclusive=True):
+            state = self._load_state_unlocked()
+            usage = state.setdefault("usage", {})
+            if not isinstance(usage, dict):
+                usage = {}
+                state["usage"] = usage
+            usage[engine_name] = {
+                "observed_at": _iso(observed),
+                "windows": [
+                    {
+                        "window_minutes": window.window_minutes,
+                        "used_percent": window.used_percent,
+                        "resets_at": _iso(window.resets_at),
+                    }
+                    for window in windows
+                ],
+            }
+            self._write_state_unlocked(state)
+
     def snapshot(self, *, now: datetime | None = None) -> QuotaSnapshot:
         current = _aware_now(now)
         with self._lock(exclusive=False):
@@ -625,11 +663,19 @@ class QuotaGate:
             for name, value in limits_raw.items():
                 if isinstance(value, int):
                     limits[str(name)] = value
+        usage: dict[str, EngineUsage] = {}
+        usage_raw = state.get("usage")
+        if isinstance(usage_raw, dict):
+            for name, payload in usage_raw.items():
+                parsed = _to_engine_usage(payload)
+                if parsed is not None:
+                    usage[str(name)] = parsed
         return QuotaSnapshot(
             engines=engines,
             draining_engines=draining_engines,
             running_tasks=running_tasks,
             limits=limits,
+            usage=usage,
         )
 
     def _load_state_unlocked(self) -> dict:
@@ -1141,6 +1187,50 @@ def _to_running_state(payload: dict | None) -> RunningTaskState:
     return RunningTaskState(engine=engine, started_at=started_at)
 
 
+def _to_quota_window(payload: object) -> QuotaWindow | None:
+    if not isinstance(payload, dict):
+        return None
+    minutes = payload.get("window_minutes")
+    used = payload.get("used_percent")
+    resets_raw = payload.get("resets_at")
+    if not isinstance(minutes, int) or minutes <= 0:
+        return None
+    if not isinstance(used, (int, float)):
+        return None
+    if not isinstance(resets_raw, str) or not resets_raw:
+        return None
+    try:
+        resets_at = _parse_dt(resets_raw, "resets_at")
+    except ValueError:
+        return None
+    return QuotaWindow(
+        window_minutes=minutes,
+        used_percent=float(used),
+        resets_at=resets_at,
+    )
+
+
+def _to_engine_usage(payload: object) -> EngineUsage | None:
+    if not isinstance(payload, dict):
+        return None
+    observed_raw = payload.get("observed_at")
+    if not isinstance(observed_raw, str) or not observed_raw:
+        return None
+    try:
+        observed_at = _parse_dt(observed_raw, "observed_at")
+    except ValueError:
+        return None
+    windows_raw = payload.get("windows")
+    if not isinstance(windows_raw, list):
+        return None
+    windows: list[QuotaWindow] = []
+    for item in windows_raw:
+        parsed = _to_quota_window(item)
+        if parsed is not None:
+            windows.append(parsed)
+    return EngineUsage(observed_at=observed_at, windows=tuple(windows))
+
+
 def _is_paused(state: EngineQuotaState, now: datetime) -> bool:
     if state.status != "paused":
         return False
@@ -1181,6 +1271,7 @@ __all__ = [
     "QuotaGate",
     "QuotaSnapshot",
     "EngineQuotaState",
+    "EngineUsage",
     "AdmissionDecision",
     "Missing",
 ]

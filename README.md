@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.135.0-blue)
+![version](https://img.shields.io/badge/version-v0.136.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.135.0** (`pyproject.toml` `version = "0.135.0"`) |
+| Current release | **v0.136.0** (`pyproject.toml` `version = "0.135.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.135.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.136.0"
 ```
 
 Install from a checkout with the development tools:
@@ -396,7 +396,7 @@ With a `quota_gate`, `call()` walks `route` from front to back: engines marked p
 | `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
 | `ghdag.metrics` | `FailureClass`, `MetricsRecorder`, `TaskMetrics`, `TokenUsage` |
 | `ghdag.pipeline` | `AuditContext`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_command_adapter`, `resolve_models`, `LLMPipelineAPI`, `wait_for_result`, `write_task_exit_audit` |
-| `ghdag.quota` | `QuotaGate`, `QuotaSnapshot`, `EngineQuotaState`, `AdmissionDecision`, `Missing` |
+| `ghdag.quota` | `QuotaGate`, `QuotaSnapshot`, `EngineQuotaState`, `EngineUsage`, `AdmissionDecision`, `Missing` |
 | `ghdag.status` | `StepStatus`, `issue_status` |
 | `ghdag.tool` | `ToolDef` |
 | `ghdag.vcs` | `CommitResult`, `ConflictError`, `LocalGitSink`, `NullSink`, `OwnershipError`, `get_sink`, `git_enabled` |
@@ -468,7 +468,7 @@ claude, cursor, gemini and codex receive the prompt on stdin (`InputMode.STDIN`)
 | `ForgePort` | `ghdag.core.ports.forge` | Provide an Issue / PR backend (`GitHubClient` and `LocalForge` implement it) |
 | `GitHubIssuePort` | `ghdag.core.ports.github` | Minimal Issue client used by `WorkflowDispatcher` (`get_issue`, `reopen_issue`, `list_issues`, `list_all_issues`, ...) |
 | `OrderBuilder` | `ghdag.core.ports.order` | Build order text: `build_order(step_id, context) -> str` |
-| `EngineOutputAdapter` | `ghdag.core.ports.output` | Parse engine output: `extract_result_text`, `extract_token_usage`, `extract_session_id`, `extract_error`, `classify_failure` |
+| `EngineOutputAdapter` | `ghdag.core.ports.output` | Parse engine output: `extract_result_text`, `extract_token_usage`, `extract_quota_windows`, `extract_session_id`, `extract_error`, `classify_failure` |
 | `EngineAdapter` | `ghdag.core.command` | Custom engine command builder registered with `register_command_adapter` |
 
 ## Architecture
@@ -938,9 +938,9 @@ sinks:
 
 ### Quota state (`quota-gate.json`)
 
-Managed by `QuotaGate` and `ghdag quota`. Top-level keys: `engines`, `draining_engines`, `running_tasks`, and optional `limits`.
+Managed by `QuotaGate` and `ghdag quota`. Top-level keys: `engines`, `draining_engines`, `running_tasks`, optional `limits`, and optional `usage` (latest per-engine utilization windows from Claude `rate_limit_event` output).
 
-Each `engines.<name>` entry stores derived fields (`status`, `observed_at`, `resume_at`, `reason`, `override_until`) plus a `sources` array. Each source object has `kind` (`budget`, `failure`, `manual`, or `drain`), `reason`, `until`, `set_by`, `observed_at`, and `available`. Pauses are merged from active sources; `QuotaGate.report(kind=...)` appends or updates the source for that `kind` (default `failure`). `ghdag quota report` has no `--kind` option and always records a `failure` source. An engine is unavailable while it is draining (`draining_engines`) or any active source keeps it `paused`. Budget-side pauses use `QuotaGate.report(kind="budget")`. `ghdag quota status` adds per-engine `queued` / `running` / `idle` counts.
+Each `engines.<name>` entry stores derived fields (`status`, `observed_at`, `resume_at`, `reason`, `override_until`) plus a `sources` array. Each source object has `kind` (`budget`, `failure`, `manual`, or `drain`), `reason`, `until`, `set_by`, `observed_at`, and `available`. Pauses are merged from active sources; `QuotaGate.report(kind=...)` appends or updates the source for that `kind` (default `failure`). `ghdag quota report` has no `--kind` option and always records a `failure` source. An engine is unavailable while it is draining (`draining_engines`) or any active source keeps it `paused`. Budget-side pauses use `QuotaGate.report(kind="budget")`. `ghdag quota status` adds per-engine `queued` / `running` / `idle` counts and optional `usage` (`observed_at` plus `windows` with `window_minutes`, `used_percent`, `resets_at`; `null` when never observed).
 
 ### Language pack (`GHDAG_LANGUAGE_PACK`)
 
@@ -1169,7 +1169,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.135.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.136.0"
 ```
 
 and read `CHANGELOG.md` before upgrading.

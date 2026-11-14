@@ -12,7 +12,7 @@ from ghdag.config.env import state_dir as resolve_state_dir
 from ghdag.io import exec_jsonl
 from ghdag.io.done import load_done_from_dir
 from ghdag.metrics.parsers import parse_engine_model
-from ghdag.quota import QuotaGate
+from ghdag.quota import EngineUsage, QuotaGate
 
 
 def cmd_quota_report(args) -> None:
@@ -95,6 +95,7 @@ def cmd_quota_status(args) -> None:
     engine_names.update(snapshot.limits.keys())
     engine_names.update(running_by_engine.keys())
     engine_names.update(queued_by_engine.keys())
+    engine_names.update(snapshot.usage.keys())
 
     payload: dict[str, Any] = {
         "engines": {},
@@ -103,6 +104,7 @@ def cmd_quota_status(args) -> None:
     for name in sorted(engine_names):
         quota_state = snapshot.engines.get(name)
         is_permanent = quota_state is not None and quota_state.status == "paused" and quota_state.resume_at is None
+        engine_usage = snapshot.usage.get(name)
         payload["engines"][name] = {
             # Keep the pre-drain status contract while adding the explicit
             # quota_status name and drain/run counters.
@@ -121,6 +123,7 @@ def cmd_quota_status(args) -> None:
             "running": running_by_engine.get(name, 0),
             "idle": running_by_engine.get(name, 0) == 0,
             "limit": snapshot.limits.get(name),
+            "usage": _usage_to_json(engine_usage),
         }
     print(json.dumps(payload, ensure_ascii=False))
 
@@ -141,6 +144,22 @@ def _parse_iso_datetime(raw: str, field_name: str) -> datetime:
     if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
         raise ValueError(f"{field_name} must be timezone-aware")
     return parsed
+
+
+def _usage_to_json(usage: EngineUsage | None) -> dict | None:
+    if usage is None:
+        return None
+    return {
+        "observed_at": usage.observed_at.isoformat(),
+        "windows": [
+            {
+                "window_minutes": window.window_minutes,
+                "used_percent": window.used_percent,
+                "resets_at": window.resets_at.isoformat(),
+            }
+            for window in usage.windows
+        ],
+    }
 
 
 def _report_to_dict(result) -> dict:

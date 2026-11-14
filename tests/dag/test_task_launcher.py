@@ -22,7 +22,7 @@ from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig, Task, _RunningProcess
 from ghdag.dag.task_launcher import TaskLauncher, _stderr_payload_bytes
 from ghdag.llm.compaction import CompactionResult
-from ghdag.quota import AdmissionDecision
+from ghdag.quota import AdmissionDecision, QuotaGate
 
 
 class TestTaskLauncherUnit:
@@ -559,6 +559,68 @@ def _run_engine_to_completion(
         thread.join(0.05)
     engine._shutdown = True
     thread.join()
+
+
+def test_task_completion_records_claude_quota_usage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Refs sumipan/nexus#6717 — task stdout rate_limit_event is stored on quota gate."""
+    import os
+    import stat
+
+    fixture = (
+        Path(__file__).resolve().parent.parent
+        / "fixtures"
+        / "claude_stream_rate_limit_event.jsonl"
+    ).read_text(encoding="utf-8")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    claude = bin_dir / "claude"
+    claude.write_text(
+        f"""#!/bin/sh
+cat <<'EOF'
+{fixture}
+EOF
+""",
+        encoding="utf-8",
+    )
+    claude.chmod(claude.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    uuid = "quota-usage-uuid"
+    jobs = tmp_path / "jobs"
+    done = jobs / "done"
+    done.mkdir(parents=True)
+    quota_path = jobs / "quota-gate.json"
+    exec_jsonl = tmp_path / "exec.jsonl"
+    exec_jsonl.write_text(
+        json.dumps(
+            {
+                "uuid": uuid,
+                "command": "claude -p hi",
+                "depends": [],
+                "engine": "claude",
+                "result_path": str(tmp_path / "result.md"),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    config = DagConfig(
+        exec_jsonl_path=str(exec_jsonl),
+        exec_done_dir=str(done),
+        poll_interval=0.05,
+        launch_stagger=0.0,
+        lock_file=str(tmp_path / "lock"),
+        quota_state_path=str(quota_path),
+        quota_audit_path=str(jobs / "quota-audit.jsonl"),
+    )
+    engine = DagEngine(config, AuditHooks(audit_path=jobs / "audit.jsonl"))
+    _run_engine_to_completion(engine, done_dir=done, task_uuids=(uuid,))
+    gate = QuotaGate(quota_path)
+    usage = gate.snapshot().usage.get("claude")
+    assert usage is not None
+    assert any(w.window_minutes == 300 and w.used_percent == 34.0 for w in usage.windows)
 
 
 def test_failed_shell_task_persists_stderr_and_audit_path(tmp_path: Path) -> None:

@@ -789,6 +789,27 @@ def _report_quota_failure(
     return True
 
 
+def _record_quota_usage(
+    quota_gate: QuotaGate,
+    engine: str,
+    result: LLMResult,
+) -> None:
+    adapter = get_output_adapter(engine)
+    stdout_raw = result.raw_stdout if result.raw_stdout is not None else result.stdout
+    windows = adapter.extract_quota_windows(
+        stdout_raw.encode("utf-8"),
+        result.stderr.encode("utf-8"),
+    )
+    try:
+        quota_gate.observe(
+            engine=engine,
+            windows=windows,
+            observed_at=datetime.now(timezone.utc),
+        )
+    except (OSError, ValueError) as exc:
+        logger.warning("quota usage observe failed for %s: %s", engine, exc)
+
+
 def call(
     prompt: str,
     *,
@@ -837,6 +858,8 @@ def call(
         )
         attempts += 1
         last_result = result
+        if quota_gate is not None:
+            _record_quota_usage(quota_gate, engine, result)
 
         if result.ok:
             if quota_gate is not None:

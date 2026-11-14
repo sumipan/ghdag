@@ -261,3 +261,41 @@ exit 0
     assert "s1" in claude_args.read_text(encoding="utf-8")
     assert codex_args.exists()
     assert "s1" not in codex_args.read_text(encoding="utf-8")
+
+
+def test_call_records_claude_quota_usage_from_stdout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Refs sumipan/nexus#6717 — call() observes rate_limit_event when quota_gate is set."""
+    from datetime import timezone as tz
+    from pathlib import Path as PathType
+
+    fixture_path = (
+        PathType(__file__).resolve().parent.parent
+        / "fixtures"
+        / "claude_stream_rate_limit_event.jsonl"
+    )
+    stream_body = fixture_path.read_text(encoding="utf-8")
+    _prepend_bin_dir(monkeypatch, tmp_path)
+    _install_script(
+        tmp_path,
+        "claude",
+        f"""#!/bin/sh
+cat <<'EOF'
+{stream_body}
+EOF
+""",
+    )
+    gate = QuotaGate(tmp_path / "quota.json")
+    result = call(
+        "p",
+        route=[("claude", None)],
+        quota_gate=gate,
+    )
+    assert result.ok is True
+    usage = gate.snapshot().usage.get("claude")
+    assert usage is not None
+    by_minutes = {w.window_minutes: w for w in usage.windows}
+    assert by_minutes[300].used_percent == 34.0
+    assert by_minutes[10080].used_percent == 95.0
+    assert usage.observed_at.tzinfo == tz.utc
