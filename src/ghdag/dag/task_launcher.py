@@ -796,6 +796,20 @@ class TaskLauncher:
 
             engine_error = adapter.extract_error(stdout_data, stderr_bytes)
             usage = adapter.extract_token_usage(stdout_data, stderr_bytes)
+            if isinstance(engine, str):
+                try:
+                    windows = adapter.extract_quota_windows(stdout_data, stderr_bytes)
+                    self._quota_gate.observe(
+                        engine=engine,
+                        windows=windows,
+                        observed_at=datetime.now(timezone.utc),
+                    )
+                except (OSError, ValueError) as exc:
+                    logger.warning(
+                        "quota usage observe failed for %s: %s",
+                        engine,
+                        exc,
+                    )
             token_count = usage.token_count if usage else None
             cost_usd = usage.cost_usd if usage else None
             cache_read_tokens = usage.cache_read_tokens if usage else None

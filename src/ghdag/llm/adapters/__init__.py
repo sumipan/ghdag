@@ -19,6 +19,9 @@ class _PassthroughAdapter:
     def extract_token_usage(self, stdout: bytes, stderr: bytes) -> TokenUsage | None:
         return None
 
+    def extract_quota_windows(self, stdout: bytes, stderr: bytes) -> tuple:
+        return ()
+
     def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
         return None
 

@@ -80,6 +80,7 @@ CURATED_RUNTIME_EXPORTS: dict[str, frozenset[str]] = {
             "QuotaGate",
             "QuotaSnapshot",
             "EngineQuotaState",
+            "EngineUsage",
             "AdmissionDecision",
             "Missing",
         }

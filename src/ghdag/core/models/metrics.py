@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 
 
@@ -39,6 +40,13 @@ class TokenUsage:
     cost_usd: float | None = None
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class QuotaWindow:
+    window_minutes: int
+    used_percent: float
+    resets_at: datetime
 
 
 @dataclass(frozen=True)

@@ -184,6 +184,9 @@ class CursorStreamAdapter:
             cost_usd=None,
         )
 
+    def extract_quota_windows(self, stdout: bytes, stderr: bytes) -> tuple:
+        return ()
+
     def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
         data = parse_cursor_result_payload(stdout)
         if data is not None:

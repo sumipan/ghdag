@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from ghdag.core.exceptions import LLMParseError
-from ghdag.core.models.metrics import FailureClass, TokenUsage
+from ghdag.core.models.metrics import FailureClass, QuotaWindow, TokenUsage
 from ghdag.core.parsers import parse_token_usage_json
 from ghdag.core.ports.output import EngineError, EngineErrorKind
 from ghdag.llm.adapters.failure_classification import (
@@ -15,6 +15,11 @@ from ghdag.llm.adapters.failure_classification import (
     classify_common_failure,
     looks_like_question,
 )
+
+_UNIFIED_WINDOW_MINUTES: dict[str, int] = {
+    "five_hour": 300,
+    "seven_day": 10080,
+}
 
 
 def extract_stream_result(stdout: str) -> str:
@@ -98,6 +103,54 @@ class ClaudeJsonAdapter:
         if data is None:
             return None
         return parse_token_usage_json(data)
+
+    def extract_quota_windows(self, stdout: bytes, stderr: bytes) -> tuple[QuotaWindow, ...]:
+        if not stdout:
+            return ()
+        try:
+            text = stdout.decode("utf-8")
+        except UnicodeDecodeError:
+            return ()
+        last_event: dict | None = None
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                obj = json.loads(stripped)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(obj, dict) and obj.get("type") == "rate_limit_event":
+                last_event = obj
+        if last_event is None:
+            return ()
+        info = last_event.get("rate_limit_info")
+        if not isinstance(info, dict):
+            return ()
+        unified = info.get("unifiedWindows")
+        if not isinstance(unified, dict):
+            return ()
+        windows: list[QuotaWindow] = []
+        for key, window_minutes in _UNIFIED_WINDOW_MINUTES.items():
+            entry = unified.get(key)
+            if not isinstance(entry, dict):
+                continue
+            utilization = entry.get("utilization")
+            resets_at = entry.get("resetsAt")
+            if not isinstance(utilization, (int, float)):
+                continue
+            if utilization < 0 or utilization > 1:
+                continue
+            if not isinstance(resets_at, int):
+                continue
+            windows.append(
+                QuotaWindow(
+                    window_minutes=window_minutes,
+                    used_percent=float(utilization) * 100.0,
+                    resets_at=datetime.fromtimestamp(resets_at, tz=timezone.utc),
+                )
+            )
+        return tuple(windows)
 
     def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
         data = parse_claude_result_payload(stdout)

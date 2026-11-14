@@ -7,7 +7,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
-from ghdag.core.models.metrics import FailureClass, TokenUsage
+from ghdag.core.models.metrics import FailureClass, QuotaWindow, TokenUsage
 
 
 class EngineErrorKind(str, Enum):
@@ -36,6 +36,10 @@ class EngineOutputAdapter(Protocol):
 
     def extract_token_usage(self, stdout: bytes, stderr: bytes) -> TokenUsage | None:
         """Extract TokenUsage from stdout/stderr. Return None if unavailable."""
+        ...
+
+    def extract_quota_windows(self, stdout: bytes, stderr: bytes) -> tuple[QuotaWindow, ...]:
+        """Extract remaining-quota windows from stdout/stderr. Return () if unavailable."""
         ...
 
     def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:

@@ -71,6 +71,9 @@ class CodexAdapter:
                 )
         return None
 
+    def extract_quota_windows(self, stdout: bytes, stderr: bytes) -> tuple:
+        return ()
+
     def extract_session_id(self, stdout: bytes, stderr: bytes) -> str | None:
         """Prefer thread.started.thread_id; accept legacy session_id for backward compatibility."""
         fallback: str | None = None

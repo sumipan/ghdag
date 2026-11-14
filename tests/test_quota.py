@@ -366,3 +366,81 @@ def test_modify_is_atomic_across_processes(tmp_path: Path) -> None:
         p.join()
         assert p.exitcode == 0
     assert QuotaGate(state_path).read_state()["resources"]["counter"] == 100
+
+
+def test_observe_records_usage_without_touching_engines(tmp_path: Path) -> None:
+    """Refs sumipan/nexus#6717 — observe updates usage only."""
+    from ghdag.core.models.metrics import QuotaWindow
+
+    gate = QuotaGate(tmp_path / "quota-gate.json")
+    gate.report(engine="claude", status="paused", observed_at=_dt(12), resume_at=_dt(17))
+    gate.begin_run(task_uuid="t1", engine="claude", now=_dt(12, 1))
+    before = gate.snapshot(now=_dt(12, 2))
+    windows = (
+        QuotaWindow(
+            window_minutes=300,
+            used_percent=34.0,
+            resets_at=datetime(2026, 11, 14, 12, 0, tzinfo=timezone.utc),
+        ),
+        QuotaWindow(
+            window_minutes=10080,
+            used_percent=95.0,
+            resets_at=datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc),
+        ),
+    )
+    observed = datetime(2026, 11, 14, 11, 0, tzinfo=timezone.utc)
+    gate.observe(engine="claude", windows=windows, observed_at=observed)
+    after = gate.snapshot(now=_dt(12, 2))
+    recorded = after.usage["claude"]
+    assert recorded.observed_at == observed
+    assert recorded.windows == windows
+    assert after.engines == before.engines
+    assert after.running_tasks == before.running_tasks
+
+
+def test_observe_empty_windows_does_not_create_state_file(tmp_path: Path) -> None:
+    """Refs sumipan/nexus#6717 — empty windows is a no-op."""
+    path = tmp_path / "quota-gate.json"
+    gate = QuotaGate(path)
+    gate.observe(
+        engine="claude",
+        windows=(),
+        observed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+    assert not path.exists()
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "engines": {},
+                "draining_engines": {},
+                "running_tasks": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    before = path.read_text(encoding="utf-8")
+    gate.observe(
+        engine="claude",
+        windows=(),
+        observed_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+    )
+    assert path.read_text(encoding="utf-8") == before
+
+
+def test_snapshot_usage_empty_for_legacy_state_without_usage_key(tmp_path: Path) -> None:
+    """Refs sumipan/nexus#6717 — legacy quota state loads with usage {}."""
+    path = tmp_path / "quota-gate.json"
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "engines": {},
+                "draining_engines": {},
+                "running_tasks": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    gate = QuotaGate(path)
+    assert gate.snapshot().usage == {}
