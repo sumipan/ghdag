@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.134.5 - 2026-11-14
+
 ### Removed
 
 - **Breaking:** `ghdag.llm.call` no longer accepts `engine`, `model`, `fallback_candidates`, or `fallback_on_timeout`. Pass an ordered `route: Sequence[tuple[str, str | None]]` instead (sumipan/nexus#6679).
