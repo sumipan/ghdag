@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ghdag"
-version = "0.134.2"
+version = "0.134.3"
 description = "Local workflow foundation: intake from Issues, triggers, exec.jsonl, or MCP; dependency-ordered execution via ghdag run; file-based recording in queue, done, audit, and result artifacts."
 readme = "README.md"
 license = "MIT"
