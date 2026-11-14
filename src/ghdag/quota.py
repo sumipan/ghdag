@@ -8,7 +8,7 @@ import os
 import tempfile
 import time
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal, cast
@@ -80,7 +80,7 @@ class QuotaSnapshot:
     draining_engines: dict[str, "DrainState"]
     running_tasks: dict[str, "RunningTaskState"]
     limits: dict[str, int]
-    usage: dict[str, EngineUsage]
+    usage: dict[str, EngineUsage] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
