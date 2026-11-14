@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.134.1 - 2026-11-14
+
+### Changed
+
+- Remove downstream host vocabulary from comments and docstrings across `src/ghdag`; apply the same convention test to every Python module without xfail or known-violation exceptions.
+
 ## 0.134.0 - 2026-11-14
 
 ### Removed

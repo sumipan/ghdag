@@ -55,7 +55,7 @@ class InlineOrderBuilder:
 
     It performs no file I/O, so it is used for dynamic prompt generation (e.g. scheduler).
 
-    Dynamic prompts (e.g. via mltgnt skill action) may contain LLM-facing
+    Dynamic prompts (e.g. from a dynamic prompt source) may contain LLM-facing
     ``${ENV_VAR}`` notation in the prompt body. Strict rendering would treat it as an
     undefined variable and kill the scheduler job, so ``safe_substitute`` is used to
     leave undefined variables as ``${VAR}``. The file-based :class:`TemplateOrderBuilder`

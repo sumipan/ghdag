@@ -1,4 +1,4 @@
-"""ghdag.io.audit_query — audit.jsonl read-only API (nexus Issue #2673)."""
+"""ghdag.io.audit_query — audit.jsonl read-only API."""
 
 from __future__ import annotations
 

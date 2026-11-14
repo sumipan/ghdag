@@ -1,4 +1,4 @@
-"""ghdag.io.audit — unified audit.jsonl writers (nexus Issue #2673)."""
+"""ghdag.io.audit — unified audit.jsonl writers."""
 
 from __future__ import annotations
 

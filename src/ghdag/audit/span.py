@@ -1,6 +1,5 @@
-"""Latency span writer for E2E tracing (nexus #3323 / #3301 sub-issue 8).
+"""Latency span writer for E2E tracing.
 
-Public API migrated from nexus ``tools.measurement.latency_span``.
 Writes one JSON object per line to ``jobs/latency_span.jsonl`` (or ``LATENCY_SPAN_PATH``).
 """
 from __future__ import annotations
@@ -26,7 +25,7 @@ EVENT_TYPE_LATENCY_SPAN = "latency_span"
 EVENT_TYPE_E2E_COMPLETED = "slack_e2e_completed"
 EVENT_TYPE_E2E_FAILED = "slack_e2e_failed"
 
-# Default path (cwd-relative) when LATENCY_SPAN_PATH is unset — same file name/form as nexus.
+# Default path (cwd-relative) when LATENCY_SPAN_PATH is unset.
 LATENCY_SPAN_JSONL = Path("jobs") / "latency_span.jsonl"
 
 

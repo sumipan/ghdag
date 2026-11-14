@@ -175,7 +175,7 @@ def validate_engine_model(engine: str, model: str | None) -> str:
 # Unsupported capabilities: passing a non-default value raises NotImplementedError.
 # "isolation" is not a Permission attribute but a meta capability for supports_capability
 # (whether global config isolation is possible). Unsupported on cursor because its CLI has no
-# skills/rules isolation flag (nexus #3044; the alternative is physical isolation, nexus #2972).
+# skills/rules isolation flag (physical isolation is the alternative).
 _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
     "gemini": {
         "disallowed_tools",
@@ -193,7 +193,7 @@ _UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
 }
 
 # CODEX_HOME for codex isolation via call() (does not read the user's ~/.codex).
-# Injected only when GHDAG_ENGINE_ISOLATION=1 and auth.json exists (nexus #3174).
+# Injected only when GHDAG_ENGINE_ISOLATION=1 and auth.json exists.
 _CODEX_DAG_HOME = "/var/tmp/ghdag-dag-codex/"
 
 
@@ -510,7 +510,7 @@ def _timeout_result(
     The process has already been killed by ``subprocess.run``. The partial
     stdout / stderr are kept so the caller can still inspect what the engine
     produced before the deadline, and a ``TIMEOUT: ...`` line is appended to
-    stderr in the same shape as the exec-path task timeout (sumipan/nexus#4304).
+    stderr in the same shape as the exec-path task timeout.
     """
     stderr = _partial_output(exc.stderr)
     if stderr and not stderr.endswith("\n"):
@@ -566,7 +566,7 @@ def _run_with_stall_guard(
     ``TimeoutExpired`` on expiry and ``FileNotFoundError`` / ``PermissionError``
     on launch failure) while watching cursor's state-reader ``cat``.
 
-    The cursor-agent shell can hang in ``zsh -> cat <&3`` (sumipan/nexus#4931);
+    The cursor-agent shell can hang in ``zsh -> cat <&3``;
     every ``interval_sec`` the process tree is scanned and a stuck ``cat`` is
     SIGTERMed once it has stalled for ``stall_sec``.
     """
@@ -661,7 +661,7 @@ def _call_once(
     resolved_isolation = _resolve_isolation(isolation)
 
     # STDIN engines (claude / cursor / gemini / codex) receive the prompt via stdin
-    # (on argv it would exceed Linux MAX_ARG_STRLEN and fail with E2BIG; nexus #3805).
+    # (on argv it would exceed Linux MAX_ARG_STRLEN and fail with E2BIG).
     spec = ENGINE_SPECS.get(engine)
     effective_stdin = stdin_text
     if spec and spec.input_mode is InputMode.STDIN:
@@ -684,7 +684,7 @@ def _call_once(
         "timeout": timeout,
         "cwd": cwd,
     }
-    # codex: start with an empty CODEX_HOME only when isolation=True and auth.json exists (nexus #3174)
+    # codex: start with an empty CODEX_HOME only when isolation=True and auth.json exists
     if engine == "codex" and resolved_isolation:
         auth_path = Path(_CODEX_DAG_HOME) / "auth.json"
         if auth_path.exists():
