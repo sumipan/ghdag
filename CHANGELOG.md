@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.134.4 - 2026-11-14
+
 ### Changed
 
 - **Breaking:** Unknown arguments and unknown or missing subcommands on `python -m ghdag.github_cli` now fail with `CLI_USAGE` (exit code 2); the prior warning-and-continue path is removed.
