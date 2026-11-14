@@ -102,7 +102,6 @@ def test_legacy_running_task_with_role_loads(tmp_path: Path) -> None:
     gate = QuotaGate(state_path, limits={"claude": 1})
     snap = gate.snapshot(now=_dt(12))
     assert snap.running_tasks["legacy"].engine == "claude"
-    gate.begin_run(task_uuid="t2", engine="claude", now=_dt(12))
-    decision = gate.begin_run(task_uuid="t3", engine="claude", now=_dt(12, 1))
+    decision = gate.begin_run(task_uuid="t2", engine="claude", now=_dt(12))
     assert decision.allowed is False
     assert decision.reason == "engine_limit"
