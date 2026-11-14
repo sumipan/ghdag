@@ -14,7 +14,6 @@ WORKFLOW_KEYS = frozenset(
         "label_namespace",
         "transitions",
         "reset_label",
-        "roles",
         "nonterminal_closed",
     }
 )
@@ -32,7 +31,6 @@ STEP_KEYS = frozenset(
         "permission",
         "skill_name",
         "render",
-        "role",
         "env_passthrough",
     }
 )
@@ -50,7 +48,6 @@ class StepConfig:
     permission: str | None = None  # capabilities preset name (None = engine default)
     skill_name: str | None = None  # skill name invoked by this step
     render: str = "frozen"  # "frozen" (expanded at enqueue) | "live" (re-expanded at run time via trampoline)
-    role: str | None = None  # QuotaGate role name (per-engine check when omitted)
     env_passthrough: list[str] = field(default_factory=list)  # env var names exempt from deny
 
 
@@ -97,18 +94,4 @@ class WorkflowConfig:
     label_namespace: str | None = None     # label prefix (e.g. "pipeline")
     transitions: dict[str, list[str]] | None = None  # state transition map
     reset_label: str | None = None         # special label that can be transitioned to from any state
-    roles: dict[str, list[str]] = field(default_factory=dict)  # role name → list of engine names
     nonterminal_closed: NonterminalClosedConfig | None = None  # detection settings for CLOSED non-terminal issues
-
-
-def validate_workflow_roles(config: WorkflowConfig) -> None:
-    """Raise ValueError when a step references an undeclared role."""
-    for handler_name, handler in config.handlers.items():
-        for step in handler.steps:
-            if step.role is None:
-                continue
-            if step.role not in config.roles:
-                raise ValueError(
-                    f"handler '{handler_name}' step '{step.id or step.template}': "
-                    f"role '{step.role}' is not declared in workflow roles"
-                )

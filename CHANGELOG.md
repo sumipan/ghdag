@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **Breaking:** workflow YAML `roles:` and step `role:`, exec record `annotations.role` / `annotations.role_engines`, `LLMPipelineAPI.submit(workflow_roles=...)`, `QuotaGate.admit` / `begin_run` `role` / `role_engines` kwargs, `AdmissionDecision.admitted_engine`, and `validate_workflow_roles` (sumipan/nexus#6680).
+
+### Changed
+
+- README identity messaging, release badge alignment, LocalForge GitHub-free quick start, and execution review artifacts are unchanged since 0.133.4 (sumipan/nexus#6610).
+
 ## 0.134.5 - 2026-11-14
 
 ### Removed

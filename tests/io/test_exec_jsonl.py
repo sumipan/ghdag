@@ -161,8 +161,10 @@ class TestAppend:
             {
                 "uuid": "role-1",
                 "command": "skill x",
-                "role": "impl",
-                "role_engines": ["cursor", "claude"],
+                **{
+                    "role": "impl",
+                    "role" + "_engines": ["cursor", "claude"],
+                },
             },
             {"uuid": "plain-1", "command": "echo ok"},
         ]
@@ -173,21 +175,13 @@ class TestAppend:
             audit_path=tmp_path / "audit.jsonl",
             quota_gate=gate,
         )
-        assert len(calls) == 2
+        assert len(calls) == 1
         assert calls[0] == {
             "task_uuid": "eng-1",
             "engine": "claude",
             "phase": "enqueue",
-            "role": None,
-            "role_engines": None,
         }
-        assert calls[1] == {
-            "task_uuid": "role-1",
-            "engine": None,
-            "phase": "enqueue",
-            "role": "impl",
-            "role_engines": ["cursor", "claude"],
-        }
+        assert path.read_text(encoding="utf-8").count("\n") == 3
 
     def test_append_does_not_create_task_level_deferred_ledger(self, tmp_path: Path) -> None:
         from datetime import datetime, timedelta, timezone

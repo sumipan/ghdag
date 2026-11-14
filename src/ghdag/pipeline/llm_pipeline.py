@@ -221,7 +221,6 @@ class LLMPipelineAPI:
         audit_context: AuditContext,
         metadata: dict[str, str] | None = None,
         order_builder: OrderBuilder | None = None,
-        workflow_roles: dict[str, list[str]] | None = None,
     ) -> list[str]:
         """Submit steps to order/exec.jsonl files.
 
@@ -232,7 +231,6 @@ class LLMPipelineAPI:
             audit_context: context recorded in the enqueue audit
             metadata: metadata shared by all steps (stored in exec.jsonl annotations)
             order_builder: if given, used instead of `_resolve_order_builder`
-            workflow_roles: role name → list of engine names (for step.role annotations)
 
         Returns:
             list of written JSON records as strings (for DispatchResult)
@@ -249,7 +247,6 @@ class LLMPipelineAPI:
             steps, base_context, idempotency_key, ts, order_builder,
             step_uuid_map, step_engine_map, audit_context,
             metadata=metadata,
-            workflow_roles=workflow_roles,
         )
 
     def _submit_jsonl(
@@ -264,7 +261,6 @@ class LLMPipelineAPI:
         audit_context: AuditContext,
         *,
         metadata: dict[str, str] | None = None,
-        workflow_roles: dict[str, list[str]] | None = None,
     ) -> list[str]:
         """Write in JSONL format (exec.jsonl)."""
         import json as _json
@@ -321,10 +317,6 @@ class LLMPipelineAPI:
             record.setdefault("annotations", {})["step_name"] = step_id
             if step.resume_from:
                 record.setdefault("annotations", {})["resume_from_uuid"] = step_uuid_map[step.resume_from]
-            if step.role is not None:
-                role_engines = list((workflow_roles or {}).get(step.role, []))
-                record.setdefault("annotations", {})["role"] = step.role
-                record.setdefault("annotations", {})["role_engines"] = role_engines
             if step.env_passthrough:
                 record.setdefault("annotations", {})["env_passthrough"] = step.env_passthrough
             if metadata:
