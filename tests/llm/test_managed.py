@@ -14,8 +14,9 @@ from ghdag.core.models.metrics import FailureClass
 from ghdag.llm.engines import TIMEOUT_RETURNCODE, call
 from ghdag.quota import QuotaGate
 
+
 def _quota_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime(2026, 1, 1, tzinfo=timezone.utc)
 
 
 def _cli_binary(engine: str) -> str:
@@ -166,8 +167,10 @@ def test_call_timeout_stops_route(
         tmp_path,
         "claude",
         """#!/bin/sh
-sleep 30
-exit 0
+while :
+do
+  :
+done
 """,
     )
     _install_script(

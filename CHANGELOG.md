@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - **Breaking:** `call()` walks `route` from front to back, skipping paused engines when `quota_gate` is set, advancing on `QUOTA_EXHAUSTED`, `AUTH`, and `ENGINE_ENVIRONMENT_ERROR`, and stopping on other failure classes including `TIMEOUT` (sumipan/nexus#6679).
+- README identity messaging, release badge alignment, LocalForge GitHub-free quick start, and execution review artifacts are unchanged since 0.133.4 (sumipan/nexus#6610).
 
 ## 0.134.4 - 2026-11-14
 
