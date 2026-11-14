@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from unittest import mock
 
 import pytest
 
+from ghdag.forge.local import LocalForge
 from ghdag.github_cli import apply_jq, cli_main
 from ghdag.github_client import GitHubClient, _resolve_token
 
@@ -151,27 +153,156 @@ def test_cli_issue_edit_title_and_body_file(monkeypatch, tmp_path):
     assert captured["kwargs"]["body"] == "Body content"
 
 
-def test_cli_issue_edit_unknown_arg_warning_excludes_title(monkeypatch, capsys):
-    """Unknown-arg warning covers --foobar only; --title is not unknown."""
+def _snapshot_tree(root: Path) -> dict[str, bytes]:
+    return {
+        str(p.relative_to(root)): p.read_bytes()
+        for p in root.rglob("*")
+        if p.is_file()
+    }
 
-    class FakeClient:
-        _token = "tok"
 
-        def issue_update(self, number, **kwargs):
-            pass
+@pytest.fixture
+def local_forge_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    root = tmp_path / "forge_data"
+    forge = LocalForge(root, repo="local/test")
+    forge.issue_create("Seed issue", "issue body")
+    forge.pr_create("main", "feature", "Seed PR", "pr body")
+    monkeypatch.setenv("GHDAG_FORGE", "local")
+    monkeypatch.setenv("GHDAG_FORGE_ROOT", str(root))
+    return root
 
-    monkeypatch.setattr(
-        "ghdag.github_client.GitHubClient",
-        lambda *a, **k: FakeClient(),
+
+@pytest.mark.parametrize(
+    "argv_prefix",
+    [
+        pytest.param(["issue", "view", "1"], id="issue-view"),
+        pytest.param(["issue", "create", "--title", "T"], id="issue-create"),
+        pytest.param(["issue", "edit", "1"], id="issue-edit"),
+        pytest.param(["issue", "comment", "1", "--body", "c"], id="issue-comment"),
+        pytest.param(["issue", "close", "1"], id="issue-close"),
+        pytest.param(["pr", "list"], id="pr-list"),
+        pytest.param(["pr", "view", "1"], id="pr-view"),
+        pytest.param(
+            ["pr", "create", "--base", "main", "--head", "h", "--title", "T"],
+            id="pr-create",
+        ),
+        pytest.param(["pr", "edit", "1"], id="pr-edit"),
+        pytest.param(["pr", "merge", "1"], id="pr-merge"),
+        pytest.param(["pr", "diff", "1"], id="pr-diff"),
+        pytest.param(["pr", "checks", "1"], id="pr-checks"),
+        pytest.param(["pr", "ready", "1"], id="pr-ready"),
+        pytest.param(["run", "view", "1"], id="run-view"),
+        pytest.param(["run", "rerun", "1"], id="run-rerun"),
+        pytest.param(["repo", "view"], id="repo-view"),
+        pytest.param(["api", "repos/local/test"], id="api"),
+    ],
+)
+def test_unknown_arg_fails_without_forge_call(
+    local_forge_cli: Path, argv_prefix: list[str]
+) -> None:
+    """Refs sumipan/nexus#6698: unknown flags fail before forge is invoked."""
+    before = _snapshot_tree(local_forge_cli)
+    rc = cli_main([*argv_prefix, "--no-such-flag"])
+    after = _snapshot_tree(local_forge_cli)
+    assert rc == 2
+    assert before == after
+
+
+def test_unknown_arg_error_lists_accepted_arguments(
+    local_forge_cli: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Refs sumipan/nexus#6698: stderr lists accepted arguments for pr create."""
+    body_file = tmp_path / "b.md"
+    body_file.write_text("ignored\n", encoding="utf-8")
+    rc = cli_main(
+        [
+            "pr",
+            "create",
+            "--base",
+            "main",
+            "--head",
+            "h",
+            "--title",
+            "T",
+            "--body-file",
+            str(body_file),
+            "--no-such-flag",
+        ]
     )
-    with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):
-        rc = cli_main(["issue", "edit", "5", "--foobar", "--title", "T"])
-    assert rc == 0
     err = capsys.readouterr().err
-    assert "warning: unknown args ignored:" in err
-    assert "--foobar" in err
-    assert "--title" not in err
-    assert "'T'" not in err
+    assert rc == 2
+    assert "error[CLI_USAGE]:" in err
+    assert "--no-such-flag" in err
+    assert "hint: accepted arguments: --base --head --title --body --body-file --repo" in err
+
+
+def test_unknown_subcommand_lists_available_subcommands(
+    local_forge_cli: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Refs sumipan/nexus#6698: invalid issue subcommands list valid choices."""
+    rc = cli_main(["issue", "list"])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "error[CLI_USAGE]:" in err
+    for name in ("create", "edit", "view", "comment", "close"):
+        assert name in err
+
+
+def test_pr_create_body_file(
+    local_forge_cli: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Refs sumipan/nexus#6698: pr create reads --body-file into the PR body."""
+    body_file = tmp_path / "body.md"
+    body_file.write_text("Body from file\n", encoding="utf-8")
+    rc = cli_main(
+        [
+            "pr",
+            "create",
+            "--base",
+            "main",
+            "--head",
+            "feature",
+            "--title",
+            "T",
+            "--body-file",
+            str(body_file),
+        ]
+    )
+    captured = capsys.readouterr()
+    assert rc == 0
+    number = int(captured.out.strip().rstrip("/").split("/")[-1])
+    forge = LocalForge(local_forge_cli, repo="local/test")
+    assert forge.pr_get(number)["body"] == "Body from file\n"
+
+
+def test_pr_create_body_and_body_file_conflict(
+    local_forge_cli: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Refs sumipan/nexus#6698: --body and --body-file together are rejected."""
+    body_file = tmp_path / "body.md"
+    body_file.write_text("Body from file\n", encoding="utf-8")
+    before = _snapshot_tree(local_forge_cli)
+    rc = cli_main(
+        [
+            "pr",
+            "create",
+            "--base",
+            "main",
+            "--head",
+            "feature",
+            "--title",
+            "T",
+            "--body",
+            "x",
+            "--body-file",
+            str(body_file),
+        ]
+    )
+    err = capsys.readouterr().err
+    after = _snapshot_tree(local_forge_cli)
+    assert rc == 2
+    assert "error[CLI_USAGE]:" in err
+    assert before == after
 
 
 def test_cli_pr_edit_body(monkeypatch):

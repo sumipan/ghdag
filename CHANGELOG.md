@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** Unknown arguments and unknown or missing subcommands on `python -m ghdag.github_cli` now fail with `CLI_USAGE` (exit code 2); the prior warning-and-continue path is removed.
+
+### Added
+
+- `pr create --body-file` (same file-read semantics as `issue create` / `issue edit`).
+
 ## 0.134.3 - 2026-11-14
 
 ### Fixed
