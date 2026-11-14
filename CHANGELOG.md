@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.134.3 - 2026-11-14
+
+### Fixed
+
+- Defer relaunching a task that returned `WAIT_QUOTA` while every engine named in its `WAIT_QUOTA:` line remains paused, instead of restarting it on every poll by its own engine (sumipan/nexus#6632).
+
 ## 0.134.1 - 2026-11-14
 
 ### Changed

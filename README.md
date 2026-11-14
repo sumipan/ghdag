@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.134.2-blue)
+![version](https://img.shields.io/badge/version-v0.134.3-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.134.2** (`pyproject.toml` `version = "0.134.2"`) |
+| Current release | **v0.134.3** (`pyproject.toml` `version = "0.134.3"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.134.2"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.134.3"
 ```
 
 Install from a checkout with the development tools:
@@ -541,7 +541,7 @@ Register in Claude Code (example):
 | Launch | A task starts when all of its `depends` succeeded and `QuotaGate.admit` admits its engine / role. Each task runs in its own process group with `GHDAG_TASK_UUID` and `GHDAG_RESULT_PATH` in its environment. Host environment variables are filtered by the [task environment policy](#task-environment-policy) before launch |
 | Dependency failure | Downstream tasks of a failed task get `DEP_FAILED` |
 | Timeout / cancel | SIGTERM to the process group, SIGKILL after `DagConfig.kill_grace`; done marker `TIMEOUT` / `CANCELLED` |
-| Quota wait | Tasks emit `PIPELINE_STATUS: WAIT_QUOTA` plus a `WAIT_QUOTA:` companion line; the engine records engine-level pause, deletes the attempt result, and leaves the task pending (no `done/` marker, no per-task ledger) |
+| Quota wait | Tasks emit `PIPELINE_STATUS: WAIT_QUOTA` plus a `WAIT_QUOTA:` companion line; the engine records engine-level pause, deletes the attempt result, and leaves the task pending (no `done/` marker, no per-task ledger). While every engine named in `WAIT_QUOTA` remains paused, the launcher does not restart that pending task. |
 | Reply block | Engine results may end with a fenced YAML block (info string `ghdag`). `check_pipeline_status` prefers the block over legacy `PIPELINE_STATUS:` lines. `status: ok` with `children` declares fan-out (flat `prompt` / `command` items; schema `reply-block`). |
 | Repair turn | On `REPLY_BLOCK_FAILED` or invalid fan-out (`FANOUT_INVALID`), when the task has a stored session and `DagConfig.max_repair_turns` &gt; 0, the runner resumes once with a repair order (`llm.repair_turn` audit). Legacy `---` + `ghdag_fanout:` with command-only children still works when no block children are present. |
 | Engine quarantine | `EngineQuarantine` temporarily blocks launches for an engine whose environment is broken |
@@ -1171,7 +1171,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.134.2"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.134.3"
 ```
 
 and read `CHANGELOG.md` before upgrading.

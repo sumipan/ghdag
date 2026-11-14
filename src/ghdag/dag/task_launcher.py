@@ -441,6 +441,7 @@ class TaskLauncher:
         )
         self._engine_quarantine = EngineQuarantine()
         self._last_quota_deferred: dict[str, tuple[str | None, str | None]] = {}
+        self._waiting_engines: dict[str, tuple[str, ...]] = {}
 
     @property
     def quota_gate(self) -> QuotaGate:
@@ -481,6 +482,28 @@ class TaskLauncher:
                 )
                 state_mark_done(self._config.exec_done_dir, uuid, DONE_SKIPPED_MISSING_INPUT)
                 return False
+
+        waiting = self._waiting_engines.get(uuid)
+        if waiting:
+            decision = self._quota_gate.admit(
+                task_uuid=uuid,
+                engine=None,
+                phase="launch",
+                role="wait_quota",
+                role_engines=list(waiting),
+            )
+            if not decision.allowed:
+                defer_key = (",".join(waiting), decision.reason)
+                if self._last_quota_deferred.get(uuid) != defer_key:
+                    logger.info(
+                        "Task [%s] launch deferred by quota gate: engine=%s reason=%s",
+                        uuid,
+                        ",".join(waiting),
+                        decision.reason,
+                    )
+                    self._last_quota_deferred[uuid] = defer_key
+                return False
+            self._waiting_engines.pop(uuid, None)
 
         decision = self._quota_gate.begin_run(
             task_uuid=uuid,
@@ -970,6 +993,7 @@ class TaskLauncher:
                                         "correlation_id": uuid,
                                     },
                                 )
+                                self._waiting_engines[uuid] = tuple(parsed.engines)
                                 try:
                                     Path(effective_result_path).unlink()
                                 except OSError:
