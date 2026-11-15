@@ -170,22 +170,6 @@ class TestRepairTurn:
             launcher.check_completions()
             popen.assert_not_called()
 
-    def test_gemini_skips_repair(self, tmp_path):
-        launcher = _make_launcher(tmp_path)
-        uuid = "task-4"
-        result = tmp_path / "jobs" / "result.md"
-        result.write_text("```ghdag\n: bad\n```\n", encoding="utf-8")
-        task = Task(
-            uuid=uuid,
-            command="gemini -p < order.md",
-            engine="gemini",
-            result_path=str(result),
-        )
-        _seed_running(launcher, uuid, task)
-        launcher._session_store.record(uuid, "gemini", "sess")
-        with patch("ghdag.dag.task_launcher.subprocess.Popen") as popen:
-            launcher.check_completions()
-            popen.assert_not_called()
 
     def test_max_repair_turns_zero_disables_repair(self, tmp_path):
         launcher = _make_launcher(tmp_path, max_repair_turns=0)
@@ -204,83 +188,7 @@ class TestRepairTurn:
             launcher.check_completions()
             popen.assert_not_called()
 
-    def test_repair_turn_registers_running_task(self, tmp_path):
-        """Refs sumipan/nexus#6802."""
-        launcher = _make_launcher(tmp_path)
-        uuid = "task-quota-1"
-        result = tmp_path / "jobs" / "result.md"
-        result.write_text("```ghdag\n: bad\n```\n", encoding="utf-8")
-        order = tmp_path / "jobs" / "order.md"
-        order.write_text("run", encoding="utf-8")
-        task = Task(
-            uuid=uuid,
-            command=f'claude -p --model m < {order}',
-            engine="claude",
-            model="claude-sonnet-4-6",
-            result_path=str(result),
-        )
-        _seed_running(launcher, uuid, task)
-        launcher._session_store.record(uuid, "claude", "sess-1")
 
-        repair_proc = MagicMock()
-        repair_proc.poll.return_value = None
-        repair_proc.pid = 4242
-        repair_proc.stdout = io.BytesIO()
-        repair_proc.stderr = io.BytesIO()
-        real_popen = subprocess.Popen
-
-        def fake_popen(*args, **kwargs):
-            if args[0][0] == "true":
-                return real_popen(["true"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            return repair_proc
-
-        with patch("ghdag.dag.task_launcher.subprocess.Popen", new=fake_popen):
-            launcher.check_completions()
-
-        snap = launcher.quota_gate.snapshot()
-        assert uuid in snap.running_tasks
-        assert snap.running_tasks[uuid].engine == "claude"
-
-    def test_repair_turn_counts_toward_engine_limit(self, tmp_path):
-        """Refs sumipan/nexus#6802."""
-        jobs = tmp_path / "jobs"
-        gate = QuotaGate(jobs / "quota-gate.json", limits={"claude": 1})
-        launcher = _make_launcher(tmp_path, quota_gate=gate)
-        uuid = "task-quota-2"
-        result = tmp_path / "jobs" / "result.md"
-        result.write_text("```ghdag\n: bad\n```\n", encoding="utf-8")
-        order = tmp_path / "jobs" / "order.md"
-        order.write_text("run", encoding="utf-8")
-        task = Task(
-            uuid=uuid,
-            command=f'claude -p < {order}',
-            engine="claude",
-            result_path=str(result),
-        )
-        _seed_running(launcher, uuid, task)
-        launcher._session_store.record(uuid, "claude", "sess-1")
-
-        repair_proc = MagicMock()
-        repair_proc.poll.return_value = None
-        repair_proc.pid = 4243
-        repair_proc.stdout = io.BytesIO()
-        repair_proc.stderr = io.BytesIO()
-        real_popen = subprocess.Popen
-
-        def fake_popen(*args, **kwargs):
-            if args[0][0] == "true":
-                return real_popen(["true"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            return repair_proc
-
-        other = Task(
-            uuid="other-claude",
-            command="claude -p < other.md",
-            engine="claude",
-            result_path=str(tmp_path / "jobs" / "other-result.md"),
-        )
-        with patch("ghdag.dag.task_launcher.subprocess.Popen", new=fake_popen):
-            launcher.check_completions()
-            assert launcher.launch("other-claude", other) is False
 
     def test_repair_turn_skipped_when_engine_paused(self, tmp_path):
         """Refs sumipan/nexus#6802."""

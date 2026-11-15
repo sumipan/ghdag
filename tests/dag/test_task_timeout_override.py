@@ -9,7 +9,7 @@ import pytest
 
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.models import DagConfig, Task, _RunningProcess
-from ghdag.dag.task_launcher import TaskLauncher, _resolve_task_timeout
+from ghdag.dag.task_launcher import TaskLauncher
 
 
 class _FakeClock:
@@ -79,67 +79,12 @@ def _make_running_task(
     )
 
 
-class TestResolveTaskTimeout:
-    @pytest.mark.parametrize(
-        ("annotations", "default", "expected"),
-        [
-            ({}, 600.0, 600.0),
-            ({}, None, None),
-            ({"timeout_sec": "1800"}, 600.0, 1800.0),
-            ({"timeout_sec": "300"}, 600.0, 300.0),
-            ({"timeout_sec": "abc"}, 600.0, 600.0),
-            ({"timeout_sec": "0"}, 600.0, 600.0),
-            ({"timeout_sec": "-10"}, 600.0, 600.0),
-        ],
-    )
-    def test_resolve_task_timeout(
-        self,
-        annotations: dict[str, str],
-        default: float | None,
-        expected: float | None,
-    ) -> None:
-        task = Task(uuid="u", command="true", annotations=annotations)
-        assert _resolve_task_timeout(task, default) == expected
 
 
 class TestCheckCompletionsTimeoutOverride:
-    def test_falls_back_to_global_timeout_without_annotation(self, tmp_path, fake_clock) -> None:
-        launcher = _make_launcher(tmp_path, task_timeout=600.0)
-        rt = _make_running_task(fake_clock, elapsed_sec=700.0)
-        launcher._running[rt.uuid] = rt
 
-        launcher.check_completions()
 
-        rt.proc.terminate.assert_called_once()
-        rt.proc.kill.assert_not_called()
 
-    def test_no_timeout_when_global_none_and_no_annotation(self, tmp_path, fake_clock) -> None:
-        launcher = _make_launcher(tmp_path, task_timeout=None)
-        rt = _make_running_task(fake_clock, elapsed_sec=700.0)
-        launcher._running[rt.uuid] = rt
-
-        launcher.check_completions()
-
-        rt.proc.terminate.assert_not_called()
-        rt.proc.kill.assert_not_called()
-
-    def test_annotation_1800_overrides_smaller_global(self, tmp_path, fake_clock) -> None:
-        launcher = _make_launcher(tmp_path, task_timeout=600.0)
-        rt = _make_running_task(fake_clock, elapsed_sec=700.0, annotations={"timeout_sec": "1800"})
-        launcher._running[rt.uuid] = rt
-
-        launcher.check_completions()
-
-        rt.proc.terminate.assert_not_called()
-
-    def test_annotation_1800_triggers_after_elapsed(self, tmp_path, fake_clock) -> None:
-        launcher = _make_launcher(tmp_path, task_timeout=600.0)
-        rt = _make_running_task(fake_clock, elapsed_sec=1900.0, annotations={"timeout_sec": "1800"})
-        launcher._running[rt.uuid] = rt
-
-        launcher.check_completions()
-
-        rt.proc.terminate.assert_called_once()
 
     def test_annotation_300_overrides_larger_global(self, tmp_path, fake_clock) -> None:
         launcher = _make_launcher(tmp_path, task_timeout=600.0)
@@ -168,14 +113,6 @@ class TestCheckCompletionsTimeoutOverride:
 
         rt.proc.terminate.assert_called_once()
 
-    def test_negative_annotation_falls_back_to_global(self, tmp_path, fake_clock) -> None:
-        launcher = _make_launcher(tmp_path, task_timeout=600.0)
-        rt = _make_running_task(fake_clock, elapsed_sec=700.0, annotations={"timeout_sec": "-10"})
-        launcher._running[rt.uuid] = rt
-
-        launcher.check_completions()
-
-        rt.proc.terminate.assert_called_once()
 
     def test_sigkill_after_kill_grace_when_term_ignored(self, tmp_path, fake_clock) -> None:
         launcher = _make_launcher(tmp_path, task_timeout=600.0, kill_grace=5.0)

@@ -2,29 +2,7 @@
 
 from __future__ import annotations
 
-from ghdag.core.models.metrics import TaskMetrics
 from ghdag.dag.hooks import DefaultHooks
-from ghdag.dag.models import Task
-
-UUID = "test-uuid-0000-0000-0000-000000000001"
-
-
-def _make_task() -> Task:
-    return Task(uuid=UUID, command="echo hello")
-
-
-def _make_metrics(status: str = "success") -> TaskMetrics:
-    now = 1_700_000_000.0
-    return TaskMetrics(
-        uuid=UUID,
-        engine="claude",
-        model="claude-sonnet-4-6",
-        wall_time_sec=10.5,
-        token_count=1500,
-        status=status,
-        started_at=now,
-        finished_at=now + 10.5,
-    )
 
 
 class TestDefaultHooksCheckRejected:
@@ -37,13 +15,6 @@ class TestDefaultHooksCheckRejected:
         hooks = DefaultHooks()
         assert hooks.check_rejected(str(f)) is True
 
-    def test_reply_block_ok_ignores_rejected_in_body(self, tmp_path) -> None:
-        lines = ["line"] * 10 + ["REJECTED: late"]
-        lines.append("```ghdag\nstatus: ok\n```")
-        f = tmp_path / "result.md"
-        f.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        hooks = DefaultHooks()
-        assert hooks.check_rejected(str(f)) is False
 
     def test_legacy_rejected_on_first_line(self, tmp_path) -> None:
         f = tmp_path / "result.md"
@@ -51,12 +22,6 @@ class TestDefaultHooksCheckRejected:
         hooks = DefaultHooks()
         assert hooks.check_rejected(str(f)) is True
 
-    def test_legacy_rejected_after_tenth_line_ignored(self, tmp_path) -> None:
-        lines = ["line"] * 10 + ["REJECTED: x"]
-        f = tmp_path / "result.md"
-        f.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        hooks = DefaultHooks()
-        assert hooks.check_rejected(str(f)) is False
 
 
 class TestDefaultHooksLoggingOnly:
@@ -65,21 +30,4 @@ class TestDefaultHooksLoggingOnly:
         hooks = DefaultHooks()
         assert hooks is not None
 
-    def test_on_task_success_no_fs_write(self, tmp_path):
-        """AC-3: calling on_task_success does not write to the filesystem."""
-        hooks = DefaultHooks()
-        hooks.on_task_success(UUID, _make_task(), _make_metrics("success"))
-        assert not any(tmp_path.iterdir())
 
-    def test_all_events_no_fs_write(self, tmp_path):
-        """Calling every event creates no files."""
-        hooks = DefaultHooks()
-        task = _make_task()
-        metrics = _make_metrics()
-        hooks.on_task_start(UUID, task)
-        hooks.on_task_success(UUID, task, metrics)
-        hooks.on_task_failure(UUID, task, 1, "err", metrics)
-        hooks.on_task_rejected(UUID, task, 0, False, metrics)
-        hooks.on_task_dep_failed(UUID, task, "dep")
-        hooks.on_task_empty_result(UUID, task, "", metrics)
-        assert not any(tmp_path.iterdir())

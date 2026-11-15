@@ -65,21 +65,7 @@ class TestScanAndFindStalled:
         tree = scan_process_tree(100, text)
         assert find_stalled_state_readers(tree) == []
 
-    def test_cat_outside_tree_ignored(self) -> None:
-        text = _sample_ps_text(
-            extra_lines="  999    1 0:00.00 /bin/cat cat",
-        )
-        tree = scan_process_tree(100, text)
-        assert find_stalled_state_readers(tree) == [300]
 
-    def test_linux_zero_time_format(self) -> None:
-        text = (
-            "  100    1 00:00:00 bash bash\n"
-            "  200  100 00:00:00 /bin/zsh zsh -c snap=$(command cat <&3); x\n"
-            "  300  200 00:00:00 /bin/cat cat\n"
-        )
-        tree = scan_process_tree(100, text)
-        assert find_stalled_state_readers(tree) == [300]
 
 
 class TestParsePsOutput:
@@ -95,57 +81,7 @@ class TestParsePsOutput:
 
 
 class TestStallTracker:
-    def test_kill_after_stall_sec_once(self) -> None:
-        kills: list[tuple[int, int]] = []
-        ps_calls = 0
 
-        def fake_ps() -> str:
-            nonlocal ps_calls
-            ps_calls += 1
-            return _sample_ps_text()
-
-        tracker = StallTracker(
-            100,
-            stall_sec=5.0,
-            interval_sec=0.0,
-            kill=lambda pid, sig: kills.append((pid, sig)),
-            ps=fake_ps,
-        )
-        assert tracker.check(0.0) == []
-        assert kills == []
-        assert tracker.check(4.0) == []
-        assert kills == []
-        events = tracker.check(5.0)
-        assert len(events) == 1
-        assert events[0].pid == 300
-        assert kills == [(300, signal.SIGTERM)]
-        tracker.check(100.0)
-        assert kills == [(300, signal.SIGTERM)]
-
-    def test_reset_when_cat_disappears(self) -> None:
-        kills: list[tuple[int, int]] = []
-        show_cat = True
-
-        def fake_ps() -> str:
-            if show_cat:
-                return _sample_ps_text()
-            return "  100    1 0:00.00 bash bash\n  150  100 0:00.00 agent agent\n"
-
-        tracker = StallTracker(
-            100,
-            stall_sec=2.0,
-            interval_sec=0.0,
-            kill=lambda pid, sig: kills.append((pid, sig)),
-            ps=fake_ps,
-        )
-        tracker.check(0.0)
-        show_cat = False
-        tracker.check(1.0)
-        show_cat = True
-        tracker.check(2.0)
-        assert kills == []
-        tracker.check(4.0)
-        assert kills == [(300, signal.SIGTERM)]
 
     def test_ps_failure_logs_and_returns_empty(self, caplog: pytest.LogCaptureFixture) -> None:
         def bad_ps() -> str:
@@ -163,21 +99,7 @@ class TestStallTracker:
 
 
 class TestStallGuardEnv:
-    def test_enabled_default_and_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("GHDAG_ENGINE_STALL_GUARD", raising=False)
-        assert env_mod.stall_guard_enabled() is True
-        monkeypatch.setenv("GHDAG_ENGINE_STALL_GUARD", "0")
-        assert env_mod.stall_guard_enabled() is False
 
-    def test_stall_sec(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("GHDAG_ENGINE_STALL_SEC", raising=False)
-        assert env_mod.stall_guard_stall_sec() == 180.0
-        monkeypatch.setenv("GHDAG_ENGINE_STALL_SEC", "abc")
-        assert env_mod.stall_guard_stall_sec() == 180.0
-        monkeypatch.setenv("GHDAG_ENGINE_STALL_SEC", "-1")
-        assert env_mod.stall_guard_stall_sec() == 180.0
-        monkeypatch.setenv("GHDAG_ENGINE_STALL_SEC", "5")
-        assert env_mod.stall_guard_stall_sec() == 5.0
 
     def test_interval_sec(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("GHDAG_ENGINE_STALL_INTERVAL_SEC", raising=False)

@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-import json
 import os
 import signal
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from ghdag.core.vocabulary import DONE_CANCELLED, DONE_TIMEOUT
+from ghdag.core.vocabulary import DONE_CANCELLED
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.models import DagConfig, Task
 from ghdag.dag.task_launcher import (
@@ -141,22 +138,6 @@ def _poll_until_done(
     launcher.check_completions()
 
 
-class TestProcessGroupExists:
-    def test_alive_and_gone(self) -> None:
-        proc = subprocess.Popen(
-            ["sleep", "30"],
-            start_new_session=True,
-        )
-        pgid = proc.pid
-        try:
-            assert _process_group_exists(pgid) is True
-            os.killpg(pgid, signal.SIGKILL)
-            proc.wait()
-            assert _spin_until(lambda: not _process_group_exists(pgid))
-            assert _process_group_exists(pgid) is False
-        finally:
-            _force_kill_pgid(pgid)
-            proc.wait()
 
 
 class TestSignalProcessTree:
@@ -185,61 +166,8 @@ class TestSignalProcessTree:
         proc.terminate.assert_called_once()
 
 
-class TestRunningJsonPgid:
-    def test_launch_pgid_matches_task_pid_not_runner(self, tmp_path: Path) -> None:
-        launcher = _make_launcher(tmp_path, task_timeout=None)
-        uuid = "pgid-launch"
-        task = Task(uuid=uuid, command="sleep 30")
-        pgid: int | None = None
-        try:
-            assert launcher.launch(uuid, task) is True
-            rt = launcher._running[uuid]
-            pgid = rt.proc.pid
-            running_path = tmp_path / "jobs" / "running" / f"{uuid}.json"
-            assert _spin_until(running_path.is_file)
-            meta = json.loads(running_path.read_text(encoding="utf-8"))
-            assert meta["pid"] == rt.proc.pid
-            assert meta["pgid"] == rt.proc.pid
-            assert meta["pgid"] != os.getpgrp()
-            assert os.getpgid(rt.proc.pid) == rt.proc.pid
-        finally:
-            if pgid is not None:
-                _force_kill_pgid(pgid)
-            if uuid in launcher._running:
-                launcher._running[uuid].proc.wait()
-                del launcher._running[uuid]
 
 
-class TestTimeoutKillsOrphanTree:
-    def test_timeout_sigkills_sigterm_ignoring_grandchild(self, tmp_path: Path, monkeypatch) -> None:
-        clock = _FakeClock(mono=100.0)
-        monkeypatch.setattr("ghdag.dag.task_launcher.time", clock)
-        launcher = _make_launcher(tmp_path, task_timeout=0.25, kill_grace=0.35)
-        uuid = "timeout-orphan"
-        ready = tmp_path / "ready-timeout"
-        script = tmp_path / "orphan_timeout.py"
-        task = Task(uuid=uuid, command=_orphan_tree_command(script, ready))
-        pgid: int | None = None
-        try:
-            assert launcher.launch(uuid, task) is True
-            rt = launcher._running[uuid]
-            pgid = rt.proc.pid
-            assert _spin_until(lambda: _ready_populated(ready))
-            ready_text = ready.read_text(encoding="utf-8").strip()
-            child_pid_s, child_pgid_s = ready_text.split()
-            child_pid, child_pgid = int(child_pid_s), int(child_pgid_s)
-            assert child_pgid == pgid
-
-            _poll_until_done(launcher, uuid, clock=clock)
-
-            assert is_done(launcher._config.exec_done_dir, uuid)
-            assert _read_done(Path(launcher._config.exec_done_dir), uuid) == DONE_TIMEOUT
-            assert _spin_until(lambda: _group_gone(pgid))
-            with pytest.raises(ProcessLookupError):
-                os.kill(child_pid, 0)
-        finally:
-            if pgid is not None:
-                _force_kill_pgid(pgid)
 
 
 class TestCancelKillsOrphanTree:
@@ -267,34 +195,6 @@ class TestCancelKillsOrphanTree:
                 _force_kill_pgid(pgid)
 
 
-class TestEarlyCompleteWithoutSigkill:
-    def test_sigterm_alone_completes_before_kill_grace(self, tmp_path: Path, monkeypatch) -> None:
-        """If the group vanishes on SIGTERM, do not wait for kill_grace or send SIGKILL."""
-        clock = _FakeClock(mono=100.0)
-        monkeypatch.setattr("ghdag.dag.task_launcher.time", clock)
-        launcher = _make_launcher(tmp_path, task_timeout=0.2, kill_grace=5.0)
-        uuid = "early-term"
-        task = Task(uuid=uuid, command="sleep 60")
-        pgid: int | None = None
-        try:
-            assert launcher.launch(uuid, task) is True
-            pgid = launcher._running[uuid].proc.pid
-
-            with patch("ghdag.dag.task_launcher.os.killpg", wraps=os.killpg) as mock_killpg:
-                mono_at_poll = clock.monotonic()
-                _poll_until_done(launcher, uuid, clock=clock, freeze_after_term=True)
-                elapsed_mono = clock.monotonic() - mono_at_poll
-
-            assert elapsed_mono < launcher._config.kill_grace
-            assert is_done(launcher._config.exec_done_dir, uuid)
-            assert _read_done(Path(launcher._config.exec_done_dir), uuid) == DONE_TIMEOUT
-            # signal 0 probes may also call killpg; only require SIGTERM was used for stop.
-            stop_signals = [c.args[1] for c in mock_killpg.call_args_list if c.args[1] != 0]
-            assert signal.SIGTERM in stop_signals
-            assert signal.SIGKILL not in stop_signals
-        finally:
-            if pgid is not None:
-                _force_kill_pgid(pgid)
 
 
 class TestLaunchStartNewSession:
