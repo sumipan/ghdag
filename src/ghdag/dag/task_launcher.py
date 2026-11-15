@@ -1639,7 +1639,7 @@ class TaskLauncher:
         decision = self._quota_gate.begin_run(task_uuid=uuid, engine=engine_name)
         if not decision.allowed:
             logger.info(
-                "Repair turn deferred by quota gate: uuid=%s engine=%s reason=%s",
+                "Repair turn skipped by quota gate: uuid=%s engine=%s reason=%s",
                 uuid,
                 engine_name,
                 decision.reason,
