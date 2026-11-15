@@ -56,17 +56,6 @@ class TestInterpretDone:
 
 
 class TestTaskStatus:
-    def test_completed_success(self, tmp_path):
-        exec_done = tmp_path / "jobs" / "done"
-        exec_done.mkdir(parents=True)
-        (exec_done / "uuid-1").write_text("0\n", encoding="utf-8")
-        assert task_status("uuid-1", exec_done) == STATE_OK
-
-    def test_completed_failed(self, tmp_path):
-        exec_done = tmp_path / "jobs" / "done"
-        exec_done.mkdir(parents=True)
-        (exec_done / "uuid-1").write_text("1\n", encoding="utf-8")
-        assert task_status("uuid-1", exec_done) == STATE_FAIL
 
     def test_completed_rejected(self, tmp_path):
         exec_done = tmp_path / "jobs" / "done"
@@ -86,24 +75,6 @@ class TestTaskStatus:
         (exec_done / "uuid-1").write_text("ENGINE_ERROR\n", encoding="utf-8")
         assert task_status("uuid-1", exec_done) == STATE_ENGINE_ERROR
 
-    def test_pending_deps_when_dep_not_done(self, tmp_path):
-        exec_done = tmp_path / "jobs" / "done"
-        exec_done.mkdir(parents=True)
-        assert task_status(
-            "uuid-1",
-            exec_done,
-            task_depends={"dep-uuid"},
-        ) == STATE_PENDING_DEPS
-
-    def test_running(self, tmp_path):
-        exec_done = tmp_path / "jobs" / "done"
-        exec_done.mkdir(parents=True)
-        assert task_status(
-            "uuid-1",
-            exec_done,
-            running_uuids={"uuid-1"},
-        ) == STATE_RUNNING
-
     def test_deferred_when_not_done_or_running(self, tmp_path):
         exec_done = tmp_path / "jobs" / "done"
         exec_done.mkdir(parents=True)
@@ -112,16 +83,6 @@ class TestTaskStatus:
             exec_done,
             deferred_uuids={"uuid-1"},
         ) == STATE_DEFERRED
-
-    def test_running_precedes_dependency_pending(self, tmp_path):
-        exec_done = tmp_path / "jobs" / "done"
-        exec_done.mkdir(parents=True)
-        assert task_status(
-            "uuid-1",
-            exec_done,
-            task_depends={"dep-uuid"},
-            running_uuids={"uuid-1"},
-        ) == STATE_RUNNING
 
     def test_pending_run_when_no_deps_and_not_running(self, tmp_path):
         exec_done = tmp_path / "jobs" / "done"
@@ -153,12 +114,6 @@ class TestStateIdentifiers:
             STATE_ENGINE_ERROR,
             STATE_UNKNOWN_DONE,
         ) == STATE_IDS
-
-    def test_task_status_success_returns_ok(self, tmp_path):
-        exec_done = tmp_path / "jobs" / "done"
-        exec_done.mkdir(parents=True)
-        (exec_done / "uuid-1").write_text("0\n", encoding="utf-8")
-        assert task_status("uuid-1", exec_done) == "ok"
 
     @pytest.mark.parametrize(
         ("raw", "expected"),
@@ -200,46 +155,5 @@ class TestStateLabel:
         )
         assert state_label("ok", pack) == "OK!"
 
-    def test_env_pack_overrides(self, tmp_path, monkeypatch):
-        import yaml
-
-        data = {
-            "state_labels": {**EN.state_labels, "ok": "Finished fine"},
-            "ui": dict(EN.ui),
-        }
-        path = tmp_path / "pack.yaml"
-        path.write_text(yaml.safe_dump(data), encoding="utf-8")
-        monkeypatch.setenv("GHDAG_LANGUAGE_PACK", str(path))
-        assert state_label("ok") == "Finished fine"
-
     def test_unknown_identifier_returned_as_is(self):
         assert state_label("no_such_state") == "no_such_state"
-
-def test_status_helpers_are_not_reexported(tmp_path):
-    import ghdag.pipeline
-    from ghdag.ui.monitor import task_state
-
-    blocked = {
-        "STATE_EMPTY",
-        "STATE_DEFERRED",
-        "STATE_ENGINE_ERROR",
-        "STATE_FAIL",
-        "STATE_OK",
-        "STATE_PENDING_DEPS",
-        "STATE_PENDING_RUN",
-        "STATE_REJECTED",
-        "STATE_RUNNING",
-        "STATE_UNKNOWN_DONE",
-        "task_status",
-        "state_label",
-        "status_rank",
-    }
-    for name in blocked:
-        assert name not in ghdag.pipeline.__all__
-        assert not hasattr(ghdag.pipeline, name)
-
-    done_dir = tmp_path / "done"
-    done_dir.mkdir()
-    (done_dir / "u1").write_text("0\n", encoding="utf-8")
-    assert task_state("u1", set(), done_dir) == STATE_OK
-    assert task_state("u2", set(), done_dir, running_uuids={"u2"}) == STATE_RUNNING

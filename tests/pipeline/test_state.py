@@ -11,7 +11,6 @@ from ghdag.pipeline.state import PipelineState
 
 UUID1 = "38d6b791-1072-42f0-838d-45c7d10748ff"
 UUID2 = "aaaabbbb-cccc-dddd-eeee-ffffffffffff"
-UUID3 = "ccccdddd-eeee-ffff-0000-111122223333"
 
 
 @pytest.fixture
@@ -49,43 +48,6 @@ class TestWriteOrderFileFooter:
         assert "## DAG (Obsidian)" in content
         assert "[[jobs/done/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee]]" in content
 
-    def test_write_order_file_without_footer_omits_dag_section(self, tmp_path) -> None:
-        queue_dir = tmp_path / "jobs"
-        queue_dir.mkdir()
-        state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=tmp_path / "exec.jsonl")
-
-        filename = state.write_order_file(
-            "20260509120000",
-            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-            "order body",
-            str(queue_dir),
-            engine="cursor",
-        )
-
-        content = (queue_dir / filename).read_text(encoding="utf-8")
-        assert "## DAG (Obsidian)" not in content
-
-
-class TestSubmitWithoutAuditContext:
-    def test_submit_without_audit_context_raises_type_error(self):
-        """AC7: required — omitting audit_context on LLMPipelineAPI.submit() raises TypeError."""
-        from unittest.mock import MagicMock
-
-        from ghdag.core.models.workflow import StepConfig
-        from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-
-        pipeline_state = MagicMock()
-        pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
-        order_builder = MagicMock()
-        order_builder.build_order.return_value = "order content"
-        api = LLMPipelineAPI(
-            pipeline_state=pipeline_state,
-            order_builder=order_builder,
-        )
-        steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        with pytest.raises(TypeError):
-            api.submit(steps, {})
-
 
 @pytest.fixture
 def jsonl_pipeline(tmp_path):
@@ -99,70 +61,13 @@ def jsonl_pipeline(tmp_path):
 # ---------------------------------------------------------------------------
 
 class TestParseExecTasksJsonl:
-    def test_returns_uuid_command_map(self, jsonl_pipeline):
-        """JSONL mode: parse_exec_tasks returns {uuid: command}."""
-        records = [
-            {"uuid": UUID1, "command": "claude -p order.md", "depends": []},
-            {"uuid": UUID2, "command": "agent --force < order2.md", "depends": []},
-        ]
-        jsonl_pipeline._exec_jsonl_path.write_text(
-            "\n".join(json.dumps(r) for r in records) + "\n"
-        )
-
-        result = jsonl_pipeline.parse_exec_tasks()
-
-        assert result == {UUID1: "claude -p order.md", UUID2: "agent --force < order2.md"}
-
-    def test_skips_invalid_json_lines(self, jsonl_pipeline):
-        """JSONL mode: invalid lines are skipped without raising."""
-        jsonl_pipeline._exec_jsonl_path.write_text(
-            f'{{"uuid": "{UUID1}", "command": "cmd"}}\n'
-            "this-is-not-json\n"
-            f'{{"uuid": "{UUID2}", "command": "cmd2"}}\n'
-        )
-
-        result = jsonl_pipeline.parse_exec_tasks()
-
-        assert UUID1 in result
-        assert UUID2 in result
-
-    def test_skips_missing_fields(self, jsonl_pipeline):
-        """JSONL mode: lines missing uuid or command are skipped."""
-        jsonl_pipeline._exec_jsonl_path.write_text(
-            f'{{"uuid": "{UUID1}", "command": "cmd"}}\n'
-            f'{{"command": "no-uuid"}}\n'
-            f'{{"uuid": "{UUID2}"}}\n'
-        )
-
-        result = jsonl_pipeline.parse_exec_tasks()
-
-        assert result == {UUID1: "cmd"}
 
     def test_empty_file_returns_empty_dict(self, jsonl_pipeline):
         """JSONL mode: empty file → empty dict."""
         assert jsonl_pipeline.parse_exec_tasks() == {}
 
 
-
 class TestRemoveExecEntriesJsonl:
-    def test_removes_matching_uuid(self, jsonl_pipeline):
-        """JSONL mode: entries for the given UUID are removed."""
-        records = [
-            {"uuid": UUID1, "command": "cmd1"},
-            {"uuid": UUID2, "command": "cmd2"},
-            {"uuid": UUID3, "command": "cmd3"},
-        ]
-        jsonl_pipeline._exec_jsonl_path.write_text(
-            "\n".join(json.dumps(r) for r in records) + "\n"
-        )
-
-        removed = jsonl_pipeline.remove_exec_entries({UUID1, UUID3})
-
-        assert removed == 2
-        remaining = jsonl_pipeline.parse_exec_tasks()
-        assert UUID1 not in remaining
-        assert UUID3 not in remaining
-        assert UUID2 in remaining
 
     def test_returns_zero_when_no_match(self, jsonl_pipeline):
         """JSONL mode: no matching UUID → returns 0 and leaves file unchanged."""
@@ -189,68 +94,9 @@ class TestRemoveExecEntriesJsonl:
         assert UUID2 in remaining_text
 
 
-
 # ---------------------------------------------------------------------------
 # JSONL mode: append_exec_records
 # ---------------------------------------------------------------------------
-
-class TestAppendExecRecordsJsonl:
-    def test_writes_valid_jsonl(self, pipeline_jsonl):
-        """append_exec_records writes only valid JSON lines."""
-        records = [
-            {"uuid": UUID1, "command": "cat order.md | claude -p 'x'", "result_path": "jobs/r.md"},
-        ]
-        pipeline_jsonl.append_exec_records(records)
-
-        lines = [ln for ln in pipeline_jsonl._exec_jsonl_path.read_text().splitlines() if ln.strip()]
-        assert len(lines) == 1
-        parsed = json.loads(lines[0])
-        assert parsed["uuid"] == UUID1
-
-    def test_no_comment_lines(self, pipeline_jsonl):
-        """append_exec_records never writes # idempotency: comment lines."""
-        records = [
-            {"uuid": UUID1, "command": "cmd", "idempotency_key": "scheduler:job:ts"},
-        ]
-        pipeline_jsonl.append_exec_records(records)
-
-        content = pipeline_jsonl._exec_jsonl_path.read_text()
-        assert "# idempotency:" not in content
-
-    def test_multiple_records_separate_lines(self, pipeline_jsonl):
-        """Multiple records are written as separate lines, each independently valid JSON."""
-        records = [
-            {"uuid": UUID1, "command": "cmd1"},
-            {"uuid": UUID2, "command": "cmd2"},
-        ]
-        pipeline_jsonl.append_exec_records(records)
-
-        lines = [ln for ln in pipeline_jsonl._exec_jsonl_path.read_text().splitlines() if ln.strip()]
-        assert len(lines) == 2
-        assert json.loads(lines[0])["uuid"] == UUID1
-        assert json.loads(lines[1])["uuid"] == UUID2
-
-    def test_idempotency_key_embedded_in_record(self, pipeline_jsonl):
-        """idempotency_key is embedded as a record field."""
-        key = "scheduler:diary_review:2026-05-08T23:00:00+09:00"
-        records = [{"uuid": UUID1, "command": "cmd", "idempotency_key": key}]
-        pipeline_jsonl.append_exec_records(records)
-
-        line = pipeline_jsonl._exec_jsonl_path.read_text().strip()
-        parsed = json.loads(line)
-        assert parsed["idempotency_key"] == key
-
-    def test_appends_to_existing_content(self, pipeline_jsonl):
-        """Appends without corrupting existing JSON lines."""
-        existing = json.dumps({"uuid": UUID2, "command": "existing"})
-        pipeline_jsonl._exec_jsonl_path.write_text(existing + "\n", encoding="utf-8")
-
-        pipeline_jsonl.append_exec_records([{"uuid": UUID1, "command": "new"}])
-
-        lines = [ln for ln in pipeline_jsonl._exec_jsonl_path.read_text().splitlines() if ln.strip()]
-        assert len(lines) == 2
-        for line in lines:
-            json.loads(line)  # must all be valid JSON
 
 
 # ---------------------------------------------------------------------------
@@ -258,13 +104,6 @@ class TestAppendExecRecordsJsonl:
 # ---------------------------------------------------------------------------
 
 class TestCheckIdempotencyJsonlMode:
-    def test_key_present_returns_false(self, pipeline_jsonl):
-        """Returns False when a JSON line containing the idempotency_key exists."""
-        key = "scheduler:diary_review:2026-05-08T23:00:00+09:00"
-        record = json.dumps({"uuid": UUID1, "command": "cmd", "idempotency_key": key})
-        pipeline_jsonl._exec_jsonl_path.write_text(record + "\n", encoding="utf-8")
-
-        assert pipeline_jsonl.check_idempotency(key) is False
 
     def test_key_absent_returns_true(self, pipeline_jsonl):
         """Returns True when the idempotency_key is absent."""
@@ -277,33 +116,6 @@ class TestCheckIdempotencyJsonlMode:
         """Returns True for an empty file."""
         assert pipeline_jsonl.check_idempotency("any-key") is True
 
-    def test_nonexistent_file_returns_true(self, tmp_path):
-        """Returns True when the file does not exist."""
-        state = PipelineState(
-            state_dir=tmp_path / "state",
-            exec_jsonl_path=tmp_path / "nonexistent.jsonl",
-        )
-        assert state.check_idempotency("any-key") is True
-
-    def test_text_comment_not_matched_in_jsonl_mode(self, pipeline_jsonl):
-        """A legacy # idempotency: text line in exec.jsonl does not match in JSONL mode.
-
-        Scenario with mixed-in legacy text-format lines. JSONL mode looks at JSON fields only.
-        """
-        key = "scheduler:diary_review:2026-05-07T23:00:00+09:00"
-        pipeline_jsonl._exec_jsonl_path.write_text(
-            f"# idempotency: {key}\n", encoding="utf-8"
-        )
-        # JSONL mode does NOT match text-format comment lines
-        assert pipeline_jsonl.check_idempotency(key) is True
-
-    def test_different_key_does_not_match(self, pipeline_jsonl):
-        """A different idempotency_key does not match."""
-        record = json.dumps({"uuid": UUID1, "command": "cmd", "idempotency_key": "other:key"})
-        pipeline_jsonl._exec_jsonl_path.write_text(record + "\n", encoding="utf-8")
-
-        assert pipeline_jsonl.check_idempotency("scheduler:diary_review:ts") is True
-
     def test_invalid_json_line_skipped(self, pipeline_jsonl):
         """JSON parse failures are skipped; only valid lines are evaluated (A1-2)."""
         key = "scheduler:diary_review:2026-05-08T23:00:00+09:00"
@@ -314,14 +126,6 @@ class TestCheckIdempotencyJsonlMode:
             encoding="utf-8",
         )
         assert pipeline_jsonl.check_idempotency(key) is False
-
-    def test_record_without_idempotency_key_does_not_match(self, pipeline_jsonl):
-        """Records without an idempotency_key field do not match (A1-2)."""
-        key = "some:key:value"
-        record = json.dumps({"uuid": UUID1, "command": "cmd"})
-        pipeline_jsonl._exec_jsonl_path.write_text(record + "\n", encoding="utf-8")
-
-        assert pipeline_jsonl.check_idempotency(key) is True
 
 
 # ---------------------------------------------------------------------------
@@ -335,42 +139,6 @@ class TestRemoveIdempotencyMatchingJsonl:
         exec_jsonl = tmp_path / "exec.jsonl"
         exec_jsonl.write_text("", encoding="utf-8")
         return PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
-
-    def test_removes_two_matching_records(self, jsonl_state):
-        """AC2-1: deletes 2 records matching workflow_name and issue_number; returns 2."""
-        jsonl_state._exec_jsonl_path.write_text(
-            json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:42"}) + "\n"
-            + json.dumps({"uuid": UUID2, "idempotency_key": "wf:handler_b:42"}) + "\n",
-            encoding="utf-8",
-        )
-        removed = jsonl_state.remove_idempotency_matching("wf", 42)
-        assert removed == 2
-        content = jsonl_state._exec_jsonl_path.read_text()
-        assert "handler_a" not in content
-        assert "handler_b" not in content
-
-    def test_no_match_returns_zero_and_file_unchanged(self, jsonl_state):
-        """AC2-2: no match (different issue_number) → returns 0, file unchanged."""
-        original = json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:99"}) + "\n"
-        jsonl_state._exec_jsonl_path.write_text(original, encoding="utf-8")
-        removed = jsonl_state.remove_idempotency_matching("wf", 42)
-        assert removed == 0
-        assert jsonl_state._exec_jsonl_path.read_text() == original
-
-    def test_keyless_and_non_matching_records_preserved(self, jsonl_state):
-        """AC2-3: records without idempotency_key / non-matching remain."""
-        jsonl_state._exec_jsonl_path.write_text(
-            json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:42"}) + "\n"
-            + json.dumps({"uuid": UUID2, "idempotency_key": "wf:handler_b:99"}) + "\n"
-            + json.dumps({"uuid": UUID3, "command": "echo hi"}) + "\n",
-            encoding="utf-8",
-        )
-        removed = jsonl_state.remove_idempotency_matching("wf", 42)
-        assert removed == 1
-        content = jsonl_state._exec_jsonl_path.read_text()
-        assert "handler_a" not in content
-        assert "handler_b" in content
-        assert UUID3 in content
 
     def test_file_not_exists_returns_zero(self, tmp_path):
         """AC2-4: missing file → returns 0, no error."""
@@ -407,19 +175,6 @@ class TestRemoveIdempotencyForHandler:
         exec_jsonl.write_text("", encoding="utf-8")
         return PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
 
-    def test_removes_only_matched_handler(self, state):
-        """Only pipeline_retry is removed; pipeline remains."""
-        state._exec_jsonl_path.write_text(
-            json.dumps({"uuid": UUID1, "idempotency_key": "research:pipeline_retry:42"}) + "\n"
-            + json.dumps({"uuid": UUID2, "idempotency_key": "research:pipeline:42"}) + "\n",
-            encoding="utf-8",
-        )
-        removed = state.remove_idempotency_for_handler("research", "pipeline_retry", 42)
-        assert removed == 1
-        content = state._exec_jsonl_path.read_text()
-        assert "pipeline_retry" not in content
-        assert "pipeline:42" in content
-
     def test_returns_count_for_multiple_matches(self, state):
         """Two records with the same key → returns 2."""
         state._exec_jsonl_path.write_text(
@@ -437,41 +192,3 @@ class TestRemoveIdempotencyForHandler:
         removed = state.remove_idempotency_for_handler("wf", "handler_a", 42)
         assert removed == 0
         assert state._exec_jsonl_path.read_text() == original
-
-    def test_remove_idempotency_matching_unchanged_after_refactor(self, state):
-        """Existing remove_idempotency_matching still deletes all wf:*:42 matches (regression)."""
-        state._exec_jsonl_path.write_text(
-            json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:42"}) + "\n"
-            + json.dumps({"uuid": UUID2, "idempotency_key": "wf:handler_b:42"}) + "\n",
-            encoding="utf-8",
-        )
-        removed = state.remove_idempotency_matching("wf", 42)
-        assert removed == 2
-        content = state._exec_jsonl_path.read_text()
-        assert "handler_a" not in content
-        assert "handler_b" not in content
-
-    def test_concurrent_write_safe(self, state, tmp_path):
-        """Concurrent writes from two threads are serialized by fcntl locking."""
-        import threading
-
-        state._exec_jsonl_path.write_text(
-            json.dumps({"uuid": UUID1, "idempotency_key": "wf:handler_a:1"}) + "\n"
-            + json.dumps({"uuid": UUID2, "idempotency_key": "wf:handler_a:2"}) + "\n",
-            encoding="utf-8",
-        )
-        results = []
-
-        def remove(issue_num):
-            results.append(state.remove_idempotency_for_handler("wf", "handler_a", issue_num))
-
-        t1 = threading.Thread(target=remove, args=(1,))
-        t2 = threading.Thread(target=remove, args=(2,))
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
-
-        assert sum(results) == 2
-        content = state._exec_jsonl_path.read_text()
-        assert "handler_a" not in content

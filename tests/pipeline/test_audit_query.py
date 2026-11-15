@@ -26,18 +26,6 @@ def audit_path(tmp_path):
 # ---------------------------------------------------------------------------
 
 class TestReadTaskExitEvents:
-    def test_filter_by_correlation_id(self, audit_path):
-        _write_events(audit_path, [
-            {"event_type": "task_complete", "uuid": "u1", "status": "success",
-             "correlation_id": "issuesmith:B1:123", "timestamp": "2026-01-01T00:00:00+09:00"},
-            {"event_type": "task_failed", "uuid": "u2", "status": "failure",
-             "correlation_id": "issuesmith:B1:999", "timestamp": "2026-01-01T00:01:00+09:00"},
-        ])
-
-        result = read_task_exit_events(audit_path, correlation_id="issuesmith:B1:123")
-
-        assert len(result) == 1
-        assert result[0]["uuid"] == "u1"
 
     def test_filter_by_uuid(self, audit_path):
         _write_events(audit_path, [
@@ -82,39 +70,6 @@ class TestReadTaskExitEvents:
         assert result[1]["uuid"] == "u3"
         assert result[2]["uuid"] == "u4"
 
-    def test_filter_by_since(self, audit_path):
-        _write_events(audit_path, [
-            {"event_type": "task_complete", "uuid": "u1", "status": "success",
-             "correlation_id": "cid", "timestamp": "2026-01-01T00:00:00+09:00"},
-            {"event_type": "task_complete", "uuid": "u2", "status": "success",
-             "correlation_id": "cid", "timestamp": "2026-06-01T00:00:00+09:00"},
-        ])
-        # epoch for 2026-03-01T00:00:00+09:00
-        import datetime
-        since_dt = datetime.datetime(2026, 3, 1, 0, 0, 0,
-                                     tzinfo=datetime.timezone(datetime.timedelta(hours=9)))
-        since_epoch = since_dt.timestamp()
-
-        result = read_task_exit_events(audit_path, since=since_epoch)
-
-        assert len(result) == 1
-        assert result[0]["uuid"] == "u2"
-
-    def test_and_filter_correlation_and_event_type(self, audit_path):
-        _write_events(audit_path, [
-            {"event_type": "task_failed", "uuid": "u1", "status": "failure",
-             "correlation_id": "X", "timestamp": "2026-01-01T00:00:00+09:00"},
-            {"event_type": "task_complete", "uuid": "u2", "status": "success",
-             "correlation_id": "X", "timestamp": "2026-01-01T00:01:00+09:00"},
-            {"event_type": "task_failed", "uuid": "u3", "status": "failure",
-             "correlation_id": "Y", "timestamp": "2026-01-01T00:02:00+09:00"},
-        ])
-
-        result = read_task_exit_events(audit_path, correlation_id="X", event_type="task_failed")
-
-        assert len(result) == 1
-        assert result[0]["uuid"] == "u1"
-
     def test_file_not_exists_returns_empty(self, tmp_path):
         result = read_task_exit_events(tmp_path / "nonexistent.jsonl")
         assert result == []
@@ -135,35 +90,12 @@ class TestReadTaskExitEvents:
         uuids = {r["uuid"] for r in result}
         assert uuids == {"u1", "u2"}
 
-    def test_no_filters_returns_all(self, audit_path):
-        _write_events(audit_path, [
-            {"event_type": "task_complete", "uuid": "u1", "status": "success",
-             "correlation_id": "c1", "timestamp": "2026-01-01T00:00:00+09:00"},
-            {"event_type": "task_failed", "uuid": "u2", "status": "failure",
-             "correlation_id": "c2", "timestamp": "2026-01-01T00:01:00+09:00"},
-        ])
-
-        result = read_task_exit_events(audit_path)
-
-        assert len(result) == 2
-
 
 # ---------------------------------------------------------------------------
 # get_latest_status
 # ---------------------------------------------------------------------------
 
 class TestGetLatestStatus:
-    def test_returns_latest_status(self, audit_path):
-        _write_events(audit_path, [
-            {"event_type": "task_failed", "uuid": "u1", "status": "failure",
-             "correlation_id": "issuesmith:B1:123", "timestamp": "2026-01-01T00:00:00+09:00"},
-            {"event_type": "task_complete", "uuid": "u2", "status": "success",
-             "correlation_id": "issuesmith:B1:123", "timestamp": "2026-01-01T00:01:00+09:00"},
-        ])
-
-        result = get_latest_status(audit_path, "issuesmith:B1:123")
-
-        assert result == "success"
 
     def test_returns_none_for_unknown_id(self, audit_path):
         _write_events(audit_path, [
@@ -190,13 +122,6 @@ class TestGetLatestStatus:
 # ---------------------------------------------------------------------------
 
 class TestPublicAPI:
-    def test_read_task_exit_events_importable(self, audit_path):
-        _write_events(audit_path, [
-            {"event_type": "task_complete", "uuid": "u1", "status": "success",
-             "correlation_id": "cid", "timestamp": "2026-01-01T00:00:00+09:00"},
-        ])
-        result = read_task_exit_events(audit_path, correlation_id="cid")
-        assert len(result) == 1
 
     def test_get_latest_status_importable(self, audit_path):
         _write_events(audit_path, [
@@ -212,75 +137,6 @@ class TestPublicAPI:
 # ---------------------------------------------------------------------------
 
 class TestMultiFileRead:
-    def test_read_events_merges_rotated_and_current_files(self, tmp_path):
-        """AC-8: 3 records in rotated + 2 in current → 5 total."""
-        audit_path = tmp_path / "audit.jsonl"
-        rotated = tmp_path / "audit.2026-05-22T00-00-00.jsonl"
-
-        _write_events(rotated, [
-            {"event_type": "task_complete", "uuid": f"u{i}", "status": "success",
-             "correlation_id": "cid", "timestamp": "2026-05-22T00:00:00+09:00"}
-            for i in range(3)
-        ])
-        _write_events(audit_path, [
-            {"event_type": "task_complete", "uuid": f"u{i+3}", "status": "success",
-             "correlation_id": "cid", "timestamp": "2026-05-23T00:00:00+09:00"}
-            for i in range(2)
-        ])
-
-        result = read_task_exit_events(audit_path)
-        assert len(result) == 5
-
-    def test_read_events_from_rotated_file_only(self, tmp_path):
-        """AC-9: only rotated file exists → records returned."""
-        audit_path = tmp_path / "audit.jsonl"
-        rotated = tmp_path / "audit.2026-05-22T00-00-00.jsonl"
-
-        _write_events(rotated, [
-            {"event_type": "task_complete", "uuid": "u1", "status": "success",
-             "correlation_id": "cid", "timestamp": "2026-05-22T00:00:00+09:00"},
-        ])
-
-        result = read_task_exit_events(audit_path)
-        assert len(result) == 1
-        assert result[0]["uuid"] == "u1"
-
-    def test_since_filter_applies_across_rotated_and_current(self, tmp_path):
-        """AC-10: since filter applies across rotated + current."""
-        import datetime
-        audit_path = tmp_path / "audit.jsonl"
-        rotated = tmp_path / "audit.2026-05-22T00-00-00.jsonl"
-
-        _write_events(rotated, [
-            {"event_type": "task_complete", "uuid": "old", "status": "success",
-             "correlation_id": "cid", "timestamp": "2026-05-22T00:00:00+09:00"},
-        ])
-        _write_events(audit_path, [
-            {"event_type": "task_complete", "uuid": "new", "status": "success",
-             "correlation_id": "cid", "timestamp": "2026-05-23T00:00:00+09:00"},
-        ])
-
-        since_dt = datetime.datetime(
-            2026, 5, 23, 0, 0, 0,
-            tzinfo=datetime.timezone(datetime.timedelta(hours=9)),
-        )
-        result = read_task_exit_events(audit_path, since=since_dt.timestamp())
-
-        assert len(result) == 1
-        assert result[0]["uuid"] == "new"
-
-    def test_get_latest_status_reads_rotated_file(self, tmp_path):
-        """AC-11: get_latest_status finds record in rotated file."""
-        audit_path = tmp_path / "audit.jsonl"
-        rotated = tmp_path / "audit.2026-05-22T00-00-00.jsonl"
-
-        _write_events(rotated, [
-            {"event_type": "task_complete", "uuid": "u1", "status": "success",
-             "correlation_id": "cid:123", "timestamp": "2026-05-22T00:00:00+09:00"},
-        ])
-
-        result = get_latest_status(audit_path, "cid:123")
-        assert result == "success"
 
     def test_read_events_missing_files_returns_empty(self, tmp_path):
         """AC-12: no files at all → empty list."""

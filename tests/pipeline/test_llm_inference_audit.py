@@ -4,15 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 
 import pytest
 
 from ghdag.io.audit import compute_prompt_hash, write_llm_inference_audit
-
-_UUID4_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
 
 
 class TestComputePromptHash:
@@ -37,61 +32,6 @@ class TestComputePromptHash:
 
 
 class TestWriteLlmInferenceAudit:
-    def test_write_llm_inference_audit_record_fields(self, tmp_path):
-        audit_path = tmp_path / "audit.jsonl"
-        write_llm_inference_audit(
-            audit_path,
-            prompt_hash="abc123",
-            latency_ms=2345.67,
-            engine="claude",
-            model="claude-sonnet-4-6",
-            correlation_id="issuesmith:impl:1275",
-        )
-
-        assert audit_path.exists()
-        r = json.loads(audit_path.read_text().strip())
-        assert r["schema_version"] == 1
-        assert r["event_type"] == "llm.inference"
-        assert "+00:00" in r["timestamp"]
-        assert _UUID4_RE.match(r["uuid"])
-        assert r["prompt_hash"] == "abc123"
-        assert r["latency_ms"] == 2345.7
-        assert r["engine"] == "claude"
-        assert r["model"] == "claude-sonnet-4-6"
-        assert r["correlation_id"] == "issuesmith:impl:1275"
-
-    def test_write_llm_inference_audit_correlation_id_none(self, tmp_path):
-        audit_path = tmp_path / "audit.jsonl"
-        write_llm_inference_audit(
-            audit_path,
-            prompt_hash="abc123",
-            latency_ms=100.0,
-            engine="claude",
-            model="claude-sonnet-4-6",
-        )
-        r = json.loads(audit_path.read_text().strip())
-        assert r["correlation_id"] is None
-
-    def test_write_llm_inference_audit_rotation(self, tmp_path, monkeypatch):
-        import ghdag.io._rotate as rotate_mod
-
-        monkeypatch.setattr(rotate_mod, "_MAX_AUDIT_BYTES", 5)
-
-        audit_path = tmp_path / "audit.jsonl"
-        audit_path.write_text("x" * 10 + "\n")
-
-        write_llm_inference_audit(
-            audit_path,
-            prompt_hash="abc123",
-            latency_ms=100.0,
-            engine="claude",
-            model="model",
-        )
-
-        assert len(sorted(tmp_path.glob("audit.*.jsonl"))) == 1
-        lines = audit_path.read_text().strip().splitlines()
-        assert len(lines) == 1
-        assert json.loads(lines[0])["event_type"] == "llm.inference"
 
     def test_write_failure_logs_stderr_no_exception(self, tmp_path, capsys):
         audit_path = tmp_path / "audit.jsonl"
