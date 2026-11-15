@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.139.3-blue)
+![version](https://img.shields.io/badge/version-v0.139.4-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.139.3** (`pyproject.toml` `version = "0.139.3"`) |
+| Current release | **v0.139.4** (`pyproject.toml` `version = "0.139.4"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.139.3"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.139.4"
 ```
 
 Install from a checkout with the development tools:
@@ -243,7 +243,7 @@ Every leaf subcommand accepts `--json` (`dest="output_json"`). With `--json`, su
 | `ghdag schema` | Bundled JSON Schema utilities |
 | `ghdag schema list` | List bundled JSON Schema names |
 | `ghdag schema show` | Print one bundled JSON Schema |
-| `ghdag mcp` | Run stdio MCP server (`ghdag_enqueue`, `ghdag_status` tools) |
+| `ghdag mcp` | Run stdio MCP server (`ghdag_enqueue`, `ghdag_status`, `ghdag_read` tools) |
 
 ### Arguments and defaults
 
@@ -269,7 +269,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 | `quota resume` | `engine`; `--state-path PATH` (as above) |
 | `quota status` | `--state-path PATH` (as above); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--done-dir PATH` (`$GHDAG_STATE_DIR/done` or `<exec.jsonl parent>/done`) |
 | `validate` | `workflows_dir` |
-| `mcp` | `--repo-root PATH` (`.`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--state-dir PATH` (same default pattern as `watch` when `exec-jsonl` lives under `jobs/`) |
+| `mcp` | `--repo-root PATH` (`.`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--state-dir PATH` (same default pattern as `watch` when `exec-jsonl` lives under `jobs/`); `--read-path PATH` (repeatable, repo-relative allowlist for `ghdag_read`) |
 
 ### Behavior notes
 
@@ -515,7 +515,8 @@ A third process can enqueue and inspect the same queue over newline-delimited JS
 | MCP tool | Input | Output (`structuredContent`) |
 |---|---|---|
 | `ghdag_enqueue` | `steps` (1–20 items; each needs `engine` and `command` or `prompt`; optional `id`, default `step-<n>`) | `{"uuids": {<step id>: <uuid>}}` |
-| `ghdag_status` | `uuids` (1–100) **or** `issue` + `handler` + `workflow` | `{"tasks": [...]}` with `pending` / `running` / `success` / `failed`, or Issue DAG snapshot |
+| `ghdag_status` | `uuids` (1–100) **or** `issue` + `handler` + `workflow`; with `uuids`, optional `include_result` (boolean) embeds capped result file bodies | `{"tasks": [...]}` with `pending` / `running` / `success` / `failed`, or Issue DAG snapshot |
+| `ghdag_read` | `path` (repo-relative; must be listed by `--read-path`) | `{"path", "content", "truncated", "reason"}` — read-only, 64 KiB cap |
 
 `tools/call` success sets `isError: false` and puts the payload in `structuredContent`. Domain failures (`ConfigError` and subclasses) return `isError: true` with `structuredContent` shaped like `GhdagError.to_dict()` and a one-line `content[].text` prefix `error[<CODE>]: …`. Unknown tool names return JSON-RPC `error.code == -32602`.
 
@@ -717,7 +718,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `metrics/recorder.py` | `MetricsRecorder`: locked JSONL append |
 | `mcp/__init__.py` | MCP server package |
 | `mcp/server.py` | JSON-RPC 2.0 stdio MCP server |
-| `mcp/tools.py` | `ghdag_enqueue` / `ghdag_status` tool handlers |
+| `mcp/tools.py` | `ghdag_enqueue` / `ghdag_status` / `ghdag_read` tool handlers |
 | `pipeline/__init__.py` | Intake pipeline public API |
 | `pipeline/config.py` | `PipelineConfig`, `resolve_models` (`ModelValidationError`) |
 | `pipeline/llm_pipeline.py` | `LLMPipelineAPI`, `SubmittedStep` (`DependencyError`) |
@@ -1039,7 +1040,7 @@ Additional error `code` values without a dedicated exception type:
 | Code | Exception class | Exit | Raised when |
 |---|---|---|---|
 | `SCHEMA_UNKNOWN` | `ConfigError` | 3 | `ghdag schema show` with an unknown schema name |
-| `MCP_ARGUMENT_INVALID` | `ConfigError` | 3 | MCP `tools/call` with unknown keys, invalid types, or conflicting shapes |
+| `MCP_ARGUMENT_INVALID` | `ConfigError` | 3 | MCP `tools/call` with unknown keys, invalid types, or conflicting shapes; `ghdag_read` path not listed by `--read-path`; invalid `--read-path` at startup |
 | `WORKFLOWS_DIR_NOT_FOUND` | `CliUsageError` | 2 | `ghdag validate` when `workflows_dir` does not exist |
 
 | Exception | Parent(s) | Code | Exit | Defined in | Raised when |
@@ -1170,7 +1171,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.139.3"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.139.4"
 ```
 
 and read `CHANGELOG.md` before upgrading.

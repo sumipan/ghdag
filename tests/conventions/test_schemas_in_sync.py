@@ -99,6 +99,7 @@ def test_permission_registry_matches_workflow_and_mcp_schema(tmp_path: Path) -> 
         queue_dir=str(jobs),
         done_dir=jobs / "done",
         running_dir=jobs / "running",
+        repo_root=tmp_path,
     )
     enqueue = next(
         t for t in McpToolRegistry(runtime).list_tools() if t["name"] == "ghdag_enqueue"

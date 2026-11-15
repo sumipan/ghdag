@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.139.4 - 2026-11-15
+
+### Added
+
+- MCP `ghdag_read` tool and `ghdag mcp --read-path` allowlist for capped repo file reads; `ghdag_status` accepts optional `include_result` with uuid lookups (sumipan/nexus#6837).
+
 ## 0.139.3 - 2026-11-15
 
 ### Changed

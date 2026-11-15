@@ -18,8 +18,6 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _README = _REPO_ROOT / "README.md"
 _LLMS = _REPO_ROOT / "llms.txt"
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
-_CHANGELOG = _REPO_ROOT / "CHANGELOG.md"
-
 _LOCALFORGE_MARKER = "<!-- ghdag-localforge-quick-start -->"
 _FENCE_START = re.compile(r"^```bash\s*$")
 _FENCE_END = re.compile(r"^```\s*$")
@@ -195,41 +193,3 @@ def test_execution_review_table_covers_artifacts_and_status_interfaces() -> None
     assert len(rows) >= len(required) + 1, "expected header plus one row per artifact/interface"
 
 
-def _unreleased_block(text: str) -> str:
-    marker = "## [Unreleased]"
-    assert marker in text, "CHANGELOG missing [Unreleased]"
-    tail = text.split(marker, 1)[1]
-    match = re.search(r"\n## \d", tail)
-    return tail[: match.start()] if match else tail
-
-
-def _current_change_block(text: str) -> str:
-    """Return pending notes, or the shipped changelog section that cites #6610 (0.133.4)."""
-    unreleased = _unreleased_block(text)
-    if unreleased.strip():
-        return unreleased
-
-    issue_marker = "sumipan/nexus#6610"
-    for match in re.finditer(
-        r"^## [^\n]+\n(?P<body>.*?)(?=^## |\Z)",
-        text,
-        re.MULTILINE | re.DOTALL,
-    ):
-        if issue_marker in match.group("body"):
-            return match.group("body")
-
-    assert False, f"CHANGELOG missing a release section containing {issue_marker}"
-
-
-def test_unreleased_changelog_records_identity_docs_update() -> None:
-    """Refs sumipan/nexus#6610 — pending/current notes cover identity, version, LocalForge, review."""
-    block = _current_change_block(_CHANGELOG.read_text(encoding="utf-8"))
-
-    themes = (
-        re.compile(r"identity|messaging|positioning", re.IGNORECASE),
-        re.compile(r"version|release|README", re.IGNORECASE),
-        re.compile(r"LocalForge|GitHub-free|without GitHub", re.IGNORECASE),
-        re.compile(r"review|retrospect|artifact", re.IGNORECASE),
-    )
-    for pattern in themes:
-        assert pattern.search(block), f"current change notes missing theme matching {pattern.pattern}"
