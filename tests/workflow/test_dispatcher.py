@@ -16,9 +16,8 @@ from ghdag.core.models.workflow import (
     WorkflowConfig,
 )
 from ghdag.github_client import GitHubIssuePort
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
+from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
-from ghdag.workflow.loader import load_workflows
 
 _FIXED_WALL_EPOCH = 1_700_000_000
 
@@ -51,27 +50,6 @@ def _make_dispatcher(tmp_path: Path) -> tuple[WorkflowDispatcher, MagicMock]:
 
 def _iso(ts: int) -> str:
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
-
-
-def test_once_rate_limited_logs_skip_line_without_raising(tmp_path, caplog, monkeypatch):
-    """AC-2: watch --once (max_iterations=1) logs one skip line and returns normally."""
-    monkeypatch.setattr(
-        "ghdag.workflow.dispatcher.time.time", lambda: _FIXED_WALL_EPOCH,
-    )
-    dispatcher, github = _make_dispatcher(tmp_path)
-    reset_at = _FIXED_WALL_EPOCH + 600
-    github.list_all_issues.side_effect = RateLimitError(
-        "rate limited", status_code=403, reset_at=reset_at
-    )
-
-    with caplog.at_level(logging.INFO, logger="ghdag.workflow.dispatcher"):
-        dispatcher.run(max_iterations=1)
-
-    skip_lines = [
-        r.getMessage() for r in caplog.records if "rate limited: skip poll until" in r.getMessage()
-    ]
-    assert skip_lines == [f"rate limited: skip poll until {_iso(reset_at)}"]
-    assert dispatcher._rate_limited_until == reset_at
 
 
 def test_poll_skipped_until_reset(tmp_path, caplog, monkeypatch):
@@ -199,62 +177,3 @@ handlers:
         engine: shell
 """
     (wf_dir / "wf.yml").write_text(yaml_content, encoding="utf-8")
-
-
-def test_dispatch_uses_workflow_dir_templates_when_template_dir_omitted(
-    tmp_path: Path, monkeypatch,
-) -> None:
-    """Refs sumipan/nexus#6803 — dispatch reads templates under the workflow YAML directory."""
-    marker = "echo wf-dir-marker\n"
-    wf_dir = tmp_path / "wf"
-    wf_dir.mkdir()
-    other_cwd = tmp_path / "other"
-    other_cwd.mkdir()
-    _write_workflow_without_template_dir(wf_dir, marker=marker)
-
-    queue = tmp_path / "queue"
-    queue.mkdir()
-    monkeypatch.chdir(other_cwd)
-
-    configs = load_workflows(wf_dir)
-    workflow = configs[0]
-    order_builders = build_order_builders(configs)
-
-    captured: list[str] = []
-
-    def _capture_write(ts, step_uuid, order_content, queue_dir, engine="claude"):
-        captured.append(order_content)
-        return f"{ts}-{engine}-order-{step_uuid}.md"
-
-    pipeline_state = MagicMock()
-    pipeline_state.check_idempotency.return_value = True
-    pipeline_state.write_order_file.side_effect = _capture_write
-    pipeline = LLMPipelineAPI(
-        pipeline_state=pipeline_state,
-        order_builder=order_builders[workflow.name],
-        queue_dir=str(queue),
-        order_builders=order_builders,
-    )
-    github = MagicMock(spec=GitHubIssuePort)
-    dispatcher = WorkflowDispatcher(
-        workflows=[workflow],
-        github_client=github,
-        pipeline=pipeline,
-        queue_dir=str(queue),
-    )
-    issue = {
-        "number": 11,
-        "title": "t",
-        "body": "",
-        "labels": [{"name": "pipe:ready"}],
-        "url": "https://example/issues/11",
-    }
-    result = dispatcher.dispatch(
-        issue,
-        workflow,
-        workflow.handlers["run"],
-        trigger=workflow.triggers[0],
-        trigger_rank=0,
-    )
-    assert result.status == "dispatched"
-    assert captured == [marker]

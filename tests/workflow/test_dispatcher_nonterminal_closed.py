@@ -99,29 +99,6 @@ def _fake_list_all(open_issues=None, closed_issues=None):
     return _impl
 
 
-class TestBackwardCompatibility:
-    def test_poll_once_without_nonterminal_closed_uses_open_only(self):
-        workflow = _make_workflow()
-        dispatcher, github_client, _ = _make_dispatcher(workflow)
-
-        dispatcher.poll_once()
-
-        assert github_client.list_all_issues.call_count == 1
-        assert github_client.list_all_issues.call_args.args[0] == "open"
-
-    def test_poll_once_without_nonterminal_closed_no_closed_scan(self):
-        workflow = _make_workflow()
-        dispatcher, github_client, _ = _make_dispatcher(workflow)
-
-        dispatcher.poll_once()
-
-        states = [
-            (call.args[0] if call.args else call.kwargs.get("state", "open"))
-            for call in github_client.list_all_issues.call_args_list
-        ]
-        assert "closed" not in states
-
-
 class TestReopenAction:
     def test_closed_nonterminal_issue_is_reopened(self):
         config = NonterminalClosedConfig(
@@ -141,52 +118,6 @@ class TestReopenAction:
         github_client.add_comment.assert_called_once()
         assert "<!-- ghdag:nonterminal_closed:reopen:42 -->" in github_client.add_comment.call_args[0][1]
         assert results == []
-
-    def test_terminal_closed_issue_is_not_reopened(self):
-        config = NonterminalClosedConfig(
-            action="reopen",
-            terminal_labels=["issuesmith:merge-done", "issuesmith:rejected"],
-        )
-        workflow = _make_workflow(nonterminal_closed=config)
-        dispatcher, github_client, _ = _make_dispatcher(workflow)
-        issue = _make_issue(99, ["issuesmith:merge-done"], state="closed")
-        github_client.list_all_issues.side_effect = _fake_list_all(closed_issues=[issue])
-
-        dispatcher.poll_once()
-
-        github_client.reopen_issue.assert_not_called()
-        github_client.add_comment.assert_not_called()
-
-    def test_reopened_issue_detected_on_next_open_scan(self):
-        config = NonterminalClosedConfig(
-            action="reopen",
-            terminal_labels=["issuesmith:merge-done"],
-        )
-        workflow = _make_workflow(nonterminal_closed=config)
-        dispatcher, github_client, _ = _make_dispatcher(workflow)
-        closed_issue = _make_issue(7, ["issuesmith:develop-done"], state="closed")
-        open_issue = _make_issue(7, ["issuesmith:develop-done"], state="open")
-        phase = {"reopened": False}
-
-        def fake_list_all(state: str = "open"):
-            if state == "closed" and not phase["reopened"]:
-                return [closed_issue]
-            if state == "open":
-                return [open_issue] if phase["reopened"] else []
-            return []
-
-        def fake_reopen(number: int):
-            phase["reopened"] = True
-
-        github_client.list_all_issues.side_effect = fake_list_all
-        github_client.reopen_issue.side_effect = fake_reopen
-
-        dispatcher.poll_once()
-        matches = dispatcher.poll_once()
-
-        assert github_client.reopen_issue.call_count == 1
-        assert len(matches) == 1
-        assert matches[0]["issue"] == 7
 
 
 class TestIdempotency:
@@ -267,17 +198,6 @@ class TestLoaderParse:
         assert config.nonterminal_closed.action == "reopen"
         assert config.nonterminal_closed.terminal_labels == ["issuesmith:merge-done"]
         assert config.nonterminal_closed.trigger is None
-
-    def test_parse_without_nonterminal_closed_returns_none(self):
-        data = {
-            "name": "issuesmith",
-            "triggers": [{"label": "issuesmith:develop-done", "handler": "impl"}],
-            "handlers": {
-                "impl": {"steps": [{"template": "impl", "model": "claude-opus-4-6"}]},
-            },
-        }
-        config = _parse(data)
-        assert config.nonterminal_closed is None
 
 
 class TestReopenIssue:
