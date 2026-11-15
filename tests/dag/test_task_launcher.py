@@ -124,33 +124,6 @@ def test_quota_deferred_log_is_emitted_once_for_same_reason(
 # --- Failure stderr artifacts ---
 
 
-def _stderr_run_config(tmp_path: Path, task: dict):
-    jobs = tmp_path / "jobs"
-    done = jobs / "done"
-    done.mkdir(parents=True)
-    audit_path = jobs / "audit.jsonl"
-    exec_jsonl = tmp_path / "exec.jsonl"
-    exec_jsonl.write_text(json.dumps(task) + "\n", encoding="utf-8")
-    config = DagConfig(
-        exec_jsonl_path=str(exec_jsonl),
-        exec_done_dir=str(done),
-        poll_interval=0.05,
-        launch_stagger=0.0,
-        lock_file=str(tmp_path / "lock"),
-    )
-    hooks = AuditHooks(audit_path=audit_path)
-    engine = DagEngine(config, hooks)
-    return jobs, audit_path, engine
-
-
-def _audit_record(audit_path: Path, event_type: str) -> dict:
-    for line in audit_path.read_text().splitlines():
-        record = json.loads(line)
-        if record.get("event_type") == event_type:
-            return record
-    raise AssertionError(f"no {event_type} in audit")
-
-
 def _run_engine_to_completion(
     engine: DagEngine,
     *,

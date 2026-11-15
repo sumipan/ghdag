@@ -77,24 +77,7 @@ def _spin_until(predicate) -> bool:
     return True
 
 
-class _FakeClock:
-    def __init__(self, mono: float = 10_000.0, wall: float = 1_700_000_000.0) -> None:
-        self._mono = mono
-        self._wall = wall
-
-    def monotonic(self) -> float:
-        return self._mono
-
-    def time(self) -> float:
-        return self._wall
-
-    def advance(self, sec: float) -> None:
-        self._mono += sec
-        self._wall += sec
-
-
 UUID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-UUID_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 
 
 class TestMarkInterruptedAll:

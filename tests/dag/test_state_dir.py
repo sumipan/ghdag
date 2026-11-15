@@ -4,21 +4,10 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
-from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
-from ghdag.dag.hooks import DagHooks
-from ghdag.dag.models import DagConfig
-from ghdag.dag.task_launcher import TaskLauncher
 from ghdag.pipeline.state import PipelineState
-
-
-def _launcher(config: DagConfig) -> TaskLauncher:
-    return TaskLauncher(
-        config, MagicMock(spec=DagHooks), CircuitBreakerPolicy(float("inf"), 2**31), MagicMock(), lambda _: None
-    )
 
 
 @pytest.fixture
