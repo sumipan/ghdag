@@ -67,18 +67,27 @@ handlers:
         args.redispatch = False
         args.reason = None
 
-        with patch("ghdag.github_client.create_github_client", return_value=mock_github):
+        with patch(
+            "ghdag.github_client.create_github_clients",
+            return_value=[mock_github],
+        ):
             cmd_trigger(args)
 
         args.redispatch = False
-        with patch("ghdag.github_client.create_github_client", return_value=mock_github):
+        with patch(
+            "ghdag.github_client.create_github_clients",
+            return_value=[mock_github],
+        ):
             with pytest.raises(SystemExit) as exc_skip:
                 cmd_trigger(args)
             assert exc_skip.value.code == 1
 
         args.redispatch = True
         args.reason = "design changed"
-        with patch("ghdag.github_client.create_github_client", return_value=mock_github):
+        with patch(
+            "ghdag.github_client.create_github_clients",
+            return_value=[mock_github],
+        ):
             cmd_trigger(args)
 
         content = exec_jsonl.read_text(encoding="utf-8")
@@ -132,7 +141,10 @@ handlers:
         args.redispatch = True
         args.reason = "worktree lost"
 
-        with patch("ghdag.github_client.create_github_client", return_value=mock_github):
+        with patch(
+            "ghdag.github_client.create_github_clients",
+            return_value=[mock_github],
+        ):
             cmd_trigger(args)
 
         audit_path = exec_jsonl.parent / "audit.jsonl"
