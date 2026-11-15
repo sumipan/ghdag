@@ -1,6 +1,6 @@
 """ghdag.dag — Generic DAG execution engine."""
 
-from ghdag.core.vocabulary import DONE_SUCCESS, LEGACY_DONE_DEFERRED, PIPELINE_WAIT_QUOTA
+from ghdag.core.vocabulary import DONE_SUCCESS, PIPELINE_WAIT_QUOTA
 
 from ._util import WaitQuotaSignal, check_pipeline_status, default_check_rejected, parse_wait_quota_signal
 from ._util import _extract_tee_target as extract_tee_target
@@ -18,7 +18,6 @@ __all__ = [
     "DagHooks",
     "DONE_SUCCESS",
     "FanOutSpec",
-    "LEGACY_DONE_DEFERRED",
     "PIPELINE_WAIT_QUOTA",
     "Task",
     "WaitQuotaSignal",

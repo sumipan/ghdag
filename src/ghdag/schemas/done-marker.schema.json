@@ -23,8 +23,7 @@
         "SKIPPED_MISSING_INPUT",
         "UNKNOWN_FAILURE",
         "ORPHAN_ARCHIVED",
-        "ORPHANED_ON_RESTART",
-        "DEFERRED"
+        "ORPHANED_ON_RESTART"
       ],
       "description": "Known terminal token on the first line."
     },

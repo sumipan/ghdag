@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.140.9-blue)
+![version](https://img.shields.io/badge/version-v0.140.10-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.140.9** (`pyproject.toml` `version = "0.140.9"`) |
+| Current release | **v0.140.10** (`pyproject.toml` `version = "0.140.10"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.140.9"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.140.10"
 ```
 
 Install from a checkout with the development tools:
@@ -387,7 +387,7 @@ With a `quota_gate`, `call()` walks `route` from front to back: engines marked p
 |---|---|
 | `ghdag.cli` | `main` |
 | `ghdag.core.ports` | `ForgePort` |
-| `ghdag.dag` | `AuditHooks`, `DagConfig`, `DagEngine`, `DagHooks`, `DONE_SUCCESS`, `FanOutSpec`, `LEGACY_DONE_DEFERRED`, `PIPELINE_WAIT_QUOTA`, `Task`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
+| `ghdag.dag` | `AuditHooks`, `DagConfig`, `DagEngine`, `DagHooks`, `DONE_SUCCESS`, `FanOutSpec`, `PIPELINE_WAIT_QUOTA`, `Task`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
 | `ghdag.files` | `md_read`, `md_write` |
 | `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
 | `ghdag.forge` | `ForgePort`, `GitHubApiError`, `GitHubClient`, `LocalForge`, `get_forge` |
@@ -1140,7 +1140,6 @@ Contents of `done/<uuid>` (constants in `ghdag.core.vocabulary`). Marker bodies 
 | `DONE_UNKNOWN_FAILURE` | `UNKNOWN_FAILURE` | Unclassified failure |
 | `DONE_ORPHAN_ARCHIVED` | `ORPHAN_ARCHIVED` | Archived by `ghdag cleanup` as an orphan |
 | `DONE_ORPHANED_ON_RESTART` | `ORPHANED_ON_RESTART` | Task lost across a runner restart (recoverable with `ghdag dag recover`) |
-| `LEGACY_DONE_DEFERRED` | `DEFERRED` | Legacy marker removed during the first exec load so the task becomes pending again |
 
 Any other content is the task's non-zero exit code.
 
@@ -1171,7 +1170,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.140.9"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.140.10"
 ```
 
 and read `CHANGELOG.md` before upgrading.

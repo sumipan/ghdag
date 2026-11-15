@@ -49,8 +49,6 @@ from ghdag.core.vocabulary import (
     DONE_SKIPPED_MISSING_INPUT,
     DONE_TIMEOUT,
     DONE_UNKNOWN_FAILURE,
-    LEGACY_DONE_DEFERRED,
-    PIPELINE_LEGACY_DEFERRED_UNSUPPORTED,
     PIPELINE_REPLY_BLOCK_FAILED,
     PIPELINE_WAIT_QUOTA,
     PIPELINE_WAIT_QUOTA_INVALID,
@@ -975,34 +973,6 @@ class TaskLauncher:
                                         uuid,
                                         exc_info=True,
                                     )
-                        elif pipeline_status == LEGACY_DONE_DEFERRED:
-                            pipeline_failed = (
-                                f"{DONE_PIPELINE_FAILED_PREFIX}"
-                                f"{PIPELINE_LEGACY_DEFERRED_UNSUPPORTED}"
-                            )
-                            state_mark_done(
-                                self._config.exec_done_dir, uuid, pipeline_failed
-                            )
-                            metrics = TaskMetrics(
-                                uuid=uuid, engine=engine, model=model,
-                                wall_time_sec=round(finished_at - rt.started_at, 3),
-                                token_count=token_count, status="failure",
-                                started_at=rt.started_at, finished_at=finished_at,
-                                correlation_id=task.idempotency_key,
-                                failure_class=FailureClass.PIPELINE_FAILED,
-                                request_id=_task_request_id(task),
-                                cost_usd=cost_usd,
-                                cache_read_tokens=cache_read_tokens,
-                                cache_creation_tokens=cache_creation_tokens,
-                            )
-                            self._call_on_task_failure(
-                                uuid,
-                                task,
-                                0,
-                                PIPELINE_LEGACY_DEFERRED_UNSUPPORTED,
-                                metrics,
-                            )
-                            self._circuit_breaker.record_failure()
                         elif pipeline_status == PIPELINE_REPLY_BLOCK_FAILED:
                             block_err = self._reply_block_error_from_result(
                                 effective_result_path

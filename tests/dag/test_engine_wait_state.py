@@ -195,17 +195,3 @@ def test_wait_quota_task_relaunches_when_one_engine_becomes_available(
     mock_popen.assert_called_once()
 
 
-def test_legacy_deferred_done_marker_migrated_on_load(tmp_path: Path) -> None:
-    engine, done_dir, audit_path = _make_engine(tmp_path)
-    (done_dir / "task-1").write_text("DEFERRED", encoding="utf-8")
-
-    def stop(*_a, **_k):
-        engine._shutdown = True
-
-    with patch("ghdag.dag.engine.time.sleep", side_effect=stop), patch.object(
-        engine._launcher, "launch", side_effect=stop
-    ):
-        engine.run()
-
-    assert not (done_dir / "task-1").exists()
-    assert "task_deferred_migrated" in audit_path.read_text(encoding="utf-8")

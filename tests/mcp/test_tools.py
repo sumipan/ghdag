@@ -26,7 +26,6 @@ from ghdag.core.vocabulary import (
     DONE_SUCCESS,
     DONE_TIMEOUT,
     DONE_UNKNOWN_FAILURE,
-    LEGACY_DONE_DEFERRED,
 )
 from ghdag.io.done import mark_done
 from ghdag.mcp.server import McpServer
@@ -270,7 +269,6 @@ class TestStatus:
             (DONE_UNKNOWN_FAILURE, "failed"),
             (DONE_ORPHAN_ARCHIVED, "failed"),
             (DONE_ORPHANED_ON_RESTART, "failed"),
-            (LEGACY_DONE_DEFERRED, "failed"),
             ("1", "failed"),
         ],
     )

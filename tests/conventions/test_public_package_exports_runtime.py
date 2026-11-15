@@ -21,7 +21,6 @@ CURATED_RUNTIME_EXPORTS: dict[str, frozenset[str]] = {
             "DagHooks",
             "DONE_SUCCESS",
             "FanOutSpec",
-            "LEGACY_DONE_DEFERRED",
             "PIPELINE_WAIT_QUOTA",
             "Task",
             "WaitQuotaSignal",
