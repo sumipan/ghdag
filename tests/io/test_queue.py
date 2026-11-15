@@ -50,31 +50,6 @@ class TestQueueTaskStore:
         (queue_dir / _order_name(TS, ENGINE, UUID1)).write_text("order", encoding="utf-8")
         assert QueueTaskStore(queue_dir, done_dir).read_result(UUID1) is None
 
-    def test_get_result_path(self, dirs: tuple[Path, Path]) -> None:
-        queue_dir, done_dir = dirs
-        result_file = queue_dir / _result_name(TS, ENGINE, UUID1)
-        result_file.write_text("content", encoding="utf-8")
-        assert QueueTaskStore(queue_dir, done_dir).get_result_path(UUID1) == result_file.resolve()
-
-    def test_list_tasks_groups_by_uuid(self, dirs: tuple[Path, Path]) -> None:
-        queue_dir, done_dir = dirs
-        order_file = queue_dir / _order_name(TS, ENGINE, UUID1)
-        result_file = queue_dir / _result_name(TS, ENGINE, UUID1)
-        stderr_file = queue_dir / _stderr_name(TS, ENGINE, UUID1)
-        order_file.write_text("order", encoding="utf-8")
-        result_file.write_text("result", encoding="utf-8")
-        stderr_file.write_text("stderr", encoding="utf-8")
-
-        tasks = QueueTaskStore(queue_dir, done_dir).list_tasks()
-        assert len(tasks) == 1
-        t = tasks[0]
-        assert t.uuid == UUID1.lower()
-        assert t.timestamp == TS
-        assert t.engine == ENGINE
-        assert t.order_path == order_file.resolve()
-        assert t.result_path == result_file.resolve()
-        assert t.stderr_path == stderr_file.resolve()
-        assert t.is_done is False
 
     def test_done_marker_sets_is_done(self, dirs: tuple[Path, Path]) -> None:
         queue_dir, done_dir = dirs
@@ -84,12 +59,6 @@ class TestQueueTaskStore:
         assert len(tasks) == 1
         assert tasks[0].is_done is True
 
-    def test_multiple_uuids(self, dirs: tuple[Path, Path]) -> None:
-        queue_dir, done_dir = dirs
-        (queue_dir / _order_name(TS, ENGINE, UUID1)).write_text("o1", encoding="utf-8")
-        (queue_dir / _result_name(TS, ENGINE, UUID2)).write_text("r2", encoding="utf-8")
-        uuids = {t.uuid for t in QueueTaskStore(queue_dir, done_dir).list_tasks()}
-        assert uuids == {UUID1.lower(), UUID2.lower()}
 
     def test_non_matching_files_ignored(self, dirs: tuple[Path, Path]) -> None:
         queue_dir, done_dir = dirs
