@@ -56,10 +56,9 @@ def cmd_watch(args) -> None:
         exec_jsonl_path=str(exec_jsonl_resolved),
     )
     order_builders = build_order_builders(workflows)
-    default_template_dir = next(
-        (wf.template_dir for wf in workflows if wf.template_dir), "templates"
+    default_order_builder = TemplateOrderBuilder(
+        workflows_path.resolve() / "templates"
     )
-    default_order_builder = TemplateOrderBuilder(default_template_dir)
 
     pipeline = LLMPipelineAPI(
         pipeline_state=pipeline_state,

@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.137.1-blue)
+![version](https://img.shields.io/badge/version-v0.137.2-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.137.1** (`pyproject.toml` `version = "0.137.1"`) |
+| Current release | **v0.137.2** (`pyproject.toml` `version = "0.137.2"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.137.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.137.2"
 ```
 
 Install from a checkout with the development tools:
@@ -821,7 +821,7 @@ Load-time step validation error codes (each `ValidationError` uses the code in t
 | | `triggers` | `list[TriggerConfig]` | yes | none | Label -> handler map; earlier entries take precedence |
 | | `handlers` | `dict[str, HandlerConfig]` | yes | none | Handler definitions |
 | | `polling_interval` | `int` | no | `30` | Seconds between polls |
-| | `template_dir` | `str \| None` | no | `None` (`<workflow dir>/templates`) | Order template directory, relative to the workflow file |
+| | `template_dir` | `str \| None` | no | omitted → loader sets `<workflow dir>/templates` | Order template directory; relative values resolve from the workflow file |
 | | `label_namespace` | `str \| None` | no | `None` | Label prefix |
 | | `transitions` | `dict[str, list[str]] \| None` | no | `None` | Allowed label transitions |
 | | `reset_label` | `str \| None` | no | `None` | Label reachable from any state |
@@ -1172,7 +1172,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.137.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.137.2"
 ```
 
 and read `CHANGELOG.md` before upgrading.

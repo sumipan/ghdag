@@ -10,8 +10,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from ghdag.core.exceptions import ConfigError
+from ghdag.core.models.workflow import (
+    HandlerConfig,
+    StepConfig,
+    TriggerConfig,
+    WorkflowConfig,
+)
 from ghdag.github_client import GitHubIssuePort
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
 from ghdag.pipeline.order import TemplateOrderBuilder
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.loader import load_workflows
@@ -279,3 +286,137 @@ def test_live_submit_does_not_mutate_pipeline_order_builders(tmp_path: Path) -> 
     )
     assert result.status == "dispatched"
     assert mutations == [], f"dispatcher mutated _order_builders: {mutations}"
+
+
+def _write_omitted_template_dir_live_workflow(wf_dir: Path) -> None:
+    tdir = wf_dir / "templates"
+    tdir.mkdir(parents=True)
+    (tdir / "step.md").write_text('echo "live-${issue_number}"\n', encoding="utf-8")
+    yaml_content = """\
+name: live-wf
+triggers:
+  - label: "pipe:ready"
+    handler: run
+handlers:
+  run:
+    steps:
+      - id: s1
+        template: step
+        model: bash
+        engine: shell
+        render: live
+"""
+    (wf_dir / "wf.yml").write_text(yaml_content, encoding="utf-8")
+
+
+def test_live_render_uses_workflow_dir_templates_when_template_dir_omitted(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """Refs sumipan/nexus#6803 — live render trampoline points at workflow-dir templates."""
+    wf_dir = tmp_path / "wf"
+    wf_dir.mkdir()
+    other_cwd = tmp_path / "other"
+    other_cwd.mkdir()
+    _write_omitted_template_dir_live_workflow(wf_dir)
+
+    queue = tmp_path / "queue"
+    queue.mkdir()
+    monkeypatch.chdir(other_cwd)
+
+    configs = load_workflows(wf_dir)
+    workflow = configs[0]
+    order_builders = build_order_builders(configs)
+
+    captured: list[str] = []
+
+    def _capture_write(ts, step_uuid, order_content, queue_dir, engine="claude"):
+        captured.append(order_content)
+        return f"{ts}-{engine}-order-{step_uuid}.md"
+
+    pipeline_state = MagicMock()
+    pipeline_state.check_idempotency.return_value = True
+    pipeline_state.write_order_file.side_effect = _capture_write
+    pipeline = LLMPipelineAPI(
+        pipeline_state=pipeline_state,
+        order_builder=order_builders[workflow.name],
+        queue_dir=str(queue),
+        order_builders=order_builders,
+    )
+    github = MagicMock(spec=GitHubIssuePort)
+    dispatcher = WorkflowDispatcher(
+        workflows=[workflow],
+        github_client=github,
+        pipeline=pipeline,
+        queue_dir=str(queue),
+    )
+    issue = {
+        "number": 3,
+        "title": "t",
+        "body": "",
+        "labels": [{"name": "pipe:ready"}],
+        "url": "https://example/issues/3",
+    }
+    result = dispatcher.dispatch(
+        issue,
+        workflow,
+        workflow.handlers["run"],
+        trigger=workflow.triggers[0],
+        trigger_rank=0,
+    )
+    assert result.status == "dispatched"
+    template_path = str((wf_dir / "templates" / "step.md").resolve())
+    order = captured[0].strip()
+    assert template_path in order or shlex.quote(template_path) in order
+
+
+def test_live_render_raises_when_template_dir_none_on_config(tmp_path: Path) -> None:
+    """Refs sumipan/nexus#6803 — live render requires template_dir on WorkflowConfig."""
+    workflow = WorkflowConfig(
+        name="live-wf",
+        triggers=[TriggerConfig(label="pipe:ready", handler="run")],
+        handlers={
+            "run": HandlerConfig(
+                steps=[
+                    StepConfig(
+                        id="s1",
+                        template="step",
+                        model="bash",
+                        engine="shell",
+                        render="live",
+                    ),
+                ],
+            ),
+        },
+        template_dir=None,
+    )
+    queue = tmp_path / "queue"
+    queue.mkdir()
+    pipeline_state = MagicMock()
+    pipeline_state.check_idempotency.return_value = True
+    pipeline = LLMPipelineAPI(
+        pipeline_state=pipeline_state,
+        order_builder=MagicMock(),
+        queue_dir=str(queue),
+    )
+    github = MagicMock(spec=GitHubIssuePort)
+    dispatcher = WorkflowDispatcher(
+        workflows=[workflow],
+        github_client=github,
+        pipeline=pipeline,
+        queue_dir=str(queue),
+    )
+    issue = {
+        "number": 1,
+        "title": "t",
+        "body": "",
+        "labels": [{"name": "pipe:ready"}],
+        "url": "https://example/issues/1",
+    }
+    with pytest.raises(ConfigError, match="live-wf"):
+        dispatcher.dispatch(
+            issue,
+            workflow,
+            workflow.handlers["run"],
+            trigger=workflow.triggers[0],
+            trigger_rank=0,
+        )

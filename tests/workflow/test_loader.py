@@ -265,8 +265,8 @@ handlers:
         # Relative path resolved against workflow directory
         assert configs[0].template_dir == str(tmp_path.resolve() / "my-templates")
 
-    def test_template_dir_none_when_not_specified(self, tmp_path):
-        """template_dir is None when omitted"""
+    def test_template_dir_defaults_to_workflow_dir_templates(self, tmp_path):
+        """Refs sumipan/nexus#6803 — omitted template_dir resolves under the workflow file."""
         yaml_content = """\
 name: test-pipeline
 triggers:
@@ -281,7 +281,7 @@ handlers:
         (tmp_path / "test.yml").write_text(yaml_content, encoding="utf-8")
         _make_templates(tmp_path, "brushup")
         configs = load_workflows(tmp_path)
-        assert configs[0].template_dir is None
+        assert configs[0].template_dir == str(tmp_path.resolve() / "templates")
 
     def test_template_dir_absolute_path_preserved(self, tmp_path):
         """Absolute template_dir is kept as-is"""
