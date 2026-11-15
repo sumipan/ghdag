@@ -5,9 +5,6 @@ import pytest
 
 from ghdag.github_client import GitHubClient
 
-_NEXT_URL = "https://api.github.com/repos/o/r/pulls/42/files?per_page=100&page=2"
-_LINK_NEXT = f"<{_NEXT_URL}>; rel=\"next\""
-
 
 def _make_files(n: int, start: int = 1) -> list[dict]:
     return [{"filename": f"file{i}.py", "additions": i, "deletions": 1} for i in range(start, start + n)]
