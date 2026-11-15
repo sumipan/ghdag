@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.139.0 - 2026-11-15
+
 ### Removed
 
 - `ghdag.tool.audit.write_tool_fallback_audit` and `ghdag.tool.audit` module (sumipan/nexus#6805).
