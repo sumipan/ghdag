@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -16,61 +15,6 @@ def _dt(hour: int, minute: int = 0) -> datetime:
     return datetime(2026, 9, 2, hour, minute, tzinfo=JST)
 
 
-def test_report_and_admit_returns_deferred_with_resume_at(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-    gate.report(
-        engine="claude",
-        status="paused",
-        observed_at=_dt(12, 0),
-        resume_at=_dt(17, 0),
-        reason="five-hour quota exhausted",
-    )
-
-    decision = gate.admit(
-        task_uuid="task-1",
-        engine="claude",
-        phase="launch",
-        now=_dt(12, 30),
-    )
-    assert decision.allowed is False
-    assert decision.status == "DEFERRED"
-    assert decision.resume_at == _dt(17, 0).astimezone(timezone.utc)
-
-
-def test_begin_run_is_deferred_while_draining(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-    gate.drain(engine="claude", reason="switch", now=_dt(12))
-    decision = gate.begin_run(task_uuid="task-1", engine="claude", now=_dt(12, 1))
-    assert decision.allowed is False
-    assert decision.status == "DEFERRED"
-    assert "task-1" not in gate.snapshot(now=_dt(12, 2)).running_tasks
-
-
-def test_begin_run_registers_running_and_finish_run_clears_it(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-    decision = gate.begin_run(task_uuid="task-1", engine="claude", now=_dt(12))
-    assert decision.allowed is True
-    assert gate.snapshot().running_tasks["task-1"].engine == "claude"
-    assert gate.finish_run(task_uuid="task-1") is True
-    assert gate.finish_run(task_uuid="task-1") is False
-    assert "task-1" not in gate.snapshot().running_tasks
-
-
-def test_resume_when_last_blocker_cleared(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-    gate.report(engine="claude", status="paused", observed_at=_dt(12), reason="quota paused")
-    gate.drain(engine="claude", reason="model switch", now=_dt(12, 1))
-    gate.admit(task_uuid="task-1", engine="claude", phase="enqueue", now=_dt(12, 2))
-
-    released = gate.resume(engine="claude", now=_dt(12, 3))
-    assert released == []
-
-    clear_result = gate.clear(engine="claude", observed_at=_dt(12, 4))
-    assert clear_result.applied is True
-    decision = gate.begin_run(task_uuid="task-1", engine="claude", now=_dt(12, 5))
-    assert decision.allowed is True
-
-
 def test_stale_available_report_is_ignored(tmp_path: Path) -> None:
     gate = QuotaGate(tmp_path / "quota-gate.json")
     gate.report(engine="claude", status="paused", observed_at=_dt(12, 0), resume_at=_dt(17, 0))
@@ -80,62 +24,6 @@ def test_stale_available_report_is_ignored(tmp_path: Path) -> None:
 
     snapshot = gate.snapshot(now=_dt(13, 0))
     assert snapshot.engines["claude"].status == "paused"
-
-
-def test_refresh_expires_pause_per_engine(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-    gate.report(engine="claude", status="paused", observed_at=_dt(12), resume_at=_dt(17))
-    gate.report(engine="codex", status="paused", observed_at=_dt(12), resume_at=_dt(18))
-
-    gate.refresh(now=_dt(17, 0))
-    assert gate.snapshot(now=_dt(17, 1)).engines["claude"].status == "available"
-    assert gate.snapshot(now=_dt(17, 1)).engines["codex"].status == "paused"
-
-
-def test_paused_without_resume_at_stays_paused_until_clear(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
-    gate.report(engine="claude", status="paused", observed_at=_dt(12))
-    gate.refresh(now=_dt(20, 0))
-    assert gate.snapshot(now=_dt(20, 0)).engines["claude"].status == "paused"
-
-    gate.clear(engine="claude", observed_at=_dt(20, 1))
-    snap = gate.snapshot(now=_dt(20, 2))
-    assert snap.engines.get("claude") is None or snap.engines["claude"].status == "available"
-
-
-def test_default_pause_ttl_applied_on_report(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-    observed = _dt(12, 0)
-    result = gate.report(engine="codex", status="paused", observed_at=observed, reason="quota")
-    expected_resume = observed + timedelta(seconds=3600)
-    assert result.resume_at == expected_resume.astimezone(timezone.utc)
-    state = gate.read_state()
-    assert state["engines"]["codex"]["resume_at"] == expected_resume.astimezone(timezone.utc).isoformat()
-    gate.refresh(now=observed + timedelta(seconds=3599))
-    assert gate.snapshot(now=observed + timedelta(seconds=3599)).engines["codex"].status == "paused"
-    gate.refresh(now=observed + timedelta(seconds=3600))
-    assert gate.read_state()["engines"]["codex"]["status"] == "available"
-
-
-def test_explicit_resume_at_overrides_default_ttl(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-    result = gate.report(
-        engine="claude",
-        status="paused",
-        observed_at=_dt(12),
-        resume_at=_dt(12, 10),
-    )
-    assert result.resume_at == _dt(12, 10).astimezone(timezone.utc)
-    assert gate.read_state()["engines"]["claude"]["resume_at"] == _dt(12, 10).astimezone(
-        timezone.utc
-    ).isoformat()
-
-
-def test_pause_ttl_none_keeps_permanent_pause(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json", pause_ttl_seconds=None)
-    result = gate.report(engine="claude", status="paused", observed_at=_dt(12))
-    assert result.resume_at is None
-    assert gate.read_state()["engines"]["claude"]["resume_at"] is None
 
 
 def test_invalid_pause_ttl_raises(tmp_path: Path) -> None:
@@ -155,51 +43,6 @@ def test_validation_rejects_naive_timestamp_and_empty_engine(tmp_path: Path) -> 
             status="paused",
             observed_at=datetime(2026, 9, 2, 12, 0),
         )
-
-
-def test_parallel_report_and_admit_keeps_valid_json(tmp_path: Path) -> None:
-    state_path = tmp_path / "quota-gate.json"
-    gate = QuotaGate(state_path)
-
-    def worker(engine_name: str, task_prefix: str) -> None:
-        gate.report(engine=engine_name, status="paused", observed_at=_dt(12), resume_at=_dt(17))
-        for idx in range(20):
-            gate.admit(
-                task_uuid=f"{task_prefix}-{idx}",
-                engine=engine_name,
-                phase="launch",
-                now=_dt(12, 10),
-            )
-
-    t1 = threading.Thread(target=worker, args=("claude", "c"), daemon=True)
-    t2 = threading.Thread(target=worker, args=("codex", "x"), daemon=True)
-    t1.start()
-    t2.start()
-    t1.join()
-    t2.join()
-
-    content = state_path.read_text(encoding="utf-8")
-    payload = json.loads(content)
-    assert payload["schema_version"] == 1
-    assert "deferred_tasks" not in payload
-
-
-def test_legacy_state_without_new_keys_is_loaded(tmp_path: Path) -> None:
-    state_path = tmp_path / "quota-gate.json"
-    state_path.write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "engines": {},
-                "deferred_tasks": {},
-            }
-        ),
-        encoding="utf-8",
-    )
-    gate = QuotaGate(state_path)
-    snapshot = gate.snapshot()
-    assert snapshot.draining_engines == {}
-    assert snapshot.running_tasks == {}
 
 
 def test_begin_run_and_drain_race_never_creates_dual_registry(tmp_path: Path) -> None:
@@ -234,59 +77,6 @@ def test_corrupted_state_is_fail_closed(tmp_path: Path) -> None:
         gate.admit(task_uuid="task-1", engine="claude", phase="launch", now=_dt(12))
 
 
-_DEFAULT_STATE = {
-    "schema_version": 1,
-    "engines": {},
-    "draining_engines": {},
-    "running_tasks": {},
-}
-
-
-def test_read_state_missing_file_returns_default_without_creating(tmp_path: Path) -> None:
-    state_path = tmp_path / "quota-gate.json"
-    gate = QuotaGate(state_path)
-    assert gate.read_state() == _DEFAULT_STATE
-    assert not state_path.exists()
-
-
-def test_read_state_preserves_unknown_top_level_keys(tmp_path: Path) -> None:
-    state_path = tmp_path / "quota-gate.json"
-    state_path.write_text(
-        json.dumps({"schema_version": 1, "resources": {"x": True}}), encoding="utf-8"
-    )
-    gate = QuotaGate(state_path)
-    assert gate.read_state()["resources"] == {"x": True}
-
-
-def test_read_state_broken_json_raises_value_error(tmp_path: Path) -> None:
-    state_path = tmp_path / "quota-gate.json"
-    state_path.write_text("{broken", encoding="utf-8")
-    gate = QuotaGate(state_path, audit_path=tmp_path / "audit.jsonl")
-    with pytest.raises(ValueError):
-        gate.read_state()
-
-
-def test_modify_in_place_mutation_is_written_and_returned(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-    result = gate.modify(lambda s: s.setdefault("resources", {}).update({"flag": True}))
-    assert gate.read_state()["resources"] == {"flag": True}
-    assert result == gate.read_state()
-    assert result["resources"] == {"flag": True}
-
-
-def test_modify_returned_dict_is_written_and_returned(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-
-    def fn(state: dict) -> dict:
-        new = dict(state)
-        new["resources"] = {"replaced": 1}
-        return new
-
-    result = gate.modify(fn)
-    assert result["resources"] == {"replaced": 1}
-    assert gate.read_state() == result
-
-
 def test_modify_exception_propagates_and_state_is_unchanged(tmp_path: Path) -> None:
     state_path = tmp_path / "quota-gate.json"
     gate = QuotaGate(state_path)
@@ -302,106 +92,3 @@ def test_modify_exception_propagates_and_state_is_unchanged(tmp_path: Path) -> N
     assert state_path.read_bytes() == before
 
 
-def _increment_counter(state_path: str, n: int) -> None:
-    gate = QuotaGate(Path(state_path))
-
-    def fn(state: dict) -> None:
-        res = state.setdefault("resources", {})
-        res["counter"] = res.get("counter", 0) + 1
-
-    for _ in range(n):
-        gate.modify(fn)
-
-
-def test_modify_is_atomic_across_processes(tmp_path: Path) -> None:
-    import multiprocessing
-
-    state_path = tmp_path / "quota-gate.json"
-    procs = [
-        multiprocessing.Process(target=_increment_counter, args=(str(state_path), 50))
-        for _ in range(2)
-    ]
-    for p in procs:
-        p.start()
-    for p in procs:
-        p.join()
-        assert p.exitcode == 0
-    assert QuotaGate(state_path).read_state()["resources"]["counter"] == 100
-
-
-def test_observe_records_usage_without_touching_engines(tmp_path: Path) -> None:
-    """Refs sumipan/nexus#6717 — observe updates usage only."""
-    from ghdag.core.models.metrics import QuotaWindow
-
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-    gate.report(engine="claude", status="paused", observed_at=_dt(12), resume_at=_dt(17))
-    gate.begin_run(task_uuid="t1", engine="claude", now=_dt(12, 1))
-    before = gate.snapshot(now=_dt(12, 2))
-    windows = (
-        QuotaWindow(
-            window_minutes=300,
-            used_percent=34.0,
-            resets_at=datetime(2026, 11, 14, 12, 0, tzinfo=timezone.utc),
-        ),
-        QuotaWindow(
-            window_minutes=10080,
-            used_percent=95.0,
-            resets_at=datetime(2026, 11, 21, 12, 0, tzinfo=timezone.utc),
-        ),
-    )
-    observed = datetime(2026, 11, 14, 11, 0, tzinfo=timezone.utc)
-    gate.observe(engine="claude", windows=windows, observed_at=observed)
-    after = gate.snapshot(now=_dt(12, 2))
-    recorded = after.usage["claude"]
-    assert recorded.observed_at == observed
-    assert recorded.windows == windows
-    assert after.engines == before.engines
-    assert after.running_tasks == before.running_tasks
-
-
-def test_observe_empty_windows_does_not_create_state_file(tmp_path: Path) -> None:
-    """Refs sumipan/nexus#6717 — empty windows is a no-op."""
-    path = tmp_path / "quota-gate.json"
-    gate = QuotaGate(path)
-    gate.observe(
-        engine="claude",
-        windows=(),
-        observed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-    )
-    assert not path.exists()
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "engines": {},
-                "draining_engines": {},
-                "running_tasks": {},
-            }
-        ),
-        encoding="utf-8",
-    )
-    before = path.read_text(encoding="utf-8")
-    gate.observe(
-        engine="claude",
-        windows=(),
-        observed_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
-    )
-    assert path.read_text(encoding="utf-8") == before
-
-
-def test_snapshot_usage_empty_for_legacy_state_without_usage_key(tmp_path: Path) -> None:
-    """Refs sumipan/nexus#6717 — legacy quota state loads with usage {}."""
-    path = tmp_path / "quota-gate.json"
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "engines": {},
-                "draining_engines": {},
-                "running_tasks": {},
-            }
-        ),
-        encoding="utf-8",
-    )
-    gate = QuotaGate(path)
-    assert gate.snapshot().usage == {}

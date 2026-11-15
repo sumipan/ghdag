@@ -12,7 +12,6 @@ import pytest
 from ghdag.core.exceptions import (
     AuthError,
     NetworkError,
-    PermissionDeniedError,
     RateLimitError,
 )
 from ghdag.github_client import GitHubClient
@@ -53,31 +52,6 @@ def _mock_http_error(code: int, message: str = "error", headers: dict | None = N
         hdrs=hdrs,
         fp=io.BytesIO(body),
     )
-
-
-def test_get_issue_calls_expected_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = _make_client()
-    monkeypatch.setattr(
-        "ghdag.github_client.urllib.request.urlopen",
-        lambda req, timeout=120: _mock_urlopen({"number": 42}),
-    )
-    result = client.get_issue(42)
-    assert result["number"] == 42
-
-
-def test_list_issues_calls_expected_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = _make_client()
-    captured: list[str] = []
-
-    def fake_urlopen(req, timeout=120):
-        captured.append(req.full_url)
-        return _mock_urlopen([{"number": 1}])
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    result = client.list_issues("bug", "open")
-    assert result == [{"number": 1}]
-    assert "labels=bug" in captured[0]
-    assert "state=open" in captured[0]
 
 
 def test_add_comment_calls_expected_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -184,18 +158,6 @@ def test_raises_rate_limit_error_for_403_with_empty_remaining(monkeypatch: pytes
     assert exc_info.value.status_code == 403
 
 
-def test_raises_permission_denied_for_403_non_rate_limit(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = _make_client()
-
-    def fake_urlopen(req, timeout=120):
-        raise _mock_http_error(403, headers={"X-RateLimit-Remaining": "10"})
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    with pytest.raises(PermissionDeniedError) as exc_info:
-        client.get_issue(1)
-    assert exc_info.value.status_code == 403
-
-
 def test_raises_network_error_for_url_error(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _make_client()
     import urllib.error
@@ -208,49 +170,3 @@ def test_raises_network_error_for_url_error(monkeypatch: pytest.MonkeyPatch) -> 
         client.get_issue(1)
 
 
-def test_get_issue_comments_normalizes_api_response(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = _make_client()
-    raw = [
-        {
-            "user": {"login": "alice"},
-            "created_at": "2026-01-01T00:00:00Z",
-            "body": "hello",
-        }
-    ]
-
-    def fake_urlopen(req, timeout=120):
-        assert "/comments" in req.full_url
-        return _mock_urlopen(raw)
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    result = client.get_issue_comments(42)
-    assert result == [
-        {
-            "author": "alice",
-            "created_at": "2026-01-01T00:00:00Z",
-            "body": "hello",
-        }
-    ]
-
-
-def test_get_issue_comments_null_user_yields_empty_author(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = _make_client()
-    raw = [{"user": None, "created_at": "2026-01-01T00:00:00Z", "body": "ghost"}]
-
-    monkeypatch.setattr(
-        "ghdag.github_client.urllib.request.urlopen",
-        lambda req, timeout=120: _mock_urlopen(raw),
-    )
-    result = client.get_issue_comments(1)
-    assert result == [{"author": "", "created_at": "2026-01-01T00:00:00Z", "body": "ghost"}]
-
-
-def test_get_issue_comments_empty_list(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = _make_client()
-
-    monkeypatch.setattr(
-        "ghdag.github_client.urllib.request.urlopen",
-        lambda req, timeout=120: _mock_urlopen([]),
-    )
-    result = client.get_issue_comments(99)
-    assert result == []

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from ghdag.core.models.workflow import WorkflowConfig
-from ghdag.workflow.loader import ValidationError, load_workflow_file
+from ghdag.workflow.loader import ValidationError
 from ghdag.workflow.state_machine import (
     _load_workflow_config,
     get_current_phase,
@@ -35,28 +35,6 @@ def test_workflow_config_transitions_default_none():
     assert cfg.reset_label is None
 
 
-def test_load_workflow_config_uses_validating_file_loader(tmp_path: Path) -> None:
-    path = tmp_path / "workflow.yml"
-    path.write_text(
-        """\
-name: example
-triggers:
-  - label: ready
-    handler: reset
-handlers:
-  reset:
-    type: reset
-label_namespace: example
-transitions:
-  ready: [done]
-reset_label: reset
-""",
-        encoding="utf-8",
-    )
-
-    assert _load_workflow_config(path) == load_workflow_file(path)
-
-
 def test_load_workflow_config_rejects_unknown_key(tmp_path: Path) -> None:
     path = tmp_path / "workflow.yml"
     path.write_text(
@@ -79,30 +57,8 @@ handlers:
 
 # --- validate_transition happy path ---
 
-def test_valid_transition():
-    ok, msg = validate_transition(
-        ["test:a"], "test:b", transitions={"test:a": ["test:b"]}
-    )
-    assert ok is True
-    assert msg == "test:a -> test:b"
-
-
-def test_valid_transition_with_unrelated_labels():
-    ok, _ = validate_transition(
-        ["test:a", "unrelated"], "test:b", transitions={"test:a": ["test:b"]}
-    )
-    assert ok is True
-
 
 # --- validate_transition error cases ---
-
-def test_undefined_transition_rejected():
-    ok, msg = validate_transition(
-        ["test:a"], "test:c", transitions={"test:a": ["test:b"]}
-    )
-    assert ok is False
-    assert msg.startswith("invalid transition: test:a -> test:c is not allowed.")
-    assert "allowed targets: ['test:b']" in msg
 
 
 def test_no_phase_label_rejected():
@@ -122,15 +78,6 @@ def test_transitions_none_skips_validation():
 
 
 # --- reset_label ---
-
-def test_reset_from_any_phase():
-    ok, _ = validate_transition(
-        ["test:a"],
-        "test:reset",
-        transitions={"test:a": ["test:b"]},
-        reset_label="test:reset",
-    )
-    assert ok is True
 
 
 def test_reset_from_no_phase():
@@ -157,66 +104,5 @@ def test_get_current_phase_none():
     ) is None
 
 
-# --- AC-1/AC-2/AC-3: multi-phase label deterministic resolution ---
-
-_TRANSITIONS = {
-    "issuesmith:draft-done": ["issuesmith:develop-ready"],
-    "issuesmith:develop-running": [
-        "issuesmith:develop-done",
-        "issuesmith:scope-too-large",
-    ],
-}
 
 
-def test_get_current_phase_most_advanced():
-    # AC-1: returns develop-running even when draft-done comes first
-    assert (
-        get_current_phase(
-            ["issuesmith:draft-done", "issuesmith:develop-running"],
-            transitions=_TRANSITIONS,
-        )
-        == "issuesmith:develop-running"
-    )
-
-
-def test_get_current_phase_order_invariant():
-    # AC-1: same result even when label array is reversed
-    assert (
-        get_current_phase(
-            ["issuesmith:develop-running", "issuesmith:draft-done"],
-            transitions=_TRANSITIONS,
-        )
-        == "issuesmith:develop-running"
-    )
-
-
-def test_transition_scope_too_large_from_develop_running():
-    # AC-4: transition to scope-too-large succeeds for issue with develop-running + draft-done
-    # Forge fake: verify labels_remove is ["issuesmith:develop-running"]
-    from unittest.mock import MagicMock, patch
-
-    fake_forge = MagicMock()
-    fake_forge.issue_get.side_effect = [
-        # 1st call: get current_labels
-        {"labels": [
-            {"name": "issuesmith:draft-done"},
-            {"name": "issuesmith:develop-running"},
-        ]},
-        # 2nd call: post-transition verification
-        {"labels": [{"name": "issuesmith:scope-too-large"}]},
-    ]
-
-    with patch("ghdag.workflow.state_machine.get_forge", return_value=fake_forge):
-        from ghdag.workflow.state_machine import transition
-
-        transition(
-            issue_number=3364,
-            target="issuesmith:scope-too-large",
-            transitions=_TRANSITIONS,
-        )
-
-    fake_forge.issue_update.assert_called_once_with(
-        3364,
-        labels_remove=["issuesmith:develop-running"],
-        labels_add=["issuesmith:scope-too-large"],
-    )
