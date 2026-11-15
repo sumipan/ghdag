@@ -1,4 +1,5 @@
 """tests/llm/test_call_text.py — unified ghdag.llm.call / LLMResult (Issue sumipan/nexus#6529)."""
+
 from __future__ import annotations
 
 import inspect
@@ -13,11 +14,17 @@ from ghdag.llm.engines import build_llm_cmd
 
 def test_public_signatures_use_permission() -> None:
     """Issue sumipan/nexus#6501 — public LLM entrypoints take permission, not capabilities."""
-    targets = (call, build_llm_cmd, render_exec_command, container_prefix)
+    targets = (
+        call,
+        build_llm_cmd,
+        render_exec_command,
+        container_prefix,
+    )
     for fn in targets:
         params = inspect.signature(fn).parameters
-        assert 'permission' in params, f'{fn.__name__} missing permission parameter'
-        assert 'capabilities' not in params, f'{fn.__name__} still exposes capabilities'
+        assert "permission" in params, f"{fn.__name__} missing permission parameter"
+        assert "capabilities" not in params, f"{fn.__name__} still exposes capabilities"
+
 
 def test_public_api_exports_only_call_and_llm_result() -> None:
     """Issue sumipan/nexus#6529 — one-shot API surface is call + LLMResult only."""
