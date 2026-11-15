@@ -10,12 +10,10 @@ import pytest
 
 from ghdag.forge.local import LocalForge
 from ghdag.github_cli import apply_jq, cli_main
-from ghdag.github_client import GitHubClient
+from ghdag.github_client import GitHubClient, _resolve_token
 
 
 def test_resolve_token_from_env():
-    from ghdag.github_client import _resolve_token
-
     with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=True):
         assert _resolve_token() == "tok"
 
