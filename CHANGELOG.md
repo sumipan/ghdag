@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Repair-turn relaunches now call `QuotaGate.begin_run` before writing repair artifacts; denied admission finalizes the original failure without a deferred repair attempt (sumipan/nexus#6802).
+
 ## 0.137.0 - 2026-11-15
 
 ### Added
