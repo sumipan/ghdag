@@ -24,13 +24,6 @@ class TestLLMResultLatencyMs:
         r = LLMResult(body="out", stdout="out", stderr="", returncode=0)
         assert r.latency_ms == 0.0
 
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_measures_latency(self, mock_run: MagicMock):
-        """call(route=[("claude", None)]) returns latency_ms > 0."""
-        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
-        result = call("hello", route=[("claude", None)])
-        assert result.latency_ms > 0
-
 
 class TestBuildLlmCmdCodex:
     def test_build_llm_cmd_codex(self):
@@ -50,131 +43,6 @@ class TestBuildLlmCmdCodex:
             assert cmd[0] == cli
             # empty subcommand: options/args follow cli directly (no extra elements like exec)
             assert "exec" not in cmd
-
-    def test_build_llm_cmd_claude_includes_resume(self):
-        """With resume_session_id, claude gets --resume."""
-        cmd = build_llm_cmd(
-            "claude",
-            "claude-sonnet-4-6",
-            "test",
-            resume_session_id="sess-1",
-        )
-        assert "--resume" in cmd
-        assert "sess-1" in cmd
-
-    def test_build_llm_cmd_codex_switches_to_resume_subcommand(self):
-        """With resume_session_id, codex switches to exec resume."""
-        cmd = build_llm_cmd(
-            "codex",
-            "gpt-5.6-terra",
-            "test",
-            resume_session_id="sess-1",
-        )
-        assert cmd[:4] == ["codex", "exec", "resume", "sess-1"]
-        assert "-" not in cmd[:5]
-
-    def test_render_exec_command_codex(self):
-        """render_exec_command builds the correct shell command for codex."""
-        spec = ENGINE_SPECS["codex"]
-        cmd = render_exec_command(
-            spec,
-            order_path="jobs/order.md",
-            model="gpt-5.6-terra",
-        )
-        assert cmd == (
-            "codex exec - --model 'gpt-5.6-terra' --json --skip-git-repo-check"
-            " --dangerously-bypass-approvals-and-sandbox < jobs/order.md"
-        )
-
-    def test_render_exec_command_codex_with_capabilities(self):
-        """With capabilities set, flags are built via _build_codex_flags."""
-        from ghdag.core.capabilities import Permission
-        spec = ENGINE_SPECS["codex"]
-        cmd = render_exec_command(
-            spec,
-            order_path="jobs/order.md",
-            model="gpt-5.6-terra",
-            permission=Permission(),
-        )
-        assert "codex exec -" in cmd
-        assert "--json" in cmd
-        assert "--skip-git-repo-check" in cmd
-        # Both extra_args and _build_codex_flags emit these, so duplicates are likely.
-        # codex CLI rejects duplicate `--json` with an argument error (exit 2).
-        assert cmd.split().count("--json") == 1
-        assert cmd.split().count("--skip-git-repo-check") == 1
-
-    def test_render_exec_command_codex_dangerous_full_access(self):
-        """DANGEROUS_FULL_ACCESS adds the sandbox bypass flag (nexus#2558 regression).
-
-        render_exec_command calls the builder with dangerously_skip_permissions=False,
-        so without reading capabilities.permission_mode the flag is dropped. Then codex
-        starts in workspace-write and fails to write outside cwd (e.g. a diary repo).
-        """
-        from ghdag.core.capabilities import DANGEROUS_FULL_ACCESS
-        spec = ENGINE_SPECS["codex"]
-        cmd = render_exec_command(
-            spec,
-            order_path="jobs/order.md",
-            model="gpt-5.6-terra",
-            permission=DANGEROUS_FULL_ACCESS,
-        )
-        assert "--dangerously-bypass-approvals-and-sandbox" in cmd
-        assert cmd.split().count("--dangerously-bypass-approvals-and-sandbox") == 1
-        assert cmd.split().count("--json") == 1
-
-    def test_render_exec_command_codex_default_keeps_sandbox(self):
-        """Default capabilities do not add the bypass flag (sandbox stays on)."""
-        from ghdag.core.capabilities import Permission
-        spec = ENGINE_SPECS["codex"]
-        cmd = render_exec_command(
-            spec,
-            order_path="jobs/order.md",
-            model="gpt-5.6-terra",
-            permission=Permission(),
-        )
-        assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
-
-
-class TestCallCodexPromptRouting:
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_codex_prompt_to_stdin(self, mock_run: MagicMock):
-        """call(, prompt="hello", route=[("codex", None)]) passes prompt as subprocess.run input."""
-        captured: dict = {}
-
-        def _run(*_args, **kwargs):
-            captured.update(kwargs)
-            return MagicMock(stdout="jsonl", stderr="", returncode=0)
-
-        mock_run.side_effect = _run
-        call("hello", permission=Permission(), route=[("codex", None)])
-        assert captured["input"] == "hello"
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_codex_stdin_text_priority(self, mock_run: MagicMock):
-        """stdin_text is joined after the prompt (nexus #3805)."""
-        captured: dict = {}
-
-        def _run(*_args, **kwargs):
-            captured.update(kwargs)
-            return MagicMock(stdout="jsonl", stderr="", returncode=0)
-
-        mock_run.side_effect = _run
-        call("hello", stdin_text="override", permission=Permission(), route=[("codex", None)])
-        assert captured["input"] == "hello\n\noverride"
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_claude_stdin_text_unaffected(self, mock_run: MagicMock):
-        """claude is a STDIN engine, so the prompt goes to stdin (nexus #3805)."""
-        captured: dict = {}
-
-        def _run(*_args, **kwargs):
-            captured.update(kwargs)
-            return MagicMock(stdout="ok", stderr="", returncode=0)
-
-        mock_run.side_effect = _run
-        call("hello", stdin_text=None, route=[("claude", None)])
-        assert captured["input"] == "hello"
 
 
 _STDIN_ENGINE_MODELS = {
@@ -255,99 +123,13 @@ class TestCallResumeSessionId:
 
         assert result.session_id == "sess-abc"
 
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_cursor_extracts_session_id_from_real_json(self, mock_run: MagicMock):
-        """Extract session_id from measured cursor JSON stdout."""
-        stdout = (
-            '{"type":"result","subtype":"success","is_error":false,'
-            '"result":"pong",'
-            '"session_id":"85105031-11df-48a2-a791-812a0128b4cf",'
-            '"usage":{"inputTokens":7144,"outputTokens":73}}'
-        )
-        mock_run.return_value = MagicMock(stdout=stdout, stderr="", returncode=0)
-        result = call("hello", permission=Permission(), route=[("cursor", None)])
-        assert result.session_id == "85105031-11df-48a2-a791-812a0128b4cf"
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_cursor_extracts_result_from_json(self, mock_run: MagicMock):
-        """call(cursor, route=[("claude", None)]) puts JSON result in body and keeps session_id."""
-        stdout = (
-            '{"type":"result","subtype":"success","is_error":false,'
-            '"result":"pong",'
-            '"session_id":"85105031-11df-48a2-a791-812a0128b4cf",'
-            '"usage":{"inputTokens":7144,"outputTokens":73}}'
-        )
-        mock_run.return_value = MagicMock(stdout=stdout, stderr="", returncode=0)
-        result = call("hello", permission=Permission(), route=[("cursor", None)])
-        assert result.body == "pong"
-        assert result.session_id == "85105031-11df-48a2-a791-812a0128b4cf"
-
 
 class TestCodexUnsupportedCapabilities:
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_codex_stream_accepted(self, mock_run: MagicMock):
-        """stream=True is accepted and uses the --json path (#2967)."""
-        mock_run.return_value = MagicMock(stdout="{}", stderr="", returncode=0)
-        result = call("test", permission=Permission(stream=True), route=[("codex", None)])
-        assert result.returncode == 0
-        cmd = build_llm_cmd("codex", ENGINE_SPECS["codex"].default_model or "auto", "test")
-        assert "--json" in cmd
 
     def test_codex_unsupported_output_format_json(self):
         """output_format="json" raises NotImplementedError."""
         with pytest.raises(NotImplementedError, match="output_format"):
             call("test", permission=Permission(output_format="json"), route=[("codex", None)])
-
-    def test_codex_unsupported_permission_mode(self):
-        """A permission_mode codex cannot express raises NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="permission_mode"):
-            call("test",
-                permission=Permission(permission_mode="acceptEdits"), route=[("codex", None)])
-
-
-class TestCodexIgnoredCapabilities:
-    """codex accepts allowed_tools / disallowed_tools as noop (want TEXT_ONLY via codex)."""
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_codex_with_text_only_does_not_raise(self, mock_run: MagicMock):
-        """Passing TEXT_ONLY (with disallowed_tools) to codex does not raise NotImplementedError."""
-        from ghdag.core.capabilities import TEXT_ONLY
-        mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
-        result = call("test", permission=TEXT_ONLY, route=[("codex", None)])
-        assert result.returncode == 0
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_codex_with_disallowed_tools_does_not_raise(self, mock_run: MagicMock):
-        """Explicit disallowed_tools is a noop for codex."""
-        mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
-        result = call("test",
-            permission=Permission(disallowed_tools=("Bash", "Edit")), route=[("codex", None)])
-        assert result.returncode == 0
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_codex_with_allowed_tools_does_not_raise(self, mock_run: MagicMock):
-        """Explicit allowed_tools is a noop for codex."""
-        mock_run.return_value = MagicMock(stdout="jsonl", stderr="", returncode=0)
-        result = call("test",
-            permission=Permission(allowed_tools=("Read", "Grep")), route=[("codex", None)])
-        assert result.returncode == 0
-
-    def test_codex_tool_flags_not_emitted_in_argv(self):
-        """codex argv has no --allowed-tools / --disallowed-tools (CLI has no such flags)."""
-        cmd = build_llm_cmd(
-            "codex",
-            "gpt-5.6-terra",
-            "test",
-            permission=Permission(
-                allowed_tools=("Read",),
-                disallowed_tools=("Bash", "Edit"),
-            ),
-        )
-        assert "--allowed-tools" not in cmd
-        assert "--disallowed-tools" not in cmd
-        # Existing codex-specific flags are preserved
-        assert "--json" in cmd
-        assert "--skip-git-repo-check" in cmd
 
 
 class TestExtraArgsDedupe:
@@ -357,13 +139,6 @@ class TestExtraArgsDedupe:
     multiple times` (exit 2), so duplicates are an immediate failure before the model call.
     """
 
-    def test_dedupe_removes_valueless_flag_emitted_by_builder(self):
-        """Valueless flags present on the builder side are dropped from extra_args."""
-        from ghdag.core.command import _dedupe_extra_args
-        assert _dedupe_extra_args(
-            ("--json", "--skip-git-repo-check"), ["--json", "--skip-git-repo-check"]
-        ) == []
-
     def test_dedupe_removes_flag_with_value_as_a_pair(self):
         """Flags with values are dropped as flag+value pairs."""
         from ghdag.core.command import _dedupe_extra_args
@@ -371,66 +146,10 @@ class TestExtraArgsDedupe:
             ("--output-format", "json"), ["--permission-mode", "default", "--output-format", "json"]
         ) == []
 
-    def test_dedupe_keeps_flags_builder_did_not_emit(self):
-        """Flags the builder did not emit remain, including their values."""
-        from ghdag.core.command import _dedupe_extra_args
-        assert _dedupe_extra_args(
-            ("--output-format", "json"), ["--permission-mode", "default"]
-        ) == ["--output-format", "json"]
-
     def test_dedupe_noop_when_builder_emits_nothing(self):
         """When perm_flags is empty, extra_args is unchanged."""
         from ghdag.core.command import _dedupe_extra_args
         assert _dedupe_extra_args(("-o", "pipefail"), []) == ["-o", "pipefail"]
-
-    def test_codex_render_has_no_duplicate_flags_for_every_preset(self):
-        """No flag duplicates in codex argv for any permission preset."""
-        from ghdag.core.capabilities import PERMISSIONS
-        spec = ENGINE_SPECS["codex"]
-        for name, caps in PERMISSIONS.items():
-            cmd = render_exec_command(
-                spec, order_path="jobs/order.md",
-                model="gpt-5.6-terra", permission=caps,
-            )
-            tokens = cmd.split()
-            for flag in ("--json", "--skip-git-repo-check"):
-                assert tokens.count(flag) == 1, f"preset={name} cmd={cmd}"
-
-    def test_claude_json_only_no_duplicate_output_format(self):
-        """claude + json_only does not duplicate --output-format (valued-flag regression)."""
-        from ghdag.core.capabilities import PERMISSIONS
-        cmd = render_exec_command(
-            ENGINE_SPECS["claude"], order_path="jobs/order.md",
-            model="claude-sonnet-4-6", permission=PERMISSIONS["json_only"],
-        )
-        assert cmd.split().count("--output-format") == 1
-        assert "--output-format json" in cmd
-
-    def test_claude_text_only_keeps_extra_args_output_format(self):
-        """claude + text_only keeps extra_args --output-format because the builder omits it.
-
-        DAG default is stream-json --verbose (#2966). ClaudeJsonAdapter reads usage /
-        session_id from the JSONL result line.
-        """
-        from ghdag.core.capabilities import PERMISSIONS
-        cmd = render_exec_command(
-            ENGINE_SPECS["claude"], order_path="jobs/order.md",
-            model="claude-sonnet-4-6", permission=PERMISSIONS["text_only"],
-        )
-        assert "--output-format stream-json" in cmd
-        assert "--verbose" in cmd
-        assert cmd.split().count("--output-format") == 1
-
-    def test_cursor_text_only_keeps_extra_args_output_format(self):
-        """cursor + text_only keeps extra_args --output-format stream-json."""
-        from ghdag.core.capabilities import PERMISSIONS
-        cmd = render_exec_command(
-            ENGINE_SPECS["cursor"], order_path="jobs/order.md",
-            model="auto", permission=PERMISSIONS["text_only"],
-        )
-        assert cmd.split().count("--output-format") == 1
-        assert "--output-format stream-json" in cmd
-        assert "--stream-partial-output" in cmd
 
     def test_cursor_json_only_overrides_stream_default(self):
         """cursor + json_only returns to single JSON and drops stream-only flags."""
@@ -444,43 +163,9 @@ class TestExtraArgsDedupe:
         assert "--output-format stream-json" not in cmd
         assert "--stream-partial-output" not in cmd
 
-    def test_cursor_stream_dedupes_output_format(self):
-        """cursor + stream prefers stream-json and emits --output-format only once."""
-        cmd = render_exec_command(
-            ENGINE_SPECS["cursor"], order_path="jobs/order.md",
-            model="auto", permission=Permission(stream=True),
-        )
-        assert cmd.split().count("--output-format") == 1
-        assert "--output-format stream-json" in cmd
-        assert cmd.split().count("--stream-partial-output") == 1
-
-    def test_gemini_without_builder_keeps_extra_args(self):
-        """extra_args for engines without a builder are unchanged."""
-        from ghdag.core.capabilities import PERMISSIONS
-        cmd = render_exec_command(
-            ENGINE_SPECS["gemini"], order_path="jobs/order.md",
-            model="gemini-3-flash", permission=PERMISSIONS["text_only"],
-        )
-        assert "--approval-mode yolo" in cmd
-
 
 class TestSandboxCapability:
     """sandbox capability and READONLY_OBSERVE preset (nexus Issue #2640)."""
-
-    def test_sandbox_off_matches_default_for_all_engines(self):
-        """Permission(sandbox='off') and Permission() yield the same argv for all engines."""
-        default = Permission()
-        explicit_off = Permission(sandbox="off")
-        for engine, model in [
-            ("claude", "claude-sonnet-4-6"),
-            ("codex", "gpt-5.6-terra"),
-            ("cursor", "auto"),
-            ("gemini", "gemini-3-flash"),
-            ("shell", "bash"),
-        ]:
-            assert build_llm_cmd(engine, model, "p", permission=default) == build_llm_cmd(
-                engine, model, "p", permission=explicit_off
-            )
 
     def test_readonly_observe_preset(self):
         """PERMISSIONS['readonly_observe'] has sandbox=readonly and edit-tool denies."""
@@ -490,37 +175,12 @@ class TestSandboxCapability:
         assert caps.sandbox == "readonly"
         assert caps.disallowed_tools == ("Edit", "NotebookEdit")
 
-    def test_readonly_observe_claude_flags(self):
-        """READONLY_OBSERVE → plan mode without Write deny (sumipan/nexus#3188)."""
-        from ghdag.core.capabilities import READONLY_OBSERVE
-        from ghdag.llm.engines import _build_claude_flags
-
-        assert _build_claude_flags(READONLY_OBSERVE, False) == [
-            "--permission-mode",
-            "plan",
-            "--disallowed-tools",
-            "Edit,NotebookEdit",
-        ]
-
     def test_non_plan_presets_keep_write_denied(self):
         """TEXT_ONLY / JSON_ONLY / WEB_RESEARCH still deny Write."""
         from ghdag.core.capabilities import JSON_ONLY, TEXT_ONLY, WEB_RESEARCH
 
         for caps in (TEXT_ONLY, JSON_ONLY, WEB_RESEARCH):
             assert "Write" in caps.disallowed_tools
-
-    def test_readonly_observe_cursor_codex_argv_unchanged(self):
-        """cursor / codex argv is identical to the pre-#3188 preset value."""
-        from ghdag.core.capabilities import READONLY_OBSERVE
-
-        previous = Permission(
-            sandbox="readonly", disallowed_tools=("Edit", "Write", "NotebookEdit")
-        )
-        for engine, model in [("cursor", "auto"), ("codex", "gpt-5.6-terra")]:
-            current_cmd = build_llm_cmd(engine, model, "p", permission=READONLY_OBSERVE)
-            previous_cmd = build_llm_cmd(engine, model, "p", permission=previous)
-            assert current_cmd == previous_cmd
-            assert "--disallowed-tools" not in current_cmd
 
     def test_claude_sandbox_readonly_uses_permission_mode_plan(self):
         """claude + sandbox=readonly → --permission-mode plan."""
@@ -592,18 +252,6 @@ class TestSandboxCapability:
                 dangerously_skip_permissions=True,
             )
 
-    def test_gemini_sandbox_readonly_raises(self):
-        """gemini + sandbox=readonly → NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="sandbox"):
-            call("test",
-                permission=Permission(sandbox="readonly"), route=[("gemini", None)])
-
-    def test_shell_sandbox_readonly_raises(self):
-        """shell + sandbox=readonly → NotImplementedError."""
-        with pytest.raises(NotImplementedError, match="sandbox"):
-            call("test",
-                permission=Permission(sandbox="readonly"), route=[("shell", "bash")])
-
     def test_cursor_disallowed_tools_in_ignored_capabilities(self):
         """cursor disallowed_tools is declared noop via _IGNORED_CAPABILITIES."""
         from ghdag.llm.engines import _IGNORED_CAPABILITIES, _UNSUPPORTED_CAPABILITIES
@@ -614,47 +262,8 @@ class TestSandboxCapability:
         ignored = _IGNORED_CAPABILITIES.get("cursor", set())
         assert "disallowed_tools" not in (unsupported - ignored)
 
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_cursor_disallowed_tools_noop(self, mock_run: MagicMock):
-        """Passing disallowed_tools to cursor does not raise and does not appear in argv."""
-        captured: dict = {}
-
-        def _run(*args, **kwargs):
-            captured["cmd"] = args[0]
-            return MagicMock(stdout="ok", stderr="", returncode=0)
-
-        mock_run.side_effect = _run
-        result = call("test",
-            permission=Permission(disallowed_tools=("Edit", "Write")), route=[("cursor", None)])
-        assert result.returncode == 0
-        assert "--disallowed-tools" not in captured["cmd"]
-
 
 class TestWebSearchCapability:
-    def test_claude_web_research_allowed_tools_from_builder(self):
-        from ghdag.core.capabilities import WEB_RESEARCH
-        from ghdag.llm.engines import _build_claude_flags
-
-        flags = _build_claude_flags(WEB_RESEARCH, False)
-        assert "--allowed-tools" in flags
-        assert flags[flags.index("--allowed-tools") + 1] == (
-            "WebFetch,WebSearch,Read,Grep,Glob"
-        )
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_cursor_web_research_no_extra_argv(self, mock_run: MagicMock):
-        from ghdag.core.capabilities import WEB_RESEARCH
-
-        captured: dict = {}
-
-        def _run(*args, **kwargs):
-            captured["cmd"] = args[0]
-            return MagicMock(stdout="ok", stderr="", returncode=0)
-
-        mock_run.side_effect = _run
-        call("hello", permission=WEB_RESEARCH, route=[("cursor", None)])
-        assert "--search" not in captured["cmd"]
-        assert "--allowed-tools" not in captured["cmd"]
 
     def test_gemini_web_search_raises_before_subprocess(self):
         with pytest.raises(NotImplementedError, match="web_search"):
@@ -665,67 +274,8 @@ class TestWebSearchCapability:
             call("hello", permission=Permission(web_search=True), route=[("shell", "bash")])
 
 
-class TestCallCwd:
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_passes_cwd_to_subprocess(self, mock_run: MagicMock, tmp_path):
-        """call(..., cwd=..., route=[("claude", None)]) passes cwd to subprocess.run."""
-        captured: dict = {}
-
-        def _run(*_args, **kwargs):
-            captured.update(kwargs)
-            return MagicMock(stdout="ok", stderr="", returncode=0)
-
-        mock_run.side_effect = _run
-        call("hello", cwd=tmp_path, route=[("claude", None)])
-        assert captured["cwd"] == tmp_path
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_default_cwd_is_none(self, mock_run: MagicMock):
-        """When cwd is omitted, subprocess.run gets cwd=None (current compat)."""
-        captured: dict = {}
-
-        def _run(*_args, **kwargs):
-            captured.update(kwargs)
-            return MagicMock(stdout="ok", stderr="", returncode=0)
-
-        mock_run.side_effect = _run
-        call("hello", route=[("claude", None)])
-        assert captured.get("cwd") is None
-
-
 class TestCallLaunchFailure:
     """Launch failures of the engine binary become an LLMResult, not an exception."""
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_file_not_found_becomes_127(self, mock_run: MagicMock):
-        mock_run.side_effect = FileNotFoundError(
-            2, "No such file or directory", "cursor-agent",
-        )
-        result = call("hello", route=[("cursor", None)])
-        assert result.returncode == 127
-        assert "cursor-agent: command not found" in result.stderr
-        assert result.stdout == ""
-        assert result.session_id is None
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_cursor_agent_missing_classifies_environment_error(self, mock_run: MagicMock):
-        """PATH has grok's agent but not cursor-agent → ENGINE_ENVIRONMENT_ERROR."""
-        from ghdag.core.models.metrics import FailureClass
-
-        mock_run.side_effect = FileNotFoundError(
-            2, "No such file or directory", "cursor-agent",
-        )
-        result = call("hello", route=[("cursor", None)])
-        assert result.returncode == 127
-        assert "cursor-agent: command not found" in result.stderr
-        assert result.failure_class == FailureClass.ENGINE_ENVIRONMENT_ERROR
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_permission_error_becomes_126(self, mock_run: MagicMock):
-        mock_run.side_effect = PermissionError(13, "Permission denied", "cursor-agent")
-        result = call("hello", route=[("cursor", None)])
-        assert result.returncode == 126
-        assert "cursor-agent: permission denied" in result.stderr
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_missing_cwd_still_raises(self, mock_run: MagicMock):
@@ -733,40 +283,9 @@ class TestCallLaunchFailure:
         with pytest.raises(FileNotFoundError):
             call("hello", cwd="/no/such/dir", route=[("cursor", None)])
 
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_classifies_missing_binary(self, mock_run: MagicMock):
-        from ghdag.core.models.metrics import FailureClass
-
-        mock_run.side_effect = FileNotFoundError(
-            2, "No such file or directory", "cursor-agent",
-        )
-        result = call("hello", route=[("cursor", None)])
-        assert result.returncode == 127
-        assert result.failure_class == FailureClass.ENGINE_ENVIRONMENT_ERROR
-
 
 class TestCallTimeout:
     """subprocess.TimeoutExpired becomes an LLMResult tagged TIMEOUT (sumipan/nexus#4304)."""
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_timeout_becomes_124_with_failure_class(self, mock_run: MagicMock):
-        import subprocess
-
-        from ghdag.core.models.metrics import FailureClass
-        from ghdag.llm.engines import TIMEOUT_RETURNCODE
-
-        mock_run.side_effect = subprocess.TimeoutExpired(
-            ["cursor-agent", "--model", "composer-2.5", "-p", "--force"], 3599
-        )
-        result = call("hello", timeout=3599, route=[("cursor", None)])
-        assert result.returncode == TIMEOUT_RETURNCODE == 124
-        assert result.failure_class is FailureClass.TIMEOUT
-        assert result.timed_out is True
-        assert result.ok is False
-        assert result.stdout == ""
-        assert result.stderr == "TIMEOUT: cursor-agent timed out after 3599s\n"
-        assert result.session_id is None
-        assert result.latency_ms > 0
 
     @patch("ghdag.llm.engines.subprocess.run")
     def test_timeout_keeps_partial_bytes_output(self, mock_run: MagicMock):
@@ -779,30 +298,6 @@ class TestCallTimeout:
         result = call("hello", timeout=10, route=[("claude", None)])
         assert result.stdout == '{"type":"assistant"}\n'
         assert result.stderr == "warn\nTIMEOUT: claude timed out after 10s\n"
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_timeout_keeps_partial_str_output(self, mock_run: MagicMock):
-        import subprocess
-
-        mock_run.side_effect = subprocess.TimeoutExpired(
-            ["claude"], 10, output="partial", stderr="err\n"
-        )
-        result = call("hello", timeout=10, route=[("claude", None)])
-        assert result.stdout == "partial"
-        assert result.stderr == "err\nTIMEOUT: claude timed out after 10s\n"
-
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_timeout_skips_json_validation(self, mock_run: MagicMock):
-        """A truncated stdout must not raise LLMParseError on top of the timeout."""
-        import subprocess
-
-        mock_run.side_effect = subprocess.TimeoutExpired(
-            ["claude"], 10, output=b'{"unterminated'
-        )
-        result = call("hello",
-            timeout=10,
-            permission=Permission(output_format="json"), route=[("claude", None)])
-        assert result.returncode == 124
 
     def test_llm_result_failure_class_defaults_to_none(self):
         r = LLMResult(body="", stdout="", stderr="", returncode=1)

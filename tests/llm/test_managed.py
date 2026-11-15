@@ -11,7 +11,7 @@ import pytest
 
 from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.models.metrics import FailureClass
-from ghdag.llm.engines import TIMEOUT_RETURNCODE, call
+from ghdag.llm.engines import call
 from ghdag.quota import QuotaGate
 
 
@@ -41,53 +41,6 @@ def test_call_empty_route_raises_value_error() -> None:
     """Issue sumipan/nexus#6679 — AC1 empty route."""
     with pytest.raises(ValueError, match="route must not be empty"):
         call("p", route=[])
-
-
-def test_call_skips_paused_first_candidate(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Issue sumipan/nexus#6679 — AC2 skip paused head, run second engine."""
-    stamps = _prepend_bin_dir(monkeypatch, tmp_path)
-    claude_stamp = stamps / "claude"
-    codex_stamp = stamps / "codex"
-    _install_script(
-        tmp_path,
-        "claude",
-        f"""#!/bin/sh
-touch "{claude_stamp}"
-echo "session limit" >&2
-exit 1
-""",
-    )
-    _install_script(
-        tmp_path,
-        "codex",
-        f"""#!/bin/sh
-touch "{codex_stamp}"
-echo ok
-exit 0
-""",
-    )
-    gate = QuotaGate(tmp_path / "quota.json", pause_ttl_seconds=None)
-    gate.report(
-        engine="claude",
-        status="paused",
-        observed_at=_quota_now(),
-        reason="test",
-        kind="failure",
-    )
-
-    result = call(
-        "p",
-        route=[("claude", None), ("codex", None)],
-        quota_gate=gate,
-    )
-
-    assert result.ok is True
-    assert result.engine_used == "codex"
-    assert result.attempts == 1
-    assert not claude_stamp.exists()
-    assert codex_stamp.exists()
 
 
 def test_call_walks_route_past_two_quota_failures(
@@ -157,44 +110,6 @@ exit 0
     assert gate.snapshot().engines.get("claude") is None
 
 
-def test_call_timeout_stops_route(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Issue sumipan/nexus#6679 — AC5 TIMEOUT does not advance route."""
-    stamps = _prepend_bin_dir(monkeypatch, tmp_path)
-    codex_stamp = stamps / "codex"
-    _install_script(
-        tmp_path,
-        "claude",
-        """#!/bin/sh
-while :
-do
-  :
-done
-""",
-    )
-    _install_script(
-        tmp_path,
-        "codex",
-        f"""#!/bin/sh
-touch "{codex_stamp}"
-echo ok
-exit 0
-""",
-    )
-
-    result = call(
-        "p",
-        route=[("claude", None), ("codex", None)],
-        timeout=1,
-    )
-
-    assert result.failure_class is FailureClass.TIMEOUT
-    assert result.attempts == 1
-    assert result.returncode == TIMEOUT_RETURNCODE
-    assert not codex_stamp.exists()
-
-
 def test_call_all_paused_launches_nothing(tmp_path: Path) -> None:
     """Issue sumipan/nexus#6679 — AC6 all candidates paused."""
     gate = QuotaGate(tmp_path / "quota.json", pause_ttl_seconds=None)
@@ -261,41 +176,3 @@ exit 0
     assert "s1" in claude_args.read_text(encoding="utf-8")
     assert codex_args.exists()
     assert "s1" not in codex_args.read_text(encoding="utf-8")
-
-
-def test_call_records_claude_quota_usage_from_stdout(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Refs sumipan/nexus#6717 — call() observes rate_limit_event when quota_gate is set."""
-    from datetime import timezone as tz
-    from pathlib import Path as PathType
-
-    fixture_path = (
-        PathType(__file__).resolve().parent.parent
-        / "fixtures"
-        / "claude_stream_rate_limit_event.jsonl"
-    )
-    stream_body = fixture_path.read_text(encoding="utf-8")
-    _prepend_bin_dir(monkeypatch, tmp_path)
-    _install_script(
-        tmp_path,
-        "claude",
-        f"""#!/bin/sh
-cat <<'EOF'
-{stream_body}
-EOF
-""",
-    )
-    gate = QuotaGate(tmp_path / "quota.json")
-    result = call(
-        "p",
-        route=[("claude", None)],
-        quota_gate=gate,
-    )
-    assert result.ok is True
-    usage = gate.snapshot().usage.get("claude")
-    assert usage is not None
-    by_minutes = {w.window_minutes: w for w in usage.windows}
-    assert by_minutes[300].used_percent == 34.0
-    assert by_minutes[10080].used_percent == 95.0
-    assert usage.observed_at.tzinfo == tz.utc

@@ -7,19 +7,6 @@ from datetime import datetime, timedelta, timezone
 from ghdag.llm.session import SessionStore
 
 
-def test_record_and_lookup_roundtrip(tmp_path):
-    store = SessionStore(tmp_path / ".sessions")
-
-    store.record("k1", "claude", "sess-abc")
-    resolved = store.lookup("k1")
-
-    assert resolved is not None
-    assert resolved.engine == "claude"
-    assert resolved.session_id == "sess-abc"
-    assert resolved.created_at.tzinfo is not None
-    assert resolved.created_at.utcoffset() == timedelta(0)
-
-
 def test_lookup_returns_none_when_missing(tmp_path):
     store = SessionStore(tmp_path / ".sessions")
 

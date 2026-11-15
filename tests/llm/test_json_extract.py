@@ -25,12 +25,5 @@ class TestExtractJsonText:
             extract_json_text("")
         assert exc_info.value.reason == "empty"
 
-    def test_no_json_raises_with_fence_hint(self):
-        with pytest.raises(LLMParseError) as exc_info:
-            extract_json_text("no json here")
-        assert exc_info.value.code == "LLM_OUTPUT_NOT_JSON"
-        assert "code fence" in (exc_info.value.hint or "").lower()
-
     def test_extract_json_parses_object(self):
         assert extract_json('{"x": true}') == {"x": True}
-

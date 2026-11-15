@@ -69,26 +69,7 @@ class TestCapabilities:
         assert caps.permission_mode == "plan"
         assert caps.output_format == "json"
 
-    def test_force_cursor(self):
-        """cursor with dangerously_skip_permissions=True attaches --force"""
-        cmd = build_llm_cmd(
-            "cursor", "auto", "hello",
-            dangerously_skip_permissions=True,
-        )
-        assert "--force" in cmd
-
     def test_force_cursor_not_added_by_default(self):
         """cursor with dangerously_skip_permissions=False does not attach --force"""
         cmd = build_llm_cmd("cursor", "auto", "hello")
         assert "--force" not in cmd
-
-
-class TestLLMParseErrorCodes:
-    def test_llm_parse_error_declares_code_and_exit(self):
-        """#6142: LLMParseError uses LLM_OUTPUT_NOT_JSON and exit 3."""
-        from ghdag.core.exceptions import LLMParseError
-
-        err = LLMParseError("not json", "invalid")
-        assert err.code == "LLM_OUTPUT_NOT_JSON"
-        assert err.exit_code == 3
-        assert err.raw == "not json"

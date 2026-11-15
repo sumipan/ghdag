@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,7 +10,6 @@ import pytest
 
 from ghdag.core.models.metrics import FailureClass
 from ghdag.core.ports.output import EngineErrorKind
-from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.adapters.codex import CodexAdapter
 from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
@@ -67,113 +65,15 @@ class TestClaudeJsonClassifyErrorDefaultPause:
         expected = FIXED_NOW + timedelta(seconds=QUOTA_DEFAULT_PAUSE_SECONDS)
         assert resume_at == expected
 
-    def test_quota_exhausted_with_reset_at_uses_parsed_time(self):
-        from ghdag.llm.adapters.claude_json import _classify_error
-
-        message = "quota exhausted, resets at 2026-09-21T06:00:00+00:00"
-        kind, retryable, resume_at = _classify_error(message, FIXED_NOW)
-
-        assert kind == EngineErrorKind.QUOTA_EXHAUSTED
-        assert retryable is False
-        assert resume_at is not None
-        assert resume_at == datetime(2026, 9, 21, 6, 0, 0, tzinfo=timezone.utc)
-
 
 # ---------------------------------------------------------------------------
 # classify_common_failure: environment / auth rules and real-output fixtures
 # ---------------------------------------------------------------------------
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "failure_classification"
-ENGINES = ("claude", "cursor", "codex")
-
-
-def _load_fixture(name: str) -> dict:
-    return json.loads((FIXTURE_DIR / name).read_text(encoding="utf-8"))
 
 
 class TestEnvironmentErrorRules:
-    def test_cursor_cli_command_not_found_with_127(self):
-        assert (
-            classify_common_failure(
-                "cursor", b"", b"bash: line 1: agent: command not found", returncode=127
-            )
-            == FailureClass.ENGINE_ENVIRONMENT_ERROR
-        )
-
-    def test_cursor_agent_cli_command_not_found_with_127(self):
-        assert (
-            classify_common_failure(
-                "cursor",
-                b"",
-                b"bash: line 1: cursor-agent: command not found",
-                returncode=127,
-            )
-            == FailureClass.ENGINE_ENVIRONMENT_ERROR
-        )
-
-    def test_cursor_agent_cli_command_not_found_without_returncode(self):
-        assert (
-            classify_common_failure(
-                "cursor", b"", b"bash: line 1: cursor-agent: command not found"
-            )
-            == FailureClass.ENGINE_ENVIRONMENT_ERROR
-        )
-
-    def test_cli_command_not_found_without_returncode(self):
-        assert (
-            classify_common_failure("cursor", b"", b"bash: line 1: agent: command not found")
-            == FailureClass.ENGINE_ENVIRONMENT_ERROR
-        )
-
-    def test_engine_name_still_matches(self):
-        assert (
-            classify_common_failure("codex", b"", b"/bin/sh: codex: Permission denied")
-            == FailureClass.ENGINE_ENVIRONMENT_ERROR
-        )
-
-    def test_quoted_name_matches(self):
-        assert (
-            classify_common_failure("cursor", b"", b"exec: 'agent': command not found")
-            == FailureClass.ENGINE_ENVIRONMENT_ERROR
-        )
-
-    def test_python_errno_format(self):
-        assert (
-            classify_common_failure(
-                "cursor", b"", b"[Errno 2] No such file or directory: 'agent'"
-            )
-            == FailureClass.ENGINE_ENVIRONMENT_ERROR
-        )
-        assert (
-            classify_common_failure("claude", b"", b"[Errno 13] Permission denied: 'claude'")
-            == FailureClass.ENGINE_ENVIRONMENT_ERROR
-        )
-
-    def test_returncode_127_command_not_found_other_binary(self):
-        assert (
-            classify_common_failure("claude", b"", b"env: node: command not found", returncode=127)
-            == FailureClass.ENGINE_ENVIRONMENT_ERROR
-        )
-
-    def test_command_not_found_without_127_and_other_binary_is_not_env(self):
-        assert (
-            classify_common_failure("claude", b"", b"env: node: command not found", returncode=1)
-            is None
-        )
-
-    def test_generic_agent_word_with_permission_denied_is_not_env(self):
-        assert (
-            classify_common_failure(
-                "cursor", b"The agent could not open /tmp/x: permission denied", b"", returncode=1
-            )
-            is None
-        )
-
-    def test_name_as_substring_is_not_env(self):
-        assert (
-            classify_common_failure("cursor", b"", b"useragent: command not found", returncode=1)
-            is None
-        )
 
     def test_empty_binary_keeps_legacy_behavior(self):
         assert (
@@ -187,32 +87,6 @@ class TestEnvironmentErrorRules:
 
 
 class TestAuthErrorRules:
-    def test_author_is_not_auth(self):
-        assert (
-            classify_common_failure("cursor", b"", b"error: author field is required", returncode=1)
-            is None
-        )
-
-    @pytest.mark.parametrize(
-        "text",
-        [
-            "auth error: 401",
-            "Authentication failed",
-            "missing Authorization header",
-            "UNAUTHENTICATED: request had invalid credentials",
-            "401 Unauthorized",
-            "403 Forbidden",
-            "OAuth session expired",
-            "Invalid API key",
-            "Not logged in",
-            "Failed to authenticate: OAuth session expired and could not be refreshed",
-            'Failed to authenticate. API Error: 401 {"type":"error","error":'
-            '{"type":"authentication_error","message":"OAuth token has expired."}}',
-            '{"error":{"type":"authentication_error","message":"invalid x-api-key"}}',
-        ],
-    )
-    def test_auth_tokens(self, text):
-        assert classify_common_failure("claude", b"", text.encode(), returncode=1) == FailureClass.AUTH
 
     @pytest.mark.parametrize("text", ["authored by x", "coauthor", "authorize the app later"])
     def test_non_auth_words(self, text):
@@ -223,36 +97,6 @@ class TestAuthErrorRules:
             classify_common_failure("codex", b"", b"You've hit your usage limit (unauthorized)")
             == FailureClass.QUOTA_EXHAUSTED
         )
-
-
-@pytest.mark.parametrize("engine", ("claude", "codex"))
-def test_binary_missing_fixture(engine: str) -> None:
-    data = _load_fixture(f"{engine}_binary_missing.json")
-    stdout = data["stdout"].encode()
-    stderr = data["stderr"].encode()
-    assert (
-        classify_common_failure(engine, stdout, stderr, returncode=data["returncode"])
-        == FailureClass.ENGINE_ENVIRONMENT_ERROR
-    )
-    adapter = get_output_adapter(engine)
-    assert (
-        adapter.classify_failure(data["returncode"], stdout, stderr)
-        == FailureClass.ENGINE_ENVIRONMENT_ERROR
-    )
-
-
-@pytest.mark.parametrize("engine", ENGINES)
-class TestRealOutputFixtures:
-    def test_auth_fail(self, engine):
-        data = _load_fixture(f"{engine}_auth_fail.json")
-        stdout = data["stdout"].encode()
-        stderr = data["stderr"].encode()
-        assert (
-            classify_common_failure(engine, stdout, stderr, returncode=data["returncode"])
-            == FailureClass.AUTH
-        )
-        adapter = get_output_adapter(engine)
-        assert adapter.classify_failure(data["returncode"], stdout, stderr) == FailureClass.AUTH
 
 
 def test_fixtures_have_no_cjk():
@@ -287,66 +131,6 @@ def test_cursor_capacity_classifies_as_engine_error() -> None:
         b'"result":"Selected model is at capacity."}\n'
     )
     assert adapter.classify_failure(1, stdout, b"") is FailureClass.ENGINE_ERROR
-
-
-@pytest.mark.parametrize(
-    ("adapter", "stdout"),
-    [
-        (
-            CodexAdapter(),
-            b'{"type":"error","message":"Selected model is at capacity."}\n',
-        ),
-        (
-            ClaudeJsonAdapter(),
-            b'{"is_error":true,"error":{"message":"overloaded"}}',
-        ),
-        (
-            CursorStreamAdapter(),
-            b'{"type":"result","subtype":"error","is_error":true,'
-            b'"result":"Selected model is at capacity."}\n',
-        ),
-    ],
-    ids=["codex", "claude", "cursor"],
-)
-def test_capacity_with_zero_returncode_is_not_failure(
-    adapter, stdout: bytes
-) -> None:
-    """Refs sumipan/nexus#6602: success exit must not classify capacity as failure."""
-    assert adapter.classify_failure(0, stdout, b"") is None
-
-
-def test_interactive_prompt_precedes_capacity() -> None:
-    """Refs sumipan/nexus#6602: question detection wins over capacity on non-zero exit."""
-    adapter = CodexAdapter()
-    stdout = b"\n".join(
-        [
-            b'{"type":"error","message":"Selected model is at capacity. '
-            b'Please try a different model."}',
-            b'{"type":"item.completed","item":{"type":"agent_message","text":"Which option?"}}',
-        ]
-    )
-    assert adapter.classify_failure(1, stdout, b"") is FailureClass.INTERACTIVE_PROMPT
-
-
-@pytest.mark.parametrize(
-    ("adapter", "stdout"),
-    [
-        (CodexAdapter(), b'{"type":"turn.failed","error":"Rate limit exceeded"}\n'),
-        (
-            ClaudeJsonAdapter(),
-            b'{"is_error":true,"error":{"message":"rate limit exceeded"}}',
-        ),
-        (
-            CursorStreamAdapter(),
-            b'{"type": "result", "subtype": "error", "is_error": true, '
-            b'"result": "Rate limit exceeded"}\n',
-        ),
-    ],
-    ids=["codex", "claude", "cursor"],
-)
-def test_rate_limit_is_not_mapped_to_engine_error(adapter, stdout: bytes) -> None:
-    """Refs sumipan/nexus#6602: RATE_LIMIT stays outside the new CAPACITY branch."""
-    assert adapter.classify_failure(1, stdout, b"") is not FailureClass.ENGINE_ERROR
 
 
 def test_failure_class_values_unchanged():

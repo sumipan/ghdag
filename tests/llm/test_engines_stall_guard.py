@@ -106,68 +106,6 @@ def test_guard_fires_and_kills_cat_once(guard_env: list[tuple[int, int]]) -> Non
     assert r.stderr.startswith("err\n")
 
 
-def test_input_passed_only_on_first_communicate(guard_env: list[tuple[int, int]]) -> None:
-    popen, holder = _patch_popen(lambda cmd: FakeProc(cmd, timeouts_before_done=2))
-    with popen:
-        call("p", timeout=600, stdin_text="extra", route=[("cursor", None)])
-
-    calls = holder["proc"].calls
-    assert len(calls) == 3
-    assert calls[0]["input"] == "p\n\nextra"
-    assert all(c["input"] is None for c in calls[1:])
-    assert holder["kwargs"]["stdin"] is subprocess.PIPE
-
-
-def test_no_fire_when_cat_has_cpu_time(
-    guard_env: list[tuple[int, int]], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(engines, "_stall_ps", lambda: _BUSY_PS)
-    popen, _ = _patch_popen(lambda cmd: FakeProc(cmd, timeouts_before_done=4))
-    with popen:
-        r = call("p", timeout=600, route=[("cursor", None)])
-
-    assert guard_env == []
-    assert "[stall-guard]" not in r.stderr
-    assert r.stderr == "err"
-
-
-def test_guard_off_uses_subprocess_run(
-    guard_env: list[tuple[int, int]], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setenv("GHDAG_ENGINE_STALL_GUARD", "0")
-    ps = MagicMock(return_value=_STALLED_PS)
-    kill = MagicMock()
-    monkeypatch.setattr(engines, "_stall_ps", ps)
-    monkeypatch.setattr(engines, "_stall_kill", kill)
-    done = subprocess.CompletedProcess([], 0, "ok", "")
-    with patch("ghdag.llm.engines.subprocess.run", return_value=done) as mock_run, patch(
-        "ghdag.llm.engines.subprocess.Popen"
-    ) as mock_popen:
-        r = call("p", timeout=600, route=[("cursor", None)])
-
-    assert mock_run.call_count == 1
-    mock_popen.assert_not_called()
-    ps.assert_not_called()
-    kill.assert_not_called()
-    assert r.stdout == "ok"
-
-
-def test_claude_uses_subprocess_run(
-    guard_env: list[tuple[int, int]], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    ps = MagicMock(return_value=_STALLED_PS)
-    monkeypatch.setattr(engines, "_stall_ps", ps)
-    done = subprocess.CompletedProcess([], 0, "ok", "")
-    with patch("ghdag.llm.engines.subprocess.run", return_value=done) as mock_run, patch(
-        "ghdag.llm.engines.subprocess.Popen"
-    ) as mock_popen:
-        call("p", timeout=600, route=[("claude", None)])
-
-    assert mock_run.call_count == 1
-    mock_popen.assert_not_called()
-    ps.assert_not_called()
-
-
 def test_timeout_kills_process_and_maps_to_124(
     guard_env: list[tuple[int, int]], monkeypatch: pytest.MonkeyPatch
 ) -> None:

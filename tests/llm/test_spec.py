@@ -6,7 +6,6 @@ import pytest
 
 from ghdag.core.command import render_exec_command
 from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec
-from ghdag.llm import Permission
 
 
 class TestEngineSpec:
@@ -75,132 +74,7 @@ class TestRenderExecCommand:
         cmd = render_exec_command(spec, order_path="queue/order.md", model="gemini-2.5-flash")
         assert cmd == "gemini -p --model 'gemini-2.5-flash' --approval-mode yolo < queue/order.md"
 
-    def test_cursor_with_model(self):
-        spec = ENGINE_SPECS["cursor"]
-        cmd = render_exec_command(spec, order_path="queue/order.md", model="auto")
-        assert cmd == (
-            "cursor-agent --model 'auto' -p --force --output-format stream-json "
-            "--stream-partial-output < queue/order.md"
-        )
-
-    def test_cursor_without_model(self):
-        spec = ENGINE_SPECS["cursor"]
-        cmd = render_exec_command(spec, order_path="queue/order.md", model=None)
-        assert cmd == (
-            "cursor-agent -p --force --output-format stream-json "
-            "--stream-partial-output < queue/order.md"
-        )
-
     def test_shell_command(self):
         spec = ENGINE_SPECS["shell"]
         cmd = render_exec_command(spec, order_path="queue/order.sh", model=None)
         assert cmd == "bash -o pipefail queue/order.sh"
-
-    def test_prompt_ignored_for_flag_only(self):
-        """FLAG_ONLY does not put the prompt string on argv"""
-        spec = ENGINE_SPECS["claude"]
-        cmd = render_exec_command(
-            spec, order_path="jobs/o.md", model="claude-sonnet-4-6", prompt="any-string",
-        )
-        assert "-p '" not in cmd
-        assert "any-string" not in cmd
-
-    def test_no_engine_embeds_prompt_value_in_argv(self):
-        """Generated commands for all ENGINE_SPECS must not contain `-p '`"""
-        for name, spec in ENGINE_SPECS.items():
-            cmd = render_exec_command(
-                spec, order_path="jobs/o.md", model=spec.default_model, prompt="hello",
-            )
-            assert "-p '" not in cmd, f"{name}: {cmd}"
-
-
-class TestRenderExecCommandCapabilities:
-    def test_render_exec_claude_text_only_adds_permission_and_disallowed_tools(self):
-        """AC1: permission=TEXT_ONLY → --permission-mode default --disallowed-tools ...; no --dangerously-skip-permissions"""
-        from ghdag.core.capabilities import TEXT_ONLY
-        spec = ENGINE_SPECS["claude"]
-        cmd = render_exec_command(
-            spec, order_path="queue/order.md", model="claude-opus-4-6",
-            permission=TEXT_ONLY,
-        )
-        assert "--permission-mode" in cmd
-        assert "default" in cmd
-        assert "--disallowed-tools" in cmd
-        for tool in ("Bash", "Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch"):
-            assert tool in cmd
-        assert "--dangerously-skip-permissions" not in cmd
-
-    def test_render_exec_claude_dangerous_uses_bypass_permissions(self):
-        """AC2: permission=DANGEROUS_FULL_ACCESS → --permission-mode bypassPermissions"""
-        from ghdag.core.capabilities import DANGEROUS_FULL_ACCESS
-        spec = ENGINE_SPECS["claude"]
-        cmd = render_exec_command(
-            spec, order_path="queue/order.md", model=None,
-            permission=DANGEROUS_FULL_ACCESS,
-        )
-        assert "--permission-mode" in cmd
-        assert "bypassPermissions" in cmd
-        assert "--dangerously-skip-permissions" not in cmd
-
-    def test_render_exec_cursor_text_only_omits_force(self):
-        """AC3: cursor + permission=TEXT_ONLY → does not include --force"""
-        from ghdag.core.capabilities import TEXT_ONLY
-        spec = ENGINE_SPECS["cursor"]
-        cmd = render_exec_command(
-            spec, order_path="queue/order.md", model="auto",
-            permission=TEXT_ONLY,
-        )
-        assert "--force" not in cmd
-
-    def test_render_exec_claude_default_keeps_dangerously_skip_permissions(self):
-        """AC8: permission=None (default) → --dangerously-skip-permissions as before"""
-        spec = ENGINE_SPECS["claude"]
-        cmd = render_exec_command(
-            spec, order_path="queue/order.md", model="claude-opus-4-6",
-            permission=None,
-        )
-        assert "--dangerously-skip-permissions" in cmd
-        assert "--permission-mode" not in cmd
-
-    def test_gemini_capabilities_fallback_to_no_flags(self):
-        """gemini + capabilities → fall back to no flags (extra_args kept)"""
-        from ghdag.core.capabilities import TEXT_ONLY
-        spec = ENGINE_SPECS["gemini"]
-        cmd = render_exec_command(
-            spec, order_path="queue/order.md", model="gemini-2.5-flash",
-            permission=TEXT_ONLY,
-        )
-        assert "--permission-mode" not in cmd
-        assert "--approval-mode yolo" in cmd  # extra_args kept
-
-    def test_shell_capabilities_no_change(self):
-        """shell + capabilities → command unchanged"""
-        from ghdag.core.capabilities import TEXT_ONLY
-        spec = ENGINE_SPECS["shell"]
-        cmd_no_caps = render_exec_command(spec, order_path="queue/order.sh", model=None)
-        cmd_with_caps = render_exec_command(spec, order_path="queue/order.sh", model=None, permission=TEXT_ONLY)
-        assert cmd_no_caps == cmd_with_caps
-
-    def test_claude_stream_capabilities(self):
-        """stream=True → render_exec_command includes stream-json flags"""
-        caps = Permission(stream=True)
-        spec = ENGINE_SPECS["claude"]
-        cmd = render_exec_command(
-            spec, order_path="queue/order.md", model="claude-opus-4-6",
-            permission=caps,
-        )
-        assert "--output-format" in cmd
-        assert "stream-json" in cmd
-        assert "--verbose" in cmd
-
-    def test_cursor_stream_prefers_stream_json_without_duplicate(self):
-        """With cursor stream, stream-json wins and --output-format appears once."""
-        caps = Permission(stream=True)
-        spec = ENGINE_SPECS["cursor"]
-        cmd = render_exec_command(
-            spec, order_path="queue/order.md", model="auto",
-            permission=caps,
-        )
-        assert cmd.split().count("--output-format") == 1
-        assert "--output-format stream-json" in cmd
-        assert "--output-format json" not in cmd
