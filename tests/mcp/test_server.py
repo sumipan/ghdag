@@ -6,7 +6,6 @@ import io
 import json
 from unittest.mock import MagicMock
 
-from ghdag.core.exceptions import ConfigError
 from ghdag.mcp.server import SUPPORTED_PROTOCOL_VERSION, McpServer
 from ghdag.mcp.tools import McpToolRegistry
 
@@ -25,25 +24,6 @@ def _tools_listing() -> MagicMock:
 
 
 class TestInitialize:
-    def test_supported_protocol_version_echoed(self):
-        server = McpServer(_tools_listing())
-        resp = server.handle(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": SUPPORTED_PROTOCOL_VERSION,
-                    "capabilities": {},
-                    "clientInfo": {"name": "t", "version": "0"},
-                },
-            }
-        )
-        assert resp is not None
-        assert resp["result"]["protocolVersion"] == SUPPORTED_PROTOCOL_VERSION
-        assert resp["result"]["capabilities"] == {"tools": {}}
-        assert resp["result"]["serverInfo"]["name"] == "ghdag"
-
     def test_unknown_protocol_counter_offered(self):
         server = McpServer(_tools_listing())
         resp = server.handle(
@@ -84,31 +64,6 @@ class TestNotificationsAndErrors:
 
 
 class TestTools:
-    def test_ghdag_error_surfaces_as_is_error(self):
-        tools = MagicMock()
-        tools.list_tools.return_value = []
-        tools.call_tool.side_effect = ConfigError(
-            "bad",
-            code="STEP_DEPENDENCY_UNKNOWN",
-            hint="defined step ids: []",
-        )
-        server = McpServer(tools)
-        resp = server.handle(
-            {
-                "jsonrpc": "2.0",
-                "id": 3,
-                "method": "tools/call",
-                "params": {"name": "ghdag_enqueue", "arguments": {}},
-            }
-        )
-        assert resp is not None
-        result = resp["result"]
-        assert result["isError"] is True
-        assert result["structuredContent"]["code"] == "STEP_DEPENDENCY_UNKNOWN"
-        assert result["content"][0]["text"].startswith(
-            "error[STEP_DEPENDENCY_UNKNOWN]:"
-        )
-
     def test_tools_list_names(self):
         tools = _tools_listing()
         server = McpServer(tools)

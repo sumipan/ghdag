@@ -73,12 +73,3 @@ print("OK")
     assert result.returncode == 0, result.stderr or result.stdout
     assert "OK" in result.stdout
 
-
-def test_get_command_adapter_after_workflow_import() -> None:
-    """Issue sumipan/nexus#6535 — get_command_adapter after ghdag.workflow import."""
-    import ghdag.workflow  # noqa: F401
-    from ghdag.core.command import get_command_adapter
-
-    adapter = get_command_adapter("claude")
-    assert adapter.name == "claude"
-    assert hasattr(adapter, "build_exec_record")

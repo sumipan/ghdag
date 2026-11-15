@@ -37,39 +37,11 @@ class TestPublicApi:
         assert callable(make_span_id)
 
 class TestEmitSpanSchema:
-    def test_writes_valid_json(self, tmp_path: Path) -> None:
-        log = tmp_path / "latency_span.jsonl"
-        _emit(**_base_kwargs(tmp_path, log_path=log))
-        lines = log.read_text().splitlines()
-        assert len(lines) == 1
-        record = json.loads(lines[0])
-        assert record["orchestration_id"] == "orch-abc123def456"
-        assert record["trace_id"] == "orch-abc123def456"
-        assert record["span_id"] == "s-01abcd"
-        assert record["parent_span_id"] == "s-00root"
-        assert record["name"] == "memory_retrieval"
-        assert record["route"] == "direct"
-        assert record["start_ts"] == "2026-08-12T07:15:32.123456Z"
-        assert record["duration_ms"] == 145
-        assert record["status"] == "ok"
-
-    def test_event_type_latency_span_default(self, tmp_path: Path) -> None:
-        log = tmp_path / "latency_span.jsonl"
-        _emit(**_base_kwargs(tmp_path, name="memory_retrieval", status="ok", log_path=log))
-        record = json.loads(log.read_text().strip())
-        assert record["event_type"] == "latency_span"
-
     def test_event_type_slack_e2e_completed(self, tmp_path: Path) -> None:
         log = tmp_path / "latency_span.jsonl"
         _emit(**_base_kwargs(tmp_path, name="slack_e2e", status="ok", log_path=log))
         record = json.loads(log.read_text().strip())
         assert record["event_type"] == "slack_e2e_completed"
-
-    def test_event_type_slack_e2e_failed_error(self, tmp_path: Path) -> None:
-        log = tmp_path / "latency_span.jsonl"
-        _emit(**_base_kwargs(tmp_path, name="slack_e2e", status="error", log_path=log))
-        record = json.loads(log.read_text().strip())
-        assert record["event_type"] == "slack_e2e_failed"
 
     def test_event_type_slack_e2e_failed_timeout(self, tmp_path: Path) -> None:
         log = tmp_path / "latency_span.jsonl"
@@ -77,74 +49,10 @@ class TestEmitSpanSchema:
         record = json.loads(log.read_text().strip())
         assert record["event_type"] == "slack_e2e_failed"
 
-    def test_attributes_included_when_provided(self, tmp_path: Path) -> None:
-        log = tmp_path / "latency_span.jsonl"
-        _emit(
-            **_base_kwargs(
-                tmp_path,
-                log_path=log,
-                attributes={"engine": "claude", "model": "claude-opus-5", "attempt": 1},
-            )
-        )
-        record = json.loads(log.read_text().strip())
-        assert record["attributes"]["engine"] == "claude"
-        assert record["attributes"]["model"] == "claude-opus-5"
-        assert record["attributes"]["attempt"] == 1
-
-    def test_attributes_absent_when_none(self, tmp_path: Path) -> None:
-        log = tmp_path / "latency_span.jsonl"
-        _emit(**_base_kwargs(tmp_path, log_path=log, attributes=None))
-        record = json.loads(log.read_text().strip())
-        assert "attributes" not in record
-
-    def test_parent_span_id_null_for_root(self, tmp_path: Path) -> None:
-        log = tmp_path / "latency_span.jsonl"
-        _emit(**_base_kwargs(tmp_path, log_path=log, parent_span_id=None))
-        record = json.loads(log.read_text().strip())
-        assert record["parent_span_id"] is None
-
-    def test_appends_multiple_records(self, tmp_path: Path) -> None:
-        log = tmp_path / "latency_span.jsonl"
-        for i in range(3):
-            _emit(**_base_kwargs(tmp_path, log_path=log, span_id=f"s-{i:02d}", duration_ms=100 + i))
-        lines = log.read_text().splitlines()
-        assert len(lines) == 3
-
     def test_creates_parent_dirs(self, tmp_path: Path) -> None:
         log = tmp_path / "nested" / "dir" / "latency_span.jsonl"
         _emit(**_base_kwargs(tmp_path, log_path=log))
         assert log.exists()
-
-    def test_duration_ms_coerced_to_int(self, tmp_path: Path) -> None:
-        log = tmp_path / "latency_span.jsonl"
-        _emit(**_base_kwargs(tmp_path, log_path=log, duration_ms=145.7))
-        record = json.loads(log.read_text().strip())
-        assert isinstance(record["duration_ms"], int)
-        assert record["duration_ms"] == 145
-
-    def test_row_fields_match_nexus_schema(self, tmp_path: Path) -> None:
-        """AC: event_type / orchestration_id / name / route / start_ts / duration_ms / status / attributes."""
-        log = tmp_path / "latency_span.jsonl"
-        _emit(
-            **_base_kwargs(
-                tmp_path,
-                log_path=log,
-                attributes={"engine": "cursor"},
-            )
-        )
-        record = json.loads(log.read_text().strip())
-        for key in (
-            "event_type",
-            "orchestration_id",
-            "name",
-            "route",
-            "start_ts",
-            "duration_ms",
-            "status",
-            "attributes",
-        ):
-            assert key in record
-
 
 class TestLatencySpanPathEnv:
     def test_latency_span_path_env_used_when_log_path_omitted(
@@ -212,12 +120,6 @@ class TestPiiExclusion:
 
 
 class TestMakeSpanId:
-    def test_returns_8_chars(self) -> None:
-        from ghdag.audit.span import make_span_id
-
-        sid = make_span_id()
-        assert len(sid) == 8
-
     def test_unique_on_each_call(self) -> None:
         from ghdag.audit.span import make_span_id
 

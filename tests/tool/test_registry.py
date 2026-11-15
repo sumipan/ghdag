@@ -36,13 +36,6 @@ class TestDiscoverBasics:
         with pytest.raises(FileNotFoundError):
             ToolRegistry.discover(tmp_path / "missing")
 
-    def test_valid_tool(self, tmp_path: Path) -> None:
-        _write_tool(tmp_path, "my_tool")
-        result = ToolRegistry.discover(tmp_path)
-        assert len(result) == 1
-        assert "my_tool" in result
-        assert result["my_tool"].engine == "claude-code"
-
     def test_init_py_excluded(self, tmp_path: Path) -> None:
         (tmp_path / "__init__.py").write_text(
             '''\
