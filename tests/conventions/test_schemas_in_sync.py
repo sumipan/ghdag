@@ -50,7 +50,6 @@ def _done_marker_enum_values() -> set[str]:
             continue
         if isinstance(value, str):
             values.add(value)
-    values.add(vocab.LEGACY_DONE_DEFERRED)
     return values
 
 

@@ -387,7 +387,7 @@ With a `quota_gate`, `call()` walks `route` from front to back: engines marked p
 |---|---|
 | `ghdag.cli` | `main` |
 | `ghdag.core.ports` | `ForgePort` |
-| `ghdag.dag` | `AuditHooks`, `DagConfig`, `DagEngine`, `DagHooks`, `DONE_SUCCESS`, `FanOutSpec`, `LEGACY_DONE_DEFERRED`, `PIPELINE_WAIT_QUOTA`, `Task`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
+| `ghdag.dag` | `AuditHooks`, `DagConfig`, `DagEngine`, `DagHooks`, `DONE_SUCCESS`, `FanOutSpec`, `PIPELINE_WAIT_QUOTA`, `Task`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
 | `ghdag.files` | `md_read`, `md_write` |
 | `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
 | `ghdag.forge` | `ForgePort`, `GitHubApiError`, `GitHubClient`, `LocalForge`, `get_forge` |
@@ -1140,7 +1140,6 @@ Contents of `done/<uuid>` (constants in `ghdag.core.vocabulary`). Marker bodies 
 | `DONE_UNKNOWN_FAILURE` | `UNKNOWN_FAILURE` | Unclassified failure |
 | `DONE_ORPHAN_ARCHIVED` | `ORPHAN_ARCHIVED` | Archived by `ghdag cleanup` as an orphan |
 | `DONE_ORPHANED_ON_RESTART` | `ORPHANED_ON_RESTART` | Task lost across a runner restart (recoverable with `ghdag dag recover`) |
-| `LEGACY_DONE_DEFERRED` | `DEFERRED` | Legacy marker removed during the first exec load so the task becomes pending again |
 
 Any other content is the task's non-zero exit code.
 

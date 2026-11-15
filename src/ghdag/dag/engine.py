@@ -12,13 +12,12 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import IO
 
-from ghdag.core.vocabulary import DONE_DEP_FAILED, LEGACY_DONE_DEFERRED
+from ghdag.core.vocabulary import DONE_DEP_FAILED
 from ghdag.io import exec_jsonl
-from ghdag.io.audit import AuditContext, append_audit_record
+from ghdag.io.audit import AuditContext
 from ghdag.io.done import (
     load_done_from_dir,
     load_succeeded_from_dir,
-    read_done_content,
 )
 from ghdag.io.done import (
     mark_done as state_mark_done,
@@ -48,7 +47,6 @@ class DagEngine:
         self._drain_deadline: float | None = None
         self._lock_fh: IO[str] | None = None
         self._adopt_done = False
-        self._legacy_deferred_migrated = False
         self._test_hook_post_adopt: Callable[[], None] | None = None
 
         self._circuit_breaker = CircuitBreakerPolicy(
@@ -111,9 +109,6 @@ class DagEngine:
                     self._launcher.adopt_orphans(self._tasks)
                     if self._test_hook_post_adopt is not None:
                         self._test_hook_post_adopt()
-                if not self._legacy_deferred_migrated:
-                    self._legacy_deferred_migrated = True
-                    self._migrate_legacy_deferred_done(self._tasks)
 
             self._apply_pending_cancels()
             self._launcher.check_completions()
@@ -230,52 +225,6 @@ class DagEngine:
         return self._launcher._running
 
     # --- Internal ---
-
-    def _migrate_legacy_deferred_done(self, tasks: dict[str, Task]) -> None:
-        done_dir = Path(self._config.exec_done_dir)
-        if not done_dir.is_dir():
-            return
-        audit_path = Path(
-            self._config.quota_audit_path
-            or Path(self._config.exec_jsonl_path).parent / "audit.jsonl"
-        )
-        from datetime import datetime, timezone
-
-        observed_at = datetime.now(timezone.utc).isoformat()
-        for done_file in done_dir.iterdir():
-            if not done_file.is_file():
-                continue
-            uuid = done_file.name
-            content = read_done_content(done_dir, uuid)
-            if content is None or content.strip() != LEGACY_DONE_DEFERRED:
-                continue
-            task_present = uuid in tasks
-            try:
-                done_file.unlink()
-            except OSError:
-                logger.warning("Failed to remove legacy DEFERRED done file [%s]", uuid)
-                continue
-            task = tasks.get(uuid)
-            if task is not None and task.result_path:
-                result_path = Path(task.result_path)
-                if result_path.exists():
-                    try:
-                        result_path.unlink()
-                    except OSError:
-                        logger.warning(
-                            "Failed to remove stale result for migrated task [%s]", uuid
-                        )
-            append_audit_record(
-                audit_path,
-                {
-                    "schema_version": 1,
-                    "event_type": "task_deferred_migrated",
-                    "uuid": uuid,
-                    "task_present": task_present,
-                    "observed_at": observed_at,
-                    "correlation_id": uuid,
-                },
-            )
 
     def _apply_pending_cancels(self) -> None:
         """Detect jobs/cancel/<uuid> for running tasks and ask the launcher to cancel."""

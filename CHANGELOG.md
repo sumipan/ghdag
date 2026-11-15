@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **Breaking:** Remove `ghdag.dag.LEGACY_DONE_DEFERRED` and first-exec migration of `jobs/done/<uuid>` contents `DEFERRED`. Legacy done files with that body are no longer deleted on load; they are treated like other non-success done markers. `PIPELINE_STATUS: DEFERRED` is no longer mapped to `PIPELINE_FAILED:LEGACY_DEFERRED_UNSUPPORTED` (sumipan/nexus#6875).
+
 ## 0.140.1 - 2026-11-16
 
 ### Changed

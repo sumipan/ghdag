@@ -103,34 +103,6 @@ def test_retryable_engine_error_marks_done_for_retry(tmp_path):
     assert result_file.read_text(encoding="utf-8").startswith("ENGINE_ERROR (CAPACITY):")
 
 
-def test_pipeline_status_legacy_deferred_records_failure(tmp_path):
-    engine, hooks = _make_engine(tmp_path)
-    result_file = tmp_path / "result.md"
-    result_file.write_text("PIPELINE_STATUS: DEFERRED\n", encoding="utf-8")
-
-    hooks.pipeline_status = "DEFERRED"
-
-    proc = MagicMock()
-    proc.poll.return_value = 0
-    proc.returncode = 0
-    task = Task(uuid="deferred-2", command="claude -p hi", engine="claude", result_path=str(result_file))
-    rt = _RunningProcess(
-        uuid=task.uuid,
-        task=task,
-        proc=proc,
-        started_at=time.time() - 0.1,
-        started_at_mono=time.monotonic() - 0.1,
-        stderr_buf=io.BytesIO(b""),
-        stdout_buf=io.BytesIO(b""),
-        retry_depth=0,
-    )
-    engine._launcher._running[rt.uuid] = rt
-
-    engine._launcher.check_completions()
-
-    assert len(hooks.failures) == 1
-
-
 def _make_shell_running_task(uuid, returncode, stdout, result_path, stderr=b""):
     proc = MagicMock()
     proc.poll.return_value = returncode
