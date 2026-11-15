@@ -8,6 +8,7 @@ Test approach:
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from unittest import mock
@@ -518,3 +519,62 @@ class TestTriggerForgeBackend:
         assert exc.value.code == 4
         err = capsys.readouterr().err
         assert err.splitlines()[0].startswith("error[GITHUB_AUTH]:")
+
+    def test_trigger_uses_workflow_dir_templates_from_foreign_cwd(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Refs sumipan/nexus#6803 — trigger resolves omitted template_dir against workflow YAML dir."""
+        marker = "TRIGGER-WF-DIR-MARKER"
+        forge_root = tmp_path / "forge"
+        forge_root.mkdir()
+        _init_git_repo(forge_root)
+        workflows_dir = tmp_path / "workflows"
+        workflows_dir.mkdir()
+        tdir = workflows_dir / "templates"
+        tdir.mkdir()
+        (tdir / "hello.md").write_text(f'echo "{marker}"\n', encoding="utf-8")
+        yaml_content = """\
+name: sample
+triggers:
+  - label: "pipeline:develop-ready"
+    handler: run
+handlers:
+  run:
+    steps:
+      - id: hello
+        template: hello
+        engine: shell
+"""
+        (workflows_dir / "sample.yml").write_text(yaml_content, encoding="utf-8")
+        exec_jsonl = tmp_path / "exec.jsonl"
+        exec_jsonl.write_text("", encoding="utf-8")
+        other_cwd = tmp_path / "other"
+        other_cwd.mkdir()
+
+        _clear_github_env(monkeypatch)
+        monkeypatch.setenv("GHDAG_FORGE", "local")
+        monkeypatch.setenv("GHDAG_FORGE_ROOT", str(forge_root))
+        monkeypatch.chdir(other_cwd)
+
+        forge = LocalForge(forge_root)
+        issue_no = forge.issue_create("title", "body", labels=[])
+
+        with mock.patch("urllib.request.urlopen") as urlopen:
+            urlopen.side_effect = AssertionError("GitHub network must not be used")
+            from ghdag.cli import main
+            main([
+                "trigger",
+                str(issue_no),
+                "--handler",
+                "run",
+                "--workflows-dir",
+                str(workflows_dir),
+                "--exec-jsonl",
+                str(exec_jsonl),
+            ])
+
+        lines = [ln for ln in exec_jsonl.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        assert len(lines) == 1
+        command = json.loads(lines[0])["command"]
+        order_path = Path(command.split()[-1])
+        assert marker in order_path.read_text(encoding="utf-8")

@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- When `template_dir` is omitted from workflow YAML, the loader now resolves it to `<workflow file directory>/templates` and all execution paths use that resolved path instead of a cwd-relative `templates` fallback (sumipan/nexus#6803).
+- README identity messaging, release badge alignment, LocalForge GitHub-free quick start, and execution review artifacts are unchanged since 0.133.4 (sumipan/nexus#6610).
+
 ## 0.137.1 - 2026-11-15
 
 ### Fixed

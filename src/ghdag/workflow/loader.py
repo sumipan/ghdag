@@ -382,6 +382,8 @@ def _parse(data: dict, *, workflow_dir: Path | None = None) -> WorkflowConfig:
         if not td.is_absolute() and workflow_dir is not None:
             td = workflow_dir / td
         resolved_template_dir = str(td)
+    elif workflow_dir is not None:
+        resolved_template_dir = str(workflow_dir / "templates")
 
     nonterminal_closed_data = data.get("nonterminal_closed")
     nonterminal_closed: NonterminalClosedConfig | None = None

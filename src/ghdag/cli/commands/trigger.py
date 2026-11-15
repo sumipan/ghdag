@@ -75,8 +75,7 @@ def _load_workflow_for_cli(args, *, workflows_path: Path):
 
 def cmd_trigger(args) -> None:
     """ghdag trigger: run a handler one-shot against an Issue."""
-    from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-    from ghdag.pipeline.order import TemplateOrderBuilder
+    from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
     from ghdag.pipeline.state import PipelineState
     from ghdag.workflow.dispatcher import WorkflowDispatcher
 
@@ -105,13 +104,14 @@ def cmd_trigger(args) -> None:
         state_dir=state_dir,
         exec_jsonl_path=str(exec_jsonl_resolved),
     )
-    template_dir = workflow.template_dir or "templates"
-    order_builder = TemplateOrderBuilder(template_dir)
+    order_builders = build_order_builders([workflow])
+    order_builder = order_builders[workflow.name]
 
     pipeline = LLMPipelineAPI(
         pipeline_state=pipeline_state,
         order_builder=order_builder,
         queue_dir=queue_dir,
+        order_builders=order_builders,
     )
     dispatcher = WorkflowDispatcher(
         workflows=[workflow],

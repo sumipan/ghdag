@@ -349,7 +349,13 @@ class WorkflowDispatcher:
                 audit_context=audit_ctx,
             )
 
-        template_dir = Path(workflow.template_dir) if workflow.template_dir else Path("templates")
+        if workflow.template_dir is None:
+            raise ConfigError(
+                f"workflow {workflow.name!r} has no template_dir for live render; "
+                "load via load_workflows",
+                code="WORKFLOW_TEMPLATE_DIR_MISSING",
+            )
+        template_dir = Path(workflow.template_dir)
         inner = self._pipeline._resolve_order_builder(workflow.name)
         wrapped = _LiveRenderOrderBuilder(
             inner,

@@ -821,7 +821,7 @@ Load-time step validation error codes (each `ValidationError` uses the code in t
 | | `triggers` | `list[TriggerConfig]` | yes | none | Label -> handler map; earlier entries take precedence |
 | | `handlers` | `dict[str, HandlerConfig]` | yes | none | Handler definitions |
 | | `polling_interval` | `int` | no | `30` | Seconds between polls |
-| | `template_dir` | `str \| None` | no | `None` (`<workflow dir>/templates`) | Order template directory, relative to the workflow file |
+| | `template_dir` | `str \| None` | no | omitted → loader sets `<workflow dir>/templates` | Order template directory; relative values resolve from the workflow file |
 | | `label_namespace` | `str \| None` | no | `None` | Label prefix |
 | | `transitions` | `dict[str, list[str]] \| None` | no | `None` | Allowed label transitions |
 | | `reset_label` | `str \| None` | no | `None` | Label reachable from any state |

@@ -35,10 +35,15 @@ def build_order_builders(workflows: list[WorkflowConfig]) -> dict[str, OrderBuil
     """Build per-workflow TemplateOrderBuilders from loaded workflow configs."""
     from ghdag.pipeline.order import TemplateOrderBuilder
 
-    return {
-        wf.name: TemplateOrderBuilder(wf.template_dir or "templates")
-        for wf in workflows
-    }
+    builders: dict[str, OrderBuilder] = {}
+    for wf in workflows:
+        if wf.template_dir is None:
+            raise ConfigError(
+                f"workflow {wf.name!r} has no template_dir; load via load_workflows",
+                code="WORKFLOW_TEMPLATE_DIR_MISSING",
+            )
+        builders[wf.name] = TemplateOrderBuilder(wf.template_dir)
+    return builders
 
 
 def validate_depends(steps: "list[StepConfig]") -> None:
