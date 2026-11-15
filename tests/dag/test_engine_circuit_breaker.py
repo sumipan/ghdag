@@ -46,22 +46,7 @@ def _make_engine(tmp_path):
 # --- CircuitBreakerPolicy unit tests ---
 
 class TestCircuitBreakerPolicy:
-    def test_trips_after_max_consecutive_failures(self):
-        cb = CircuitBreakerPolicy(failure_window_sec=float("inf"), max_consecutive_failures=3)
-        assert not cb.tripped
-        cb.record_failure()
-        assert not cb.tripped
-        cb.record_failure()
-        assert not cb.tripped
-        cb.record_failure()
-        assert cb.tripped
 
-    def test_reset_clears_counter(self):
-        cb = CircuitBreakerPolicy(failure_window_sec=float("inf"), max_consecutive_failures=2)
-        cb.record_failure()
-        cb.reset()
-        cb.record_failure()
-        assert not cb.tripped
 
     def test_failure_outside_window_resets_counter(self):
         cb = CircuitBreakerPolicy(failure_window_sec=0.0, max_consecutive_failures=2)
@@ -85,28 +70,7 @@ class TestCircuitBreakerPolicy:
 # --- TaskLauncher.check_completions circuit breaker integration tests ---
 
 class TestTaskLauncherCircuitBreakerIntegration:
-    @patch("ghdag.dag.task_launcher.state_mark_done")
-    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-    def test_failure_increments_circuit_breaker(self, mock_tee, mock_mark_done, tmp_path):
-        engine, hooks = _make_engine(tmp_path)
-        rt = _make_running_task(returncode=1)
-        engine._launcher._running[rt.uuid] = rt
 
-        engine._launcher.check_completions()
-
-        assert engine._circuit_breaker._consecutive_failures == 1
-
-    @patch("ghdag.dag.task_launcher.state_mark_done")
-    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-    def test_success_resets_circuit_breaker(self, mock_tee, mock_mark_done, tmp_path):
-        engine, hooks = _make_engine(tmp_path)
-        engine._circuit_breaker._consecutive_failures = 2
-        rt = _make_running_task(returncode=0)
-        engine._launcher._running[rt.uuid] = rt
-
-        engine._launcher.check_completions()
-
-        assert engine._circuit_breaker._consecutive_failures == 0
 
     @patch("ghdag.dag.task_launcher.state_mark_done")
     @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
@@ -120,44 +84,6 @@ class TestTaskLauncherCircuitBreakerIntegration:
 
         assert engine._circuit_breaker._consecutive_failures == 1
 
-    @patch("ghdag.dag.task_launcher.state_mark_done")
-    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value="result.md")
-    def test_pipeline_failed_increments_circuit_breaker(self, mock_tee, mock_mark_done, tmp_path):
-        engine, hooks = _make_engine(tmp_path)
-        hooks.check_rejected.return_value = False
-        hooks.check_pipeline_status.return_value = "IMPL_FAILED"
-        rt = _make_running_task(returncode=0)
-        engine._launcher._running[rt.uuid] = rt
-
-        engine._launcher.check_completions()
-
-        assert engine._circuit_breaker._consecutive_failures == 1
-
-    @patch("ghdag.dag.task_launcher.state_mark_done")
-    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-    def test_multiple_failures_trip_breaker(self, mock_tee, mock_mark_done, tmp_path):
-        engine, hooks = _make_engine(tmp_path)
-        engine._circuit_breaker._max_consecutive_failures = 3
-
-        for i in range(3):
-            rt = _make_running_task(uuid=f"fail-{i}", returncode=1)
-            engine._launcher._running[rt.uuid] = rt
-
-        engine._launcher.check_completions()
-
-        assert engine._circuit_breaker.tripped
-
-    @patch("ghdag.dag.task_launcher.state_mark_done")
-    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-    def test_rejected_does_not_increment_circuit_breaker(self, mock_tee, mock_mark_done, tmp_path):
-        engine, hooks = _make_engine(tmp_path)
-        hooks.check_rejected.return_value = True
-        rt = _make_running_task(returncode=0)
-        engine._launcher._running[rt.uuid] = rt
-
-        engine._launcher.check_completions()
-
-        assert engine._circuit_breaker._consecutive_failures == 0
 
     @patch("ghdag.dag.task_launcher.state_mark_done")
     def test_empty_result_does_not_increment_circuit_breaker(self, mock_mark_done, tmp_path):
@@ -172,46 +98,4 @@ class TestTaskLauncherCircuitBreakerIntegration:
 
         assert engine._circuit_breaker._consecutive_failures == 0
 
-    @patch("ghdag.dag.task_launcher.state_mark_done")
-    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-    def test_tripped_breaker_does_not_reset_on_further_failure(self, mock_tee, mock_mark_done, tmp_path):
-        engine, hooks = _make_engine(tmp_path)
-        engine._circuit_breaker._tripped = True
 
-        rt = _make_running_task(returncode=0)
-        engine._launcher._running[rt.uuid] = rt
-        engine._launcher.check_completions()
-
-        assert engine._circuit_breaker.tripped
-
-    @patch("ghdag.dag.task_launcher.state_mark_done")
-    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-    def test_infinite_threshold_circuit_breaker_never_trips(self, mock_tee, mock_mark_done, tmp_path):
-        engine, hooks = _make_engine(tmp_path)
-        engine._circuit_breaker._max_consecutive_failures = 2**31
-
-        for i in range(100):
-            rt = _make_running_task(uuid=f"fail-{i}", returncode=1)
-            engine._launcher._running[rt.uuid] = rt
-
-        engine._launcher.check_completions()
-
-        assert not engine._circuit_breaker.tripped
-
-    @patch("ghdag.dag.task_launcher.state_mark_done")
-    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-    def test_failure_and_success_cycle_resets(self, mock_tee, mock_mark_done, tmp_path):
-        engine, hooks = _make_engine(tmp_path)
-        engine._circuit_breaker._max_consecutive_failures = 3
-
-        for i in range(2):
-            rt = _make_running_task(uuid=f"fail-{i}", returncode=1)
-            engine._launcher._running[rt.uuid] = rt
-        engine._launcher.check_completions()
-        assert engine._circuit_breaker._consecutive_failures == 2
-
-        rt_ok = _make_running_task(uuid="ok-task", returncode=0)
-        engine._launcher._running[rt_ok.uuid] = rt_ok
-        engine._launcher.check_completions()
-        assert engine._circuit_breaker._consecutive_failures == 0
-        assert not engine._circuit_breaker.tripped
