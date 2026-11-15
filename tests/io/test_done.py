@@ -6,7 +6,6 @@ from pathlib import Path
 
 
 class TestIsDoneAndMarkDone:
-
     def test_not_done(self, tmp_path: Path) -> None:
         from ghdag.io.done import is_done
 
@@ -21,7 +20,6 @@ class TestLoadDone:
 
 
 class TestReadDoneContent:
-
     def test_missing_returns_none(self, tmp_path: Path) -> None:
         from ghdag.io.done import read_done_content
 
@@ -29,8 +27,6 @@ class TestReadDoneContent:
 
 
 class TestDepSucceeded:
-
-
     def test_missing(self, tmp_path: Path) -> None:
         from ghdag.io.done import dep_succeeded
 

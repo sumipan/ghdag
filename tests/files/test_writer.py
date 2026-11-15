@@ -20,8 +20,6 @@ def write_file(path: Path, content: str) -> None:
 
 
 class TestMdWriteBasic:
-
-
     def test_w3_path_traversal(self, repo_root: Path) -> None:
         """W3: path outside repo_root raises ValueError"""
         with pytest.raises(PathTraversalError, match="Path traversal"):
@@ -42,5 +40,3 @@ class TestMdWriteBasic:
 
         assert f.read_text(encoding="utf-8") == "new content"
         assert result.bytes_written == len("new content".encode("utf-8"))
-
-

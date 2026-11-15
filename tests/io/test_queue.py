@@ -9,7 +9,6 @@ import pytest
 from ghdag.io.queue import QueueTaskStore
 
 UUID1 = "14036ae7-f47f-4669-8a80-679a5e87c147"
-UUID2 = "75d11b22-75ca-4754-8768-765857d3ac9d"
 TS = "20260510194041"
 ENGINE = "claude"
 
@@ -20,10 +19,6 @@ def _order_name(ts: str, engine: str, uuid: str) -> str:
 
 def _result_name(ts: str, engine: str, uuid: str) -> str:
     return f"{ts}-{engine}-result-{uuid}.md"
-
-
-def _stderr_name(ts: str, engine: str, uuid: str) -> str:
-    return f"{ts}-{engine}-stderr-{uuid}.md"
 
 
 @pytest.fixture
@@ -50,7 +45,6 @@ class TestQueueTaskStore:
         (queue_dir / _order_name(TS, ENGINE, UUID1)).write_text("order", encoding="utf-8")
         assert QueueTaskStore(queue_dir, done_dir).read_result(UUID1) is None
 
-
     def test_done_marker_sets_is_done(self, dirs: tuple[Path, Path]) -> None:
         queue_dir, done_dir = dirs
         (queue_dir / _order_name(TS, ENGINE, UUID1)).write_text("o", encoding="utf-8")
@@ -58,7 +52,6 @@ class TestQueueTaskStore:
         tasks = QueueTaskStore(queue_dir, done_dir).list_tasks()
         assert len(tasks) == 1
         assert tasks[0].is_done is True
-
 
     def test_non_matching_files_ignored(self, dirs: tuple[Path, Path]) -> None:
         queue_dir, done_dir = dirs

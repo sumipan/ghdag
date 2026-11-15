@@ -11,8 +11,6 @@ from pathlib import Path
 from ghdag.dag.task_launcher import _stdout_line_reader_redacting
 from ghdag.io.redact import init_redact_patterns, redact_text
 
-_GITHUB_PAT = "github_pat_" + ("a" * 80)
-
 
 def test_custom_patterns_file(tmp_path: Path):
     path = tmp_path / "patterns.txt"

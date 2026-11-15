@@ -6,8 +6,6 @@ import json
 
 
 class TestInterpretDoneStrict:
-
-
     def test_json_ok_is_success(self) -> None:
         from ghdag.io.done import interpret_done
 
@@ -24,5 +22,3 @@ class TestInterpretDoneStrict:
         from ghdag.io.done import interpret_done
 
         assert interpret_done("{not-json") == "other"
-
-

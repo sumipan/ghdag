@@ -25,8 +25,6 @@ def _hash16(body: str) -> str:
 
 
 class TestMdAppendBasic:
-
-
     def test_a6_empty_body(self, repo_root: Path) -> None:
         """A6: empty body is a valid append and returns APPENDED"""
         f = repo_root / "order" / "foo.md"
@@ -63,5 +61,3 @@ class TestAllowRecover:
 
         with pytest.raises(AppendRecoverError):
             md_append("order/foo.md", "Result", body, allow_recover=False, repo_root=repo_root)
-
-

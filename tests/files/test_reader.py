@@ -22,16 +22,12 @@ def write(path: Path, content: str) -> None:
 
 
 class TestMdReadBasic:
-
-
     def test_file_not_found(self, repo_root: Path) -> None:
         with pytest.raises(FileNotFoundError):
             md_read("order/missing.md", repo_root=repo_root)
 
 
 class TestMdReadFrontmatter:
-
-
     def test_frontmatter_only(self, repo_root: Path) -> None:
         write(
             repo_root / "order" / "fm_only.md",
@@ -57,7 +53,6 @@ class TestMdReadPathTraversal:
 
 
 class TestMdReadWikilink:
-
     def test_wikilink_not_found_raises(self, repo_root: Path) -> None:
         with pytest.raises(FileNotFoundError):
             md_read("[[missing]]", repo_root=repo_root)

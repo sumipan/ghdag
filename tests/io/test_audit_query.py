@@ -2,26 +2,8 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
-import pytest
-
-
-def _write_events(path: Path, events: list[dict]) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        for ev in events:
-            f.write(json.dumps(ev, ensure_ascii=False) + "\n")
-
-
-@pytest.fixture
-def audit_path(tmp_path: Path) -> Path:
-    return tmp_path / "audit.jsonl"
-
 
 class TestIoAuditQuery:
-
-
     def test_detect_and_top_n_resolvable(self) -> None:
         from ghdag.io.audit_query import detect_correlation_bursts, get_correlation_top_n
 

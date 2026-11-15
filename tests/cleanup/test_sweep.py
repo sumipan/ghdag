@@ -21,7 +21,6 @@ from ghdag.cleanup.orchestrator import cleanup_queue
 
 
 class TestSweepExtras:
-
     def test_sweep_archives_old_nonstandard_md(self, tmp_path):
         """AC12: non-standard-named .md files are swept"""
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
@@ -41,7 +40,6 @@ class TestSweepExtras:
         assert not nonstandard.exists()
         extras_dirs = list(archive_dir.glob("*/extras"))
         assert len(extras_dirs) == 1
-
 
     def test_sweep_skips_jobs_already_archived_by_primary_cleanup(self, tmp_path):
         """AC17: files archived in Phase 1 are not double-processed in Phase 2"""
@@ -92,7 +90,6 @@ class TestIsSweepableExtra:
 
 class TestPhase3MtimeSweep:
     """AC-1: quota-gate-override.json created 8 days ago, updated 1 hour ago is NOT swept."""
-
 
     def test_dry_run_sweep_age_is_measured_from_fixed_now(self, tmp_path, capsys):
         """Sweep dry-run age reflects days elapsed from the frozen orchestrator clock."""

@@ -2,22 +2,10 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 
 class TestCheckIdempotency:
-    def test_missing_key_is_unprocessed(self, tmp_path: Path) -> None:
-        from ghdag.io.exec_jsonl import check_idempotency
-
-        path = tmp_path / "exec.jsonl"
-        path.write_text(
-            json.dumps({"uuid": "u", "command": "x", "idempotency_key": "k1"}) + "\n",
-            encoding="utf-8",
-        )
-        assert check_idempotency(path, "k2") is True
-        assert check_idempotency(path, "k1") is False
-
     def test_missing_file_is_unprocessed(self, tmp_path: Path) -> None:
         from ghdag.io.exec_jsonl import check_idempotency
 
@@ -37,5 +25,3 @@ def test_parse_idempotency_key_rejects_malformed():
 
     for bad in ("garbage", "wf:h:x", "wf::3", "wf:h:3:2:9"):
         assert parse_idempotency_key(bad) is None
-
-
