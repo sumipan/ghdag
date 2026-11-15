@@ -9,21 +9,6 @@ import pytest
 from ghdag.io.queue import QueueTaskStore
 
 UUID1 = "14036ae7-f47f-4669-8a80-679a5e87c147"
-UUID2 = "75d11b22-75ca-4754-8768-765857d3ac9d"
-TS = "20260510194041"
-ENGINE = "claude"
-
-
-def _order_name(ts: str, engine: str, uuid: str) -> str:
-    return f"{ts}-{engine}-order-{uuid}.md"
-
-
-def _result_name(ts: str, engine: str, uuid: str) -> str:
-    return f"{ts}-{engine}-result-{uuid}.md"
-
-
-def _stderr_name(ts: str, engine: str, uuid: str) -> str:
-    return f"{ts}-{engine}-stderr-{uuid}.md"
 
 
 @pytest.fixture

@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from ghdag.io.audit import AuditContext
 from ghdag.pipeline.order import InlineOrderBuilder
-
-_TEST_AUDIT_CTX = AuditContext(source="test")
 
 
 class TestInlineOrderBuilder:

@@ -11,7 +11,6 @@ from ghdag.pipeline.state import PipelineState
 
 UUID1 = "38d6b791-1072-42f0-838d-45c7d10748ff"
 UUID2 = "aaaabbbb-cccc-dddd-eeee-ffffffffffff"
-UUID3 = "ccccdddd-eeee-ffff-0000-111122223333"
 
 
 @pytest.fixture
@@ -68,7 +67,6 @@ class TestParseExecTasksJsonl:
         assert jsonl_pipeline.parse_exec_tasks() == {}
 
 
-
 class TestRemoveExecEntriesJsonl:
 
     def test_returns_zero_when_no_match(self, jsonl_pipeline):
@@ -94,7 +92,6 @@ class TestRemoveExecEntriesJsonl:
         remaining_text = jsonl_pipeline._exec_jsonl_path.read_text()
         assert UUID1 not in remaining_text
         assert UUID2 in remaining_text
-
 
 
 # ---------------------------------------------------------------------------

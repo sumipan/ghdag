@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import json
-import re
 
 from ghdag.io.audit import AuditContext, write_audit_log
 
 UUID1 = "38d6b791-1072-42f0-838d-45c7d10748ff"
-UUID2 = "aaaabbbb-cccc-dddd-eeee-ffffffffffff"
 
 
 class TestAuditContext:
@@ -101,11 +99,6 @@ class TestAppendExecRecordsAudit:
         line = exec_path.read_text().strip()
         rec = json.loads(line)
         assert rec["annotations"]["_request_id"] == "req-abc"
-
-
-_UUID4_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
-)
 
 
 class TestWriteLlmAuditLog:

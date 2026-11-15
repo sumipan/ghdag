@@ -69,11 +69,6 @@ class TestResultContentInjection:
         assert p3_ctx["p2_result_content"] == content_p2
 
 
-_A_UUID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-_B_UUID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-_FORWARD_TS = "20260523120000"
-
-
 class TestEnvPassthroughInAnnotations:
     def test_submit_writes_env_passthrough_to_annotations(self):
         """Non-empty StepConfig.env_passthrough is copied to record annotations."""
