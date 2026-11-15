@@ -428,6 +428,85 @@ class TaskLauncher:
     def quota_gate(self) -> QuotaGate:
         return self._quota_gate
 
+    def _spawn(
+        self,
+        uuid: str,
+        task: Task,
+        command: str,
+        engine: str | None,
+        cwd: str | None,
+        *,
+        previous_attempt: str | None = None,
+    ) -> _RunningProcess:
+        popen_kwargs: dict[str, object] = {
+            "stderr": subprocess.PIPE,
+            "cwd": cwd,
+            "env": _task_env(uuid, task, previous_attempt),
+            "start_new_session": True,
+        }
+        if task.result_path is not None:
+            popen_kwargs["stdout"] = subprocess.PIPE
+        proc = subprocess.Popen(
+            ["bash", "-o", "pipefail", "-c", command],
+            **popen_kwargs,  # type: ignore[arg-type]
+        )
+        stdout_buf: io.BytesIO | None
+        t_stdout: threading.Thread | None
+        if task.result_path is not None:
+            stdout_buf = io.BytesIO()
+            if _should_use_line_reader(engine, command, task.annotations):
+                events_path = self._events_path(uuid)
+
+                def _on_event(event: dict, _uuid: str = uuid) -> None:
+                    cb = getattr(self._hooks, "on_task_progress", None)
+                    if cb is not None:
+                        cb(_uuid, event)
+
+                t_stdout = threading.Thread(
+                    target=_stdout_line_reader_redacting,
+                    args=(proc, stdout_buf, events_path, _on_event),
+                    daemon=True,
+                )
+            else:
+                t_stdout = threading.Thread(
+                    target=_stdout_reader, args=(proc, stdout_buf), daemon=True
+                )
+            t_stdout.start()
+        else:
+            stdout_buf = None
+            t_stdout = None
+
+        stderr_buf = io.BytesIO()
+        t_stderr = threading.Thread(target=_stderr_reader, args=(proc, stderr_buf), daemon=True)
+        t_stderr.start()
+        stall_tracker: StallTracker | None = None
+        if (
+            engine == "cursor"
+            and stall_guard_enabled()
+            and isinstance(proc.pid, int)
+        ):
+            stall_tracker = StallTracker(
+                proc.pid,
+                stall_sec=stall_guard_stall_sec(),
+                interval_sec=stall_guard_interval_sec(),
+                ps=read_ps,
+            )
+        rt = _RunningProcess(
+            uuid=uuid,
+            task=task,
+            proc=proc,
+            started_at=time.time(),
+            started_at_mono=time.monotonic(),
+            stderr_buf=stderr_buf,
+            retry_depth=task.retry,
+            stdout_buf=stdout_buf,
+            stderr_thread=t_stderr,
+            stdout_thread=t_stdout,
+            stall_tracker=stall_tracker,
+        )
+        self._running[uuid] = rt
+        return rt
+
     def launch(self, uuid: str, task: Task) -> bool:
         """Start a subprocess for the given task and register it in _running."""
         cwd = str(self._config.cwd) if self._config.cwd else None
@@ -516,45 +595,15 @@ class TaskLauncher:
         interrupted_reruns = self._pending_reruns.pop(uuid, None)
         previous_attempt = "interrupted" if interrupted_reruns is not None else None
 
-        stdout_buf: io.BytesIO | None = None
-        t_stdout: threading.Thread | None = None
         try:
-            if task.result_path is not None:
-                proc = subprocess.Popen(
-                    ["bash", "-o", "pipefail", "-c", task.command],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    cwd=cwd,
-                    env=_task_env(uuid, task, previous_attempt),
-                    start_new_session=True,
-                )
-                stdout_buf = io.BytesIO()
-                if _should_use_line_reader(launch_engine, task.command, task.annotations):
-                    events_path = self._events_path(uuid)
-
-                    def _on_event(event: dict, _uuid: str = uuid) -> None:
-                        cb = getattr(self._hooks, "on_task_progress", None)
-                        if cb is not None:
-                            cb(_uuid, event)
-
-                    t_stdout = threading.Thread(
-                        target=_stdout_line_reader_redacting,
-                        args=(proc, stdout_buf, events_path, _on_event),
-                        daemon=True,
-                    )
-                else:
-                    t_stdout = threading.Thread(
-                        target=_stdout_reader, args=(proc, stdout_buf), daemon=True
-                    )
-                t_stdout.start()
-            else:
-                proc = subprocess.Popen(
-                    ["bash", "-o", "pipefail", "-c", task.command],
-                    stderr=subprocess.PIPE,
-                    cwd=cwd,
-                    env=_task_env(uuid, task, previous_attempt),
-                    start_new_session=True,
-                )
+            rt = self._spawn(
+                uuid,
+                task,
+                task.command,
+                launch_engine,
+                cwd,
+                previous_attempt=previous_attempt,
+            )
         except Exception:
             self._quota_gate.finish_run(task_uuid=uuid)
             if task.command != command_before_resume:
@@ -563,35 +612,7 @@ class TaskLauncher:
                 task.annotations.pop("resumed_session_id", None)
             raise
 
-        stderr_buf = io.BytesIO()
-        t_stderr = threading.Thread(target=_stderr_reader, args=(proc, stderr_buf), daemon=True)
-        t_stderr.start()
-        stall_tracker: StallTracker | None = None
-        if (
-            launch_engine == "cursor"
-            and stall_guard_enabled()
-            and isinstance(proc.pid, int)
-        ):
-            stall_tracker = StallTracker(
-                proc.pid,
-                stall_sec=stall_guard_stall_sec(),
-                interval_sec=stall_guard_interval_sec(),
-                ps=read_ps,
-            )
-        self._running[uuid] = _RunningProcess(
-            uuid=uuid,
-            task=task,
-            proc=proc,
-            started_at=time.time(),
-            started_at_mono=time.monotonic(),
-            stderr_buf=stderr_buf,
-            retry_depth=task.retry,
-            stdout_buf=stdout_buf,
-            stderr_thread=t_stderr,
-            stdout_thread=t_stdout,
-            stall_tracker=stall_tracker,
-        )
-        self._write_running_file(uuid, proc, task, launch_engine, interrupted_reruns)
+        self._write_running_file(uuid, rt.proc, task, launch_engine, interrupted_reruns)
         self._hooks.on_task_start(uuid, task)
         return True
 
@@ -728,55 +749,8 @@ class TaskLauncher:
                         )
                         task.annotations["_resume_fallback_launched"] = "true"
                         task.command = original_command
-                        fallback_proc = subprocess.Popen(
-                            ["bash", "-o", "pipefail", "-c", original_command],
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            cwd=cwd,
-                            env=_task_env(uuid, task),
-                            start_new_session=True,
-                        )
-                        stdout_buf = io.BytesIO()
-                        stderr_buf = io.BytesIO()
-                        if _should_use_line_reader(engine, original_command, task.annotations):
-                            events_path = self._events_path(uuid)
-
-                            def _on_event(event: dict, _uuid: str = uuid) -> None:
-                                cb = getattr(self._hooks, "on_task_progress", None)
-                                if cb is not None:
-                                    cb(_uuid, event)
-
-                            t_stdout = threading.Thread(
-                                target=_stdout_line_reader_redacting,
-                                args=(fallback_proc, stdout_buf, events_path, _on_event),
-                                daemon=True,
-                            )
-                        else:
-                            t_stdout = threading.Thread(
-                                target=_stdout_reader,
-                                args=(fallback_proc, stdout_buf),
-                                daemon=True,
-                            )
-                        t_stdout.start()
-                        t_stderr = threading.Thread(
-                            target=_stderr_reader,
-                            args=(fallback_proc, stderr_buf),
-                            daemon=True,
-                        )
-                        t_stderr.start()
-                        self._running[uuid] = _RunningProcess(
-                            uuid=uuid,
-                            task=task,
-                            proc=fallback_proc,
-                            started_at=time.time(),
-                            started_at_mono=time.monotonic(),
-                            stderr_buf=stderr_buf,
-                            retry_depth=task.retry,
-                            stdout_buf=stdout_buf,
-                            stderr_thread=t_stderr,
-                            stdout_thread=t_stdout,
-                        )
-                        self._write_running_file(uuid, fallback_proc, task, engine)
+                        fallback = self._spawn(uuid, task, original_command, engine, cwd)
+                        self._write_running_file(uuid, fallback.proc, task, engine)
                         resume_fallback_relaunched = True
             finally:
                 if not resume_fallback_relaunched:
@@ -1705,65 +1679,8 @@ class TaskLauncher:
         cwd: str | None,
     ) -> bool:
         try:
-            if task.result_path is not None:
-                proc = subprocess.Popen(
-                    ["bash", "-o", "pipefail", "-c", command],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    cwd=cwd,
-                    env=_task_env(uuid, task),
-                    start_new_session=True,
-                )
-                stdout_buf = io.BytesIO()
-                if _should_use_line_reader(engine, command, task.annotations):
-                    events_path = self._events_path(uuid)
-
-                    def _on_event(event: dict, _uuid: str = uuid) -> None:
-                        cb = getattr(self._hooks, "on_task_progress", None)
-                        if cb is not None:
-                            cb(_uuid, event)
-
-                    t_stdout = threading.Thread(
-                        target=_stdout_line_reader_redacting,
-                        args=(proc, stdout_buf, events_path, _on_event),
-                        daemon=True,
-                    )
-                else:
-                    t_stdout = threading.Thread(
-                        target=_stdout_reader,
-                        args=(proc, stdout_buf),
-                        daemon=True,
-                    )
-                t_stdout.start()
-            else:
-                proc = subprocess.Popen(
-                    ["bash", "-o", "pipefail", "-c", command],
-                    stderr=subprocess.PIPE,
-                    cwd=cwd,
-                    env=_task_env(uuid, task),
-                    start_new_session=True,
-                )
-                stdout_buf = None
-                t_stdout = None
-
-            stderr_buf = io.BytesIO()
-            t_stderr = threading.Thread(
-                target=_stderr_reader, args=(proc, stderr_buf), daemon=True
-            )
-            t_stderr.start()
-            self._running[uuid] = _RunningProcess(
-                uuid=uuid,
-                task=task,
-                proc=proc,
-                started_at=time.time(),
-                started_at_mono=time.monotonic(),
-                stderr_buf=stderr_buf,
-                retry_depth=task.retry,
-                stdout_buf=stdout_buf,
-                stderr_thread=t_stderr,
-                stdout_thread=t_stdout,
-            )
-            self._write_running_file(uuid, proc, task, engine)
+            rt = self._spawn(uuid, task, command, engine, cwd)
+            self._write_running_file(uuid, rt.proc, task, engine)
             return True
         except OSError:
             logger.warning("Failed to relaunch task [%s] for repair turn", uuid, exc_info=True)

@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ghdag.core.stall_guard import StallEvent, StallTracker
+from ghdag.core.vocabulary import PIPELINE_REPLY_BLOCK_FAILED
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.models import DagConfig, Task, _RunningProcess
 from ghdag.dag.task_launcher import TaskLauncher
@@ -127,6 +128,63 @@ def test_check_completions_invokes_tracker_and_writes_audit(
     assert record["event_type"] == "stall_guard"
     assert record["task_uuid"] == "stall-uuid"
     assert record["pid"] == 99
+
+
+@patch("ghdag.dag.task_launcher.subprocess.Popen")
+def test_stall_guard_disabled_relaunch_has_no_tracker(
+    mock_popen, tmp_path, monkeypatch
+) -> None:
+    """Refs sumipan/nexus#6874."""
+    monkeypatch.setenv("GHDAG_ENGINE_STALL_GUARD", "0")
+    proc = MagicMock()
+    proc.pid = 6060
+    proc.poll.return_value = 0
+    proc.returncode = 0
+    proc.stderr = io.BytesIO(b"")
+    mock_popen.return_value = proc
+
+    done = tmp_path / "jobs" / "done"
+    done.mkdir(parents=True, exist_ok=True)
+    (tmp_path / "jobs").mkdir(parents=True, exist_ok=True)
+    config = DagConfig(
+        exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl",
+        exec_done_dir=done,
+        max_repair_turns=1,
+    )
+    hooks = MagicMock()
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = PIPELINE_REPLY_BLOCK_FAILED
+    launcher = TaskLauncher(
+        config,
+        hooks=hooks,
+        circuit_breaker=CircuitBreakerPolicy(float("inf"), 2**31),
+        fanout_manager=MagicMock(),
+        promote_fn=MagicMock(),
+    )
+    uuid = "u-relaunch"
+    result = tmp_path / "jobs" / "result.md"
+    result.write_text("```ghdag\n: bad\n```\n", encoding="utf-8")
+    order = tmp_path / "jobs" / "order.md"
+    order.write_text("run", encoding="utf-8")
+    task = Task(
+        uuid=uuid,
+        command=f"agent -p --force < {order}",
+        engine="cursor",
+        result_path=str(result),
+    )
+    launcher._running[uuid] = _RunningProcess(
+        uuid=uuid,
+        task=task,
+        proc=proc,
+        started_at=1_700_000_000.0,
+        started_at_mono=1_700_000_000.0,
+        stderr_buf=io.BytesIO(b""),
+        retry_depth=0,
+        stdout_buf=io.BytesIO(b""),
+    )
+    launcher._session_store.record(uuid, "cursor", "sess-1")
+    launcher.check_completions()
+    assert launcher._running[uuid].stall_tracker is None
 
 
 @patch("ghdag.dag.task_launcher._signal_process_tree")
