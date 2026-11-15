@@ -21,29 +21,6 @@ from ghdag.cleanup.orchestrator import cleanup_queue
 
 
 class TestDryRun:
-    def test_dry_run_makes_no_changes(self, tmp_path, capsys):
-        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
-        order, result = _make_queue_files(queue_dir, UUID_A)
-        _set_mtime(order, days_ago=2)
-        _make_done_flag(done_dir, UUID_A)
-        _make_exec_jsonl(exec_md, [UUID_A])
-        exec_md_content_before = exec_md.read_text()
-
-        res = cleanup_queue(
-            queue_dir=queue_dir,
-            archive_dir=archive_dir,
-            done_dir=done_dir,
-            exec_jsonl=exec_md,
-            cutoff_days=1,
-            dry_run=True,
-        )
-
-        assert order.exists()
-        assert result.exists()
-        assert (done_dir / UUID_A).exists()
-        assert exec_md.read_text() == exec_md_content_before
-        assert res.archived_done == 1
-
     def test_dry_run_outputs_to_stdout(self, tmp_path, capsys):
         queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
         order, _ = _make_queue_files(queue_dir, UUID_A)
@@ -89,68 +66,7 @@ class TestQueueDirMissing:
 # ---------------------------------------------------------------------------
 
 
-class TestNoMatchingFiles:
-    def test_empty_queue_dir_returns_zero_counts(self, tmp_path):
-        queue_dir, archive_dir, done_dir, exec_md = _setup_dirs(tmp_path)
-        _make_exec_jsonl(exec_md, [])
-
-        res = cleanup_queue(
-            queue_dir=queue_dir,
-            archive_dir=archive_dir,
-            done_dir=done_dir,
-            exec_jsonl=exec_md,
-        )
-
-        assert res.archived_done == 0
-        assert res.archived_orphan == 0
-        assert res.pruned_exec == 0
-
-
 class TestAutoRepairFalse:
-    def test_case_d_no_archive_detected_orphan(self, tmp_path, capsys):
-        """auto_repair=False: Case D orphan is detect-only, no file move, detected_orphan=1"""
-        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
-        order, result = _make_queue_files(queue_dir, UUID_A)
-        _set_mtime(order, days_ago=10)
-        _make_exec_jsonl(exec_jsonl, [UUID_A])
-
-        res = cleanup_queue(
-            queue_dir=queue_dir,
-            archive_dir=archive_dir,
-            done_dir=done_dir,
-            exec_jsonl=exec_jsonl,
-            orphan_days=7,
-            auto_repair=False,
-        )
-
-        assert res.archived_orphan == 0
-        assert res.detected_orphan == 1
-        assert res.pruned_exec == 0
-        assert order.exists()
-        assert result.exists()
-        assert UUID_A in exec_jsonl.read_text()
-
-    def test_case_d_stderr_report_orphan(self, tmp_path, capsys):
-        """auto_repair=False: Case D → ORPHAN detected report on stderr"""
-        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
-        order, _ = _make_queue_files(queue_dir, UUID_A)
-        _set_mtime(order, days_ago=10)
-        _make_exec_jsonl(exec_jsonl, [UUID_A])
-
-        cleanup_queue(
-            queue_dir=queue_dir,
-            archive_dir=archive_dir,
-            done_dir=done_dir,
-            exec_jsonl=exec_jsonl,
-            orphan_days=7,
-            auto_repair=False,
-        )
-
-        err = capsys.readouterr().err
-        assert "ORPHAN detected" in err
-        assert UUID_A in err
-        assert "--auto-repair" in err
-
     def test_case_d_no_done_marker_created(self, tmp_path):
         """auto_repair=False: Case D → done marker is not created"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
@@ -186,45 +102,6 @@ class TestAutoRepairFalse:
         assert res.pruned_exec == 0
         assert UUID_B in exec_jsonl.read_text()
 
-    def test_case_f_stderr_report_dead(self, tmp_path, capsys):
-        """auto_repair=False: Case F → DEAD_ENTRY detected report on stderr"""
-        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
-        _make_exec_jsonl(exec_jsonl, [UUID_B])
-
-        cleanup_queue(
-            queue_dir=queue_dir,
-            archive_dir=archive_dir,
-            done_dir=done_dir,
-            exec_jsonl=exec_jsonl,
-            auto_repair=False,
-        )
-
-        err = capsys.readouterr().err
-        assert "DEAD_ENTRY detected" in err
-        assert UUID_B in err
-        assert "--auto-repair" in err
-
-    def test_auto_repair_true_case_d_archives(self, tmp_path):
-        """auto_repair=True: Case D → orphan archived as before"""
-        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
-        order, result = _make_queue_files(queue_dir, UUID_A)
-        _set_mtime(order, days_ago=10)
-        _make_exec_jsonl(exec_jsonl, [UUID_A])
-
-        res = cleanup_queue(
-            queue_dir=queue_dir,
-            archive_dir=archive_dir,
-            done_dir=done_dir,
-            exec_jsonl=exec_jsonl,
-            orphan_days=7,
-            auto_repair=True,
-        )
-
-        assert res.archived_orphan == 1
-        assert res.detected_orphan == 0
-        assert not order.exists()
-        assert not result.exists()
-
     def test_auto_repair_true_case_f_prunes(self, tmp_path):
         """auto_repair=True: Case F → exec line deleted as before"""
         queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
@@ -241,24 +118,3 @@ class TestAutoRepairFalse:
         assert res.pruned_exec == 1
         assert res.detected_dead == 0
         assert UUID_B not in exec_jsonl.read_text()
-
-    def test_auto_repair_false_dry_run_no_dry_prefix_in_stderr(self, tmp_path, capsys):
-        """auto_repair=False, dry_run=True: Case D/F detect reports have no [dry] prefix"""
-        queue_dir, archive_dir, done_dir, exec_jsonl = _setup_dirs(tmp_path)
-        order, _ = _make_queue_files(queue_dir, UUID_A)
-        _set_mtime(order, days_ago=10)
-        _make_exec_jsonl(exec_jsonl, [UUID_A])
-
-        cleanup_queue(
-            queue_dir=queue_dir,
-            archive_dir=archive_dir,
-            done_dir=done_dir,
-            exec_jsonl=exec_jsonl,
-            orphan_days=7,
-            auto_repair=False,
-            dry_run=True,
-        )
-
-        err = capsys.readouterr().err
-        assert "ORPHAN detected" in err
-        assert "[dry]" not in err

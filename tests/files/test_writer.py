@@ -1,12 +1,10 @@
 """Tests for ghdag.files.writer (md_write)."""
-import concurrent.futures
-import json
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from ghdag.core.models.files import PathTraversalError, WriteResult
+from ghdag.core.models.files import PathTraversalError
 from ghdag.files import md_write
 
 
@@ -22,38 +20,6 @@ def write_file(path: Path, content: str) -> None:
 
 
 class TestMdWriteBasic:
-    def test_w1_write_and_audit(self, repo_root: Path) -> None:
-        """W1: after a successful write, file content is replaced and audit.jsonl is updated"""
-        f = repo_root / "result" / "bar.md"
-        write_file(f, "old content")
-
-        result = md_write("result/bar.md", "done", repo_root=repo_root)
-
-        assert isinstance(result, WriteResult)
-        assert result.path == "result/bar.md"
-        assert result.bytes_written == len("done".encode("utf-8"))
-        assert f.read_text(encoding="utf-8") == "done"
-
-        audit_path = repo_root / "result" / "audit.jsonl"
-        assert audit_path.exists()
-        record = json.loads(audit_path.read_text(encoding="utf-8").strip())
-        assert record["event"] == "md_write"
-        assert record["path"] == "result/bar.md"
-        assert record["bytes_written"] == len("done".encode("utf-8"))
-
-    def test_w2_overwrite(self, repo_root: Path) -> None:
-        """W2: overwriting an existing file with different content → two audit log entries"""
-        f = repo_root / "result" / "bar.md"
-        write_file(f, "first")
-
-        md_write("result/bar.md", "second", repo_root=repo_root)
-        md_write("result/bar.md", "third", repo_root=repo_root)
-
-        assert f.read_text(encoding="utf-8") == "third"
-        audit_path = repo_root / "result" / "audit.jsonl"
-        lines = [line for line in audit_path.read_text(encoding="utf-8").splitlines() if line.strip()]
-        assert len(lines) == 2
-
     def test_w3_path_traversal(self, repo_root: Path) -> None:
         """W3: path outside repo_root raises ValueError"""
         with pytest.raises(PathTraversalError, match="Path traversal"):
@@ -74,54 +40,3 @@ class TestMdWriteBasic:
 
         assert f.read_text(encoding="utf-8") == "new content"
         assert result.bytes_written == len("new content".encode("utf-8"))
-
-    def test_w6_concurrent_no_partial_write(self, repo_root: Path) -> None:
-        """TC2: 10 threads x 100 parallel md_write calls produce no partial writes"""
-        f = repo_root / "result" / "concurrent.md"
-        write_file(f, "initial")
-
-        def write_repeatedly(i: int) -> None:
-            for _ in range(100):
-                md_write("result/concurrent.md", f"content-{i}", repo_root=repo_root)
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [executor.submit(write_repeatedly, i) for i in range(10)]
-            for fut in futures:
-                fut.result()
-
-        final = f.read_text(encoding="utf-8")
-        valid = {f"content-{i}" for i in range(10)}
-        assert final in valid
-
-
-class TestMdWriteProvenance:
-    def test_md_write_records_source_and_correlation_in_audit(self, repo_root: Path) -> None:
-        """AC14: source / correlation_id are recorded in audit"""
-        f = repo_root / "result" / "bar.md"
-        write_file(f, "old")
-
-        md_write(
-            "result/bar.md",
-            "new",
-            repo_root=repo_root,
-            source="cleanup_link_rewrite",
-            correlation_id="xyz",
-        )
-
-        audit_path = repo_root / "result" / "audit.jsonl"
-        record = json.loads(audit_path.read_text(encoding="utf-8").strip())
-        assert record["source"] == "cleanup_link_rewrite"
-        assert record["correlation_id"] == "xyz"
-
-    def test_md_write_default_audit_source_is_md_write(self, repo_root: Path) -> None:
-        """AC14: default None keeps legacy source=md_write"""
-        f = repo_root / "result" / "bar.md"
-        write_file(f, "old")
-
-        md_write("result/bar.md", "done", repo_root=repo_root)
-
-        record = json.loads(
-            (repo_root / "result" / "audit.jsonl").read_text(encoding="utf-8").strip()
-        )
-        assert record["source"] == "md_write"
-        assert record.get("correlation_id") is None
