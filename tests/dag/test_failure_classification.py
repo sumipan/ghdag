@@ -26,7 +26,6 @@ from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.adapters.codex import CodexAdapter
 from ghdag.llm.adapters.codex_jsonl import CodexJsonlAdapter
-from ghdag.llm.adapters.cursor import CursorAdapter
 from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
 from ghdag.llm.adapters.failure_classification import looks_like_question
 
@@ -122,7 +121,6 @@ def _make_running_task(task: Task, stdout: bytes = b"", stderr: bytes = b"", ret
 def all_adapters():
     return [
         ClaudeJsonAdapter(),
-        CursorAdapter(),
         CodexAdapter(),
     ]
 
@@ -155,7 +153,6 @@ def test_all_adapters_detect_auth_from_both_streams(all_adapters, stream: str) -
     ("adapter", "binary"),
     [
         (ClaudeJsonAdapter(), "claude"),
-        (CursorAdapter(), "cursor"),
         (CodexAdapter(), "codex"),
     ],
 )

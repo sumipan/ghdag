@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import threading
-import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -183,44 +182,6 @@ def test_parallel_report_and_admit_keeps_valid_json(tmp_path: Path) -> None:
     payload = json.loads(content)
     assert payload["schema_version"] == 1
     assert "deferred_tasks" not in payload
-
-
-def test_wait_idle_returns_true_when_no_running(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-    assert gate.wait_idle("claude", timeout=0.1, poll_interval=0.01) is True
-
-
-def test_wait_idle_returns_false_on_timeout(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-    gate.begin_run(task_uuid="task-1", engine="claude", now=_dt(12))
-    assert gate.wait_idle("claude", timeout=0.05, poll_interval=0.01) is False
-
-
-def test_wait_idle_validates_arguments(tmp_path: Path) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-    with pytest.raises(ValueError):
-        gate.wait_idle("claude", timeout=-1)
-    with pytest.raises(ValueError):
-        gate.wait_idle("claude", poll_interval=0)
-
-
-def test_wait_idle_becomes_true_after_finish(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    gate = QuotaGate(tmp_path / "quota-gate.json")
-    gate.begin_run(task_uuid="task-1", engine="claude", now=_dt(12))
-
-    sleep_calls: list[float] = []
-
-    def fake_sleep(sec: float) -> None:
-        sleep_calls.append(sec)
-        gate.finish_run(task_uuid="task-1")
-
-    fake_time = types.SimpleNamespace(monotonic=lambda: 1_000.0, sleep=fake_sleep)
-    monkeypatch.setattr("ghdag.quota.time", fake_time)
-    assert gate.wait_idle("claude", timeout=0.3, poll_interval=0.01) is True
-    assert sleep_calls == [0.01]
 
 
 def test_legacy_state_without_new_keys_is_loaded(tmp_path: Path) -> None:

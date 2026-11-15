@@ -67,7 +67,6 @@ __all__ = [
     "list_engines",
     "list_models",
     "validate_engine_model",
-    "ENGINE_CLI",
     "ENGINE_DEFAULTS",
     "TIMEOUT_RETURNCODE",
     "_CAPABILITY_FLAG_BUILDERS",
@@ -104,9 +103,6 @@ def get_engine_models() -> dict[str, list[str]]:
         _ENGINE_MODELS = load_engine_models()
     return _ENGINE_MODELS
 
-
-# CLI command name per engine (derived from spec)
-ENGINE_CLI: dict[str, str] = {name: spec.cli for name, spec in ENGINE_SPECS.items()}
 
 # Default model per engine (derived from spec)
 ENGINE_DEFAULTS: dict[str, str | None] = {name: spec.default_model for name, spec in ENGINE_SPECS.items()}

@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.138.0-blue)
+![version](https://img.shields.io/badge/version-v0.139.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.138.0** (`pyproject.toml` `version = "0.138.0"`) |
+| Current release | **v0.139.0** (`pyproject.toml` `version = "0.139.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.138.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.139.0"
 ```
 
 Install from a checkout with the development tools:
@@ -323,7 +323,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `build_order_builders` | `(workflows) -> dict[str, OrderBuilder]` — build per-workflow `TemplateOrderBuilder` map (`ghdag.pipeline.llm_pipeline`) |
 | `LLMPipelineAPI.submit` | `(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None) -> list[str]` |
 | `PipelineState` | `(state_dir, exec_jsonl_path)`; also `PipelineState.from_repo_root(repo_root)` |
-| `QuotaGate` | `(state_path, audit_path=None, pause_ttl_seconds=3600, limits=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `wait_idle`, `observe` |
+| `QuotaGate` | `(state_path, audit_path=None, pause_ttl_seconds=3600, limits=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `observe` |
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
 | `issue_status` | `(issue_number, *, handler=None, workflow=None, exec_jsonl_path, state_dir, done_dir, running_uuids=None, audit_path=None, running_dir=None) -> IssueStatus` |
 | `running_tasks` | `(running_dir) -> list[RunningTask]` |
@@ -710,7 +710,6 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `llm/adapters/claude_json.py` | claude JSON / stream-json output adapter |
 | `llm/adapters/codex.py` | codex `--json` output adapter |
 | `llm/adapters/codex_jsonl.py` | codex JSONL stream adapter |
-| `llm/adapters/cursor.py` | cursor JSON / text output adapter |
 | `llm/adapters/cursor_stream.py` | cursor stream-json adapter and `RetriableError:` classification |
 | `llm/adapters/failure_classification.py` | Shared failure classification (`looks_like_question`, missing binary, auth, quota pause) |
 | `metrics/__init__.py` | `MetricsRecorder`, `TaskMetrics` |
@@ -727,7 +726,6 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `pipeline/status.py` | Task state identifiers (`task_status`, `STATE_*`) and display labels (`state_label`) |
 | `pipeline/wait.py` | `wait_for_result` done-marker polling |
 | `tool/__init__.py` | Tool definition API |
-| `tool/audit.py` | `write_tool_fallback_audit` |
 | `tool/cli.py` | `ghdag tools list` handler |
 | `tool/exceptions.py` | `ToolRegistryError` |
 | `tool/registry.py` | `ToolRegistry` discovery |
@@ -1172,7 +1170,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.138.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.139.0"
 ```
 
 and read `CHANGELOG.md` before upgrading.

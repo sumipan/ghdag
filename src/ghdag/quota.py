@@ -6,7 +6,6 @@ import fcntl
 import json
 import os
 import tempfile
-import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -474,30 +473,6 @@ class QuotaGate:
             observed_at=datetime.now(timezone.utc),
         )
         return True
-
-    def wait_idle(
-        self,
-        engine: str,
-        timeout: float | None = None,
-        poll_interval: float = 0.1,
-    ) -> bool:
-        engine_name = _require_non_empty(engine, "engine")
-        if timeout is not None and timeout < 0:
-            raise ValueError("timeout must be >= 0")
-        if poll_interval <= 0:
-            raise ValueError("poll_interval must be > 0")
-
-        deadline = None if timeout is None else (time.monotonic() + timeout)
-        while True:
-            snapshot = self.snapshot()
-            running_count = sum(
-                1 for state in snapshot.running_tasks.values() if state.engine == engine_name
-            )
-            if running_count == 0:
-                return True
-            if deadline is not None and time.monotonic() >= deadline:
-                return False
-            time.sleep(poll_interval)
 
     def refresh(self, *, now: datetime | None = None) -> None:
         """Expire engine pause sources and reconcile drain metadata."""
@@ -1243,28 +1218,6 @@ def _parse_optional_dt(raw: object, field_name: str) -> datetime | None:
     if not isinstance(raw, str) or not raw:
         return None
     return _parse_dt(raw, field_name)
-
-
-def _engine_effective_available(
-    state: dict,
-    engine: str,
-    observed_at: datetime,
-) -> bool:
-    eng_payload = state["engines"].get(engine)
-    engine_state = _to_engine_state(eng_payload, now=observed_at)
-    stored_sources = _sources_from_engine_payload(eng_payload)
-    has_source_backed_drain = _source_for_kind(stored_sources, "drain") is not None
-    if engine in state["draining_engines"] and not has_source_backed_drain:
-        return False
-    if eng_payload is None:
-        return True
-    if engine_state is None:
-        return False
-    if engine_state.status == "available":
-        return True
-    if engine_state.resume_at is not None and engine_state.resume_at <= observed_at:
-        return True
-    return False
 
 
 __all__ = [
