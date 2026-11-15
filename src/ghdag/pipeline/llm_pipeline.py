@@ -11,13 +11,11 @@ import os
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
 from typing import TYPE_CHECKING
-from zoneinfo import ZoneInfo
 
 from ghdag.config.env import engine_isolation_enabled, ghdag_safe_default_permission
 from ghdag.core.exceptions import ConfigError
-from ghdag.io.audit import AuditContext
+from ghdag.io.audit import AuditContext, file_ts
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import PipelineState
 
@@ -162,6 +160,7 @@ class LLMPipelineAPI:
         queue_dir: str = "queue",
         *,
         order_builders: dict[str, OrderBuilder] | None = None,
+        timezone: str | None = None,
     ):
         """
         Args:
@@ -177,11 +176,13 @@ class LLMPipelineAPI:
                 on a per-workflow basis.
                 Single-workflow callers (``ghdag trigger``) can leave it
                 as ``None``.
+            timezone: IANA timezone for order/result file name timestamps; ``None`` = machine local.
         """
         self._state = pipeline_state
         self._order_builder = order_builder
         self._queue_dir = queue_dir
         self._order_builders: dict[str, OrderBuilder] = dict(order_builders or {})
+        self._timezone = timezone
 
     def set_order_builders(self, mapping: Mapping[str, OrderBuilder]) -> None:
         """Replace the per-workflow order builder map (default builder unchanged)."""
@@ -242,7 +243,7 @@ class LLMPipelineAPI:
         """
         validate_depends(steps)
 
-        ts = datetime.now(tz=ZoneInfo("Asia/Tokyo")).strftime("%Y%m%d%H%M%S")
+        ts = file_ts(self._timezone)
         if order_builder is None:
             order_builder = self._resolve_order_builder(base_context.get("workflow_name"))
         step_uuid_map: dict[str, str] = {}

@@ -58,6 +58,7 @@ from ghdag.core.vocabulary import (
 from ghdag.dag._util import WaitQuotaParseError, parse_wait_quota_result_path
 from ghdag.io.audit import (
     append_audit_record,
+    file_ts,
     now_ts,
     write_compaction_audit,
     write_quarantine_audit,
@@ -650,7 +651,7 @@ class TaskLauncher:
                                         {
                                             "schema_version": 1,
                                             "event_type": "stall_guard",
-                                            "timestamp": now_ts(),
+                                            "timestamp": now_ts(self._config.timezone),
                                             "task_uuid": uuid,
                                             "pid": event.pid,
                                             "stalled_sec": event.stalled_sec,
@@ -1405,7 +1406,7 @@ class TaskLauncher:
                     {
                         "schema_version": 3,
                         "event_type": "task_success_postprocess_failed",
-                        "timestamp": now_ts(),
+                        "timestamp": now_ts(self._config.timezone),
                         "uuid": uuid,
                         "status": "success",
                         "component": component,
@@ -1648,7 +1649,7 @@ class TaskLauncher:
 
         turn = _repair_turn_count(task.annotations) + 1
         base_command = task.annotations.get("_command_without_resume") or task.command
-        ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        ts = file_ts(self._config.timezone)
         queue_dir = self._queue_dir()
         order_name = f"{ts}-{engine_name}-order-{uuid}-repair{turn}.md"
         order_path = queue_dir / order_name

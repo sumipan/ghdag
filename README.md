@@ -318,7 +318,7 @@ Import other supported types from their definition packages (for example `ghdag.
 |---|---|
 | `DagEngine` | `(config: DagConfig, hooks: DagHooks \| None = None)` |
 | `WorkflowDispatcher` | `(workflows, github_client, pipeline, queue_dir="queue", pause_file=None, workflows_dir=None)`; `github_client` is one `GitHubIssuePort` or a list of them |
-| `LLMPipelineAPI` | `(pipeline_state, order_builder, queue_dir="queue", *, order_builders=None)` |
+| `LLMPipelineAPI` | `(pipeline_state, order_builder, queue_dir="queue", *, order_builders=None, timezone=None)` — `timezone`: IANA name for order/result file name timestamps; `None` = machine local time zone |
 | `LLMPipelineAPI.set_order_builders` | `(mapping) -> None` — replace per-workflow builders; default `order_builder` unchanged |
 | `build_order_builders` | `(workflows) -> dict[str, OrderBuilder]` — build per-workflow `TemplateOrderBuilder` map (`ghdag.pipeline.llm_pipeline`) |
 | `LLMPipelineAPI.submit` | `(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None) -> list[str]` |
@@ -875,7 +875,7 @@ Each line is parsed into `Task` (`ghdag.core.models.dag`). Field names match the
 | `launch_stagger` | `float` | `0.5` | Delay between launches (seconds) |
 | `max_retry` | `int` | `1` | Engine-error retry budget |
 | `lock_file` | `str \| Path \| None` | `None` -> `<queue dir>/.ghdag.lock` | Single-runner lock |
-| `timezone` | `str` | `"UTC"` | Timezone of audit and metrics timestamps |
+| `timezone` | `str \| None` | `None` | Timezone of order/result file name timestamps and DAG audit timestamps; `None` = machine local time zone |
 | `cwd` | `str \| Path \| None` | `None` | Task working directory |
 | `task_timeout` | `float \| None` | `None` | Default task timeout and SIGTERM drain window (seconds) |
 | `kill_grace` | `float` | `10.0` | SIGTERM -> SIGKILL grace (seconds) |

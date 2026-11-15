@@ -32,7 +32,7 @@ class DagConfig:
     launch_stagger: float = 0.5
     max_retry: int = 1
     lock_file: str | Path | None = None
-    timezone: str = "UTC"
+    timezone: str | None = None
     cwd: str | Path | None = None
     task_timeout: float | None = None
     kill_grace: float = 10.0
