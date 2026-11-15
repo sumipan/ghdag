@@ -268,3 +268,51 @@ class TestQuotaCli:
         for name, entry in payload["engines"].items():
             if name != "claude":
                 assert entry["usage"] is None
+
+    def test_quota_status_resolves_done_dir_from_ghdag_state_dir(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        """Refs sumipan/nexus#6801."""
+        from ghdag.cli import main
+
+        monkeypatch.setenv("GHDAG_STATE_DIR", str(tmp_path / "state"))
+        jobs = tmp_path / "jobs"
+        jobs.mkdir()
+        exec_path = jobs / "exec.jsonl"
+        uid = "u-done"
+        exec_path.write_text(
+            json.dumps({"uuid": uid, "command": "claude -p x", "depends": []}) + "\n",
+            encoding="utf-8",
+        )
+        state_path = tmp_path / "state" / "quota-gate.json"
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "engines": {},
+                    "deferred_tasks": {},
+                    "draining_engines": {},
+                    "running_tasks": {},
+                    "limits": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        state_done = tmp_path / "state" / "done"
+        state_done.mkdir(parents=True)
+        (state_done / uid).write_text("0\n", encoding="utf-8")
+
+        main([
+            "quota",
+            "status",
+            "--state-path",
+            str(state_path),
+            "--exec-jsonl",
+            str(exec_path),
+        ])
+        payload = json.loads(capsys.readouterr().out.strip())
+        queued_total = sum(
+            entry.get("queued", 0) for entry in payload["engines"].values()
+        )
+        assert queued_total == 0

@@ -531,9 +531,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     audit_query_parser.add_argument(
         "--audit-path",
-        default="jobs/audit.jsonl",
+        default=None,
         dest="audit_path",
-        help="Path to audit.jsonl (default: jobs/audit.jsonl)",
+        help="Path to audit.jsonl (default: $GHDAG_AUDIT_PATH or jobs/audit.jsonl)",
     )
     audit_query_parser.add_argument(
         "--window-sec",
@@ -664,9 +664,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     quota_status.add_argument(
         "--done-dir",
-        default="jobs/done",
+        default=None,
         dest="done_dir",
-        help="Path to done marker directory",
+        help="Path to done marker directory (default: $GHDAG_STATE_DIR/done or <exec.jsonl parent>/done)",
     )
     quota_status.set_defaults(func=cmd_quota_status)
 

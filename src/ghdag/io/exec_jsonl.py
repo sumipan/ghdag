@@ -9,6 +9,7 @@ import os
 from collections.abc import Callable
 from pathlib import Path
 
+from ghdag.config.env import resolve_runtime_paths
 from ghdag.core.exceptions import GhdagError
 from ghdag.core.models.dag import Task
 from ghdag.core.ports.quota import QuotaAdmissionPort
@@ -267,6 +268,7 @@ def append(
     idempotency_key: str | None = None,
     default_permission_uuids: list[str] | None = None,
     quota_gate: QuotaAdmissionPort | None = None,
+    done_dir: Path | None = None,
 ) -> None:
     """Append records as JSONL under LOCK_EX and write an audit enqueue record."""
     if not records:
@@ -279,7 +281,9 @@ def append(
     lines = [json.dumps(r, ensure_ascii=False) for r in records]
     path = Path(exec_jsonl_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    exec_done_dir = path.parent / "done"
+    exec_done_dir = (
+        done_dir if done_dir is not None else resolve_runtime_paths(path).done_dir
+    )
     with open(path, "a+", encoding="utf-8") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         try:

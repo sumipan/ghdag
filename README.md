@@ -258,7 +258,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 | `ui` | `--repo-root PATH` (`.`); `--host HOST` (`127.0.0.1`); `--port PORT` (`8080`); `--interval-sec SEC` (SSE poll, `3.0`); `--max-visible N` (`30`) |
 | `llm` | `[prompt]` (read from stdin when omitted); `--engine` / `-e` (`claude`); `--model` / `-m` (engine default); `--timeout-sec SEC` (no limit); `--permission {text_only,json_only,web_research,dangerous_full_access,readonly_observe}`; `--stdin` (also pipe stdin to the engine); `--list-engines`; `--list-models`; `--audit-path PATH` (`GHDAG_AUDIT_PATH`); `--correlation-id ID`; `--request-id ID` |
 | `cleanup` | `repo_root`; `--dry-run`; `--cutoff-days N` (`1`); `--orphan-days N` (`7`); `--auto-repair` (fix orphan and dead entries; detect-only by default) |
-| `audit-query` | `--correlation-id ID`; `--burst-detect` (exit `1` when a burst is found); `--since ISO8601` (correlation-ID mode only); `--audit-path PATH` (`jobs/audit.jsonl`); `--window-sec SEC` (`600`); `--threshold N` (`10`) |
+| `audit-query` | `--correlation-id ID`; `--burst-detect` (exit `1` when a burst is found); `--since ISO8601` (correlation-ID mode only); `--audit-path PATH` (`$GHDAG_AUDIT_PATH` or `jobs/audit.jsonl`); `--window-sec SEC` (`600`); `--threshold N` (`10`) |
 | `version` | none |
 | `dag recover` | `--issue N` (required); `--handler NAME` (required); `--from STEP` (only this step and its downstream steps); `--dry-run`; `--workflows-dir PATH` (`workflows`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto-detected); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `.pipeline-state`); `--keep-results` |
 | `dag cancel` | `uuid`; `--queue-dir PATH` (`$GHDAG_STATE_DIR` or `jobs`) |
@@ -267,7 +267,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 | `quota clear` | `engine`; `--observed-at ISO8601` (required); `--state-path PATH` (as above) |
 | `quota drain` | `engine`; `--reason TEXT`; `--state-path PATH` (as above) |
 | `quota resume` | `engine`; `--state-path PATH` (as above) |
-| `quota status` | `--state-path PATH` (as above); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--done-dir PATH` (`jobs/done`) |
+| `quota status` | `--state-path PATH` (as above); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--done-dir PATH` (`$GHDAG_STATE_DIR/done` or `<exec.jsonl parent>/done`) |
 | `validate` | `workflows_dir` |
 | `mcp` | `--repo-root PATH` (`.`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--state-dir PATH` (same default pattern as `watch` when `exec-jsonl` lives under `jobs/`) |
 
@@ -757,7 +757,7 @@ Every variable ghdag reads (`os.environ` / `os.getenv` in `src/ghdag/`). Most re
 | `GITHUB_TOKEN` | none | `config.env.github_token` | GitHub token; required by the GitHub forge (`AuthError` when neither token is set) |
 | `GH_TOKEN` | none | `config.env.github_token` | Fallback when `GITHUB_TOKEN` is unset |
 | `GITHUB_REPOSITORIES` | `""` | `config.env.github_repositories_raw` | Comma-separated `owner/repo` list; the first entry is the default repository, and `ghdag watch` polls all of them |
-| `GHDAG_AUDIT_PATH` | Web UI: `jobs/audit.jsonl`; `ghdag llm`: unset (no audit) | `config.env.ghdag_audit_path` | Audit log for the Web UI dashboard, `ghdag llm` and `ghdag.vcs` sinks |
+| `GHDAG_AUDIT_PATH` | Web UI / `ghdag audit-query`: `jobs/audit.jsonl`; `ghdag llm`: unset (no audit) | `config.env.ghdag_audit_path` | Audit log for the Web UI dashboard, `ghdag audit-query`, `ghdag llm` and `ghdag.vcs` sinks |
 | `GHDAG_TOKEN_WARN_THRESHOLD` | `500000` | `config.env.ghdag_token_warn_threshold` | Token usage warning threshold on the Web UI dashboard |
 | `GHDAG_SAFE_DEFAULT_PERMISSION` | `text_only` | `config.env.ghdag_safe_default_permission` | Capability preset for workflow steps without `permission`; unknown names raise `ValueError` |
 | `GHDAG_LLM_MODELS` | unset | `config.env.ghdag_llm_models` | Path to [`llm-models.yml`](#llm-modelsyml) |
@@ -996,7 +996,7 @@ Paths are relative to `--repo-root`.
 | `GET /api/dashboard/status` | Task status counts from `audit.jsonl` (`?since=<sec>`, default `86400`) |
 | `GET /api/dashboard/tokens` | Token usage from `audit.jsonl` (`?since=<sec>`, `?threshold=N`; default threshold `GHDAG_TOKEN_WARN_THRESHOLD`) |
 | `GET /api/dashboard/cb-firing` | Circuit breaker firings (`?since=<sec>`; `?window=<minutes>`, default `60`) |
-| `GET /api/correlation-bursts` | `{"bursts": [...]}`: top correlation IDs in `jobs/audit.jsonl` (`?hours=1`, `?top_n=20`) |
+| `GET /api/correlation-bursts` | `{"bursts": [...]}`: top correlation IDs from `GHDAG_AUDIT_PATH` or `jobs/audit.jsonl` (`?hours=1`, `?top_n=20`) |
 | `POST /api/retry` | Body `{"uuid": "..."}`; `Content-Type: application/json` required; same-origin CSRF checks (see [Web UI](#web-ui-ghdag-ui)); deletes `jobs/done/<uuid>` so the runner runs the task again (`404` when there is no marker) |
 | `POST /api/stop` | Body `{"uuid": "..."}`; same CSRF rules as `/api/retry`; writes `jobs/cancel/<uuid>` when `jobs/running/<uuid>.json` exists (`404` otherwise) |
 

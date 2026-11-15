@@ -376,3 +376,50 @@ class TestValidateRepair:
         path.write_text("bad\n", encoding="utf-8")
         exec_jsonl.repair(path)
         assert fcntl.LOCK_EX in locks
+
+
+class TestAppendDoneDirResolution:
+    """Resolve done markers via runtime paths when GHDAG_STATE_DIR splits queue from state."""
+
+    def test_reappend_allowed_when_done_marker_is_in_state_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Refs sumipan/nexus#6801."""
+        from ghdag.io.audit import AuditContext
+        from ghdag.io.exec_jsonl import append
+
+        monkeypatch.setenv("GHDAG_STATE_DIR", str(tmp_path / "state"))
+        jobs = tmp_path / "jobs"
+        jobs.mkdir()
+        exec_path = jobs / "exec.jsonl"
+        audit = jobs / "audit.jsonl"
+        uuid = "task-1"
+        record = {"uuid": uuid, "command": "echo x"}
+        ctx = AuditContext(source="test")
+        append(exec_path, [record], ctx, audit_path=audit)
+        state_done = tmp_path / "state" / "done"
+        state_done.mkdir(parents=True)
+        (state_done / uuid).write_text("0\n", encoding="utf-8")
+        append(exec_path, [record], ctx, audit_path=audit)
+
+    def test_duplicate_when_only_queue_adjacent_done_exists(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Refs sumipan/nexus#6801."""
+        from ghdag.io.audit import AuditContext
+        from ghdag.io.exec_jsonl import DuplicateTaskError, append
+
+        monkeypatch.setenv("GHDAG_STATE_DIR", str(tmp_path / "state"))
+        jobs = tmp_path / "jobs"
+        jobs.mkdir()
+        exec_path = jobs / "exec.jsonl"
+        audit = jobs / "audit.jsonl"
+        uuid = "task-1"
+        record = {"uuid": uuid, "command": "echo x"}
+        ctx = AuditContext(source="test")
+        append(exec_path, [record], ctx, audit_path=audit)
+        legacy_done = jobs / "done"
+        legacy_done.mkdir(parents=True)
+        (legacy_done / uuid).write_text("0\n", encoding="utf-8")
+        with pytest.raises(DuplicateTaskError):
+            append(exec_path, [record], ctx, audit_path=audit)
