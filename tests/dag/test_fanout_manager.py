@@ -4,14 +4,13 @@ from datetime import datetime
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
-from ghdag.io.audit import file_ts as audit_file_ts
-
 from ghdag_dag_conftest_helpers import (
     MemoryHooks,
     _make_config,
 )
 
 from ghdag.core.models.metrics import TaskMetrics
+from ghdag.io.audit import file_ts as audit_file_ts
 
 
 class TestFanOutManagerUnit:
