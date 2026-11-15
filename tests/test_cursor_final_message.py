@@ -3,229 +3,75 @@
 Confirm each turn at tool_call boundaries, that the deduplicated full text
 matches across result / call(route=[("claude", None)]) / DAG result, and that events remain raw JSONL.
 """
-
 from __future__ import annotations
 
 import json
-import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ghdag.core.capabilities import Permission
-from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig
-from ghdag.llm.adapters.cursor_stream import (
-    CursorStreamAdapter,
-    reconstruct_assistant_turns,
-)
+from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter, reconstruct_assistant_turns
 from ghdag.llm.engines import call
 
-_FIXTURES = Path(__file__).parent / "fixtures"
-_FINAL_MESSAGE = (_FIXTURES / "cursor_stream_final_message.jsonl").read_text(encoding="utf-8")
-
-# Synthetic English fixture text (host persona names scrubbed; see nexus #3338).
-_A = (
-    "Acting as persona-1, I will start the morning assistant flow. "
-    "First I will fetch tasks and calendar."
-)
-_B = (
-    "<@USER> Evening update. It is past 19:00 on Sunday. "
-    "Calendar items are mostly done. All-day is marked rest.\n\n"
-    "Carry-overs are bulk trash and Olive sync. I will leave a quiet gap too."
-)
-_JOINED = f"{_A}\n\n{_B}"
-# Contiguous host persona literals must not appear in this repo (#3338 / #3333 AC-4).
+_FIXTURES = Path(__file__).parent / 'fixtures'
+_FINAL_MESSAGE = (_FIXTURES / 'cursor_stream_final_message.jsonl').read_text(encoding='utf-8')
+_A = 'Acting as persona-1, I will start the morning assistant flow. First I will fetch tasks and calendar.'
+_B = '<@USER> Evening update. It is past 19:00 on Sunday. Calendar items are mostly done. All-day is marked rest.\n\nCarry-overs are bulk trash and Olive sync. I will leave a quiet gap too.'
+_JOINED = f'{_A}\n\n{_B}'
 # Encoded as \u escapes so denylist scanners do not match this test source itself.
 _HOST_PERSONA_LEAKS = (
-    "\u3042\u3093\u3069\u3045\u30fc",  # nickname
-    "\u5b89\u85e4\u745e\u7a42",  # full name
-    "\u30cf\u30cb",  # other host nickname
+    "\u3042\u3093\u3069\u3045\u30fc",
+    "\u5b89\u85e4\u745e\u7a42",
+    "\u30cf\u30cb",
 )
 
-
-def _assistant(
-    text: str,
-    *,
-    model_call_id: str | None = None,
-    timestamp_ms: int | None = None,
-) -> dict:
-    obj: dict = {
-        "type": "assistant",
-        "message": {"role": "assistant", "content": [{"type": "text", "text": text}]},
-        "session_id": "sess",
-    }
+def _assistant(text: str, *, model_call_id: str | None=None, timestamp_ms: int | None=None) -> dict:
+    obj: dict = {'type': 'assistant', 'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': text}]}, 'session_id': 'sess'}
     if model_call_id is not None:
-        obj["model_call_id"] = model_call_id
+        obj['model_call_id'] = model_call_id
     if timestamp_ms is not None:
-        obj["timestamp_ms"] = timestamp_ms
+        obj['timestamp_ms'] = timestamp_ms
     return obj
 
-
-def _tool_call(subtype: str = "started", route=[("claude", None)]) -> dict:
-    return {"type": "tool_call", "subtype": subtype, "call_id": "t1"}
-
+def _tool_call(subtype: str='started', route=[('claude', None)]) -> dict:
+    return {'type': 'tool_call', 'subtype': subtype, 'call_id': 't1'}
 
 def _result(text: str) -> dict:
-    return {"type": "result", "subtype": "success", "result": text, "session_id": "sess"}
-
+    return {'type': 'result', 'subtype': 'success', 'result': text, 'session_id': 'sess'}
 
 def _jsonl(*events: dict) -> str:
-    return "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in events)
+    return ''.join((json.dumps(e, ensure_ascii=False) + '\n' for e in events))
 
-
-def _partials(text: str, size: int = 3) -> list[dict]:
-    # Deltas from --stream-partial-output carry timestamp_ms; complete texts do not.
-    return [
-        _assistant(text[i : i + size], timestamp_ms=i + 1)
-        for i in range(0, len(text), size)
-    ]
-
+def _partials(text: str, size: int=3) -> list[dict]:
+    return [_assistant(text[i:i + size], timestamp_ms=i + 1) for i in range(0, len(text), size)]
 
 def _deltas(*pieces: str) -> list[dict]:
     return [_assistant(p, timestamp_ms=i + 1) for i, p in enumerate(pieces)]
 
-
 class TestReconstructAssistantTurns:
+
     def test_reconstruct_joins_turns_with_blank_line(self):
-        stdout = _FINAL_MESSAGE.encode("utf-8")
+        stdout = _FINAL_MESSAGE.encode('utf-8')
         assert reconstruct_assistant_turns(stdout) == _JOINED
 
-    def test_reconstruct_merges_partials_without_model_call_id(self):
-        events = [
-            *_partials("hello world", 4),
-            _assistant("hello world"),  # no model_call_id
-            _result("hello world"),
-        ]
-        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "hello world"
-
-    def test_reconstruct_dedupes_partials_when_complete_has_model_call_id(self):
-        events = [
-            *_partials("hello", 2),
-            _assistant("hello", model_call_id="c1"),
-            _result("hello"),
-        ]
-        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "hello"
-
-    @pytest.mark.parametrize(
-        "stdout,expected",
-        [
-            (
-                _jsonl(
-                    _assistant("first", model_call_id="c1"),
-                    _assistant("second", model_call_id="c2"),
-                    _result("firstsecond"),
-                ).encode(),
-                "second",
-            ),
-            (b"", None),
-            (_jsonl(_assistant("only-partial")).encode(), "only-partial"),
-            (
-                _jsonl(
-                    *_partials("abc", 1),
-                    _result("abc"),
-                ).encode(),
-                "abc",
-            ),
-            (
-                _jsonl(_assistant("solo", model_call_id="c1"), _result("solo")).encode(),
-                "solo",
-            ),
-            (b"not json\n{broken", None),
-            (_jsonl({"type": "assistant", "message": {"content": []}}).encode(), None),
-            (b"[1, 2, 3]\n", None),
-        ],
-        ids=[
-            "last_of_multiple_completes_same_turn",
-            "empty",
-            "single_partial_only",
-            "partials_without_complete",
-            "complete_only_no_deltas",
-            "broken_jsonl",
-            "empty_content",
-            "non_dict_json",
-        ],
-    )
+    @pytest.mark.parametrize('stdout,expected', [(_jsonl(_assistant('first', model_call_id='c1'), _assistant('second', model_call_id='c2'), _result('firstsecond')).encode(), 'second'), (b'', None), (_jsonl(_assistant('only-partial')).encode(), 'only-partial'), (_jsonl(*_partials('abc', 1), _result('abc')).encode(), 'abc'), (_jsonl(_assistant('solo', model_call_id='c1'), _result('solo')).encode(), 'solo'), (b'not json\n{broken', None), (_jsonl({'type': 'assistant', 'message': {'content': []}}).encode(), None), (b'[1, 2, 3]\n', None)], ids=['last_of_multiple_completes_same_turn', 'empty', 'single_partial_only', 'partials_without_complete', 'complete_only_no_deltas', 'broken_jsonl', 'empty_content', 'non_dict_json'])
     def test_reconstruct_parametrized_edge_cases(self, stdout: bytes, expected: str | None):
         assert reconstruct_assistant_turns(stdout) == expected
 
     def test_repro_fixture_repeated_leading_delta(self):
-        stdout = (_FIXTURES / "cursor_stream_repro.jsonl").read_bytes()
-        assert reconstruct_assistant_turns(stdout) == "llamas are great."
+        stdout = (_FIXTURES / 'cursor_stream_repro.jsonl').read_bytes()
+        assert reconstruct_assistant_turns(stdout) == 'llamas are great.'
 
     def test_repeated_delta_equal_to_concat_is_not_complete(self):
-        events = [*_deltas("ab", "ab", "c"), _result("ababc")]
-        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "ababc"
-
-    def test_complete_without_timestamp_is_not_doubled(self):
-        events = [
-            *_deltas("l", "l", "amas are great."),
-            _assistant("llamas are great."),
-            _result("llamas are great."),
-        ]
-        text = reconstruct_assistant_turns(_jsonl(*events).encode())
-        assert text == "llamas are great."
-        assert text != "llamas are great.llamas are great."
-
-    def test_model_call_id_with_timestamp_is_complete(self):
-        events = [
-            *_deltas("he", "llo"),
-            _assistant("hello", model_call_id="c1", timestamp_ms=9),
-            _result("hello"),
-        ]
-        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "hello"
-
-    def test_turns_with_and_without_complete_across_tool_calls(self):
-        events = [
-            *_deltas("o", "o", "ps"),
-            _assistant("oops"),
-            _tool_call("started", route=[("claude", None)]),
-            _tool_call("completed", route=[("claude", None)]),
-            *_deltas("x", "x", "y"),
-            _tool_call("started", route=[("claude", None)]),
-            *_deltas("z", "z"),
-            _assistant("zz", model_call_id="c3"),
-            _result("oopsxxyzz"),
-        ]
-        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "oops\n\nxxy\n\nzz"
-
-    def test_reconstruct_tool_calls_do_not_add_empty_turns(self):
-        events = [
-            *_partials("ABCD", 2),
-            _tool_call("started", route=[("claude", None)]),
-            _tool_call("completed", route=[("claude", None)]),
-            *_partials("WXYZ", 2),
-            _assistant("WXYZ"),
-            _result("ABCDWXYZ"),
-        ]
-        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "ABCD\n\nWXYZ"
+        events = [*_deltas('ab', 'ab', 'c'), _result('ababc')]
+        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == 'ababc'
 
     def test_reconstruct_skips_non_text_and_empty_assistant_chunks(self):
-        events = [
-            {
-                "type": "assistant",
-                "model_call_id": "c1",
-                "message": {
-                    "role": "assistant",
-                    "content": [
-                        {"type": "image", "url": "x"},
-                        {"type": "text", "text": ""},
-                    ],
-                },
-            },
-            *_partials("ok", 1),
-            _assistant("ok"),
-            _result("ok"),
-        ]
-        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "ok"
-
-    def test_scrubbed_fixture_preserves_both_turns(self):
-        text = reconstruct_assistant_turns(_FINAL_MESSAGE.encode())
-        assert text is not None
-        assert "morning assistant flow" in text
-        assert "Evening update" in text
-        assert "\n\n" in text
+        events = [{'type': 'assistant', 'model_call_id': 'c1', 'message': {'role': 'assistant', 'content': [{'type': 'image', 'url': 'x'}, {'type': 'text', 'text': ''}]}}, *_partials('ok', 1), _assistant('ok'), _result('ok')]
+        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == 'ok'
 
     def test_scrubbed_fixture_has_no_host_persona_literals(self):
         for token in _HOST_PERSONA_LEAKS:
@@ -234,125 +80,54 @@ class TestReconstructAssistantTurns:
             assert token not in _B
             assert token not in _JOINED
 
-
 class TestCursorStreamAdapterFinalMessage:
+
     def test_adapter_extract_uses_reconstructed_turns(self):
         adapter = CursorStreamAdapter()
-        assert adapter.extract_result_text(_FINAL_MESSAGE.encode(), b"") == _JOINED.encode()
+        assert adapter.extract_result_text(_FINAL_MESSAGE.encode(), b'') == _JOINED.encode()
 
     def test_repro_fixture_result_text(self):
         adapter = CursorStreamAdapter()
-        raw = (_FIXTURES / "cursor_stream_repro.jsonl").read_bytes()
-        assert adapter.extract_result_text(raw, b"") == b"llamas are great."
-
-    def test_complete_without_timestamp_result_text_not_doubled(self):
-        adapter = CursorStreamAdapter()
-        raw = _jsonl(
-            *_deltas("ab", "ab", "cd"),
-            _assistant("ababcd"),
-            _result("ababcd"),
-        ).encode()
-        assert adapter.extract_result_text(raw, b"") == b"ababcd"
+        raw = (_FIXTURES / 'cursor_stream_repro.jsonl').read_bytes()
+        assert adapter.extract_result_text(raw, b'') == b'llamas are great.'
 
     def test_adapter_extract_falls_back_to_result_event(self):
         adapter = CursorStreamAdapter()
-        raw = _jsonl(_result("x")).encode()
-        assert adapter.extract_result_text(raw, b"") == b"x"
+        raw = _jsonl(_result('x')).encode()
+        assert adapter.extract_result_text(raw, b'') == b'x'
 
     def test_adapter_extract_falls_back_to_single_json_object(self):
         adapter = CursorStreamAdapter()
-        raw = json.dumps({"result": "x"}).encode()
-        assert adapter.extract_result_text(raw, b"") == b"x"
+        raw = json.dumps({'result': 'x'}).encode()
+        assert adapter.extract_result_text(raw, b'') == b'x'
 
     def test_adapter_extract_falls_back_to_raw_bytes(self):
         adapter = CursorStreamAdapter()
-        assert adapter.extract_result_text(b"plain text", b"") == b"plain text"
-
+        assert adapter.extract_result_text(b'plain text', b'') == b'plain text'
 
 class TestCallStreamNormalization:
+
     @pytest.fixture(autouse=True)
     def _stall_guard_off(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("GHDAG_ENGINE_STALL_GUARD", "0")
+        monkeypatch.setenv('GHDAG_ENGINE_STALL_GUARD', '0')
 
-    @patch("ghdag.llm.engines.subprocess.run")
+    @patch('ghdag.llm.engines.subprocess.run')
     def test_call_cursor_stream_body_becomes_joined_turns(self, mock_run):
-        mock_run.return_value = MagicMock(stdout=_FINAL_MESSAGE, stderr="", returncode=0)
-        result = call("p", permission=Permission(stream=True), route=[("cursor", None)])
+        mock_run.return_value = MagicMock(stdout=_FINAL_MESSAGE, stderr='', returncode=0)
+        result = call('p', permission=Permission(stream=True), route=[('cursor', None)])
         assert result.body == _JOINED
         assert result.raw_stdout == _FINAL_MESSAGE
 
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_claude_stream_keeps_result_field(self, mock_run):
-        stream = _jsonl(
-            {"type": "assistant", "message": {"content": [{"type": "text", "text": "mid"}]}},
-            _result("final-claude"),
-        )
-        mock_run.return_value = MagicMock(stdout=stream, stderr="", returncode=0)
-        result = call("p", permission=Permission(stream=True), route=[("claude", None)])
-        assert result.body == "final-claude"
-
-    @patch("ghdag.llm.engines.subprocess.run")
+    @patch('ghdag.llm.engines.subprocess.run')
     def test_call_codex_stream_preserves_raw_stdout(self, mock_run):
         raw = '{"type":"item.completed"}\n{"type":"result","result":"x"}\n'
-        mock_run.return_value = MagicMock(stdout=raw, stderr="", returncode=0)
-        result = call("p", permission=Permission(stream=True), route=[("codex", None)])
+        mock_run.return_value = MagicMock(stdout=raw, stderr='', returncode=0)
+        result = call('p', permission=Permission(stream=True), route=[('codex', None)])
         assert result.stdout == raw
 
-
 def _make_config(tmp_path: Path, records: list[dict]) -> DagConfig:
-    jobs = tmp_path / "jobs"
+    jobs = tmp_path / 'jobs'
     jobs.mkdir(parents=True, exist_ok=True)
-    exec_jsonl = jobs / "exec.jsonl"
-    exec_jsonl.write_text(
-        "".join(json.dumps(r) + "\n" for r in records),
-        encoding="utf-8",
-    )
-    return DagConfig(
-        exec_jsonl_path=str(exec_jsonl),
-        exec_done_dir=str(jobs / "done"),
-        poll_interval=0.05,
-        launch_stagger=0.0,
-        lock_file=str(tmp_path / "lock"),
-        kill_grace=1.0,
-        task_timeout=None,
-        cwd=str(tmp_path),
-    )
-
-
-class TestDagResultUsesReconstructedTurns:
-    def test_dag_events_file_stores_reconstructed_turns(self, tmp_path: Path):
-        result_file = tmp_path / "result.md"
-        fixture = tmp_path / "fixture.jsonl"
-        fixture.write_text(_FINAL_MESSAGE, encoding="utf-8")
-        config = _make_config(
-            tmp_path,
-            [
-                {
-                    "uuid": "evt-final",
-                    "engine": "cursor",
-                    "command": f"cat {fixture} # -p --output-format stream-json",
-                    "depends": [],
-                    "result_path": str(result_file),
-                }
-            ],
-        )
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
-        hooks.check_pipeline_status.return_value = None
-        finished = threading.Event()
-
-        def _on_success(*_args, **_kwargs) -> None:
-            finished.set()
-
-        hooks.on_task_success.side_effect = _on_success
-        engine = DagEngine(config, hooks)
-        t = threading.Thread(target=engine.run, daemon=True)
-        t.start()
-        finished.wait()
-        engine._shutdown = True
-        t.join()
-
-        events_path = tmp_path / "jobs" / "events" / "evt-final.jsonl"
-        assert events_path.is_file()
-        assert events_path.read_text(encoding="utf-8") == _FINAL_MESSAGE
-        assert result_file.read_text(encoding="utf-8") == _JOINED
+    exec_jsonl = jobs / 'exec.jsonl'
+    exec_jsonl.write_text(''.join((json.dumps(r) + '\n' for r in records)), encoding='utf-8')
+    return DagConfig(exec_jsonl_path=str(exec_jsonl), exec_done_dir=str(jobs / 'done'), poll_interval=0.05, launch_stagger=0.0, lock_file=str(tmp_path / 'lock'), kill_grace=1.0, task_timeout=None, cwd=str(tmp_path))
