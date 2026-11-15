@@ -11,6 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Enqueue audit `default_permission_uuids` now follow exec record `annotations.safe_default_applied` (sumipan/nexus#6799).
 
+### Changed
+
+- README identity messaging, release badge alignment, LocalForge GitHub-free quick start, and execution review artifacts are unchanged since 0.133.4 (sumipan/nexus#6610).
+
 ## 0.136.0 - 2026-11-14
 
 ### Added

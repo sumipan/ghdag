@@ -291,7 +291,7 @@ class TestAppendExecRecordsAudit:
         assert rec["annotations"]["_request_id"] == "req-abc"
 
     def test_append_exec_records_audit_default_permission_uuids(self, tmp_path):
-        """AC4: only UUIDs with default_permission_applied are recorded in audit."""
+        """AC4: only UUIDs with safe_default_applied are recorded in audit."""
         from ghdag.pipeline.state import PipelineState
 
         exec_path = tmp_path / "exec.jsonl"
@@ -301,7 +301,7 @@ class TestAppendExecRecordsAudit:
                 "uuid": UUID1,
                 "command": "cmd1",
                 "annotations": {
-                    "default_permission_applied": True,
+                    "safe_default_applied": True,
                     "injected_danger_flag": "--dangerously-skip-permissions",
                 },
             },
@@ -309,7 +309,7 @@ class TestAppendExecRecordsAudit:
                 "uuid": UUID2,
                 "command": "cmd2",
                 "annotations": {
-                    "default_permission_applied": True,
+                    "safe_default_applied": True,
                     "injected_danger_flag": "--force",
                 },
             },
