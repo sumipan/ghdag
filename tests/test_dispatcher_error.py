@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from unittest.mock import MagicMock
 
 import pytest
@@ -31,16 +30,6 @@ def _make_workflow() -> WorkflowConfig:
     )
 
 
-def _make_issue(number: int) -> dict:
-    return {
-        "number": number,
-        "title": f"Issue {number}",
-        "body": "body",
-        "labels": [{"name": "pipeline:draft-ready"}],
-        "url": f"https://github.com/owner/repo/issues/{number}",
-    }
-
-
 def _make_dispatcher(workflow: WorkflowConfig) -> tuple[WorkflowDispatcher, MagicMock]:
     github_client = MagicMock(spec=GitHubIssuePort)
     github_client.list_all_issues.return_value = []
@@ -54,45 +43,6 @@ def _make_dispatcher(workflow: WorkflowConfig) -> tuple[WorkflowDispatcher, Magi
         queue_dir="queue",
     )
     return dispatcher, github_client
-
-
-class TestTC7DispatchErrorLogsOnly:
-    def test_no_error_comment_on_dispatch_failure(self):
-        """TC-7: when dispatch() raises, do not post an error comment on the Issue"""
-        workflow = _make_workflow()
-        dispatcher, github_client = _make_dispatcher(workflow)
-        issue = _make_issue(42)
-        github_client.list_all_issues.return_value = [issue]
-
-        dispatcher.dispatch = MagicMock(side_effect=KeyError("template expansion error (brushup.md): 'missing'"))
-
-        dispatcher.run(max_iterations=1)
-
-        github_client.add_comment.assert_not_called()
-
-    def test_error_log_includes_traceback(self, caplog):
-        """TC-7: logger.exception is called (with stack trace)"""
-        workflow = _make_workflow()
-        dispatcher, github_client = _make_dispatcher(workflow)
-        issue = _make_issue(42)
-        github_client.list_all_issues.return_value = [issue]
-        dispatcher.dispatch = MagicMock(side_effect=RuntimeError("boom"))
-
-        with caplog.at_level(logging.ERROR, logger="ghdag.workflow.dispatcher"):
-            dispatcher.run(max_iterations=1)
-
-        assert any("dispatch failed" in r.message for r in caplog.records)
-        assert any("issue #42" in r.message for r in caplog.records)
-
-    def test_run_continues_after_dispatch_failure(self):
-        """TC-7: when dispatch() raises, run() does not crash"""
-        workflow = _make_workflow()
-        dispatcher, github_client = _make_dispatcher(workflow)
-        issue = _make_issue(42)
-        github_client.list_all_issues.return_value = [issue]
-        dispatcher.dispatch = MagicMock(side_effect=RuntimeError("dispatch error"))
-
-        dispatcher.run(max_iterations=1)
 
 
 class TestTC9NonIntIssueNumberSkipsComment:

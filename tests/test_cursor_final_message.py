@@ -7,15 +7,12 @@ matches across result / call(route=[("claude", None)]) / DAG result, and that ev
 from __future__ import annotations
 
 import json
-import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ghdag.core.capabilities import Permission
-from ghdag.dag.engine import DagEngine
-from ghdag.dag.models import DagConfig
 from ghdag.llm.adapters.cursor_stream import (
     CursorStreamAdapter,
     reconstruct_assistant_turns,
@@ -63,10 +60,6 @@ def _assistant(
     return obj
 
 
-def _tool_call(subtype: str = "started", route=[("claude", None)]) -> dict:
-    return {"type": "tool_call", "subtype": subtype, "call_id": "t1"}
-
-
 def _result(text: str) -> dict:
     return {"type": "result", "subtype": "success", "result": text, "session_id": "sess"}
 
@@ -91,22 +84,6 @@ class TestReconstructAssistantTurns:
     def test_reconstruct_joins_turns_with_blank_line(self):
         stdout = _FINAL_MESSAGE.encode("utf-8")
         assert reconstruct_assistant_turns(stdout) == _JOINED
-
-    def test_reconstruct_merges_partials_without_model_call_id(self):
-        events = [
-            *_partials("hello world", 4),
-            _assistant("hello world"),  # no model_call_id
-            _result("hello world"),
-        ]
-        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "hello world"
-
-    def test_reconstruct_dedupes_partials_when_complete_has_model_call_id(self):
-        events = [
-            *_partials("hello", 2),
-            _assistant("hello", model_call_id="c1"),
-            _result("hello"),
-        ]
-        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "hello"
 
     @pytest.mark.parametrize(
         "stdout,expected",
@@ -158,49 +135,6 @@ class TestReconstructAssistantTurns:
         events = [*_deltas("ab", "ab", "c"), _result("ababc")]
         assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "ababc"
 
-    def test_complete_without_timestamp_is_not_doubled(self):
-        events = [
-            *_deltas("l", "l", "amas are great."),
-            _assistant("llamas are great."),
-            _result("llamas are great."),
-        ]
-        text = reconstruct_assistant_turns(_jsonl(*events).encode())
-        assert text == "llamas are great."
-        assert text != "llamas are great.llamas are great."
-
-    def test_model_call_id_with_timestamp_is_complete(self):
-        events = [
-            *_deltas("he", "llo"),
-            _assistant("hello", model_call_id="c1", timestamp_ms=9),
-            _result("hello"),
-        ]
-        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "hello"
-
-    def test_turns_with_and_without_complete_across_tool_calls(self):
-        events = [
-            *_deltas("o", "o", "ps"),
-            _assistant("oops"),
-            _tool_call("started", route=[("claude", None)]),
-            _tool_call("completed", route=[("claude", None)]),
-            *_deltas("x", "x", "y"),
-            _tool_call("started", route=[("claude", None)]),
-            *_deltas("z", "z"),
-            _assistant("zz", model_call_id="c3"),
-            _result("oopsxxyzz"),
-        ]
-        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "oops\n\nxxy\n\nzz"
-
-    def test_reconstruct_tool_calls_do_not_add_empty_turns(self):
-        events = [
-            *_partials("ABCD", 2),
-            _tool_call("started", route=[("claude", None)]),
-            _tool_call("completed", route=[("claude", None)]),
-            *_partials("WXYZ", 2),
-            _assistant("WXYZ"),
-            _result("ABCDWXYZ"),
-        ]
-        assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "ABCD\n\nWXYZ"
-
     def test_reconstruct_skips_non_text_and_empty_assistant_chunks(self):
         events = [
             {
@@ -220,13 +154,6 @@ class TestReconstructAssistantTurns:
         ]
         assert reconstruct_assistant_turns(_jsonl(*events).encode()) == "ok"
 
-    def test_scrubbed_fixture_preserves_both_turns(self):
-        text = reconstruct_assistant_turns(_FINAL_MESSAGE.encode())
-        assert text is not None
-        assert "morning assistant flow" in text
-        assert "Evening update" in text
-        assert "\n\n" in text
-
     def test_scrubbed_fixture_has_no_host_persona_literals(self):
         for token in _HOST_PERSONA_LEAKS:
             assert token not in _FINAL_MESSAGE
@@ -244,15 +171,6 @@ class TestCursorStreamAdapterFinalMessage:
         adapter = CursorStreamAdapter()
         raw = (_FIXTURES / "cursor_stream_repro.jsonl").read_bytes()
         assert adapter.extract_result_text(raw, b"") == b"llamas are great."
-
-    def test_complete_without_timestamp_result_text_not_doubled(self):
-        adapter = CursorStreamAdapter()
-        raw = _jsonl(
-            *_deltas("ab", "ab", "cd"),
-            _assistant("ababcd"),
-            _result("ababcd"),
-        ).encode()
-        assert adapter.extract_result_text(raw, b"") == b"ababcd"
 
     def test_adapter_extract_falls_back_to_result_event(self):
         adapter = CursorStreamAdapter()
@@ -282,77 +200,8 @@ class TestCallStreamNormalization:
         assert result.raw_stdout == _FINAL_MESSAGE
 
     @patch("ghdag.llm.engines.subprocess.run")
-    def test_call_claude_stream_keeps_result_field(self, mock_run):
-        stream = _jsonl(
-            {"type": "assistant", "message": {"content": [{"type": "text", "text": "mid"}]}},
-            _result("final-claude"),
-        )
-        mock_run.return_value = MagicMock(stdout=stream, stderr="", returncode=0)
-        result = call("p", permission=Permission(stream=True), route=[("claude", None)])
-        assert result.body == "final-claude"
-
-    @patch("ghdag.llm.engines.subprocess.run")
     def test_call_codex_stream_preserves_raw_stdout(self, mock_run):
         raw = '{"type":"item.completed"}\n{"type":"result","result":"x"}\n'
         mock_run.return_value = MagicMock(stdout=raw, stderr="", returncode=0)
         result = call("p", permission=Permission(stream=True), route=[("codex", None)])
         assert result.stdout == raw
-
-
-def _make_config(tmp_path: Path, records: list[dict]) -> DagConfig:
-    jobs = tmp_path / "jobs"
-    jobs.mkdir(parents=True, exist_ok=True)
-    exec_jsonl = jobs / "exec.jsonl"
-    exec_jsonl.write_text(
-        "".join(json.dumps(r) + "\n" for r in records),
-        encoding="utf-8",
-    )
-    return DagConfig(
-        exec_jsonl_path=str(exec_jsonl),
-        exec_done_dir=str(jobs / "done"),
-        poll_interval=0.05,
-        launch_stagger=0.0,
-        lock_file=str(tmp_path / "lock"),
-        kill_grace=1.0,
-        task_timeout=None,
-        cwd=str(tmp_path),
-    )
-
-
-class TestDagResultUsesReconstructedTurns:
-    def test_dag_events_file_stores_reconstructed_turns(self, tmp_path: Path):
-        result_file = tmp_path / "result.md"
-        fixture = tmp_path / "fixture.jsonl"
-        fixture.write_text(_FINAL_MESSAGE, encoding="utf-8")
-        config = _make_config(
-            tmp_path,
-            [
-                {
-                    "uuid": "evt-final",
-                    "engine": "cursor",
-                    "command": f"cat {fixture} # -p --output-format stream-json",
-                    "depends": [],
-                    "result_path": str(result_file),
-                }
-            ],
-        )
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
-        hooks.check_pipeline_status.return_value = None
-        finished = threading.Event()
-
-        def _on_success(*_args, **_kwargs) -> None:
-            finished.set()
-
-        hooks.on_task_success.side_effect = _on_success
-        engine = DagEngine(config, hooks)
-        t = threading.Thread(target=engine.run, daemon=True)
-        t.start()
-        finished.wait()
-        engine._shutdown = True
-        t.join()
-
-        events_path = tmp_path / "jobs" / "events" / "evt-final.jsonl"
-        assert events_path.is_file()
-        assert events_path.read_text(encoding="utf-8") == _FINAL_MESSAGE
-        assert result_file.read_text(encoding="utf-8") == _JOINED

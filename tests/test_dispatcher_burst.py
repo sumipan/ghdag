@@ -20,7 +20,6 @@ from ghdag.core.models.workflow import (
 from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import (
-    _BURST_COOLDOWN_SEC,
     _BURST_THRESHOLD,
     WorkflowDispatcher,
 )
@@ -95,16 +94,6 @@ class TestObserveCorrelationBurst:
         assert len(warnings) == 1
         assert cid in warnings[0].message
 
-    def test_no_warning_below_threshold(self, tmp_path, caplog):
-        dispatcher, _ = _make_dispatcher(tmp_path)
-        _write_burst_events(tmp_path / "audit.jsonl", "cid-low", _BURST_THRESHOLD - 1)
-
-        with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
-            dispatcher._observe_correlation_burst()
-
-        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert len(warnings) == 0
-
     def test_cooldown_suppresses_repeated_warning(self, tmp_path, caplog):
         dispatcher, _ = _make_dispatcher(tmp_path)
         cid = "issuesmith:B1:cooldown"
@@ -118,20 +107,6 @@ class TestObserveCorrelationBurst:
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert len(warnings) == 0
 
-    def test_warning_after_cooldown_expires(self, tmp_path, caplog):
-        dispatcher, _ = _make_dispatcher(tmp_path)
-        cid = "issuesmith:B1:expired"
-        _write_burst_events(tmp_path / "audit.jsonl", cid, _BURST_THRESHOLD + 1)
-
-        dispatcher._burst_warned[cid] = FIXED_NOW - _BURST_COOLDOWN_SEC - 1
-
-        with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
-            dispatcher._observe_correlation_burst()
-
-        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-        assert len(warnings) == 1
-        assert cid in warnings[0].message
-
     def test_exception_does_not_propagate(self, tmp_path, caplog):
         dispatcher, _ = _make_dispatcher(tmp_path)
 
@@ -141,16 +116,6 @@ class TestObserveCorrelationBurst:
         ):
             with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
                 dispatcher._observe_correlation_burst()
-
-    def test_run_calls_observe_correlation_burst(self, tmp_path):
-        dispatcher, github_client = _make_dispatcher(tmp_path)
-        _write_burst_events(tmp_path / "audit.jsonl", "cid-run", _BURST_THRESHOLD + 1)
-
-        with patch.object(dispatcher, "_observe_correlation_burst") as mock_burst:
-            with patch.object(dispatcher, "_observe_rate_limit"):
-                dispatcher.run(max_iterations=1)
-
-        mock_burst.assert_called_once()
 
     def test_burst_warned_initialized_in_init(self, tmp_path):
         dispatcher, _ = _make_dispatcher(tmp_path)

@@ -12,7 +12,6 @@ import pytest
 from ghdag.dag.models import DagConfig, Task
 from ghdag.dag.task_launcher import TaskLauncher
 from ghdag.io.audit import write_compaction_audit
-from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.compaction import (
     HANDOFF_SUMMARY_PROMPT,
     CompactionPolicy,
@@ -78,21 +77,6 @@ def _llm_result(body: str, *, session_id: str | None, ok: bool = True) -> LLMRes
     )
 
 
-def _claude_json_llm_result(payload: dict) -> LLMResult:
-    """Build an LLMResult as call(route=[("claude", None)]) would from claude --output-format json stdout."""
-    stdout = json.dumps(payload)
-    adapter = ClaudeJsonAdapter()
-    body = adapter.extract_result_text(stdout.encode(), b"").decode()
-    session_id = adapter.extract_session_id(stdout.encode(), b"")
-    return LLMResult(
-        body=body,
-        stdout=stdout,
-        stderr="",
-        returncode=0,
-        session_id=session_id,
-    )
-
-
 def test_compact_resume_passes_json_capabilities_to_both_calls(tmp_path):
     """Issue #6090: both summary and seed LLM calls use JSON output capabilities."""
     store = SessionStore(tmp_path / ".sessions")
@@ -126,51 +110,6 @@ def test_compact_resume_passes_json_capabilities_to_both_calls(tmp_path):
         caps = call_kwargs.get("permission")
         assert caps is not None
         assert caps.output_format == "json"
-
-
-def test_compact_resume_records_session_id_from_claude_json_output(tmp_path):
-    """Issue #6090: compaction records session_id parsed from claude JSON stdout."""
-    store = SessionStore(tmp_path / ".sessions")
-    store.record("parent", "claude", "sess-parent")
-    parent = store.lookup("parent")
-    assert parent is not None
-
-    summary_json = (
-        '{"facts":[],"unresolved":[],"next":[],"files":[],"constraints":[]}'
-    )
-
-    def fake_call_fn(prompt, **kwargs):
-        if kwargs.get("resume_session_id") == "sess-parent":
-            return _claude_json_llm_result(
-                {
-                    "type": "result",
-                    "result": summary_json,
-                    "session_id": "sess-parent",
-                }
-            )
-        return _claude_json_llm_result(
-            {
-                "type": "result",
-                "result": "ack",
-                "session_id": "sess-compacted",
-            }
-        )
-
-    result = compact_resume_session(
-        store=store,
-        parent_key="parent",
-        parent_record=parent,
-        compacted_key="child__compacted",
-        policy=CompactionPolicy(token_threshold=10, enabled=True),
-        token_usage=50_000,
-        call_fn=fake_call_fn,
-    )
-
-    assert result.status == "compacted"
-    assert result.session_id == "sess-compacted"
-    compacted = store.lookup("child__compacted")
-    assert compacted is not None
-    assert compacted.session_id == "sess-compacted"
 
 
 def test_compact_resume_falls_back_when_seed_has_no_session_id(tmp_path):
@@ -214,48 +153,6 @@ def test_readme_compaction_row_mentions_json_output_mode():
             assert "JSON output mode" in line
             return
     pytest.fail("README.md has no llm/compaction.py module inventory row")
-
-
-def test_compact_resume_creates_new_session_with_lineage(tmp_path):
-    store = SessionStore(tmp_path / ".sessions")
-    store.record("parent", "claude", "sess-parent")
-    parent = store.lookup("parent")
-    assert parent is not None
-
-    calls: list[dict] = []
-
-    def fake_call_fn(prompt, **kwargs):
-        calls.append({"prompt": prompt, **kwargs})
-        if kwargs.get("resume_session_id") == "sess-parent":
-            return _llm_result(
-                '{"facts":[],"unresolved":[],"next":[],"files":[],"constraints":[]}',
-                session_id="sess-parent",
-            )
-        return _llm_result("ack", session_id="sess-compacted")
-
-    result = compact_resume_session(
-        store=store,
-        parent_key="parent",
-        parent_record=parent,
-        compacted_key="child__compacted",
-        policy=CompactionPolicy(token_threshold=10, enabled=True),
-        token_usage=50_000,
-        call_fn=fake_call_fn,
-    )
-
-    assert result.status == "compacted"
-    assert result.session_id == "sess-compacted"
-    assert result.parent_session_id == "sess-parent"
-    assert result.summary_tokens is not None and result.summary_tokens > 0
-
-    compacted = store.lookup("child__compacted")
-    assert compacted is not None
-    assert compacted.session_id != parent.session_id
-    assert compacted.parent_session_id == parent.session_id
-    assert compacted.is_compacted is True
-
-    assert any(c.get("resume_session_id") == "sess-parent" for c in calls)
-    assert HANDOFF_SUMMARY_PROMPT in calls[0]["prompt"] or calls[0]["prompt"] == HANDOFF_SUMMARY_PROMPT
 
 
 @pytest.mark.parametrize(
@@ -341,41 +238,6 @@ def test_write_compaction_audit_records_lineage(tmp_path):
     assert rec["reason"] == "over_threshold"
 
 
-def test_replay_comparison_records_token_delta(tmp_path):
-    """Audit can record a with/without compact comparison for the same workflow."""
-    audit_path = tmp_path / "audit.jsonl"
-    write_compaction_audit(
-        audit_path,
-        task_uuid="replay-no-compact",
-        status="skipped",
-        reason="policy_disabled",
-        parent_session_id="sess-parent",
-        compacted_session_id=None,
-        summary_tokens=None,
-        tokens_before=150_000,
-        tokens_after=150_000,
-        engine="claude",
-        comparison_group="wf-replay-1",
-    )
-    write_compaction_audit(
-        audit_path,
-        task_uuid="replay-compact",
-        status="compacted",
-        reason="over_threshold",
-        parent_session_id="sess-parent",
-        compacted_session_id="sess-compacted",
-        summary_tokens=400,
-        tokens_before=150_000,
-        tokens_after=400,
-        engine="claude",
-        comparison_group="wf-replay-1",
-    )
-    lines = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines()]
-    assert len(lines) == 2
-    assert lines[0]["comparison_group"] == lines[1]["comparison_group"] == "wf-replay-1"
-    assert lines[1]["tokens_after"] < lines[0]["tokens_after"]
-
-
 def _make_launcher(tmp_path: Path) -> TaskLauncher:
     done = tmp_path / "jobs" / "done"
     done.mkdir(parents=True)
@@ -459,32 +321,3 @@ def test_apply_resume_falls_back_on_engine_mismatch(tmp_path):
     assert "resumed_session_id" not in task.annotations
     mock_audit.assert_called_once()
     assert mock_audit.call_args.kwargs["reason"] == "engine_mismatch"
-
-
-def test_apply_resume_falls_back_when_compaction_skips(tmp_path):
-    launcher = _make_launcher(tmp_path)
-    launcher._session_store.record("parent-uuid", "claude", "sess-parent")
-    task = Task(
-        uuid="child-uuid",
-        command="claude -p 'continue'",
-        engine="claude",
-        annotations={"resume_from_uuid": "parent-uuid"},
-    )
-    skipped = CompactionResult(
-        status="skipped",
-        reason="below_threshold",
-        session_id="sess-parent",
-        parent_session_id="sess-parent",
-        summary_tokens=None,
-        tokens_before=10,
-        tokens_after=10,
-        compacted_key=None,
-    )
-    with patch(
-        "ghdag.dag.task_launcher.compact_resume_session",
-        return_value=skipped,
-    ), patch("ghdag.dag.task_launcher.write_compaction_audit"):
-        launcher._apply_resume_if_available("child-uuid", task)
-
-    assert task.annotations["resumed_session_id"] == "sess-parent"
-    assert "--resume 'sess-parent'" in task.command

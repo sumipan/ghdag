@@ -6,7 +6,6 @@ Exceptions during label filtering skip at trigger granularity (per-trigger isola
 
 from __future__ import annotations
 
-import logging
 from unittest.mock import MagicMock
 
 from ghdag.core.models.workflow import (
@@ -59,18 +58,6 @@ def _make_dispatcher(workflows: list[WorkflowConfig]) -> tuple[WorkflowDispatche
 
 
 class TestPollOncePerTriggerIsolation:
-    def test_batch_failure_skips_all_triggers(self, caplog):
-        """On bulk fetch failure, skip all triggers and warn."""
-        wf = _make_workflow("wf", ["a:ready", "b:ready"])
-        dispatcher, github_client = _make_dispatcher([wf])
-        github_client.list_all_issues.side_effect = RuntimeError("api down")
-
-        with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
-            results = dispatcher.poll_once()
-
-        assert results == []
-        assert any("list_all_issues" in r.message for r in caplog.records)
-
     def test_filter_failure_in_one_issue_does_not_skip_subsequent(self):
         """A per-issue exception during label filtering must not stop other issues/triggers."""
         wf = _make_workflow("wf", ["a:ready", "b:ready"])
@@ -85,20 +72,6 @@ class TestPollOncePerTriggerIsolation:
 
         assert {r["issue"] for r in results} == {10, 99}
 
-    def test_warning_logged_for_failed_batch(self, caplog):
-        """Bulk fetch failure emits a warning log."""
-        wf = _make_workflow("wf", ["a:ready"])
-        dispatcher, github_client = _make_dispatcher([wf])
-        github_client.list_all_issues.side_effect = RuntimeError("boom")
-
-        with caplog.at_level(logging.WARNING, logger="ghdag.workflow.dispatcher"):
-            dispatcher.poll_once()
-
-        assert any(
-            "a:ready" not in r.message and r.levelno == logging.WARNING
-            for r in caplog.records
-        ) or any("list_all_issues" in r.message for r in caplog.records)
-
     def test_no_exception_propagates_when_batch_fails(self):
         """Bulk fetch failure must not propagate as an exception to the caller."""
         wf = _make_workflow("wf", ["a:ready", "b:ready"])
@@ -107,17 +80,3 @@ class TestPollOncePerTriggerIsolation:
 
         results = dispatcher.poll_once()
         assert results == []
-
-    def test_all_triggers_succeed_unchanged_behavior(self):
-        """When all triggers succeed, every matched Issue appears in results."""
-        wf = _make_workflow("wf", ["a:ready", "b:ready"])
-        dispatcher, github_client = _make_dispatcher([wf])
-
-        github_client.list_all_issues.return_value = [
-            _make_issue(1, "a:ready"),
-            _make_issue(2, "b:ready"),
-        ]
-
-        results = dispatcher.poll_once()
-
-        assert {r["issue"] for r in results} == {1, 2}

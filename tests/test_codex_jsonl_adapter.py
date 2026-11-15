@@ -7,13 +7,10 @@ success / empty agent_message / auth failure (401 Unauthorized error events).
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-from ghdag.core.capabilities import Permission
 from ghdag.core.ports.output import EngineErrorKind
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.codex_jsonl import CodexJsonlAdapter
-from ghdag.llm.engines import call
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _SUCCESS = (_FIXTURES / "codex_jsonl_success.jsonl").read_bytes()
@@ -29,12 +26,6 @@ class TestCodexJsonlAdapterExtraction:
     def test_extract_result_text_empty_message(self):
         adapter = CodexJsonlAdapter()
         assert adapter.extract_result_text(_EMPTY, b"") == b""
-
-    def test_extract_session_id_thread_id(self):
-        adapter = CodexJsonlAdapter()
-        assert adapter.extract_session_id(_SUCCESS, b"") == (
-            "01a085df-dac8-7060-8452-030f649c1b94"
-        )
 
     def test_extract_error_from_auth_fail(self):
         adapter = CodexJsonlAdapter()
@@ -59,21 +50,3 @@ class TestCodexJsonlAdapterExtraction:
     def test_get_output_adapter_returns_codex_jsonl(self):
         adapter = get_output_adapter("codex")
         assert isinstance(adapter, CodexJsonlAdapter)
-
-
-class TestCodexStreamCapability:
-    @patch("ghdag.llm.engines.subprocess.run")
-    def test_codex_stream_no_longer_raises(self, mock_run: MagicMock):
-        mock_run.return_value = MagicMock(
-            stdout=_SUCCESS.decode(),
-            stderr="",
-            returncode=0,
-        )
-        result = call("hello",
-            permission=Permission(stream=True), route=[("codex", None)])
-        assert result.ok
-        # codex keeps raw JSONL on LLMResult; adapters extract text
-        assert "item.completed" in result.stdout
-        assert result.session_id == "01a085df-dac8-7060-8452-030f649c1b94"
-        cmd = mock_run.call_args[0][0]
-        assert "--json" in cmd

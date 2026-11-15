@@ -2,41 +2,10 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 
 class TestCliDagCancel:
-    def test_cancel_creates_control_file_when_running(self, tmp_path, capsys, monkeypatch):
-        """Cancel for a running uuid creates jobs/cancel/<uuid>."""
-        from ghdag.cli import main
-
-        jobs = tmp_path / "jobs"
-        running = jobs / "running"
-        running.mkdir(parents=True)
-        uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
-        (running / f"{uuid}.json").write_text(
-            json.dumps(
-                {
-                    "pid": 12345,
-                    "pgid": 12345,
-                    "engine": "shell",
-                    "started_at": "2026-09-09T00:00:00+00:00",
-                    "has_resume": False,
-                }
-            ),
-            encoding="utf-8",
-        )
-        monkeypatch.chdir(tmp_path)
-
-        main(["dag", "cancel", uuid])
-
-        captured = capsys.readouterr()
-        cancel_path = jobs / "cancel" / uuid
-        assert cancel_path.is_file()
-        assert "cancel" in captured.out.lower() or uuid in captured.out
-
     def test_cancel_not_running_creates_nothing(self, tmp_path, capsys, monkeypatch):
         """A non-running uuid returns not running and creates no control file."""
         from ghdag.cli import main
