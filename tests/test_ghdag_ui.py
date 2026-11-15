@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import threading
-from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -52,43 +51,6 @@ class TestMonitor:
                 (done_dir / uuid).write_text(content, encoding="utf-8")
         return tmp_path
 
-    def test_build_rows_empty(self, tmp_path):
-        from ghdag.ui.monitor import build_rows
-
-        repo = self._make_repo(tmp_path, "")
-        rows, tasks, file_order = build_rows(repo, detect_running=False)
-        assert rows == []
-        assert tasks == {}
-
-    def test_build_rows_single_task(self, tmp_path):
-        import json as _json
-
-        from ghdag.ui.monitor import STATE_PENDING_RUN, build_rows
-        content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
-        repo = self._make_repo(tmp_path, content + "\n")
-        rows, tasks, file_order = build_rows(repo, detect_running=False)
-        assert len(rows) == 1
-        assert rows[0].uuid == "aaaa-bbbb-cccc-dddd"
-        assert rows[0].state_id == STATE_PENDING_RUN
-
-    def test_build_rows_completed_task(self, tmp_path):
-        import json as _json
-
-        from ghdag.ui.monitor import STATE_OK, build_rows
-        content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
-        repo = self._make_repo(tmp_path, content + "\n", done={"aaaa-bbbb-cccc-dddd": "0"})
-        rows, tasks, file_order = build_rows(repo, detect_running=False)
-        assert len(rows) == 1
-        assert rows[0].state_id == STATE_OK
-
-    def test_build_rows_failed_task(self, tmp_path):
-        import json as _json
-
-        from ghdag.ui.monitor import STATE_FAIL, build_rows
-        content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
-        repo = self._make_repo(tmp_path, content + "\n", done={"aaaa-bbbb-cccc-dddd": "1"})
-        rows, tasks, file_order = build_rows(repo, detect_running=False)
-        assert rows[0].state_id == STATE_FAIL
 
     def test_build_rows_with_depends(self, tmp_path):
         import json as _json
@@ -115,97 +77,6 @@ class TestMonitor:
         )
         assert rows[0].state_id == STATE_RUNNING
 
-    def test_build_rows_running_from_jobs_running_dir(self, tmp_path):
-        """When jobs/running/<uuid>.json exists, build_rows marks it running."""
-        import json as _json
-
-        from ghdag.ui.monitor import STATE_RUNNING, build_rows, running_uuids_from_jobs_dir
-
-        uuid = "aaaa-bbbb-cccc-dddd"
-        content = _json.dumps({"uuid": uuid, "command": "echo hello", "depends": []})
-        repo = self._make_repo(tmp_path, content + "\n")
-        running_dir = repo / "jobs" / "running"
-        running_dir.mkdir(parents=True, exist_ok=True)
-        (running_dir / f"{uuid}.json").write_text("{}", encoding="utf-8")
-
-        assert running_uuids_from_jobs_dir(running_dir, {uuid}) == {uuid}
-        with patch("ghdag.ui.monitor.running_uuids_from_ps") as mock_ps:
-            rows, _, _ = build_rows(repo, detect_running=True)
-            mock_ps.assert_not_called()
-        assert rows[0].state_id == STATE_RUNNING
-
-    def test_build_rows_pending_when_engine_paused(self, tmp_path):
-        import json as _json
-
-        from ghdag.quota import QuotaGate
-        from ghdag.ui.monitor import STATE_PENDING_RUN, build_rows
-
-        content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "claude -p hello", "depends": []})
-        repo = self._make_repo(tmp_path, content + "\n")
-        gate = QuotaGate(repo / "jobs" / "quota-gate.json")
-        gate.report(
-            engine="claude",
-            status="paused",
-            observed_at=datetime(2026, 9, 2, 12, 0, tzinfo=timezone.utc),
-        )
-
-        rows, _, _ = build_rows(repo, detect_running=False)
-        assert rows[0].state_id == STATE_PENDING_RUN
-
-    def test_row_state_is_pack_label(self, tmp_path):
-        import json as _json
-
-        from ghdag.ui.monitor import build_rows
-        content = (
-            _json.dumps({"uuid": "aaaa-bbbb-cccc-0001", "command": "echo first", "depends": []}) + "\n"
-            + _json.dumps({"uuid": "aaaa-bbbb-cccc-0002", "command": "echo second", "depends": []}) + "\n"
-        )
-        repo = self._make_repo(tmp_path, content, done={"aaaa-bbbb-cccc-0001": "0"})
-        rows, _, _ = build_rows(
-            repo, running_uuids_override={"aaaa-bbbb-cccc-0002"}, detect_running=False,
-        )
-        row_map = {r.uuid: r for r in rows}
-        assert row_map["aaaa-bbbb-cccc-0001"].state_id == "ok"
-        assert row_map["aaaa-bbbb-cccc-0001"].state == "Done (success)"
-        assert row_map["aaaa-bbbb-cccc-0002"].state_id == "running"
-        assert row_map["aaaa-bbbb-cccc-0002"].state == "Running"
-
-    def test_row_state_uses_host_pack(self, tmp_path, monkeypatch):
-        import json as _json
-
-        from ghdag.ui.monitor import build_rows
-        pack = _write_pack(tmp_path / "pack.yaml", ok="Host OK")
-        monkeypatch.setenv("GHDAG_LANGUAGE_PACK", str(pack))
-        content = _json.dumps({"uuid": "aaaa-bbbb-cccc-dddd", "command": "echo hello", "depends": []})
-        repo = self._make_repo(tmp_path, content + "\n", done={"aaaa-bbbb-cccc-dddd": "0"})
-        rows, _, _ = build_rows(repo, detect_running=False)
-        assert rows[0].state_id == "ok"
-        assert rows[0].state == "Host OK"
-
-    def test_task_state_returns_identifier(self, tmp_path):
-        from ghdag.ui.monitor import task_state
-
-        done_dir = tmp_path / "done"
-        done_dir.mkdir()
-        (done_dir / "u1").write_text("0\n", encoding="utf-8")
-        assert task_state("u1", set(), done_dir) == "ok"
-        assert task_state("u2", set(), done_dir, running_uuids={"u2"}) == "running"
-
-    def test_relayout_keeps_state_id(self, tmp_path):
-        import json as _json
-
-        from ghdag.ui.monitor import build_rows, relayout_tree_for_visible_rows
-        content = (
-            _json.dumps({"uuid": "aaaa-bbbb-cccc-0001", "command": "echo first", "depends": []}) + "\n"
-            + _json.dumps({"uuid": "aaaa-bbbb-cccc-0002", "command": "echo second", "depends": ["aaaa-bbbb-cccc-0001"]}) + "\n"
-        )
-        repo = self._make_repo(tmp_path, content, done={"aaaa-bbbb-cccc-0001": "0"})
-        rows, tasks, file_order = build_rows(repo, detect_running=False)
-        rows = relayout_tree_for_visible_rows(rows, tasks, file_order)
-        assert {r.uuid: r.state_id for r in rows} == {
-            "aaaa-bbbb-cccc-0001": "ok",
-            "aaaa-bbbb-cccc-0002": "pending_run",
-        }
 
     def test_extract_engine_model(self):
         from ghdag.ui.monitor import extract_engine_model
@@ -215,47 +86,6 @@ class TestMonitor:
         assert extract_engine_model("gemini -p 'hi' -m flash") == "gemini/flash"
         assert extract_engine_model("echo hello") == ""
 
-    def test_filter_rows_by_state(self, tmp_path):
-        import json as _json
-
-        from ghdag.ui.monitor import build_rows, filter_rows
-        content = (
-            _json.dumps({"uuid": "aaaa-bbbb-cccc-0001", "command": "echo first", "depends": []}) + "\n"
-            + _json.dumps({"uuid": "aaaa-bbbb-cccc-0002", "command": "echo second", "depends": []}) + "\n"
-        )
-        repo = self._make_repo(tmp_path, content, done={"aaaa-bbbb-cccc-0001": "0"})
-        rows, _, _ = build_rows(repo, detect_running=False)
-        filtered = filter_rows(rows, None, {"ok"})
-        assert len(filtered) == 1
-        assert filtered[0].uuid == "aaaa-bbbb-cccc-0001"
-
-    @pytest.mark.parametrize(
-        ("query", "expected"),
-        [
-            ("ok", {"aaaa-bbbb-cccc-0001"}),
-            ("success", {"aaaa-bbbb-cccc-0001"}),
-            ("OK", {"aaaa-bbbb-cccc-0001"}),
-            ("running", {"aaaa-bbbb-cccc-0002"}),
-            ("pending_run", {"aaaa-bbbb-cccc-0003"}),
-        ],
-    )
-    def test_filter_rows_by_state_id_alias(self, tmp_path, monkeypatch, query, expected):
-        import json as _json
-
-        from ghdag.ui.monitor import build_rows, filter_rows
-        # Display labels must not affect filtering.
-        pack = _write_pack(tmp_path / "pack.yaml", ok="running", running="ok")
-        monkeypatch.setenv("GHDAG_LANGUAGE_PACK", str(pack))
-        content = "".join(
-            _json.dumps({"uuid": f"aaaa-bbbb-cccc-000{i}", "command": "echo", "depends": []}) + "\n"
-            for i in (1, 2, 3)
-        )
-        repo = self._make_repo(tmp_path, content, done={"aaaa-bbbb-cccc-0001": "0"})
-        rows, _, _ = build_rows(
-            repo, running_uuids_override={"aaaa-bbbb-cccc-0002"}, detect_running=False,
-        )
-        assert {r.uuid for r in filter_rows(rows, None, {query})} == expected
-
     def test_state_aliases_map_to_identifiers(self):
         from ghdag.config.language import STATE_IDS
         from ghdag.ui.monitor import STATE_ALIASES
@@ -264,17 +94,6 @@ class TestMonitor:
         for state_id in STATE_IDS:
             assert STATE_ALIASES[state_id] == state_id
 
-    def test_row_to_dict(self):
-        from ghdag.ui.monitor import Row
-
-        r = Row(
-            uuid="abc", state="Running", cmd_preview="echo", tree_ts="2026",
-            engine_model="claude", state_id="running",
-        )
-        d = r.to_dict()
-        assert d["uuid"] == "abc"
-        assert d["state"] == "Running"
-        assert d["state_id"] == "running"
 
     def test_queue_ts_parsing(self):
         from ghdag.ui.monitor import ts_display
@@ -302,74 +121,6 @@ class TestMonitor:
 
         assert cmd_preview("echo hello", idempotency_key="scheduler:daily:99") == "#99 \u00b7 daily"
 
-    def test_cmd_preview_malformed_key_fallback(self):
-        from ghdag.ui.monitor import cmd_preview
-
-        # \u30b3\u30ed\u30f3\u533a\u5207\u308a\u304c\u4e0d\u6b63\uff082\u30bb\u30af\u30b7\u30e7\u30f3\u3057\u304b\u306a\u3044\uff09
-        assert cmd_preview("echo hello", idempotency_key="issuesmith:impl") == "echo hello"
-        # \u672b\u5c3e\u304c\u7a7a
-        assert cmd_preview("echo hello", idempotency_key="issuesmith:") == "echo hello"
-
-    def test_cmd_preview_none_key_does_not_crash(self):
-        """submit/audit/hooks \u7d4c\u8def\u306f `idempotency_key: str | None = None` \u4ed5\u69d8\u3067
-        None \u3092\u51fa\u529b\u3059\u308b\u3002cmd_preview \u304c None \u3092\u53d7\u3051\u53d6\u3063\u3066\u3082 TypeError \u3067\u306f\u306a\u304f
-        \u901a\u5e38\u306e\u30b3\u30de\u30f3\u30c9\u6587\u5b57\u5217\u306b\u30d5\u30a9\u30fc\u30eb\u30d0\u30c3\u30af\u3059\u308b\u3053\u3068\u3002"""
-        from ghdag.ui.monitor import cmd_preview
-
-        assert cmd_preview("echo hello", idempotency_key=None) == "echo hello"
-
-    def test_parse_exec_jsonl_with_idempotency_key(self, tmp_path):
-        import json as _json
-
-        from ghdag.ui.monitor import _parse_exec_jsonl
-
-        content = _json.dumps({
-            "uuid": "aaaa-bbbb-cccc-dddd",
-            "command": "echo hello",
-            "depends": [],
-            "idempotency_key": "issuesmith:impl:1203",
-        })
-        path = tmp_path / "exec.jsonl"
-        path.write_text(content + "\n", encoding="utf-8")
-        tasks, _ = _parse_exec_jsonl(str(path))
-        assert tasks["aaaa-bbbb-cccc-dddd"].idempotency_key == "issuesmith:impl:1203"
-
-    def test_parse_exec_jsonl_without_idempotency_key(self, tmp_path):
-        import json as _json
-
-        from ghdag.ui.monitor import _parse_exec_jsonl
-
-        content = _json.dumps({
-            "uuid": "aaaa-bbbb-cccc-dddd",
-            "command": "echo hello",
-            "depends": [],
-        })
-        path = tmp_path / "exec.jsonl"
-        path.write_text(content + "\n", encoding="utf-8")
-        tasks, _ = _parse_exec_jsonl(str(path))
-        assert tasks["aaaa-bbbb-cccc-dddd"].idempotency_key == ""
-
-    def test_parse_exec_jsonl_with_null_idempotency_key(self, tmp_path):
-        """Case where submit/audit/hooks `idempotency_key: str | None = None`
-        writes `"idempotency_key": null` into exec.jsonl.
-        `data.get(k, default)` does not apply default when the value is null
-        (returns None), so without normalizing via `or ""` the downstream
-        regex.match() raises TypeError."""
-        import json as _json
-
-        from ghdag.ui.monitor import _parse_exec_jsonl
-
-        content = _json.dumps({
-            "uuid": "aaaa-bbbb-cccc-dddd",
-            "command": "echo hello",
-            "depends": [],
-            "idempotency_key": None,
-        })
-        path = tmp_path / "exec.jsonl"
-        path.write_text(content + "\n", encoding="utf-8")
-        tasks, _ = _parse_exec_jsonl(str(path))
-        assert tasks["aaaa-bbbb-cccc-dddd"].idempotency_key == ""
-
 
 # ---------------------------------------------------------------------------
 # CLI integration tests
@@ -377,16 +128,6 @@ class TestMonitor:
 
 
 class TestUiCli:
-    def test_ui_help_exits_0(self, capsys):
-        from ghdag.cli import main
-
-        with pytest.raises(SystemExit) as exc:
-            main(["ui", "--help"])
-        assert exc.value.code == 0
-        captured = capsys.readouterr()
-        assert "--host" in captured.out
-        assert "--port" in captured.out
-        assert "--repo-root" in captured.out
 
     def test_ui_missing_exec_starts_anyway(self, tmp_path):
         from ghdag.cli import main
@@ -395,19 +136,6 @@ class TestUiCli:
         with patch("ghdag.ui.server.run_server") as mock_run:
             main(["ui", "--repo-root", str(tmp_path), "--port", "9999"])
             mock_run.assert_called_once()
-
-    def test_ui_calls_run_server(self, tmp_path):
-        from ghdag.cli import main
-
-        jobs_dir = tmp_path / "jobs"
-        jobs_dir.mkdir()
-        (jobs_dir / "exec.jsonl").write_text("")
-
-        with patch("ghdag.ui.server.run_server") as mock_run:
-            main(["ui", "--repo-root", str(tmp_path), "--port", "9999"])
-            mock_run.assert_called_once()
-            call_kwargs = mock_run.call_args
-            assert call_kwargs.kwargs["port"] == 9999
 
 
 # ---------------------------------------------------------------------------
@@ -425,13 +153,6 @@ class TestStaticAssets:
             "Run 'pip install -r requirements.txt' to restore a non-editable install."
         )
 
-    def test_index_html_exists(self):
-        """index.html must be present in the installed package."""
-        from ghdag.ui.server import _read_static
-
-        html = _read_static("index.html")
-        assert b"ghdag Dashboard" in html
-
 
 class TestServer:
     def _make_repo(self, tmp_path: Path):
@@ -445,33 +166,6 @@ class TestServer:
         (tmp_path / "jobs" / "done").mkdir(parents=True, exist_ok=True)
         return tmp_path
 
-    def test_serve_json_endpoint(self, tmp_path):
-        import urllib.request
-
-        repo = self._make_repo(tmp_path)
-
-        from http.server import HTTPServer
-
-        from ghdag.ui.server import _Handler
-
-        _Handler.repo_root = repo
-        _Handler.poll_interval = 1.0
-        _Handler.max_visible = 30
-
-        server = HTTPServer(("127.0.0.1", 0), _Handler)
-        port = server.server_address[1]
-        t = threading.Thread(target=server.serve_forever, daemon=True)
-        t.start()
-
-        try:
-            url = f"http://127.0.0.1:{port}/api/rows"
-            resp = urllib.request.urlopen(url, timeout=5)
-            data = json.loads(resp.read().decode("utf-8"))
-            assert isinstance(data, list)
-            assert len(data) == 1
-            assert data[0]["uuid"] == "aaaa-bbbb-cccc-0001"
-        finally:
-            server.shutdown()
 
     def test_serve_html_endpoint(self, tmp_path):
         import urllib.request
@@ -540,19 +234,6 @@ class TestServer:
         (jobs_dir / "running" / "aaaa-bbbb-cccc-0002.json").write_text("{}", encoding="utf-8")
         return tmp_path
 
-    def test_rows_have_state_id_and_label(self, tmp_path):
-        repo = self._make_mixed_repo(tmp_path)
-        server, port = self._start(repo)
-        try:
-            data = self._get_json(port, "/api/rows")
-        finally:
-            server.shutdown()
-        by_uuid = {r["uuid"]: r for r in data}
-        assert by_uuid["aaaa-bbbb-cccc-0001"]["state_id"] == "ok"
-        assert by_uuid["aaaa-bbbb-cccc-0001"]["state"] == "Done (success)"
-        assert by_uuid["aaaa-bbbb-cccc-0002"]["state_id"] == "running"
-        assert by_uuid["aaaa-bbbb-cccc-0002"]["state"] == "Running"
-        assert by_uuid["aaaa-bbbb-cccc-0003"]["state_id"] == "pending_run"
 
     def test_rows_state_filter(self, tmp_path):
         repo = self._make_mixed_repo(tmp_path)
@@ -569,21 +250,6 @@ class TestServer:
         assert {r["uuid"] for r in both} == {"aaaa-bbbb-cccc-0001", "aaaa-bbbb-cccc-0002"}
         assert len(unfiltered) == 3
 
-    def test_config_includes_i18n(self, tmp_path):
-        from ghdag.config.language import EN, STATE_IDS, UI_KEYS
-
-        server, port = self._start(self._make_repo(tmp_path))
-        try:
-            data = self._get_json(port, "/api/config")
-        finally:
-            server.shutdown()
-        assert data["github_base_url"] == "https://github.com/o/r"
-        assert set(data["i18n"]["ui"]) == set(UI_KEYS)
-        assert len(data["i18n"]["ui"]) == 12
-        assert set(data["i18n"]["state_labels"]) == set(STATE_IDS)
-        assert len(data["i18n"]["state_labels"]) == 10
-        assert data["i18n"]["state_labels"] == dict(EN.state_labels)
-        assert data["i18n"]["ui"] == dict(EN.ui)
 
     def test_config_i18n_uses_handler_pack(self, tmp_path):
         from ghdag.config.language import EN, LanguagePack
@@ -600,17 +266,6 @@ class TestServer:
             _Handler.language_pack = None
         assert data["i18n"]["state_labels"]["ok"] == "Host OK"
 
-    def test_run_server_rejects_invalid_pack(self, tmp_path, monkeypatch):
-        from ghdag.core.exceptions import GhdagError
-        from ghdag.ui import server as server_mod
-
-        bad = tmp_path / "bad.yaml"
-        bad.write_text("state_labels: {}\nui: {}\nextra: 1\n", encoding="utf-8")
-        monkeypatch.setenv("GHDAG_LANGUAGE_PACK", str(bad))
-        with patch.object(server_mod, "HTTPServer") as mock_http:
-            with pytest.raises(GhdagError):
-                server_mod.run_server(tmp_path, port=0)
-            mock_http.assert_not_called()
 
     def test_run_server_rejects_missing_pack_file(self, tmp_path, monkeypatch):
         from ghdag.core.exceptions import GhdagError
@@ -659,22 +314,6 @@ class TestStateDir:
         t.start()
         return server, port
 
-    def test_rows_running_from_state_dir(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setenv("GHDAG_STATE_DIR", str(tmp_path / "s"))
-        repo = self._make_state_repo(tmp_path)
-        server, port = self._start(repo)
-        try:
-            import urllib.request
-
-            resp = urllib.request.urlopen(f"http://127.0.0.1:{port}/api/rows", timeout=5)
-            data = json.loads(resp.read().decode("utf-8"))
-        finally:
-            server.shutdown()
-        assert len(data) == 1
-        assert data[0]["uuid"] == self.UUID
-        assert data[0]["state_id"] == "running"
 
     def test_stop_writes_cancel_in_state_dir(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,

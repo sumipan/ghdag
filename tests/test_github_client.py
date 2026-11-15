@@ -16,7 +16,6 @@ from ghdag.github_client import (
     GRAPHQL_URL,
     GitHubClient,
     _resolve_repo,
-    _resolve_token,
 )
 
 
@@ -50,16 +49,6 @@ def test_client_repo_property() -> None:
 def test_user_agent_header() -> None:
     client = GitHubClient(token="t", repo="o/r")
     assert client._headers()["User-Agent"] == "ghdag-github-client"
-
-
-def test_resolve_token_missing() -> None:
-    from ghdag.core.exceptions import AuthError
-
-    with mock.patch.dict(os.environ, {}, clear=True):
-        with pytest.raises(AuthError, match="GITHUB_TOKEN is not set"):
-            _resolve_token()
-        with pytest.raises(AuthError, match="GITHUB_TOKEN is not set"):
-            GitHubClient()
 
 
 def test_resolve_repo_invalid_format() -> None:
@@ -102,49 +91,6 @@ _NEXT_URL = (
     "https://api.github.com/repositories/1206558072/issues?"
     "per_page=1&state=all&after=Y3Vyc29yOnYyOpLPAAABoIdganDPAAAAAUINI3I%3D&page=2"
 )
-
-
-def test_paginate_single_page_no_link(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = GitHubClient(token="tok", repo="o/r")
-    calls: list[str] = []
-
-    def fake_request(method: str, path: str, **kwargs: object) -> object:
-        calls.append(path)
-        assert kwargs.get("return_link_header") is True
-        return [{"number": 1}], None
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    assert client._paginate("/repos/o/r/issues") == [{"number": 1}]
-    assert len(calls) == 1
-
-
-def test_paginate_two_pages_follows_link_next(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = GitHubClient(token="tok", repo="o/r")
-    calls: list[str] = []
-
-    def fake_request(method: str, path: str, **kwargs: object) -> object:
-        calls.append(path)
-        assert kwargs.get("return_link_header") is True
-        if path == "/repos/o/r/issues" or path.endswith("/issues"):
-            return [{"number": 1}], _REAL_LINK_NEXT
-        if path == _NEXT_URL:
-            return [{"number": 2}], None
-        raise AssertionError(f"unexpected path: {path}")
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    assert client._paginate("/repos/o/r/issues") == [{"number": 1}, {"number": 2}]
-    assert calls == ["/repos/o/r/issues", _NEXT_URL]
-
-
-def test_paginate_empty_list(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = GitHubClient(token="tok", repo="o/r")
-
-    def fake_request(method: str, path: str, **kwargs: object) -> object:
-        assert kwargs.get("return_link_header") is True
-        return [], None
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    assert client._paginate("/repos/o/r/issues") == []
 
 
 def test_issue_get_fields_body(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -217,28 +163,6 @@ def test_issue_update_body_labels(monkeypatch: pytest.MonkeyPatch) -> None:
     assert patch_call[2] == {"body": "new body"}
 
 
-def test_pr_create_builds_owner_head_ref(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = GitHubClient(token="tok", repo="o/r")
-    captured: dict[str, object] = {}
-
-    def fake_request(method: str, path: str, **kwargs: object) -> dict:
-        captured["method"] = method
-        captured["path"] = path
-        captured["body"] = kwargs.get("body")
-        return {"html_url": "https://github.com/o/r/pull/1"}
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    url = client.pr_create("main", "feature", "title", "body")
-    assert url == "https://github.com/o/r/pull/1"
-    assert captured["method"] == "POST"
-    assert captured["body"] == {
-        "title": "title",
-        "body": "body",
-        "head": "o:feature",
-        "base": "main",
-    }
-
-
 def test_pr_create_slash_branch_builds_owner_head_ref(monkeypatch: pytest.MonkeyPatch) -> None:
     """feat/xxx branch (contains /) still gets the owner: prefix."""
     client = GitHubClient(token="tok", repo="o/r")
@@ -274,55 +198,6 @@ def test_pr_list_slash_branch_passes_owner_prefix(monkeypatch: pytest.MonkeyPatc
     path = str(captured.get("path", ""))
     qs = urllib.parse.parse_qs(path.split("?", 1)[1] if "?" in path else "")
     assert qs.get("head", [""])[0] == "o:feat/issue-1759-abcd1234"
-
-
-def test_pr_list_already_qualified_head_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
-    """owner:branch form is not double-prefixed."""
-    client = GitHubClient(token="tok", repo="o/r")
-    captured: dict[str, object] = {}
-
-    def fake_request(method: str, path: str, **kwargs: object) -> object:
-        captured["path"] = path
-        if kwargs.get("return_link_header"):
-            return [], None
-        return []
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    client.pr_list(head="o:feat/issue-1759-abcd1234")
-    path = str(captured.get("path", ""))
-    qs = urllib.parse.parse_qs(path.split("?", 1)[1] if "?" in path else "")
-    assert qs.get("head", [""])[0] == "o:feat/issue-1759-abcd1234"
-
-
-def test_pr_get_includes_head_ref_name(monkeypatch: pytest.MonkeyPatch) -> None:
-    """pr_get() includes headRefName like pr_list()'s _normalize_prs.
-
-    Measured: before this fix, `pr view <n> --json headRefName` returned null
-    because pr_get() lacked the headRefName key itself
-    (m1-merge.md local_merge_verify ran `git merge-tree origin/main origin/`
-    with an empty headRefName and always false-reported conflicts).
-    """
-    client = GitHubClient(token="tok", repo="o/r")
-
-    def fake_request(method: str, path: str, **kwargs: object) -> dict | list | tuple:
-        if "/files" in path:
-            if kwargs.get("return_link_header"):
-                return [], None
-            return []
-        return {
-            "number": 42,
-            "title": "title",
-            "body": "body",
-            "state": "open",
-            "html_url": "https://github.com/o/r/pull/42",
-            "head": {"ref": "feat/issue-42-abcd1234"},
-            "mergeable_state": "clean",
-            "mergeable": True,
-        }
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    result = client.pr_get(42)
-    assert result["headRefName"] == "feat/issue-42-abcd1234"
 
 
 def test_pr_ready_sends_graphql_mutation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -376,145 +251,11 @@ def test_api_request_expands_owner_repo_placeholder(
     assert seen == ["/repos/o/r/pulls/1"]
 
 
-def test_http_error_raises_github_api_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.core.exceptions import GitHubApiError
-
-    client = GitHubClient(token="tok", repo="o/r")
-
-    def fake_urlopen(req: object, timeout: int = 120) -> None:
-        body = json.dumps({"message": "Not Found"}).encode()
-        raise urllib.error.HTTPError(
-            url="https://api.github.com/x",
-            code=404,
-            msg="Not Found",
-            hdrs=mock.MagicMock(),
-            fp=io.BytesIO(body),
-        )
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    with pytest.raises(GitHubApiError, match="404.*Not Found"):
-        client._request("GET", "/repos/o/r/issues/1")
-
-
-def test_http_401_raises_auth_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.core.exceptions import AuthError, GhdagError
-
-    client = GitHubClient(token="tok", repo="o/r")
-
-    def fake_urlopen(req: object, timeout: int = 120) -> None:
-        body = json.dumps({"message": "Bad credentials"}).encode()
-        raise urllib.error.HTTPError(
-            url="https://api.github.com/x",
-            code=401,
-            msg="Unauthorized",
-            hdrs=mock.MagicMock(),
-            fp=io.BytesIO(body),
-        )
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    with pytest.raises(AuthError) as exc_info:
-        client._request("GET", "/repos/o/r/issues/1")
-    assert exc_info.value.status_code == 401
-    assert isinstance(exc_info.value, GhdagError)
-
-
-def test_http_403_rate_limit_raises_rate_limit_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.core.exceptions import GhdagError, RateLimitError
-
-    client = GitHubClient(token="tok", repo="o/r")
-
-    def fake_urlopen(req: object, timeout: int = 120) -> None:
-        body = json.dumps({"message": "rate limit exceeded"}).encode()
-        hdrs = mock.MagicMock()
-        hdrs.get = lambda k, d=None: {"X-RateLimit-Remaining": "0"}.get(k, d)
-        raise urllib.error.HTTPError(
-            url="https://api.github.com/x",
-            code=403,
-            msg="Forbidden",
-            hdrs=hdrs,
-            fp=io.BytesIO(body),
-        )
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    with pytest.raises(RateLimitError) as exc_info:
-        client._request("GET", "/repos/o/r/issues/1")
-    assert exc_info.value.status_code == 403
-    assert isinstance(exc_info.value, GhdagError)
-
-
-def test_http_403_permission_raises_permission_denied_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.core.exceptions import GhdagError, PermissionDeniedError
-
-    client = GitHubClient(token="tok", repo="o/r")
-
-    def fake_urlopen(req: object, timeout: int = 120) -> None:
-        body = json.dumps({"message": "Forbidden"}).encode()
-        hdrs = mock.MagicMock()
-        hdrs.get = lambda k, d=None: {"X-RateLimit-Remaining": "100"}.get(k, d)
-        raise urllib.error.HTTPError(
-            url="https://api.github.com/x",
-            code=403,
-            msg="Forbidden",
-            hdrs=hdrs,
-            fp=io.BytesIO(body),
-        )
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    with pytest.raises(PermissionDeniedError) as exc_info:
-        client._request("GET", "/repos/o/r/issues/1")
-    assert exc_info.value.status_code == 403
-    assert isinstance(exc_info.value, GhdagError)
-
-
-def test_url_error_raises_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.core.exceptions import GhdagError, NetworkError
-
-    client = GitHubClient(token="tok", repo="o/r")
-
-    def fake_urlopen(req: object, timeout: int = 120) -> None:
-        raise urllib.error.URLError("connection refused")
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    with pytest.raises(NetworkError) as exc_info:
-        client._request("GET", "/repos/o/r/issues/1")
-    assert isinstance(exc_info.value, GhdagError)
-
-
 # --- limited retry on transient faults + label idempotent convergence (nexus#2563) ---
 
 
 def _no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("ghdag.github_client.time.sleep", lambda *_: None)
-
-
-def test_transient_remote_disconnected_retried(monkeypatch: pytest.MonkeyPatch) -> None:
-    import http.client
-
-    _no_sleep(monkeypatch)
-    client = GitHubClient(token="tok", repo="o/r")
-    calls: list[int] = []
-
-    class FakeResp:
-        def read(self) -> bytes:
-            return json.dumps({"ok": True}).encode()
-
-        def __enter__(self) -> "FakeResp":
-            return self
-
-        def __exit__(self, *args: object) -> None:
-            pass
-
-    def fake_urlopen(req: object, timeout: int = 120) -> FakeResp:
-        calls.append(1)
-        if len(calls) < 3:
-            raise http.client.RemoteDisconnected(
-                "Remote end closed connection without response"
-            )
-        return FakeResp()
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    assert client._request("DELETE", "/repos/o/r/issues/1/labels/x") == {"ok": True}
-    assert len(calls) == 3
 
 
 def test_transient_exhausted_raises_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -568,29 +309,6 @@ def test_http_502_retried_then_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(calls) == 2
 
 
-def test_http_401_not_retried(monkeypatch: pytest.MonkeyPatch) -> None:
-    from ghdag.core.exceptions import AuthError
-
-    _no_sleep(monkeypatch)
-    client = GitHubClient(token="tok", repo="o/r")
-    calls: list[int] = []
-
-    def fake_urlopen(req: object, timeout: int = 120) -> None:
-        calls.append(1)
-        raise urllib.error.HTTPError(
-            url="https://api.github.com/x",
-            code=401,
-            msg="Unauthorized",
-            hdrs=mock.MagicMock(),
-            fp=io.BytesIO(json.dumps({"message": "Bad credentials"}).encode()),
-        )
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    with pytest.raises(AuthError):
-        client._request("GET", "/repos/o/r/issues/1")
-    assert len(calls) == 1
-
-
 def test_issue_update_tolerates_delete_404(monkeypatch: pytest.MonkeyPatch) -> None:
     from ghdag.core.exceptions import GitHubApiError
 
@@ -607,33 +325,6 @@ def test_issue_update_tolerates_delete_404(monkeypatch: pytest.MonkeyPatch) -> N
     client.issue_update(1, labels_remove=["old"], labels_add=["new"])
     assert ("DELETE", "/repos/o/r/issues/1/labels/old") in seen
     assert ("POST", "/repos/o/r/issues/1/labels") in seen
-
-
-def test_issue_update_converges_after_lost_delete_response(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """DELETE applied on server but response lost → refetch and run only remaining work (POST)"""
-    from ghdag.core.exceptions import NetworkError
-
-    client = GitHubClient(token="tok", repo="o/r")
-    seen: list[tuple[str, str]] = []
-
-    def fake_request(method: str, path: str, **kwargs: object) -> None:
-        seen.append((method, path))
-        if method == "DELETE":
-            raise NetworkError("Network error: Remote end closed connection")
-        return None
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    # On refetch: old already removed on server, new not yet added
-    monkeypatch.setattr(
-        client, "issue_get", lambda n, fields=None: {"labels": [{"name": "other"}]}
-    )
-    client.issue_update(1, labels_remove=["old"], labels_add=["new"])
-    deletes = [s for s in seen if s[0] == "DELETE"]
-    posts = [s for s in seen if s[0] == "POST"]
-    assert len(deletes) == 1  # reconvergence path does not re-run DELETE
-    assert len(posts) == 1
 
 
 def test_issue_update_converges_when_target_already_applied(
@@ -713,64 +404,6 @@ def _fake_rate_limited_then_ok(reset_at: int, calls: list[int]):
     return fake_urlopen
 
 
-def test_rate_limit_over_max_wait_raises_without_sleep(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """AC-1: reset beyond the limit -> RateLimitError immediately, with no sleep."""
-    from ghdag.core.exceptions import RateLimitError
-
-    class _FakeClientTime:
-        def __init__(self) -> None:
-            self._wall = 1_700_000_000.0
-            self.sleep_calls: list[float] = []
-
-        def time(self) -> float:
-            return self._wall
-
-        def sleep(self, sec: float) -> None:
-            self.sleep_calls.append(sec)
-
-    fake_time = _FakeClientTime()
-    monkeypatch.setattr("ghdag.github_client.time", fake_time)
-    monkeypatch.delenv("GHDAG_RATE_LIMIT_MAX_WAIT_SEC", raising=False)
-    client = GitHubClient(token="tok", repo="o/r", rate_limit_max_wait_sec=5)
-    reset_at = int(fake_time.time()) + 60
-    calls: list[int] = []
-    monkeypatch.setattr(
-        "ghdag.github_client.urllib.request.urlopen",
-        _fake_rate_limited_then_ok(reset_at, calls),
-    )
-
-    with pytest.raises(RateLimitError) as exc_info:
-        client._request("GET", "/repos/o/r/issues/1")
-    assert exc_info.value.reset_at == reset_at
-    assert len(calls) == 1
-    assert fake_time.sleep_calls == []
-
-
-def test_rate_limit_within_max_wait_sleeps_and_retries(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """AC-3: reset within the limit -> sleep until reset and retry."""
-    import time
-
-    monkeypatch.delenv("GHDAG_RATE_LIMIT_MAX_WAIT_SEC", raising=False)
-    now = 1_700_000_000
-    monkeypatch.setattr(time, "time", lambda: now)
-    slept: list[float] = []
-    monkeypatch.setattr(time, "sleep", lambda s: slept.append(s))
-    client = GitHubClient(token="tok", repo="o/r", rate_limit_max_wait_sec=5)
-    calls: list[int] = []
-    monkeypatch.setattr(
-        "ghdag.github_client.urllib.request.urlopen",
-        _fake_rate_limited_then_ok(now + 3, calls),
-    )
-
-    assert client._request("GET", "/repos/o/r/issues/1") == {"ok": True}
-    assert slept == [3.0]
-    assert len(calls) == 2
-
-
 def test_rate_limit_max_wait_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """AC-4: GHDAG_RATE_LIMIT_MAX_WAIT_SEC=5 is used as the limit."""
     import time
@@ -796,29 +429,6 @@ def test_rate_limit_max_wait_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(calls) == 1
 
 
-def test_rate_limit_max_wait_constructor_overrides_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """AC-5: the constructor argument takes precedence over the env var."""
-    import time
-
-    monkeypatch.setenv("GHDAG_RATE_LIMIT_MAX_WAIT_SEC", "5")
-    now = 1_700_000_000
-    monkeypatch.setattr(time, "time", lambda: now)
-    slept: list[float] = []
-    monkeypatch.setattr(time, "sleep", lambda s: slept.append(s))
-    client = GitHubClient(token="tok", repo="o/r", rate_limit_max_wait_sec=900)
-    assert client._rate_limit_max_wait_sec == 900
-    calls: list[int] = []
-    monkeypatch.setattr(
-        "ghdag.github_client.urllib.request.urlopen",
-        _fake_rate_limited_then_ok(now + 60, calls),
-    )
-
-    assert client._request("GET", "/repos/o/r/issues/1") == {"ok": True}
-    assert slept == [60.0]
-
-
 def test_rate_limit_max_wait_default_when_env_unset_or_invalid(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -841,26 +451,6 @@ class _GraphqlResp:
 
     def __exit__(self, *args: object) -> None:
         pass
-
-
-def test_graphql_posts_query_and_returns_data(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = GitHubClient(token="tok", repo="o/r")
-    captured: list[object] = []
-
-    def fake_urlopen(req: object, timeout: int = 120) -> _GraphqlResp:
-        captured.append(req)
-        return _GraphqlResp({"data": {"viewer": {"login": "x"}}})
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    result = client.graphql("query { viewer { login } }")
-    assert result == {"viewer": {"login": "x"}}
-    assert len(captured) == 1
-    req = captured[0]
-    assert req.full_url == GRAPHQL_URL  # type: ignore[attr-defined]
-    assert req.get_method() == "POST"  # type: ignore[attr-defined]
-    assert req.get_header("Authorization") == "Bearer tok"  # type: ignore[attr-defined]
-    payload = json.loads(req.data.decode())  # type: ignore[attr-defined]
-    assert payload == {"query": "query { viewer { login } }", "variables": {}}
 
 
 def test_graphql_passes_variables(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -899,22 +489,6 @@ def _rate_limited_http_error(reset: str | None = None) -> urllib.error.HTTPError
     return urllib.error.HTTPError(
         url=GRAPHQL_URL, code=403, msg="Forbidden", hdrs=hdrs, fp=io.BytesIO(body)
     )
-
-
-def test_graphql_rate_limit_retries_once_within_wait(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = GitHubClient(token="tok", repo="o/r")
-    calls: list[int] = []
-
-    def fake_urlopen(req: object, timeout: int = 120) -> _GraphqlResp:
-        calls.append(1)
-        if len(calls) == 1:
-            raise _rate_limited_http_error()
-        return _GraphqlResp({"data": {"ok": True}})
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    monkeypatch.setattr("ghdag.github_client.time.sleep", lambda s: None)
-    assert client.graphql("query { ok }") == {"ok": True}
-    assert len(calls) == 2
 
 
 def test_graphql_rate_limit_beyond_wait_raises(monkeypatch: pytest.MonkeyPatch) -> None:

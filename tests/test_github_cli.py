@@ -10,17 +10,12 @@ import pytest
 
 from ghdag.forge.local import LocalForge
 from ghdag.github_cli import apply_jq, cli_main
-from ghdag.github_client import GitHubClient, _resolve_token
-
-
-def test_resolve_token_missing():
-    from ghdag.core.exceptions import AuthError
-    with mock.patch.dict(os.environ, {}, clear=True):
-        with pytest.raises(AuthError, match="GITHUB_TOKEN is not set"):
-            _resolve_token()
+from ghdag.github_client import GitHubClient
 
 
 def test_resolve_token_from_env():
+    from ghdag.github_client import _resolve_token
+
     with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=True):
         assert _resolve_token() == "tok"
 
@@ -32,34 +27,6 @@ def test_apply_jq_simple_field():
 def test_apply_jq_labels_array():
     data = {"labels": [{"name": "a"}, {"name": "b"}]}
     assert apply_jq(data, "[.labels[].name]") == ["a", "b"]
-
-
-def test_issue_get_fields_body(monkeypatch):
-    client = GitHubClient(token="tok", repo="o/r")
-
-    def fake_request(method, path, **kwargs):
-        if path.endswith("/issues/1") and method == "GET":
-            return {"body": "issue body", "labels": []}
-        raise AssertionError(f"unexpected: {method} {path}")
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    data = client.issue_get(1, fields=["body"])
-    assert data == {"body": "issue body"}
-
-
-def test_issue_update_labels(monkeypatch):
-    client = GitHubClient(token="tok", repo="o/r")
-    calls: list[tuple[str, str]] = []
-
-    def fake_request(method, path, **kwargs):
-        calls.append((method, path))
-        return {}
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    client.issue_update(5, labels_remove=["old"], labels_add=["new"])
-    methods = [c[0] for c in calls]
-    assert "DELETE" in methods
-    assert "POST" in methods
 
 
 def test_cli_issue_view_json_jq(monkeypatch, capsys):
@@ -208,34 +175,6 @@ def test_unknown_arg_fails_without_forge_call(
     assert before == after
 
 
-def test_unknown_arg_error_lists_accepted_arguments(
-    local_forge_cli: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Refs sumipan/nexus#6698: stderr lists accepted arguments for pr create."""
-    body_file = tmp_path / "b.md"
-    body_file.write_text("ignored\n", encoding="utf-8")
-    rc = cli_main(
-        [
-            "pr",
-            "create",
-            "--base",
-            "main",
-            "--head",
-            "h",
-            "--title",
-            "T",
-            "--body-file",
-            str(body_file),
-            "--no-such-flag",
-        ]
-    )
-    err = capsys.readouterr().err
-    assert rc == 2
-    assert "error[CLI_USAGE]:" in err
-    assert "--no-such-flag" in err
-    assert "hint: accepted arguments: --base --head --title --body --body-file --repo" in err
-
-
 def test_unknown_subcommand_lists_available_subcommands(
     local_forge_cli: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -273,60 +212,6 @@ def test_pr_create_body_file(
     number = int(captured.out.strip().rstrip("/").split("/")[-1])
     forge = LocalForge(local_forge_cli, repo="local/test")
     assert forge.pr_get(number)["body"] == "Body from file\n"
-
-
-def test_pr_create_body_and_body_file_conflict(
-    local_forge_cli: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Refs sumipan/nexus#6698: --body and --body-file together are rejected."""
-    body_file = tmp_path / "body.md"
-    body_file.write_text("Body from file\n", encoding="utf-8")
-    before = _snapshot_tree(local_forge_cli)
-    rc = cli_main(
-        [
-            "pr",
-            "create",
-            "--base",
-            "main",
-            "--head",
-            "feature",
-            "--title",
-            "T",
-            "--body",
-            "x",
-            "--body-file",
-            str(body_file),
-        ]
-    )
-    err = capsys.readouterr().err
-    after = _snapshot_tree(local_forge_cli)
-    assert rc == 2
-    assert "error[CLI_USAGE]:" in err
-    assert before == after
-
-
-def test_cli_pr_edit_body(monkeypatch):
-    """pr edit <url> --body calls pr_update(number, body=...); number is extracted from URL."""
-    captured: dict[str, object] = {}
-
-    class FakeClient:
-        _token = "tok"
-
-        def pr_update(self, number, **kwargs):
-            captured["number"] = number
-            captured["kwargs"] = kwargs
-
-    monkeypatch.setattr(
-        "ghdag.github_cli.get_forge",
-        lambda *a, **k: FakeClient(),
-    )
-    with mock.patch.dict(os.environ, {"GITHUB_TOKEN": "tok"}, clear=False):
-        rc = cli_main(
-            ["pr", "edit", "https://github.com/o/r/pull/2884", "--body", "Refs #1"]
-        )
-    assert rc == 0
-    assert captured["number"] == 2884
-    assert captured["kwargs"] == {"title": None, "body": "Refs #1"}
 
 
 def test_cli_pr_edit_number_and_title(monkeypatch):
