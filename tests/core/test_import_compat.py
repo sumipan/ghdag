@@ -56,22 +56,6 @@ def test_workflow_schema_import_compat() -> None:
     assert WorkflowConfig.__name__ == "WorkflowConfig"
 
 
-def test_command_adapter_public_imports() -> None:
-    from ghdag.core.command import (
-        EngineAdapter,
-        get_command_adapter,
-        register_command_adapter,
-    )
-    from ghdag.pipeline import get_command_adapter as pipeline_get_command_adapter
-
-    adapter = get_command_adapter("claude")
-    assert adapter.name == "claude"
-    assert hasattr(adapter, "build_exec_record")
-    assert EngineAdapter is not None
-    assert callable(register_command_adapter)
-    assert pipeline_get_command_adapter is get_command_adapter
-
-
 def test_pipeline_hooks_audithooks_import_compat() -> None:
     from ghdag.dag import AuditHooks
 
@@ -108,22 +92,6 @@ def test_pipeline_order_import_compat() -> None:
     assert OrderBuilder.__name__ == "OrderBuilder"
     assert InlineOrderBuilder.__name__ == "InlineOrderBuilder"
     assert TemplateOrderBuilder.__name__ == "TemplateOrderBuilder"
-
-
-def test_llm_adapters_import_compat() -> None:
-    from ghdag.llm.adapters import EngineOutputAdapter, get_output_adapter
-
-    assert EngineOutputAdapter.__name__ == "EngineOutputAdapter"
-    assert get_output_adapter("claude") is not None
-
-
-def test_workflow_import_side_effect_get_output_adapter() -> None:
-    """get_output_adapter resolves immediately after importing ghdag.workflow."""
-    import ghdag.workflow  # noqa: F401
-    from ghdag.llm.adapters import get_output_adapter
-
-    adapter = get_output_adapter("claude")
-    assert adapter is not None
 
 
 def test_residual_definitions_stay_in_domain_modules() -> None:

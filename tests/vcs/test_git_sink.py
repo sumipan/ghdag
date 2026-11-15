@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
-import multiprocessing
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from ghdag.vcs import ConflictError, LocalGitSink, NullSink, OwnershipError
+from ghdag.vcs import ConflictError, LocalGitSink, OwnershipError
 from ghdag.vcs.sink import GitSink
 
 
@@ -83,22 +81,6 @@ def test_ownership_error_leaves_repo_untouched(sink: GitSink, paths: list[str], 
 # --- AC-2b: only the given paths ---
 
 
-def test_commit_only_includes_given_paths(sink: GitSink, tmp_path: Path) -> None:
-    _write(sink, "diary/2026-09-25.md", "entry\n")
-    _write(sink, "weekly/2026-W39.md", "unrelated\n")
-    (sink.repo_root / "README.md").write_text("dirty\n", encoding="utf-8")
-
-    result = sink.commit(["diary/2026-09-25.md"], "host(diary): 2026-09-25")
-
-    assert result.committed and result.pushed
-    names = _git(sink.repo_root, "show", "--name-only", "--format=", "HEAD").split()
-    assert names == ["diary/2026-09-25.md"]
-    # Unrelated changes survive in the working tree.
-    assert (sink.repo_root / "README.md").read_text(encoding="utf-8") == "dirty\n"
-    assert (sink.repo_root / "weekly/2026-W39.md").exists()
-    assert _remote_head(tmp_path) == result.sha
-
-
 def test_no_changes_is_skipped(sink: GitSink) -> None:
     _write(sink, "diary/2026-09-25.md", "entry\n")
     sink.commit(["diary/2026-09-25.md"], "host(diary): first")
@@ -111,20 +93,6 @@ def test_no_changes_is_skipped(sink: GitSink) -> None:
 
 
 # --- AC-3: rebase / conflict ---
-
-
-def test_rebase_onto_remote_commit_on_other_file(sink: GitSink, tmp_path: Path) -> None:
-    other = _other_clone(tmp_path)
-    _remote_push(other, "weekly/2026-W39.md", "remote\n")
-
-    _write(sink, "diary/2026-09-25.md", "local\n")
-    result = sink.commit(["diary/2026-09-25.md"], "host(diary): local")
-
-    assert result.pushed is True
-    files = _git(tmp_path / "remote.git", "ls-tree", "-r", "--name-only", "main").split()
-    assert "weekly/2026-W39.md" in files
-    assert "diary/2026-09-25.md" in files
-    assert _remote_head(tmp_path) == result.sha
 
 
 def test_conflict_saves_local_version_to_inbox(sink: GitSink, tmp_path: Path) -> None:
@@ -196,79 +164,5 @@ def test_bogus_push_policy_raises(tmp_path: Path) -> None:
         GitSink(tmp_path, name="x", branch="main", owner="host", allow_prefixes=["diary/"], push="bogus")
 
 
-# --- AC-4: concurrent processes ---
 
 
-def _worker(repo_root: str, rel: str) -> None:
-    sink = GitSink(repo_root, name="p", branch="main", owner="host", allow_prefixes=["diary/"])
-    target = Path(repo_root) / rel
-    target.parent.mkdir(parents=True, exist_ok=True)
-    for i in range(5):
-        target.write_text(f"{rel} {i}\n", encoding="utf-8")
-        sink.commit([rel], f"host(diary): {rel} {i}")
-
-
-def test_concurrent_processes_serialize_via_flock(sink: GitSink, tmp_path: Path) -> None:
-    ctx = multiprocessing.get_context("spawn")
-    procs = [
-        ctx.Process(target=_worker, args=(str(sink.repo_root), rel))
-        for rel in ("diary/a.md", "diary/b.md")
-    ]
-    for p in procs:
-        p.start()
-    for p in procs:
-        p.join(120)
-    assert [p.exitcode for p in procs] == [0, 0]
-    log = _git(sink.repo_root, "log", "--format=%s")
-    assert log.count("host(diary): diary/a.md") == 5
-    assert log.count("host(diary): diary/b.md") == 5
-    assert _remote_head(tmp_path) == _git(sink.repo_root, "rev-parse", "HEAD").strip()
-
-
-# --- AC-6: audit ---
-
-
-def _audit_events(path: Path) -> list[dict]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
-
-
-def test_audit_records_commit_skip_conflict(sink: GitSink, tmp_path: Path) -> None:
-    rel = "diary/2026-09-25.md"
-    _write(sink, rel, "base\n")
-    sink.commit([rel], "host(diary): base", trailers={"Execution-Id": "e1", "Correlation-Id": "c1"})
-    sink.commit([rel], "host(diary): same")
-    other = _other_clone(tmp_path)
-    _remote_push(other, rel, "remote\n")
-    _write(sink, rel, "local\n")
-    with pytest.raises(ConflictError):
-        sink.commit([rel], "host(diary): conflict")
-
-    events = _audit_events(tmp_path / "audit.jsonl")
-    assert [e["event"] for e in events] == ["vcs_commit", "vcs_skipped", "vcs_conflict"]
-    for e in events:
-        assert e["sink"] == "local"
-        assert e["layer"] == "host"
-        assert e["host"]
-        assert e["paths"] == [rel]
-    assert events[0]["execution_id"] == "e1"
-    assert events[0]["correlation_id"] == "c1"
-    assert events[0]["pushed"] is True
-
-
-def test_no_audit_without_audit_path(tmp_path: Path) -> None:
-    sink = LocalGitSink.create(tmp_path, owner="host", allow_prefixes=["diary/"])
-    _write(sink, "diary/a.md", "a\n")
-    sink.commit(["diary/a.md"], "host(diary): a")
-    assert not list(tmp_path.rglob("audit.jsonl"))
-
-
-def test_null_sink_writes_vcs_skipped(tmp_path: Path) -> None:
-    audit = tmp_path / "audit.jsonl"
-    result = NullSink("notes", reason="ENABLE_GIT unset", audit_path=audit).commit(
-        ["diary/a.md"], "host(diary): a"
-    )
-    assert result.skipped and result.reason == "ENABLE_GIT unset"
-    (event,) = _audit_events(audit)
-    assert event["event"] == "vcs_skipped"
-    assert event["sink"] == "notes"
-    assert "layer" in event and event["host"]

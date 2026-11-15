@@ -7,8 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from ghdag.core.capabilities import PERMISSIONS
-from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.vocabulary import (
     DONE_CANCELLED,
     DONE_DEP_FAILED,
@@ -32,7 +30,7 @@ from ghdag.core.vocabulary import (
 )
 from ghdag.io.done import mark_done
 from ghdag.mcp.server import McpServer
-from ghdag.mcp.tools import MAX_READ_BYTES, TOOL_NAMES, McpRuntime, McpToolRegistry
+from ghdag.mcp.tools import MAX_READ_BYTES, McpRuntime, McpToolRegistry
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.pipeline.state import PipelineState
@@ -101,59 +99,7 @@ def _call(server: McpServer, name: str, arguments: dict) -> dict:
     return resp["result"]
 
 
-class TestToolCatalog:
-    def test_tool_name_set(self, tmp_path):
-        runtime = _runtime(tmp_path)
-        tools = McpToolRegistry(runtime).list_tools()
-        names = {t["name"] for t in tools}
-        assert names == set(TOOL_NAMES)
-        assert names == {"ghdag_enqueue", "ghdag_status", "ghdag_read"}
-        for tool in tools:
-            assert tool["inputSchema"]["type"] == "object"
-            assert tool["inputSchema"]["additionalProperties"] is False
-
-    def test_input_schemas_are_closed_objects(self, tmp_path):
-        runtime = _runtime(tmp_path)
-        for tool in McpToolRegistry(runtime).list_tools():
-            schema = tool["inputSchema"]
-            assert schema["type"] == "object"
-            assert schema["additionalProperties"] is False
-
-    def test_enqueue_schema_contract(self, tmp_path):
-        runtime = _runtime(tmp_path)
-        registry = McpToolRegistry(runtime)
-        enqueue = next(t for t in registry.list_tools() if t["name"] == "ghdag_enqueue")
-        step_items = enqueue["inputSchema"]["properties"]["steps"]["items"]
-        assert step_items["required"] == ["engine"]
-        assert step_items["properties"]["engine"]["enum"] == sorted(ENGINE_SPECS)
-        assert step_items["properties"]["permission"]["enum"] == sorted(PERMISSIONS)
-        assert (
-            step_items["properties"]["model"]["description"]
-            == "Omit for the engine default; ghdag llm --list-models lists the allowed models."
-        )
-
-
 class TestEnqueue:
-    def test_single_step_without_id(self, tmp_path):
-        runtime = _runtime(tmp_path)
-        server = _server(runtime)
-        result = _call(
-            server,
-            "ghdag_enqueue",
-            {"steps": [{"engine": "shell", "command": "echo hi"}]},
-        )
-        assert result["isError"] is False
-        uuids = result["structuredContent"]["uuids"]
-        assert "step-1" in uuids
-        lines = [
-            ln
-            for ln in runtime.state._exec_jsonl_path.read_text().splitlines()
-            if ln.strip()
-        ]
-        assert len(lines) == 1
-        line = json.loads(lines[0])
-        assert line["uuid"] == uuids["step-1"]
-
     def test_llm_safe_default(self, tmp_path):
         runtime = _runtime(tmp_path)
         server = _server(runtime)

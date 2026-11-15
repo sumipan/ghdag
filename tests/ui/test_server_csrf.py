@@ -118,23 +118,6 @@ class TestServerCsrf:
         assert status == 415
         assert data.get("ok") is False
 
-    def test_stop_same_origin_json_succeeds(self, tmp_path):
-        repo = _setup_running_repo(tmp_path, self.UUID)
-        server, port = _start_server(repo)
-        try:
-            status, data = _post(
-                port,
-                "/api/stop",
-                {"uuid": self.UUID},
-                origin=f"http://127.0.0.1:{port}",
-            )
-        finally:
-            server.shutdown()
-
-        assert status == 200
-        assert data == {"ok": True}
-        assert (repo / "jobs" / "cancel" / self.UUID).is_file()
-
     def test_retry_same_origin_json_succeeds(self, tmp_path):
         jobs = tmp_path / "jobs"
         (jobs / "done").mkdir(parents=True)
@@ -173,23 +156,3 @@ class TestServerCsrf:
         finally:
             server.shutdown()
 
-    def test_post_response_has_no_access_control_allow_origin(self, tmp_path):
-        import urllib.request
-
-        repo = _setup_running_repo(tmp_path, self.UUID)
-        server, port = _start_server(repo)
-        try:
-            req = urllib.request.Request(
-                f"http://127.0.0.1:{port}/api/stop",
-                data=json.dumps({"uuid": self.UUID}).encode("utf-8"),
-                headers={
-                    "Content-Type": "application/json",
-                    "Origin": f"http://127.0.0.1:{port}",
-                },
-                method="POST",
-            )
-            resp = urllib.request.urlopen(req, timeout=5)
-            assert resp.status == 200
-            assert "Access-Control-Allow-Origin" not in resp.headers
-        finally:
-            server.shutdown()

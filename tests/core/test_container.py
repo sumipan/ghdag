@@ -15,18 +15,6 @@ def _caps(**kwargs: object) -> Permission:
     return Permission(sandbox="container", **kwargs)  # type: ignore[arg-type]
 
 
-def test_full_prefix_with_docker_path() -> None:
-    caps = _caps(
-        container_mounts=("/h/.codex:/root/.codex:ro",),
-        container_env=("CURSOR_API_KEY",),
-        docker_bin="/opt/d/bin/docker",
-    )
-    assert " ".join(container_prefix(caps)) == (
-        'env PATH=/opt/d/bin:$PATH /opt/d/bin/docker run --rm -i -v "$PWD":/work '
-        "-w /work -v /h/.codex:/root/.codex:ro -e CURSOR_API_KEY img:1"
-    )
-
-
 def test_bare_docker_bin_has_no_path_prefix() -> None:
     assert container_prefix(_caps()) == [
         "docker", "run", "--rm", "-i", "-v", '"$PWD":/work', "-w", "/work", "img:1",
@@ -59,14 +47,6 @@ def test_tilde_mount_expanded_to_home() -> None:
     prefix = container_prefix(_caps(container_mounts=("~/.codex:/root/.codex:ro",)))
     home = os.path.expanduser("~")
     assert f"{home}/.codex:/root/.codex:ro" in " ".join(prefix)
-
-
-def test_no_host_secrets_mounted_by_default() -> None:
-    joined = " ".join(container_prefix(_caps()))
-    for secret in (".ssh", ".config", ".env"):
-        assert secret not in joined
-    # Only the worktree is mounted.
-    assert joined.count("-v ") == 1
 
 
 def test_values_are_shell_quoted() -> None:

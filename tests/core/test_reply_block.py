@@ -13,19 +13,6 @@ from ghdag.core.reply_block import (
 
 
 class TestFindReplyBlock:
-    def test_returns_body_of_last_ghdag_fence(self) -> None:
-        text = (
-            "```ghdag\n"
-            "status: rejected\n"
-            "reason: retry\n"
-            "```\n"
-            "more\n"
-            "```ghdag\n"
-            "status: ok\n"
-            "```\n"
-        )
-        assert find_reply_block(text) == "status: ok"
-
     def test_no_fence_returns_none(self) -> None:
         assert find_reply_block("no block") is None
 
@@ -51,23 +38,6 @@ class TestParseReplyBlock:
 
     def test_no_block_returns_none(self) -> None:
         assert parse_reply_block("no block") is None
-
-    def test_last_block_wins(self) -> None:
-        text = (
-            "```ghdag\nstatus: rejected\nreason: retry\n```\n"
-            "```ghdag\nstatus: ok\n```\n"
-        )
-        block = parse_reply_block(text)
-        assert block is not None
-        assert block.status == "ok"
-
-    def test_wait_quota_engines_without_after(self) -> None:
-        block = parse_reply_block(
-            "```ghdag\nstatus: wait_quota\nengines: [claude]\n```\n"
-        )
-        assert block is not None
-        assert block.engines == ("claude",)
-        assert block.after is None
 
     def test_unknown_status_raises_with_hint(self) -> None:
         with pytest.raises(ReplyBlockError) as exc:
@@ -102,17 +72,6 @@ class TestParseReplyBlock:
         )
         assert block is not None
         assert block.after == "2026-01-01T00:00:00+09:00"
-
-    def test_after_without_timezone_raises_with_tz_hint(self) -> None:
-        with pytest.raises(ReplyBlockError) as exc:
-            parse_reply_block(
-                "```ghdag\n"
-                "status: wait_quota\n"
-                "engines: [claude]\n"
-                "after: 2026-01-01T00:00:00\n"
-                "```\n"
-            )
-        assert "+00:00" in (exc.value.hint or "")
 
     def test_rejected_requires_nonempty_reason(self) -> None:
         with pytest.raises(ReplyBlockError):

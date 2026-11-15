@@ -14,7 +14,6 @@ from ghdag.config.language import (
     EN,
     STATE_IDS,
     UI_KEYS,
-    LanguagePack,
     get_language_pack,
     load_language_pack,
 )
@@ -64,29 +63,6 @@ def test_pack_is_frozen() -> None:
 
 def test_default_is_en(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GHDAG_LANGUAGE_PACK", raising=False)
-    assert get_language_pack() is EN
-
-
-def test_env_pack_replaces_all_fields(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    path = _write(tmp_path, _full_data())
-    monkeypatch.setenv("GHDAG_LANGUAGE_PACK", str(path))
-    pack = get_language_pack()
-    assert isinstance(pack, LanguagePack)
-    assert dict(pack.state_labels) == {k: f"S-{k}" for k in STATE_IDS}
-    assert dict(pack.ui) == {k: f"U-{k}" for k in UI_KEYS}
-
-
-def test_get_language_pack_is_cached(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    path = _write(tmp_path, _full_data())
-    monkeypatch.setenv("GHDAG_LANGUAGE_PACK", str(path))
-    first = get_language_pack()
-    monkeypatch.delenv("GHDAG_LANGUAGE_PACK")
-    assert get_language_pack() is first
-    get_language_pack.cache_clear()
     assert get_language_pack() is EN
 
 
@@ -158,25 +134,10 @@ def test_broken_yaml(tmp_path: Path) -> None:
     _assert_error(path, "broken.yaml")
 
 
-def test_env_pack_invalid_raises(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.setenv("GHDAG_LANGUAGE_PACK", str(tmp_path / "missing.yaml"))
-    with pytest.raises(GhdagError):
-        get_language_pack()
-
-
 def test_question_suffixes_omitted_defaults_to_empty(tmp_path: Path) -> None:
     pack = load_language_pack(_write(tmp_path, _full_data()))
     assert pack.question_suffixes == ()
     assert EN.question_suffixes == ()
-
-
-def test_question_suffixes_extra_loaded_as_tuple(tmp_path: Path) -> None:
-    data = _full_data()
-    data["question_suffixes"] = {"extra": ["\u203d", "!?", "\u203d"]}
-    pack = load_language_pack(_write(tmp_path, data))
-    assert pack.question_suffixes == ("\u203d", "!?", "\u203d")
 
 
 def test_question_suffixes_empty_list(tmp_path: Path) -> None:

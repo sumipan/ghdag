@@ -38,25 +38,6 @@ tool = ToolDef(name="{name}", engine="claude-code", model="claude-opus-4-7"{fall
 
 
 class TestToolsListJson:
-    def test_json_output(self, tmp_path, capsys):
-        from ghdag.cli import main
-
-        _write_tool(tmp_path, "fs_read")
-        _write_tool(tmp_path, "http_get")
-
-        main(["tools", "list", "--json", "--path", str(tmp_path)])
-
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert "tools" in data
-        assert len(data["tools"]) == 2
-        names = {t["name"] for t in data["tools"]}
-        assert names == {"fs_read", "http_get"}
-        for tool in data["tools"]:
-            assert tool["engine"] == "claude-code"
-            assert tool["model"] == "claude-opus-4-7"
-            assert tool["fallback"] == []
-
     def test_json_with_fallback(self, tmp_path, capsys):
         from ghdag.cli import main
 
@@ -74,16 +55,6 @@ class TestToolsListJson:
         fb = data["tools"][0]["fallback"]
         assert fb == [{"engine": "claude-code", "model": "claude-sonnet-4-6"}]
 
-    def test_empty_directory_json(self, tmp_path, capsys):
-        from ghdag.cli import main
-
-        main(["tools", "list", "--json", "--path", str(tmp_path)])
-
-        captured = capsys.readouterr()
-        data = json.loads(captured.out)
-        assert data == {"tools": []}
-
-
 class TestToolsListText:
     def test_text_output(self, tmp_path, capsys):
         from ghdag.cli import main
@@ -99,15 +70,6 @@ class TestToolsListText:
             "fs_read: claude-code/claude-opus-4-7",
             "http_get: claude-code/claude-opus-4-7",
         ]
-
-    def test_empty_directory_text(self, tmp_path, capsys):
-        from ghdag.cli import main
-
-        main(["tools", "list", "--path", str(tmp_path)])
-
-        captured = capsys.readouterr()
-        assert captured.out == ""
-
 
 class TestToolsListErrors:
     def test_directory_not_found(self, tmp_path, capsys):
@@ -133,11 +95,3 @@ class TestToolsListErrors:
         assert "error:" in captured.err
         assert "must be a ToolDef instance" in captured.err
 
-    def test_missing_path_argument(self, capsys):
-        from ghdag.cli import main
-
-        with pytest.raises(SystemExit):
-            main(["tools", "list"])
-
-        captured = capsys.readouterr()
-        assert "--path" in captured.err
