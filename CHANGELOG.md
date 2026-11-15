@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.140.1 - 2026-11-16
+
+### Changed
+
+- Relaunched cursor tasks (resume fallback and repair turn) now attach the engine stall guard when enabled (sumipan/nexus#6874).
+- Resume fallback for tasks without `result_path` no longer reads stdout, matching the initial launch behavior (sumipan/nexus#6874).
+
 ## 0.140.0 - 2026-11-16
 
 ### Changed

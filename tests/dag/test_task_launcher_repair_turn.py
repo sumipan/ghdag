@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+from ghdag.core.stall_guard import StallTracker
 from ghdag.core.vocabulary import PIPELINE_REPLY_BLOCK_FAILED
 from ghdag.dag.models import DagConfig, Task, _RunningProcess
 from ghdag.dag.task_launcher import TaskLauncher
@@ -410,3 +411,36 @@ class TestRepairTurn:
             else:
                 monkeypatch.setenv("TZ", old_tz)
             time.tzset()
+
+    def test_repair_turn_relaunch_attaches_stall_tracker_for_cursor(
+        self, tmp_path, monkeypatch
+    ):
+        """Refs sumipan/nexus#6874."""
+        monkeypatch.delenv("GHDAG_ENGINE_STALL_GUARD", raising=False)
+        launcher = _make_launcher(tmp_path)
+        uuid = "task-cursor-stall-repair"
+        result = tmp_path / "jobs" / "result.md"
+        result.write_text("```ghdag\n: bad\n```\n", encoding="utf-8")
+        order = tmp_path / "jobs" / "order.md"
+        order.write_text("run", encoding="utf-8")
+        task = Task(
+            uuid=uuid,
+            command=f"agent -p --force < {order}",
+            engine="cursor",
+            result_path=str(result),
+        )
+        _seed_running(launcher, uuid, task)
+        launcher._session_store.record(uuid, "cursor", "sess-cursor")
+
+        repair_proc = MagicMock()
+        repair_proc.poll.return_value = None
+        repair_proc.pid = 4242
+        repair_proc.stdout = io.BytesIO()
+        repair_proc.stderr = io.BytesIO()
+
+        with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=repair_proc):
+            launcher.check_completions()
+
+        rt = launcher._running[uuid]
+        assert isinstance(rt.stall_tracker, StallTracker)
+        assert rt.stall_tracker._root_pid == 4242

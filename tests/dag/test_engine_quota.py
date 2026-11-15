@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ghdag.core.stall_guard import StallTracker
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig, Task, _RunningProcess
 
@@ -225,6 +226,58 @@ def test_resume_fallback_relaunches_async_without_blocking(tmp_path: Path) -> No
     assert task.command == "claude -p hello"
     assert task.uuid in engine._quota_gate.snapshot().running_tasks
     assert not engine._launcher._is_resume_fallback_target(task, "session not found")
+
+
+def test_resume_fallback_attaches_stall_tracker_for_cursor(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Refs sumipan/nexus#6874."""
+    monkeypatch.delenv("GHDAG_ENGINE_STALL_GUARD", raising=False)
+    config = DagConfig(
+        exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl",
+        exec_done_dir=tmp_path / "jobs" / "done",
+    )
+    hooks = MagicMock()
+    hooks.check_rejected.return_value = False
+    hooks.check_pipeline_status.return_value = None
+    engine = DagEngine(config, hooks)
+    original_command = "agent -p --force < order.md"
+    task = Task(
+        uuid="task-cursor-resume",
+        command="agent -p --force --resume 'sid' < order.md",
+        engine="cursor",
+        annotations={
+            "resumed_session_id": "sid",
+            "_command_without_resume": original_command,
+        },
+    )
+    proc = MagicMock()
+    proc.poll.return_value = 1
+    proc.returncode = 1
+    engine._launcher._running[task.uuid] = _RunningProcess(
+        uuid=task.uuid,
+        task=task,
+        proc=proc,
+        started_at=time.time() - 0.1,
+        started_at_mono=time.monotonic() - 0.1,
+        stderr_buf=io.BytesIO(b"session not found"),
+    )
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="cursor")
+
+    fallback_proc = MagicMock()
+    fallback_proc.poll.return_value = None
+    fallback_proc.pid = 5151
+    fallback_proc.stdout = io.BytesIO(b"")
+    fallback_proc.stderr = io.BytesIO(b"")
+
+    with patch(
+        "ghdag.dag.task_launcher.subprocess.Popen", return_value=fallback_proc
+    ), patch("ghdag.dag.task_launcher.state_mark_done"):
+        engine._launcher.check_completions()
+
+    rt = engine._launcher._running[task.uuid]
+    assert isinstance(rt.stall_tracker, StallTracker)
+    assert rt.stall_tracker._root_pid == 5151
 
 
 @pytest.mark.parametrize(
