@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.137.1 - 2026-11-15
+
+### Fixed
+
+- Repair-turn relaunches now call `QuotaGate.begin_run` before writing repair artifacts; denied admission finalizes the original failure without a deferred repair attempt (sumipan/nexus#6802).
+
+### Changed
+
+- README identity messaging, release badge alignment, LocalForge GitHub-free quick start, and execution review artifacts are unchanged since 0.133.4 (sumipan/nexus#6610).
+
 ## 0.137.0 - 2026-11-15
 
 ### Added

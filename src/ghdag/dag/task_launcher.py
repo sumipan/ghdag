@@ -1635,10 +1635,20 @@ class TaskLauncher:
         if resolved is None:
             return False
 
+        engine_name = engine or resolved.engine
+        decision = self._quota_gate.begin_run(task_uuid=uuid, engine=engine_name)
+        if not decision.allowed:
+            logger.info(
+                "Repair turn skipped by quota gate: uuid=%s engine=%s reason=%s",
+                uuid,
+                engine_name,
+                decision.reason,
+            )
+            return False
+
         turn = _repair_turn_count(task.annotations) + 1
         base_command = task.annotations.get("_command_without_resume") or task.command
         ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-        engine_name = engine or resolved.engine
         queue_dir = self._queue_dir()
         order_name = f"{ts}-{engine_name}-order-{uuid}-repair{turn}.md"
         order_path = queue_dir / order_name
@@ -1677,7 +1687,13 @@ class TaskLauncher:
             correlation_id=task.idempotency_key,
             tz_name=self._config.timezone,
         )
-        return self._relaunch_running_task(uuid, task, engine, relaunch_command, cwd)
+        if not self._relaunch_running_task(uuid, task, engine, relaunch_command, cwd):
+            try:
+                self._quota_gate.finish_run(task_uuid=uuid)
+            except ValueError:
+                logger.exception("Failed to update running registry for [%s]", uuid)
+            return False
+        return True
 
     def _relaunch_running_task(
         self,
