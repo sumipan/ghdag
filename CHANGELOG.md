@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.137.2 - 2026-11-15
+
 ### Changed
 
 - When `template_dir` is omitted from workflow YAML, the loader now resolves it to `<workflow file directory>/templates` and all execution paths use that resolved path instead of a cwd-relative `templates` fallback (sumipan/nexus#6803).
