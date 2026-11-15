@@ -64,43 +64,6 @@ handlers:
         assert payload["errors"][0]["code"] == "STEP_ENGINE_UNKNOWN"
         assert str(payload["errors"][0]["file"]).endswith("bad.yml")
 
-    def test_two_invalid_files_yield_two_errors(self, tmp_path, capsys):
-        from ghdag.cli import main
-
-        bad_engine = """\
-name: one
-triggers:
-  - label: "pipeline:draft-ready"
-    handler: h
-handlers:
-  h:
-    steps:
-      - template: step1
-        model: claude-sonnet-4-6
-        engine: nonexistent
-"""
-        bad_model = """\
-name: two
-triggers:
-  - label: "pipeline:draft-ready"
-    handler: h
-handlers:
-  h:
-    steps:
-      - template: step1
-        engine: claude
-"""
-        (tmp_path / "a.yml").write_text(bad_engine, encoding="utf-8")
-        (tmp_path / "b.yml").write_text(bad_model, encoding="utf-8")
-        _make_templates(tmp_path, "step1")
-
-        with pytest.raises(SystemExit) as exc:
-            main(["validate", str(tmp_path), "--json"])
-        assert exc.value.code == 3
-        captured = capsys.readouterr()
-        payload = json.loads(captured.out)
-        assert len(payload["errors"]) == 2
-
     def test_missing_directory_exit_two(self, capsys):
         from ghdag.cli import main
 

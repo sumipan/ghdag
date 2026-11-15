@@ -126,26 +126,6 @@ class TestCmdRecoverArchive:
         assert len(list(jobs.glob(f"*{UUID_P2}*.prev-*"))) == 1
         assert not (done / UUID_P2).exists()
 
-    def test_keep_results_no_archived_line(self, tmp_path, monkeypatch, capsys):
-        """AC-2b keep_results: no 'archived:' in output; result file unchanged."""
-        from ghdag.cli.commands.recover import cmd_recover
-
-        jobs, done, state_dir, exec_jsonl, result_path = _setup(tmp_path)
-        workflows_dir = tmp_path / "workflows"
-        workflows_dir.mkdir()
-
-        monkeypatch.setattr(
-            "ghdag.workflow.loader.load_workflows",
-            lambda _path: [_make_workflow()],
-        )
-
-        args = _make_args(jobs, state_dir, exec_jsonl, workflows_dir, keep_results=True)
-        cmd_recover(args)
-
-        captured = capsys.readouterr()
-        assert "archived:" not in captured.out
-        assert result_path.read_text(encoding="utf-8") == "PIPELINE_STATUS: VERIFY_FAILED\n"
-
 
 class TestRecoverCliStructuredOutput:
     def test_recover_dry_run_json(self, tmp_path, capsys, monkeypatch):

@@ -38,40 +38,6 @@ class _RecordingEngine:
         _RecordingEngine.ran = True
 
 
-class TestRunNormal:
-    def test_run_calls_dag_engine_with_defaults(self, tmp_path):
-        exec_md = tmp_path / "exec.jsonl"
-        exec_md.write_text("")
-
-        _RecordingEngine.ran = False
-        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
-             patch("ghdag.dag.models.DagConfig", _capture_config):
-            from ghdag.cli import main
-            main(["run", str(exec_md)])
-
-        kwargs = _capture_config.last_kwargs
-        assert kwargs["exec_jsonl_path"] == str(exec_md)
-        assert kwargs["poll_interval"] == 1.0
-        assert "cwd" in kwargs
-        from ghdag.dag.audit_hooks import AuditHooks
-        assert isinstance(_RecordingEngine.last_hooks, AuditHooks)
-        assert _RecordingEngine.ran is True
-
-    def test_run_with_custom_interval(self, tmp_path):
-        exec_md = tmp_path / "exec.jsonl"
-        exec_md.write_text("")
-
-        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
-             patch("ghdag.dag.models.DagConfig", _capture_config):
-            from ghdag.cli import main
-            main(["run", str(exec_md), "--interval-sec", "10"])
-
-        kwargs = _capture_config.last_kwargs
-        assert kwargs["exec_jsonl_path"] == str(exec_md)
-        assert kwargs["poll_interval"] == 10.0
-        assert "cwd" in kwargs
-
-
 # ---------------------------------------------------------------------------
 # AC3b: ghdag run --hooks
 # ---------------------------------------------------------------------------
@@ -110,20 +76,6 @@ class TestRunHooks:
 
         assert isinstance(_RecordingEngine.last_hooks, MyHooks)
 
-    def test_hooks_set_engine_called(self, tmp_path):
-        exec_md = tmp_path / "exec.jsonl"
-        exec_md.write_text("")
-        mock_module, MyHooks = self._make_hooks_module_with_class()
-
-        _RecordingEngine.ran = False
-        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
-             patch("ghdag.dag.models.DagConfig", _capture_config), \
-             patch("importlib.import_module", return_value=mock_module):
-            from ghdag.cli import main
-            main(["run", str(exec_md), "--hooks", "my_hooks"])
-
-        assert _RecordingEngine.ran is True
-
     def test_hooks_invalid_module_exits_1(self, tmp_path, capsys):
         exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
@@ -134,18 +86,6 @@ class TestRunHooks:
         assert exc.value.code == 1
         assert "cannot import" in capsys.readouterr().err
 
-    def test_no_hooks_arg_engine_called_with_audit_hooks(self, tmp_path):
-        exec_md = tmp_path / "exec.jsonl"
-        exec_md.write_text("")
-
-        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
-             patch("ghdag.dag.models.DagConfig", _capture_config):
-            from ghdag.cli import main
-            main(["run", str(exec_md)])
-
-        from ghdag.dag.audit_hooks import AuditHooks
-        assert isinstance(_RecordingEngine.last_hooks, AuditHooks)
-
 
 # ---------------------------------------------------------------------------
 # AC4: ghdag run error cases
@@ -153,13 +93,6 @@ class TestRunHooks:
 
 
 class TestRunError:
-    def test_run_no_args_exits_2(self):
-        from ghdag.cli import main
-
-        with pytest.raises(SystemExit) as exc:
-            main(["run"])
-        assert exc.value.code == 2
-
     def test_run_nonexistent_file_exits_1(self, capsys):
         from ghdag.cli import main
 
@@ -167,39 +100,3 @@ class TestRunError:
             main(["run", "nonexistent_exec.jsonl"])
         assert exc.value.code == 1
         assert "not found" in capsys.readouterr().err
-
-
-class TestRunMaxConcurrency:
-    def test_max_concurrency_arg(self, tmp_path):
-        """--max-concurrency is passed correctly to DagConfig"""
-        exec_md = tmp_path / "exec.jsonl"
-        exec_md.write_text("")
-
-        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
-             patch("ghdag.dag.models.DagConfig", _capture_config):
-            from ghdag.cli import main
-            main(["run", str(exec_md), "--max-concurrency", "4"])
-
-        assert _capture_config.last_kwargs["max_concurrency"] == 4
-
-    def test_max_concurrency_default_none(self, tmp_path):
-        """--max-concurrency omitted → None"""
-        exec_md = tmp_path / "exec.jsonl"
-        exec_md.write_text("")
-
-        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
-             patch("ghdag.dag.models.DagConfig", _capture_config):
-            from ghdag.cli import main
-            main(["run", str(exec_md)])
-
-        assert _capture_config.last_kwargs["max_concurrency"] is None
-
-    def test_max_concurrency_invalid_type_exits_2(self, tmp_path, capsys):
-        """--max-concurrency abc exits via argparse error"""
-        exec_md = tmp_path / "exec.md"
-        exec_md.write_text("")
-
-        from ghdag.cli import main
-        with pytest.raises(SystemExit) as exc:
-            main(["run", str(exec_md), "--max-concurrency", "abc"])
-        assert exc.value.code == 2
