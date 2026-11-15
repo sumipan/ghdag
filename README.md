@@ -408,7 +408,7 @@ Modules without a package-level export, importable directly as implementation de
 
 | Module | Public functions / classes |
 |---|---|
-| `ghdag.github_client` | `GitHubClient`, `create_github_client`, `create_github_clients`, `GitHubIssueClient` (alias of `GitHubClient`) |
+| `ghdag.github_client` | `GitHubClient`, `create_github_client`, `create_github_clients` |
 | `ghdag.forge.local` | `LocalForge`: file-backed `ForgePort` and `GitHubIssuePort` (usable with `WorkflowDispatcher`); Issues and PRs under `<root>/.forge/`; Issue `id` equals `number`; parent sub-issue links in each issue JSON as `sub_issues` (child numbers) |
 | `ghdag.maintenance` | `validate_exec_jsonl`, `repair_exec_jsonl`, `repair_jobs_done` |
 | `ghdag.core.vocabulary` | Done-marker constants (`DONE_*`), `QUEUE_FILE_RE`, `PIPELINE_STATUS_RE`, `FANOUT_SEPARATOR`, `FANOUT_ANCHOR`, `FANOUT_KEY` |
@@ -772,7 +772,7 @@ Every variable ghdag reads (`os.environ` / `os.getenv` in `src/ghdag/`). Most re
 | `GHDAG_EXEC_JSONL` | `jobs/exec.jsonl` | `cli.commands.status` | Default `--exec-jsonl` of `ghdag status` |
 | `GHDAG_ENGINE_ISOLATION` | unset (off) | `config.env.engine_isolation_enabled` | `1` / `true` / `yes` / `on` enables engine isolation: claude gets `--disable-slash-commands`; codex `call()` uses `CODEX_HOME=/var/tmp/ghdag-dag-codex/` when `auth.json` exists there (otherwise a warning is printed) and command builders add `-c skills.include_instructions=false` (skills under `$HOME` such as `~/.agents/skills` are not disabled by `CODEX_HOME` alone). cursor has no CLI isolation flag — ghdag does not change cursor argv. An explicit `isolation=` argument wins over this env var; `call(..., isolation=...)` applies to the primary attempt and any quota/auth fallback |
 | `GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS` | `18000` | `llm.adapters.failure_classification` | Pause (seconds) when an engine reports quota exhaustion without a reset time; read once at import |
-| `GHDAG_FORGE` | `github` | `forge.get_forge`, `github_cli.get_forge` | Forge backend: `github` or `local` |
+| `GHDAG_FORGE` | `github` | `forge.get_forge` | Forge backend: `github` or `local` |
 | `GHDAG_FORGE_ROOT` | none | `forge.get_forge` | Data root of `LocalForge`; required when `GHDAG_FORGE=local` |
 | `GHDAG_ETAG_CACHE` | unset (in-memory only) | `github_client.GitHubClient` | Path of the persistent ETag cache file |
 | `GHDAG_RATE_LIMIT_MAX_WAIT_SEC` | `900` | `github_client.GitHubClient` | Longest rate-limit sleep before `RateLimitError` is raised; non-integer values fall back to `900`. Ignored by `ghdag watch` (clients always use `0`) |
@@ -1078,7 +1078,7 @@ Additional error `code` values without a dedicated exception type:
 | `OwnershipError` | `ValueError` | `ghdag.vcs.sink` (also `ghdag.vcs`) | A sink path is absolute, contains `..` or is outside `allow_prefixes`, no paths were given, or the commit subject does not start with `<owner>(` |
 | `ConflictError` | `RuntimeError` | `ghdag.vcs.sink` (also `ghdag.vcs`) | The rebase onto the remote conflicted; local versions were saved under `inbox/` (`inbox_paths`) |
 
-Standard exceptions raised by the public API: `ValueError` (unknown `GHDAG_FORGE`, unknown preset name, invalid container settings, undefined VCS sink, invalid push policy), `NotImplementedError` (capability an engine does not support in `call()`), and `RuntimeError` (a git command inside `GitSink` failed). `call()` itself does not raise on timeouts or missing binaries; it returns an `LLMResult` (see [`LLMResult` and timeouts](#llmresult-and-timeouts)).
+Standard exceptions raised by the public API: `ConfigError` (unknown `GHDAG_FORGE`, missing `GHDAG_FORGE_ROOT` when `GHDAG_FORGE=local` — both are `ValueError` subclasses), `ValueError` (unknown preset name, invalid container settings, undefined VCS sink, invalid push policy), `NotImplementedError` (capability an engine does not support in `call()`), and `RuntimeError` (a git command inside `GitSink` failed). `call()` itself does not raise on timeouts or missing binaries; it returns an `LLMResult` (see [`LLMResult` and timeouts](#llmresult-and-timeouts)).
 
 ### Related types that are not exceptions
 

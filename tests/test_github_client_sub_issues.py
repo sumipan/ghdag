@@ -228,10 +228,6 @@ def test_github_cli_issue_view_json_sub_issues_summary(
         "ghdag.github_cli.get_forge",
         lambda *a, **k: FakeClient(),
     )
-    monkeypatch.setattr(
-        "ghdag.github_client.GitHubClient",
-        lambda *a, **k: FakeClient(),
-    )
     rc = cli_main(
         ["issue", "view", str(_PARENT), "--json", "sub_issues_summary"]
     )

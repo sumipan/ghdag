@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Breaking
+
+- Remove `ghdag.github_client.GitHubIssueClient` alias (sumipan/nexus#6804).
+- `python -m ghdag.github_cli` now errors on an unknown `GHDAG_FORGE` value instead of silently using GitHub (sumipan/nexus#6804).
+
+### Changed
+
+- `GHDAG_FORGE` / `GHDAG_FORGE_ROOT` are read only in `ghdag.forge`; unknown forge values and missing `GHDAG_FORGE_ROOT` raise `ConfigError` (sumipan/nexus#6804).
+- `ghdag watch` and `ghdag trigger` surface forge configuration errors as structured `error[...]` messages instead of tracebacks (sumipan/nexus#6804).
+- README identity messaging, release badge alignment, LocalForge GitHub-free quick start, and execution review artifacts are unchanged since 0.133.4 (sumipan/nexus#6610).
+
 ## 0.137.2 - 2026-11-15
 
 ### Changed
