@@ -184,6 +184,8 @@ def test_stall_guard_disabled_relaunch_has_no_tracker(
     )
     launcher._session_store.record(uuid, "cursor", "sess-1")
     launcher.check_completions()
+    mock_popen.assert_called_once()
+    assert uuid in launcher._running
     assert launcher._running[uuid].stall_tracker is None
 
 
