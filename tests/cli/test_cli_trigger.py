@@ -78,7 +78,10 @@ handlers:
                 return mock_dispatch_result
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", FakeDispatcher), \
-             patch("ghdag.github_client.create_github_client", return_value=mock_github_client), \
+             patch(
+                "ghdag.github_client.create_github_clients",
+                return_value=[mock_github_client],
+            ), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -117,7 +120,10 @@ handlers:
                 return mock_dispatch_result
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", FakeDispatcher), \
-             patch("ghdag.github_client.create_github_client", return_value=mock_github_client), \
+             patch(
+                "ghdag.github_client.create_github_clients",
+                return_value=[mock_github_client],
+            ), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -159,7 +165,10 @@ handlers:
                 return mock_dispatch_result
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", FakeDispatcher), \
-             patch("ghdag.github_client.create_github_client", return_value=mock_github_client), \
+             patch(
+                "ghdag.github_client.create_github_clients",
+                return_value=[mock_github_client],
+            ), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -272,10 +281,13 @@ handlers:
         mock_github_client.get_issue.return_value = {
             "number": 42, "title": "T", "body": "", "labels": [], "url": "",
         }
-        mock_create_github_client = MagicMock(return_value=mock_github_client)
+        mock_create_github_clients = MagicMock(return_value=[mock_github_client])
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", mock_dispatcher_cls), \
-             patch("ghdag.github_client.create_github_client", mock_create_github_client), \
+             patch(
+                 "ghdag.github_client.create_github_clients",
+                 mock_create_github_clients,
+             ), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -331,7 +343,10 @@ class TestTriggerStructuredErrors:
                 return mock_dispatch_result
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", FakeDispatcher), \
-             patch("ghdag.github_client.create_github_client", return_value=mock_github_client), \
+             patch(
+                "ghdag.github_client.create_github_clients",
+                return_value=[mock_github_client],
+            ), \
              patch("ghdag.pipeline.state.PipelineState"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
@@ -475,8 +490,8 @@ class TestTriggerForgeBackend:
                 return mock_dispatch_result
 
         with patch(
-            "ghdag.github_client.create_github_client",
-            return_value=mock_client,
+            "ghdag.github_client.create_github_clients",
+            return_value=[mock_client],
         ) as mock_create, \
              patch("ghdag.workflow.dispatcher.WorkflowDispatcher", FakeDispatcher), \
              patch("ghdag.pipeline.state.PipelineState"), \
@@ -493,7 +508,7 @@ class TestTriggerForgeBackend:
                 str(exec_jsonl),
             ])
 
-        mock_create.assert_called_once_with()
+        mock_create.assert_called_once_with(rate_limit_max_wait_sec=None)
         assert capture["github_client"] is mock_client
         assert capture["issue"]["number"] == 5
 

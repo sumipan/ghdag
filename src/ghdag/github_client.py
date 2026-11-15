@@ -1134,6 +1134,3 @@ def create_github_clients(
         )
         for owner, repo in _resolve_repos()
     ]
-
-
-GitHubIssueClient = GitHubClient

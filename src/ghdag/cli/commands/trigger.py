@@ -10,20 +10,6 @@ from ghdag.config.env import state_dir as resolve_state_dir
 from ghdag.core.exceptions import CliUsageError, ConfigError
 
 
-def _resolve_trigger_client():
-    """Select issue client from GHDAG_FORGE (github vs local)."""
-    import os
-
-    from ghdag.forge import get_forge
-
-    kind = (os.environ.get("GHDAG_FORGE") or "github").strip().lower()
-    if kind == "github":
-        from ghdag.github_client import create_github_client
-
-        return create_github_client()
-    return get_forge()
-
-
 def _load_workflow_for_cli(args, *, workflows_path: Path):
     from ghdag.workflow.loader import load_workflows
 
@@ -91,7 +77,9 @@ def cmd_trigger(args) -> None:
             trigger_rank = rank
             break
 
-    github_client = _resolve_trigger_client()
+    from ghdag.forge import get_forges
+
+    github_client = get_forges()[0]
     exec_jsonl_resolved = Path(args.exec_jsonl).resolve()
     queue_dir = str(exec_jsonl_resolved.parent)
     if isinstance(args.state_dir, str):

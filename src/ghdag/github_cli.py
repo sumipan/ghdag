@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -17,10 +16,9 @@ import sys
 from collections.abc import Callable
 from typing import Any, NoReturn
 
-from ghdag import github_client as _github_client
 from ghdag.core.exceptions import CliUsageError
 from ghdag.core.ports.forge import ForgePort
-from ghdag.forge import get_forge as _package_get_forge
+from ghdag.forge import get_forge
 
 __all__: list[str] = []
 
@@ -37,18 +35,6 @@ _SIMPLE_JQ_RE = re.compile(
 _API_REPOS_RE = re.compile(
     r"^repos/(?P<owner>[^/]+)/(?P<repo>[^/]+)(?:/(?P<rest>.*))?$"
 )
-
-
-def get_forge(repo: str | None = None) -> ForgePort:
-    """Return a ForgePort for CLI handlers.
-
-    ``ghdag.github_client.GitHubClient`` is constructed here; production local mode
-    delegates to :func:`ghdag.forge.get_forge`.
-    """
-    kind = (os.environ.get("GHDAG_FORGE") or "github").strip().lower()
-    if kind == "local":
-        return _package_get_forge(repo=repo)
-    return _github_client.GitHubClient(repo=repo)
 
 
 # --- jq helpers ---
