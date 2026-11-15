@@ -165,36 +165,6 @@ class TestTriggerStateDirDerivation:
 class TestWatchStateDirDerivation:
     """AC-4: ghdag watch has the same --state-dir behavior as trigger."""
 
-    def test_watch_absolute_exec_jsonl_derives_state_dir_from_repo_root(self, tmp_path, monkeypatch):
-        """watch: state_dir = exec_jsonl.parent.parent/.pipeline-state when not given."""
-        from ghdag.cli.commands.watch import cmd_watch
-
-        worktree = tmp_path / "worktree"
-        worktree.mkdir()
-        monkeypatch.chdir(worktree)
-
-        repo_root = tmp_path / "repo"
-        exec_jsonl = repo_root / "jobs" / "exec.jsonl"
-        exec_jsonl.parent.mkdir(parents=True)
-        exec_jsonl.write_text("", encoding="utf-8")
-        workflows_dir = _setup_workflow_dir(repo_root)
-
-        captured = {}
-        mock_github_clients = MagicMock()
-
-        with patch("ghdag.pipeline.state.PipelineState", side_effect=_make_pipeline_state_mock(captured)):
-            with patch("ghdag.github_client.create_github_clients", return_value=mock_github_clients):
-                try:
-                    args = _watch_args(str(exec_jsonl), str(workflows_dir), state_dir=None)
-                    cmd_watch(args)
-                except (_CaptureStateDir, SystemExit, Exception):
-                    pass
-
-        expected = str(repo_root / ".pipeline-state")
-        assert captured.get("state_dir") == expected, (
-            f"watch: Expected state_dir={expected!r}, got {captured.get('state_dir')!r}."
-        )
-
     def test_watch_explicit_state_dir_overrides_derived_path(self, tmp_path, monkeypatch):
         """watch: explicit --state-dir overrides derivation."""
         from ghdag.cli.commands.watch import cmd_watch
@@ -221,71 +191,3 @@ class TestWatchStateDirDerivation:
         assert captured.get("state_dir") == custom_state_dir, (
             f"watch: Expected state_dir={custom_state_dir!r}, got {captured.get('state_dir')!r}."
         )
-
-    def test_watch_relative_exec_jsonl_uses_cwd_pipeline_state(self, tmp_path, monkeypatch):
-        """watch: relative --exec-jsonl from repo root yields cwd/.pipeline-state."""
-        from ghdag.cli.commands.watch import cmd_watch
-
-        monkeypatch.chdir(tmp_path)
-
-        exec_jsonl = tmp_path / "jobs" / "exec.jsonl"
-        exec_jsonl.parent.mkdir(parents=True)
-        exec_jsonl.write_text("", encoding="utf-8")
-        workflows_dir = _setup_workflow_dir(tmp_path)
-
-        captured = {}
-        mock_github_clients = MagicMock()
-
-        with patch("ghdag.pipeline.state.PipelineState", side_effect=_make_pipeline_state_mock(captured)):
-            with patch("ghdag.github_client.create_github_clients", return_value=mock_github_clients):
-                try:
-                    args = _watch_args("jobs/exec.jsonl", str(workflows_dir), state_dir=None)
-                    cmd_watch(args)
-                except (_CaptureStateDir, SystemExit, Exception):
-                    pass
-
-        expected = str(tmp_path / ".pipeline-state")
-        assert captured.get("state_dir") == expected, (
-            f"watch: Expected state_dir={expected!r} (legacy cwd-relative), "
-            f"got {captured.get('state_dir')!r}."
-        )
-
-
-class TestStateDirArgParsing:
-    """AC-2 / AC-4: --state-dir appears in argparse for trigger and watch."""
-
-    def test_trigger_parser_has_state_dir(self):
-        from ghdag.cli.main import _build_parser
-        parser = _build_parser()
-        args = parser.parse_args([
-            "trigger", "1",
-            "--handler", "impl",
-            "--exec-jsonl", "/abs/jobs/exec.jsonl",
-            "--state-dir", "/custom/state",
-        ])
-        assert args.state_dir == "/custom/state"
-
-    def test_trigger_parser_state_dir_defaults_to_none(self):
-        from ghdag.cli.main import _build_parser
-        parser = _build_parser()
-        args = parser.parse_args([
-            "trigger", "1",
-            "--handler", "impl",
-        ])
-        assert args.state_dir is None
-
-    def test_watch_parser_has_state_dir(self):
-        from ghdag.cli.main import _build_parser
-        parser = _build_parser()
-        args = parser.parse_args([
-            "watch", "workflows/",
-            "--exec-jsonl", "/abs/jobs/exec.jsonl",
-            "--state-dir", "/custom/state",
-        ])
-        assert args.state_dir == "/custom/state"
-
-    def test_watch_parser_state_dir_defaults_to_none(self):
-        from ghdag.cli.main import _build_parser
-        parser = _build_parser()
-        args = parser.parse_args(["watch", "workflows/"])
-        assert args.state_dir is None

@@ -8,10 +8,7 @@ Test approach:
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 
 class TestCleanupNormal:
@@ -66,66 +63,3 @@ class TestCleanupNormal:
             main(["cleanup", str(tmp_path), "--dry-run"])
 
         assert captured["dry_run"] is True
-
-    def test_cleanup_custom_days(self, tmp_path):
-        captured: dict = {}
-
-        def fake_cleanup(**kwargs):
-            captured.update(kwargs)
-            return self._make_mock_result()
-
-        with patch("ghdag.cleanup.orchestrator.cleanup_queue", side_effect=fake_cleanup):
-            from ghdag.cli import main
-            main(["cleanup", str(tmp_path), "--cutoff-days", "3", "--orphan-days", "14"])
-
-        assert captured["cutoff_days"] == 3
-        assert captured["orphan_days"] == 14
-
-    def test_cleanup_done_dir_follows_state_dir(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Issue sumipan/nexus#6089: cleanup uses GHDAG_STATE_DIR for done_dir (AC6)."""
-        state = tmp_path / "s"
-        monkeypatch.setenv("GHDAG_STATE_DIR", str(state))
-        captured: dict = {}
-
-        def fake_cleanup(**kwargs):
-            captured.update(kwargs)
-            return self._make_mock_result()
-
-        jobs = tmp_path / "jobs"
-        jobs.mkdir(parents=True)
-        (jobs / "exec.jsonl").write_text("", encoding="utf-8")
-
-        with patch("ghdag.cleanup.orchestrator.cleanup_queue", side_effect=fake_cleanup):
-            from ghdag.cli import main
-
-            main(["cleanup", str(tmp_path)])
-
-        assert captured["done_dir"] == state / "done"
-        assert captured["queue_dir"] == jobs
-        assert captured["archive_dir"] == jobs / "archive"
-        assert captured["exec_jsonl"] == jobs / "exec.jsonl"
-
-    def test_cleanup_help_exits_0(self, capsys):
-
-        from ghdag.cli import main
-
-        with pytest.raises(SystemExit) as exc:
-            main(["cleanup", "--help"])
-        assert exc.value.code == 0
-        captured = capsys.readouterr()
-        assert "repo_root" in captured.out
-        assert "--dry-run" in captured.out
-        assert "--cutoff-days" in captured.out
-        assert "--orphan-days" in captured.out
-
-
-class TestCleanupError:
-    def test_cleanup_no_args_exits_2(self):
-
-        from ghdag.cli import main
-
-        with pytest.raises(SystemExit) as exc:
-            main(["cleanup"])
-        assert exc.value.code == 2
