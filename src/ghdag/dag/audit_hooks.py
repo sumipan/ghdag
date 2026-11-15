@@ -17,7 +17,7 @@ class AuditHooks(DefaultHooks):
         self,
         audit_path: Path | None = None,
         *,
-        tz_name: str = "UTC",
+        tz_name: str | None = "UTC",
     ) -> None:
         self._audit_path = audit_path
         self._tz_name = tz_name

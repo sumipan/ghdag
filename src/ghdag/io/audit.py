@@ -8,7 +8,7 @@ import json
 import sys
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, tzinfo
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -40,14 +40,31 @@ __all__ = [
 ]
 
 
-def now_ts(tz_name: str = "UTC") -> str:
+def resolve_tz(tz_name: str | None) -> tzinfo:
+    """Resolve an IANA name to tzinfo, or machine local time when tz_name is None."""
+    if tz_name is None:
+        return datetime.now().astimezone().tzinfo  # type: ignore[return-value]
+    return ZoneInfo(tz_name)
+
+
+def file_ts(tz_name: str | None, now: datetime | None = None) -> str:
+    """Format an aware or current instant as YYYYMMDDHHmmSS in the resolved timezone."""
+    tz = resolve_tz(tz_name)
+    if now is None:
+        dt = datetime.now(tz)
+    else:
+        dt = now.astimezone(tz)
+    return dt.strftime("%Y%m%d%H%M%S")
+
+
+def now_ts(tz_name: str | None = "UTC") -> str:
     """Return current time as ISO-8601 in the given IANA timezone."""
-    return datetime.now(ZoneInfo(tz_name)).isoformat()
+    return datetime.now(resolve_tz(tz_name)).isoformat()
 
 
-def epoch_ts(epoch: float, tz_name: str = "UTC") -> str:
+def epoch_ts(epoch: float, tz_name: str | None = "UTC") -> str:
     """Return epoch seconds as ISO-8601 in the given IANA timezone."""
-    return datetime.fromtimestamp(epoch, tz=ZoneInfo(tz_name)).isoformat()
+    return datetime.fromtimestamp(epoch, tz=resolve_tz(tz_name)).isoformat()
 
 
 def _redact_audit_record(record: dict) -> dict:
@@ -87,7 +104,7 @@ def write_audit_log(
     context: AuditContext,
     idempotency_key: str | None = None,
     default_permission_uuids: list[str] | None = None,
-    tz_name: str = "UTC",
+    tz_name: str | None = "UTC",
 ) -> None:
     if exec_lines_count == 0:
         return
@@ -127,7 +144,7 @@ def write_llm_inference_audit(
     engine: str,
     model: str,
     correlation_id: str | None = None,
-    tz_name: str = "UTC",
+    tz_name: str | None = "UTC",
 ) -> None:
     """Append one LLM inference event line to audit.jsonl."""
     record = {
@@ -159,7 +176,7 @@ def write_llm_audit_log(
     correlation_id: str | None = None,
     timeout_sec: int | None = None,
     request_id: str | None = None,
-    tz_name: str = "UTC",
+    tz_name: str | None = "UTC",
 ) -> None:
     """Append one audit log line for the llm subcommand."""
     record = {
@@ -199,7 +216,7 @@ def write_task_exit_audit(
     orchestration_id: str | None = None,
     env_denied_count: int | None = None,
     stderr_path: str | None = None,
-    tz_name: str = "UTC",
+    tz_name: str | None = "UTC",
 ) -> None:
     denied = env_denied_count
     if denied is None and event_type == "task_started":
@@ -238,7 +255,7 @@ def write_rate_limit_audit(
     reset: int,
     used: int | None = None,
     correlation_id: str | None = None,
-    tz_name: str = "UTC",
+    tz_name: str | None = "UTC",
 ) -> None:
     """Append one rate limit snapshot line to audit.jsonl."""
     record = {
@@ -263,7 +280,7 @@ def write_task_retry_audit(
     attempt: int,
     failure_class: FailureClass,
     stderr_excerpt: str | None = None,
-    tz_name: str = "UTC",
+    tz_name: str | None = "UTC",
 ) -> None:
     record = {
         "schema_version": 1,
@@ -286,7 +303,7 @@ def write_quarantine_audit(
     engine: str,
     action: str,
     cooldown_sec: int | None = None,
-    tz_name: str = "UTC",
+    tz_name: str | None = "UTC",
 ) -> None:
     record = {
         "schema_version": 1,
@@ -312,7 +329,7 @@ def write_repair_turn_audit(
     message: str,
     hint: str | None = None,
     correlation_id: str | None = None,
-    tz_name: str = "UTC",
+    tz_name: str | None = "UTC",
 ) -> None:
     """Append an LLM contract repair-turn audit record."""
     record = {
@@ -346,7 +363,7 @@ def write_compaction_audit(
     tokens_after: int | None = None,
     engine: str | None = None,
     comparison_group: str | None = None,
-    tz_name: str = "UTC",
+    tz_name: str | None = "UTC",
 ) -> None:
     """Append a session-compaction audit record (lineage + token delta)."""
     record = {

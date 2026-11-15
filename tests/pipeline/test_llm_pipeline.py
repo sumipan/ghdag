@@ -434,8 +434,7 @@ class TestResultContentInjection:
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
         ]
         with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID]), \
-             patch("ghdag.pipeline.llm_pipeline.datetime") as mock_dt:
-            mock_dt.now.return_value.strftime.return_value = _TS
+             patch("ghdag.pipeline.llm_pipeline.file_ts", return_value=_TS):
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         p2_ctx = captured[1][1]
@@ -450,8 +449,7 @@ class TestResultContentInjection:
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
         ]
         with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID]), \
-             patch("ghdag.pipeline.llm_pipeline.datetime") as mock_dt:
-            mock_dt.now.return_value.strftime.return_value = _TS
+             patch("ghdag.pipeline.llm_pipeline.file_ts", return_value=_TS):
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         p2_ctx = captured[1][1]
@@ -470,8 +468,7 @@ class TestResultContentInjection:
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6", depends=["p1"]),
         ]
         with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID]), \
-             patch("ghdag.pipeline.llm_pipeline.datetime") as mock_dt:
-            mock_dt.now.return_value.strftime.return_value = _TS
+             patch("ghdag.pipeline.llm_pipeline.file_ts", return_value=_TS):
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         p2_ctx = captured[1][1]
@@ -493,8 +490,7 @@ class TestResultContentInjection:
             StepConfig(id="p3", template="p3", model="claude-sonnet-4-6", depends=["p1", "p2"]),
         ]
         with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID, _P3_UUID]), \
-             patch("ghdag.pipeline.llm_pipeline.datetime") as mock_dt:
-            mock_dt.now.return_value.strftime.return_value = _TS
+             patch("ghdag.pipeline.llm_pipeline.file_ts", return_value=_TS):
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         p3_ctx = captured[2][1]
@@ -521,9 +517,9 @@ class TestForwardDepends:
             StepConfig(id="a", template="p1", model="claude-sonnet-4-6"),
         ]
         with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_B_UUID, _A_UUID]), patch(
-            "ghdag.pipeline.llm_pipeline.datetime"
-        ) as mock_dt:
-            mock_dt.now.return_value.strftime.return_value = _FORWARD_TS
+            "ghdag.pipeline.llm_pipeline.file_ts",
+            return_value=_FORWARD_TS,
+        ):
             exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         b_record = _json.loads(exec_lines[0])
@@ -550,9 +546,9 @@ class TestForwardDepends:
             StepConfig(id="a", template="p1", model="claude-sonnet-4-6"),
         ]
         with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_B_UUID, _A_UUID]), patch(
-            "ghdag.pipeline.llm_pipeline.datetime"
-        ) as mock_dt:
-            mock_dt.now.return_value.strftime.return_value = _FORWARD_TS
+            "ghdag.pipeline.llm_pipeline.file_ts",
+            return_value=_FORWARD_TS,
+        ):
             exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         assert len(exec_lines) == 2
@@ -621,3 +617,78 @@ class TestUnknownEngine:
             api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
         assert exc_info.value.code == "ENGINE_UNKNOWN"
         assert "claude" in (exc_info.value.hint or "")
+
+
+class TestSubmitFileTimestampTimezone:
+    """Refs sumipan/nexus#6872."""
+
+    def test_submit_file_ts_uses_given_timezone(self, tmp_path):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from ghdag.io.audit import file_ts as audit_file_ts
+        from ghdag.pipeline.order import InlineOrderBuilder
+        from ghdag.pipeline.state import PipelineState
+
+        queue = tmp_path / "queue"
+        queue.mkdir()
+        exec_jsonl = tmp_path / "exec.jsonl"
+        exec_jsonl.write_text("", encoding="utf-8")
+        state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
+        fixed = datetime(2024, 7, 4, 16, 0, 0, tzinfo=ZoneInfo("UTC"))
+        expected = audit_file_ts("America/New_York", now=fixed)
+
+        def _file_ts(tz_name: str | None) -> str:
+            return audit_file_ts(tz_name, now=fixed)
+
+        api = LLMPipelineAPI(
+            state,
+            InlineOrderBuilder(),
+            queue_dir=str(queue),
+            timezone="America/New_York",
+        )
+        steps = [StepConfig(template="run", engine="claude", model="claude-sonnet-4-6")]
+        with patch("ghdag.pipeline.llm_pipeline.file_ts", side_effect=_file_ts):
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+        orders = list(queue.glob("*-claude-order-*.md"))
+        assert len(orders) == 1
+        assert orders[0].name.startswith(expected)
+
+    def test_submit_file_ts_defaults_to_machine_timezone(self, tmp_path, monkeypatch):
+        import os
+        import time
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+
+        from ghdag.io.audit import file_ts as audit_file_ts
+        from ghdag.pipeline.order import InlineOrderBuilder
+        from ghdag.pipeline.state import PipelineState
+
+        old_tz = os.environ.get("TZ")
+        monkeypatch.setenv("TZ", "Pacific/Auckland")
+        time.tzset()
+        try:
+            queue = tmp_path / "queue"
+            queue.mkdir()
+            exec_jsonl = tmp_path / "exec.jsonl"
+            exec_jsonl.write_text("", encoding="utf-8")
+            state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
+            fixed = datetime(2024, 7, 4, 16, 0, 0, tzinfo=ZoneInfo("UTC"))
+            expected = audit_file_ts(None, now=fixed)
+
+            def _file_ts(tz_name: str | None) -> str:
+                return audit_file_ts(tz_name, now=fixed)
+
+            api = LLMPipelineAPI(state, InlineOrderBuilder(), queue_dir=str(queue))
+            steps = [StepConfig(template="run", engine="claude", model="claude-sonnet-4-6")]
+            with patch("ghdag.pipeline.llm_pipeline.file_ts", side_effect=_file_ts):
+                api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+            orders = list(queue.glob("*-claude-order-*.md"))
+            assert len(orders) == 1
+            assert orders[0].name.startswith(expected)
+        finally:
+            if old_tz is None:
+                monkeypatch.delenv("TZ", raising=False)
+            else:
+                monkeypatch.setenv("TZ", old_tz)
+            time.tzset()

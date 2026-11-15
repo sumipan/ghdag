@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.140.0 - 2026-11-16
+
+### Changed
+
+- **Breaking:** `DagConfig.timezone` default is now `None` (machine local time zone) instead of `"UTC"`. Order/result file name timestamps from `LLMPipelineAPI.submit`, fan-out child orders, and repair orders follow `DagConfig.timezone` or `LLMPipelineAPI(timezone=...)`; omitting both uses the machine local time zone (sumipan/nexus#6872).
+
 ## 0.139.4 - 2026-11-15
 
 ### Added

@@ -355,3 +355,58 @@ class TestRepairTurn:
             launcher.check_completions()
 
         assert uuid not in launcher.quota_gate.snapshot().running_tasks
+
+    def test_repair_order_ts_defaults_to_machine_timezone(self, tmp_path, monkeypatch):
+        """Refs sumipan/nexus#6872."""
+        import os
+        import time
+        from zoneinfo import ZoneInfo
+
+        from ghdag.io.audit import file_ts as audit_file_ts
+
+        old_tz = os.environ.get("TZ")
+        monkeypatch.setenv("TZ", "Pacific/Auckland")
+        time.tzset()
+        try:
+            launcher = _make_launcher(tmp_path)
+            uuid = "task-tz-repair"
+            result = tmp_path / "jobs" / "result.md"
+            result.write_text("```ghdag\n: bad\n```\n", encoding="utf-8")
+            order = tmp_path / "jobs" / "order.md"
+            order.write_text("run", encoding="utf-8")
+            task = Task(
+                uuid=uuid,
+                command=f'claude -p --model m < {order}',
+                engine="claude",
+                model="claude-sonnet-4-6",
+                result_path=str(result),
+            )
+            _seed_running(launcher, uuid, task)
+            launcher._session_store.record(uuid, "claude", "sess-1")
+
+            fixed = datetime(2024, 7, 4, 16, 0, 0, tzinfo=ZoneInfo("UTC"))
+            expected = audit_file_ts(None, now=fixed)
+
+            def _file_ts(tz_name: str | None) -> str:
+                return audit_file_ts(tz_name, now=fixed)
+
+            real_popen = subprocess.Popen
+
+            def fake_popen(*args, **kwargs):
+                return real_popen(["true"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            with (
+                patch("ghdag.dag.task_launcher.file_ts", side_effect=_file_ts),
+                patch("ghdag.dag.task_launcher.subprocess.Popen", new=fake_popen),
+            ):
+                launcher.check_completions()
+
+            repair_orders = list(tmp_path.glob(f"jobs/*-claude-order-{uuid}-repair1.md"))
+            assert repair_orders
+            assert repair_orders[0].name.startswith(expected)
+        finally:
+            if old_tz is None:
+                monkeypatch.delenv("TZ", raising=False)
+            else:
+                monkeypatch.setenv("TZ", old_tz)
+            time.tzset()

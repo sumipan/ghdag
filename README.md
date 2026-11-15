@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.139.4-blue)
+![version](https://img.shields.io/badge/version-v0.140.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.139.4** (`pyproject.toml` `version = "0.139.4"`) |
+| Current release | **v0.140.0** (`pyproject.toml` `version = "0.140.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.139.4"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.140.0"
 ```
 
 Install from a checkout with the development tools:
@@ -318,7 +318,7 @@ Import other supported types from their definition packages (for example `ghdag.
 |---|---|
 | `DagEngine` | `(config: DagConfig, hooks: DagHooks \| None = None)` |
 | `WorkflowDispatcher` | `(workflows, github_client, pipeline, queue_dir="queue", pause_file=None, workflows_dir=None)`; `github_client` is one `GitHubIssuePort` or a list of them |
-| `LLMPipelineAPI` | `(pipeline_state, order_builder, queue_dir="queue", *, order_builders=None)` |
+| `LLMPipelineAPI` | `(pipeline_state, order_builder, queue_dir="queue", *, order_builders=None, timezone=None)` — `timezone`: IANA name for order/result file name timestamps; `None` = machine local time zone |
 | `LLMPipelineAPI.set_order_builders` | `(mapping) -> None` — replace per-workflow builders; default `order_builder` unchanged |
 | `build_order_builders` | `(workflows) -> dict[str, OrderBuilder]` — build per-workflow `TemplateOrderBuilder` map (`ghdag.pipeline.llm_pipeline`) |
 | `LLMPipelineAPI.submit` | `(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None) -> list[str]` |
@@ -875,7 +875,7 @@ Each line is parsed into `Task` (`ghdag.core.models.dag`). Field names match the
 | `launch_stagger` | `float` | `0.5` | Delay between launches (seconds) |
 | `max_retry` | `int` | `1` | Engine-error retry budget |
 | `lock_file` | `str \| Path \| None` | `None` -> `<queue dir>/.ghdag.lock` | Single-runner lock |
-| `timezone` | `str` | `"UTC"` | Timezone of audit and metrics timestamps |
+| `timezone` | `str \| None` | `None` | Timezone of order/result file name timestamps and DAG audit timestamps; `None` = machine local time zone |
 | `cwd` | `str \| Path \| None` | `None` | Task working directory |
 | `task_timeout` | `float \| None` | `None` | Default task timeout and SIGTERM drain window (seconds) |
 | `kill_grace` | `float` | `10.0` | SIGTERM -> SIGKILL grace (seconds) |
@@ -1171,7 +1171,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.139.4"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.140.0"
 ```
 
 and read `CHANGELOG.md` before upgrading.

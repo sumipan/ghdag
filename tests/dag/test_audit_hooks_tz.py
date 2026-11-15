@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime
 
 from ghdag.core.models.metrics import TaskMetrics
 from ghdag.dag.audit_hooks import AuditHooks
@@ -46,3 +47,28 @@ def test_audit_hooks_default_utc_timestamp(tmp_path):
 
     record = json.loads(audit_path.read_text(encoding="utf-8").strip())
     assert "+00:00" in record["timestamp"]
+
+
+def test_audit_hooks_none_uses_machine_timezone(tmp_path, monkeypatch):
+    """Refs sumipan/nexus#6872."""
+    import os
+    import time
+
+    old_tz = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "Pacific/Auckland")
+    time.tzset()
+    try:
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = AuditHooks(audit_path=audit_path, tz_name=None)
+        hooks.on_task_success(UUID, _make_task(), _make_metrics())
+
+        record = json.loads(audit_path.read_text(encoding="utf-8").strip())
+        off = datetime.now().astimezone().strftime("%z")
+        iso_off = f"{off[:3]}:{off[3:]}"
+        assert record["timestamp"].endswith(iso_off)
+    finally:
+        if old_tz is None:
+            monkeypatch.delenv("TZ", raising=False)
+        else:
+            monkeypatch.setenv("TZ", old_tz)
+        time.tzset()

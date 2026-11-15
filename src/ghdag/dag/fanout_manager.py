@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from ghdag.core.capabilities import PERMISSIONS
 from ghdag.core.command import get_command_adapter
 from ghdag.core.models.metrics import FailureClass, TaskMetrics
 from ghdag.core.vocabulary import DONE_FANOUT_CHILD_FAILED, FANOUT_SEPARATOR
+from ghdag.io.audit import file_ts
 from ghdag.io.done import mark_done as state_mark_done
 from ghdag.io.exec_jsonl import DuplicateTaskError
 from ghdag.llm.engines import EngineModelError, validate_engine_model
@@ -21,8 +20,6 @@ from .hooks import DagHooks
 from .models import DagConfig, Task
 
 logger = logging.getLogger(__name__)
-
-_TZ = ZoneInfo("Asia/Tokyo")
 
 
 def _sibling_uuid(parent_uuid: str, sibling_id: str) -> str:
@@ -140,7 +137,7 @@ class FanOutManager:
             else (parent_model if effective_engine == parent_engine else None)
         )
 
-        ts = datetime.now(_TZ).strftime("%Y%m%d%H%M%S")
+        ts = file_ts(self._config.timezone)
         order_name = f"{ts}-{effective_engine}-order-{child_uuid}.md"
         order_path = queue_dir / order_name
         order_path.parent.mkdir(parents=True, exist_ok=True)
