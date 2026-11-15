@@ -6,13 +6,13 @@ from ghdag.io import exec_jsonl
 
 
 class ExecJsonlPruner:
-    def __init__(self, exec_md: Path, dry_run: bool = False) -> None:
-        self._exec_md = exec_md
+    def __init__(self, exec_jsonl: Path, dry_run: bool = False) -> None:
+        self._exec_jsonl = exec_jsonl
         self._dry_run = dry_run
 
     def load(self) -> tuple[list[str], set[str]]:
         """Load exec.jsonl and return (list of lines, set of UUIDs)."""
-        return exec_jsonl.load_uuids(self._exec_md)
+        return exec_jsonl.load_uuids(self._exec_jsonl)
 
     def prune(self, exec_lines: list[str], prune_uuids: set[str]) -> int:
         """Remove lines matching prune_uuids and rewrite the file.
@@ -24,7 +24,7 @@ class ExecJsonlPruner:
             Number of lines removed
         """
         del exec_lines  # scanning is done by the orchestrator; writes re-read by path
-        return exec_jsonl.prune(self._exec_md, prune_uuids, dry_run=self._dry_run)
+        return exec_jsonl.prune(self._exec_jsonl, prune_uuids, dry_run=self._dry_run)
 
     @staticmethod
     def extract_uuid(line: str) -> str | None:

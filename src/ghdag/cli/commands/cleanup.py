@@ -17,7 +17,7 @@ def cmd_cleanup(args) -> None:
         queue_dir=paths.queue_dir,
         archive_dir=paths.queue_dir / "archive",
         done_dir=paths.done_dir,
-        exec_md=paths.queue_dir / "exec.jsonl",
+        exec_jsonl=paths.queue_dir / "exec.jsonl",
         cutoff_days=args.cutoff_days,
         orphan_days=args.orphan_days,
         dry_run=args.dry_run,

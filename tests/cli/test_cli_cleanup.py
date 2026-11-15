@@ -105,7 +105,7 @@ class TestCleanupNormal:
         assert captured["done_dir"] == state / "done"
         assert captured["queue_dir"] == jobs
         assert captured["archive_dir"] == jobs / "archive"
-        assert captured["exec_md"] == jobs / "exec.jsonl"
+        assert captured["exec_jsonl"] == jobs / "exec.jsonl"
 
     def test_cleanup_help_exits_0(self, capsys):
 

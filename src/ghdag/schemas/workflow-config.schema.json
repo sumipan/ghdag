@@ -142,7 +142,7 @@
             "text_only",
             "web_research"
           ],
-          "description": "Capabilities preset for LLM engines."
+          "description": "Permission preset for LLM engines."
         },
         "skill_name": {
           "type": "string",

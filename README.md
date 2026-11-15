@@ -338,7 +338,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `ghdag.pipeline.status.state_label` | `(state_id, pack=None) -> str`; label from `pack` (default: the active language pack); unknown identifiers are returned unchanged |
 | `ghdag.dag.recover.plan_recover` | `(*, state_dir, exec_jsonl_path, workflow_name, handler_name, issue_number, queue_dir, done_dir, from_step=None, running_uuids=None) -> RecoverPlan` |
 | `ghdag.dag.recover.execute_recover` | `(plan, *, queue_dir, done_dir, dry_run=False, running_uuids=None, keep_results=False, now=None) -> RecoverResult` |
-| `ghdag.cleanup.cleanup_queue` | `(queue_dir, archive_dir, done_dir, exec_md, cutoff_days=1, orphan_days=7, dry_run=False, auto_repair=False) -> CleanupResult` |
+| `ghdag.cleanup.cleanup_queue` | `(queue_dir, archive_dir, done_dir, exec_jsonl, cutoff_days=1, orphan_days=7, dry_run=False, auto_repair=False) -> CleanupResult` |
 | `ghdag.maintenance.validate_exec_jsonl` | `(exec_jsonl_path) -> list[tuple[int, str]]` |
 | `ghdag.maintenance.repair_exec_jsonl` | `(exec_jsonl_path, *, dry_run=False) -> int` |
 | `ghdag.maintenance.repair_jobs_done` | `(exec_jsonl_path, done_dir, *, dry_run=False) -> dict[str, int]` |

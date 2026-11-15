@@ -12,9 +12,9 @@ from ghdag.core.capabilities import JSON_ONLY
 from ghdag.llm.engines import LLMResult, call
 from ghdag.llm.session import SessionRecord, SessionStore
 
-# genshijin is a handoff-summary style for compaction prompts only.
+# Handoff-summary style for compaction prompts only.
 # It must NOT be applied to result files, Slack replies, host-side notes, or reviews.
-GENSHIJIN_HANDOFF_PROMPT = """\
+HANDOFF_SUMMARY_PROMPT = """\
 You are a session handoff compressor. No human-facing tone, honorifics, or recap of history is needed.
 Output, as densely as possible, only the minimal context the next session needs to continue the same work.
 
@@ -137,7 +137,7 @@ def compact_resume_session(
 
     try:
         summary_result = llm_call(
-            GENSHIJIN_HANDOFF_PROMPT,
+            HANDOFF_SUMMARY_PROMPT,
             route=[(parent_record.engine, model)],
             resume_session_id=parent_record.session_id,
             cwd=cwd,

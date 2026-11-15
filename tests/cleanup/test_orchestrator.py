@@ -33,7 +33,7 @@ class TestDryRun:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
             dry_run=True,
         )
@@ -55,7 +55,7 @@ class TestDryRun:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
             dry_run=True,
         )
@@ -78,7 +78,7 @@ class TestQueueDirMissing:
                 queue_dir=queue_dir,
                 archive_dir=archive_dir,
                 done_dir=done_dir,
-                exec_md=exec_md,
+                exec_jsonl=exec_md,
             )
         assert exc.value.code == 1
         assert capsys.readouterr().err != ""
@@ -98,7 +98,7 @@ class TestNoMatchingFiles:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
         )
 
         assert res.archived_done == 0
@@ -118,7 +118,7 @@ class TestAutoRepairFalse:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             orphan_days=7,
             auto_repair=False,
         )
@@ -141,7 +141,7 @@ class TestAutoRepairFalse:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             orphan_days=7,
             auto_repair=False,
         )
@@ -162,7 +162,7 @@ class TestAutoRepairFalse:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             orphan_days=7,
             auto_repair=False,
         )
@@ -178,7 +178,7 @@ class TestAutoRepairFalse:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             auto_repair=False,
         )
 
@@ -195,7 +195,7 @@ class TestAutoRepairFalse:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             auto_repair=False,
         )
 
@@ -215,7 +215,7 @@ class TestAutoRepairFalse:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             orphan_days=7,
             auto_repair=True,
         )
@@ -234,7 +234,7 @@ class TestAutoRepairFalse:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             auto_repair=True,
         )
 
@@ -253,7 +253,7 @@ class TestAutoRepairFalse:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             orphan_days=7,
             auto_repair=False,
             dry_run=True,

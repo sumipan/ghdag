@@ -90,7 +90,7 @@ class TestCleanupLinkRewriteArchived:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
         )
 
@@ -123,7 +123,7 @@ class TestCleanupLinkRewriteRemaining:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
         )
 
@@ -153,7 +153,7 @@ class TestCleanupLinkRewriteDryRun:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
             dry_run=True,
         )
@@ -182,7 +182,7 @@ class TestCleanupLinkRewriteSkipUnchanged:
                 queue_dir=queue_dir,
                 archive_dir=archive_dir,
                 done_dir=done_dir,
-                exec_md=exec_md,
+                exec_jsonl=exec_md,
                 cutoff_days=1,
             )
 

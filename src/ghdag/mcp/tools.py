@@ -76,7 +76,7 @@ def _enqueue_schema() -> dict[str, Any]:
             "permission": {
                 "type": "string",
                 "enum": perm_enum,
-                "description": "Capabilities preset",
+                "description": "Permission preset",
             },
         },
         required=["engine"],

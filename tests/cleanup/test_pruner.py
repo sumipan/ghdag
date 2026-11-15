@@ -40,7 +40,7 @@ class TestJsonlPrune:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             cutoff_days=1,
         )
 
@@ -64,7 +64,7 @@ class TestJsonlPrune:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             cutoff_days=1,
         )
 
@@ -88,7 +88,7 @@ class TestJsonlPrune:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             cutoff_days=1,
         )
 
@@ -131,7 +131,7 @@ class TestDoneDeleteOrder:
                 queue_dir=queue_dir,
                 archive_dir=archive_dir,
                 done_dir=done_dir,
-                exec_md=exec_jsonl,
+                exec_jsonl=exec_jsonl,
                 cutoff_days=1,
             )
 
@@ -161,7 +161,7 @@ class TestStuckDoneExecPrune:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             cutoff_days=1,
         )
 
@@ -179,7 +179,7 @@ class TestStuckDoneExecPrune:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             cutoff_days=1,
         )
 
@@ -197,7 +197,7 @@ class TestStuckDoneExecPrune:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             cutoff_days=1,
         )
 
@@ -217,14 +217,14 @@ class TestStuckDoneExecPrune:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             cutoff_days=1,
         )
         res2 = cleanup_queue(
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             cutoff_days=1,
         )
 
@@ -247,7 +247,7 @@ class TestStuckDoneExecPrune:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             cutoff_days=1,
             auto_repair=True,
         )

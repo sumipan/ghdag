@@ -14,7 +14,7 @@ from ghdag.dag.task_launcher import TaskLauncher
 from ghdag.io.audit import write_compaction_audit
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.compaction import (
-    GENSHIJIN_HANDOFF_PROMPT,
+    HANDOFF_SUMMARY_PROMPT,
     CompactionPolicy,
     CompactionResult,
     compact_resume_session,
@@ -56,16 +56,16 @@ def test_policy_opt_in_disabled_by_default():
     assert policy.should_compact(_record(), token_usage=999_999) is False
 
 
-def test_genshijin_prompt_is_machine_handoff_style():
-    assert "honorific" in GENSHIJIN_HANDOFF_PROMPT or "background" in GENSHIJIN_HANDOFF_PROMPT
-    assert "facts" in GENSHIJIN_HANDOFF_PROMPT.lower()
+def test_handoff_summary_prompt_is_machine_handoff_style():
+    assert "honorific" in HANDOFF_SUMMARY_PROMPT or "background" in HANDOFF_SUMMARY_PROMPT
+    assert "facts" in HANDOFF_SUMMARY_PROMPT.lower()
     for key in ("facts", "unresolved", "next", "files", "constraints"):
-        assert f'"{key}"' in GENSHIJIN_HANDOFF_PROMPT
-    assert "language of the conversation" in GENSHIJIN_HANDOFF_PROMPT
+        assert f'"{key}"' in HANDOFF_SUMMARY_PROMPT
+    assert "language of the conversation" in HANDOFF_SUMMARY_PROMPT
     cjk_ranges = ((0x3000, 0x30FF), (0x4E00, 0x9FFF), (0xFF00, 0xFFEF))
-    assert not any(lo <= ord(c) <= hi for c in GENSHIJIN_HANDOFF_PROMPT for lo, hi in cjk_ranges)
+    assert not any(lo <= ord(c) <= hi for c in HANDOFF_SUMMARY_PROMPT for lo, hi in cjk_ranges)
     # Must not be a general output_style knob name
-    assert "output_style" not in GENSHIJIN_HANDOFF_PROMPT
+    assert "output_style" not in HANDOFF_SUMMARY_PROMPT
 
 
 def _llm_result(body: str, *, session_id: str | None, ok: bool = True) -> LLMResult:
@@ -255,7 +255,7 @@ def test_compact_resume_creates_new_session_with_lineage(tmp_path):
     assert compacted.is_compacted is True
 
     assert any(c.get("resume_session_id") == "sess-parent" for c in calls)
-    assert GENSHIJIN_HANDOFF_PROMPT in calls[0]["prompt"] or calls[0]["prompt"] == GENSHIJIN_HANDOFF_PROMPT
+    assert HANDOFF_SUMMARY_PROMPT in calls[0]["prompt"] or calls[0]["prompt"] == HANDOFF_SUMMARY_PROMPT
 
 
 @pytest.mark.parametrize(
