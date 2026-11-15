@@ -288,7 +288,7 @@ class TestRepairTurn:
         launcher.quota_gate.report(
             engine="claude",
             status="paused",
-            observed_at=datetime.now(timezone.utc),
+            observed_at=datetime(2026, 9, 2, 12, 0, tzinfo=timezone.utc),
             resume_at=datetime(2099, 1, 1, tzinfo=timezone.utc),
         )
         uuid = "task-quota-3"
