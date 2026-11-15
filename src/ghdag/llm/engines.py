@@ -36,11 +36,11 @@ from ghdag.core.engine_spec import ENGINE_SPECS, InputMode
 from ghdag.core.exceptions import ConfigError, LLMParseError
 from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.ports.output import EngineError
+from ghdag.core.ports.quota import QuotaCallPort
 from ghdag.core.stall_guard import StallEvent, StallTracker
 from ghdag.llm._config import load_engine_models
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.json_extract import extract_json_text
-from ghdag.quota import QuotaGate
 
 _NEXT_CANDIDATE_CLASSES = frozenset(
     {
@@ -749,7 +749,7 @@ def _run_completed_attempt(
     )
 
 
-def _engine_paused(quota_gate: QuotaGate | None, engine: str) -> bool:
+def _engine_paused(quota_gate: QuotaCallPort | None, engine: str) -> bool:
     if quota_gate is None:
         return False
     snapshot = quota_gate.snapshot()
@@ -759,7 +759,7 @@ def _engine_paused(quota_gate: QuotaGate | None, engine: str) -> bool:
 
 def _report_quota_failure(
     *,
-    quota_gate: QuotaGate,
+    quota_gate: QuotaCallPort,
     engine: str,
     failure_class: FailureClass,
 ) -> bool:
@@ -790,7 +790,7 @@ def _report_quota_failure(
 
 
 def _record_quota_usage(
-    quota_gate: QuotaGate,
+    quota_gate: QuotaCallPort,
     engine: str,
     result: LLMResult,
 ) -> None:
@@ -821,7 +821,7 @@ def call(
     resume_session_id: str | None = None,
     isolation: bool | None = None,
     permission_overrides: Mapping[str, Permission] | None = None,
-    quota_gate: QuotaGate | None = None,
+    quota_gate: QuotaCallPort | None = None,
     additional_tags: Mapping[str, str] | None = None,
 ) -> LLMResult:
     """Call the LLM one-shot and return a completed ``LLMResult``.

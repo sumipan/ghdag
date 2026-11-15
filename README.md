@@ -666,7 +666,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `core/ports/github.py` | `GitHubIssuePort` Protocol |
 | `core/ports/order.py` | `OrderBuilder` Protocol |
 | `core/ports/output.py` | `EngineOutputAdapter` Protocol, `EngineError`, `EngineErrorKind` |
-| `core/ports/quota.py` | `QuotaPort` Protocol for launch admission |
+| `core/ports/quota.py` | `QuotaAdmissionPort` (enqueue-time admission for io) and `QuotaCallPort` (what `call` uses) Protocols |
 | `core/reply_block.py` | Reply-block YAML parsing from engine result fences |
 | `dag/__init__.py` | DAG runner public API |
 | `dag/_util.py` | Internal DAG helpers |

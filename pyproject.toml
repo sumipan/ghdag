@@ -144,9 +144,6 @@ forbidden_modules = [
   "ghdag.ui",
   "ghdag.quota",
 ]
-ignore_imports = [
-  "ghdag.llm.managed -> ghdag.quota",
-]
 
 [[tool.importlinter.contracts]]
 name = "ops must not import the execution packages"
