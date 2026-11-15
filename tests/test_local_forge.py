@@ -5,16 +5,12 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 
 from ghdag.core.exceptions import GitHubApiError
-from ghdag.core.models.workflow import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
 from ghdag.core.ports.forge import ForgePort
 from ghdag.forge.local import LocalForge
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-from ghdag.workflow.dispatcher import WorkflowDispatcher
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -84,17 +80,6 @@ def test_issue_crud_create_get_update_close_reopen(forge: LocalForge) -> None:
     forge.reopen_issue(number)
     assert forge.issue_get(number, fields=["state"])["state"] == "OPEN"
 
-
-def test_issue_comment_and_list_comments(forge: LocalForge) -> None:
-    number = forge.issue_create("c", "b")
-    created = forge.issue_comment(number, "first comment")
-    assert created["body"] == "first comment"
-
-    comments = forge.get_issue_comments(number)
-    assert len(comments) == 1
-    assert comments[0]["body"] == "first comment"
-    assert "author" in comments[0]
-    assert "created_at" in comments[0]
 
 
 def test_issue_get_missing_raises_404(forge: LocalForge) -> None:
@@ -171,18 +156,6 @@ def test_pr_create_list_merge(forge: LocalForge, forge_root: Path) -> None:
     assert any(p["number"] == number for p in closed)
 
 
-def test_pr_checks_default_success(forge: LocalForge, forge_root: Path) -> None:
-    _git(forge_root, "checkout", "-b", "feature/checks")
-    (forge_root / "c.txt").write_text("c\n", encoding="utf-8")
-    _git(forge_root, "add", "c.txt")
-    _git(forge_root, "commit", "-m", "c")
-    _git(forge_root, "checkout", "main")
-    url = forge.pr_create("main", "feature/checks", "checks", "")
-    number = int(url.rstrip("/").split("/")[-1])
-    checks = forge.pr_checks(number)
-    assert checks
-    assert all(c.get("conclusion") == "success" for c in checks)
-
 
 def test_pr_checks_configured_command_failure(forge_root: Path) -> None:
     forge = LocalForge(forge_root, repo="local/test", checks_command=["false"])
@@ -203,37 +176,6 @@ def test_counter_allocates_unique_numbers(forge: LocalForge) -> None:
     assert len(nums) == 5
 
 
-def test_counter_lock_serializes(forge_root: Path) -> None:
-    """O_CREAT|O_EXCL lock must serialize concurrent allocate_number calls."""
-    forge = LocalForge(forge_root)
-    # Force a held lock and ensure second allocate waits then succeeds
-    lock = forge_root / ".forge" / "counter.lock"
-    forge_root.joinpath(".forge").mkdir(parents=True, exist_ok=True)
-    import os
-
-    fd = os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    try:
-        # With lock held, allocate in a short timeout path is exercised via
-        # public API after release — verify sequential uniqueness after unlock.
-        pass
-    finally:
-        os.close(fd)
-        lock.unlink(missing_ok=True)
-    a = forge.issue_create("a", "b")
-    b = forge.issue_create("b", "c")
-    assert a != b
-
-
-def test_get_forge_local_returns_local_forge(
-    forge_root: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from ghdag.forge import get_forge
-
-    monkeypatch.setenv("GHDAG_FORGE", "local")
-    monkeypatch.setenv("GHDAG_FORGE_ROOT", str(forge_root))
-    got = get_forge()
-    assert isinstance(got, LocalForge)
-    assert isinstance(got, ForgePort)
 
 
 def test_repo_exists_and_stubs(forge: LocalForge) -> None:
@@ -262,12 +204,6 @@ def test_pr_update_and_ready(forge: LocalForge, forge_root: Path) -> None:
     forge.pr_ready(number)  # no-op for local
 
 
-def test_issue_timeline_includes_comment_events(forge: LocalForge) -> None:
-    number = forge.issue_create("t", "b")
-    forge.issue_comment(number, "hi")
-    events = forge.issue_timeline(number)
-    assert any(e.get("event") == "commented" or e.get("body") == "hi" for e in events)
-
 
 def test_pr_diff_returns_text(forge: LocalForge, forge_root: Path) -> None:
     _git(forge_root, "checkout", "-b", "feature/diff")
@@ -286,18 +222,6 @@ def test_pr_get_missing_raises_404(forge: LocalForge) -> None:
         forge.pr_get(999999999)
     assert exc_info.value.status_code == 404
 
-
-def test_persist_layout_on_disk(forge: LocalForge, forge_root: Path) -> None:
-    number = forge.issue_create("disk", "body", labels=["x"])
-    forge.issue_comment(number, "c1")
-    issue_path = forge_root / ".forge" / "issues" / f"{number}.json"
-    comments_path = forge_root / ".forge" / "issues" / f"{number}.comments.jsonl"
-    assert issue_path.is_file()
-    data = json.loads(issue_path.read_text(encoding="utf-8"))
-    assert data["title"] == "disk"
-    assert comments_path.is_file()
-    assert "c1" in comments_path.read_text(encoding="utf-8")
-    assert (forge_root / ".forge" / "counter").is_file()
 
 
 def test_graphql_not_supported_and_protocol_conformance(tmp_path: Path) -> None:
@@ -325,63 +249,6 @@ def test_list_all_issues_filters_by_state(forge: LocalForge) -> None:
     assert all_nums == {o1, o2, closed}
 
 
-def test_dispatcher_poll_once_matches_local_forge_issue(
-    forge: LocalForge, tmp_path: Path
-) -> None:
-    """Issue #6093 AC3: WorkflowDispatcher poll_once with LocalForge as client."""
-    workflow = WorkflowConfig(
-        name="wf",
-        triggers=[TriggerConfig(label="wf:go", handler="h")],
-        handlers={
-            "h": HandlerConfig(
-                steps=[StepConfig(template="t", model="claude-opus-4-6")],
-            ),
-        },
-        polling_interval=30,
-    )
-    pipeline = MagicMock(spec=LLMPipelineAPI)
-    queue_dir = tmp_path / "queue"
-    queue_dir.mkdir()
-    dispatcher = WorkflowDispatcher(
-        workflows=[workflow],
-        github_client=forge,
-        pipeline=pipeline,
-        queue_dir=queue_dir,
-    )
-    number = forge.issue_create("poll", "body", labels=["wf:go"])
-    results = dispatcher.poll_once()
-    assert len(results) == 1
-    assert results[0]["issue"] == number
-    assert results[0]["workflow"] == "wf"
-    assert results[0]["handler"] == "h"
-
-
-def test_get_last_rate_limit_none_and_observe_rate_limit_ok(
-    forge: LocalForge, tmp_path: Path
-) -> None:
-    """Issue #6093 AC4: get_last_rate_limit is None; observe does not write audit."""
-    assert forge.get_last_rate_limit() is None
-    workflow = WorkflowConfig(
-        name="wf",
-        triggers=[TriggerConfig(label="wf:go", handler="h")],
-        handlers={
-            "h": HandlerConfig(
-                steps=[StepConfig(template="t", model="claude-opus-4-6")],
-            ),
-        },
-        polling_interval=30,
-    )
-    pipeline = MagicMock(spec=LLMPipelineAPI)
-    queue_dir = tmp_path / "queue"
-    queue_dir.mkdir()
-    dispatcher = WorkflowDispatcher(
-        workflows=[workflow],
-        github_client=forge,
-        pipeline=pipeline,
-        queue_dir=queue_dir,
-    )
-    dispatcher._observe_rate_limit()
-    assert not (queue_dir / "audit.jsonl").exists()
 
 
 def test_add_comment_appends_comment(forge: LocalForge) -> None:

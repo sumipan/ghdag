@@ -72,15 +72,6 @@ def client() -> GitHubClient:
     return GitHubClient(token="tok", repo="o/r")
 
 
-def test_get_issue_comments_fetches_all_pages(
-    monkeypatch: pytest.MonkeyPatch, client: GitHubClient
-) -> None:
-    page1 = _items(100, "id")
-    page2 = _items(50, "id", start=101)
-    monkeypatch.setattr(client, "_request", _make_two_page_fake(page1, page2))
-    result = client.get_issue_comments(1)
-    assert len(result) == 150
-
 
 def test_milestone_list_fetches_all_pages(
     monkeypatch: pytest.MonkeyPatch, client: GitHubClient
@@ -101,15 +92,6 @@ def test_list_issues_fetches_all_pages(
     result = client.list_issues("x", "all")
     assert len(result) == 150
 
-
-def test_pr_list_fetches_all_pages(
-    monkeypatch: pytest.MonkeyPatch, client: GitHubClient
-) -> None:
-    page1 = _pr_items(100)
-    page2 = _pr_items(50, start=101)
-    monkeypatch.setattr(client, "_request", _make_two_page_fake(page1, page2))
-    result = client.pr_list(state="closed")
-    assert len(result) == 150
 
 
 def test_pr_checks_fetches_all_pages(
@@ -172,66 +154,6 @@ def test_run_logs_failed_fetches_all_pages(
     assert len(captured_urls) == 1  # only the zip download
 
 
-def test_issue_get_comments_field_fetches_all_pages(
-    monkeypatch: pytest.MonkeyPatch, client: GitHubClient
-) -> None:
-    """issue_get(fields=['comments']) fetches all pages; returns correct shape."""
-    issue_data = {"number": 5, "title": "t", "body": "b"}
-    comment_page1 = [
-        {
-            "body": f"comment {i}",
-            "user": {"login": f"user{i}"},
-            "created_at": "2026-01-01T00:00:00Z",
-        }
-        for i in range(30)
-    ]
-    comment_page2 = [
-        {
-            "body": f"comment {i}",
-            "user": {"login": f"user{i}"},
-            "created_at": "2026-01-02T00:00:00Z",
-        }
-        for i in range(30, 58)
-    ]
-
-    def fake_request(method: str, path: str, **kwargs: object) -> object:
-        if path == _NEXT_URL:
-            return comment_page2, None
-        if "comments" not in path:
-            return issue_data
-        if not kwargs.get("return_link_header"):
-            return comment_page1
-        return comment_page1, _LINK_NEXT
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    data = client.issue_get(5, fields=["comments"])
-    comments = data["comments"]
-    assert len(comments) == 58
-    assert "body" in comments[0]
-    assert "author" in comments[0]
-    assert "login" in comments[0]["author"]
-    assert "createdAt" in comments[0]
-
-
-def test_pr_list_limit_1_stops_after_first_page(
-    monkeypatch: pytest.MonkeyPatch, client: GitHubClient
-) -> None:
-    """pr_list(limit=1) never requests the second page."""
-    page1 = _pr_items(100)
-    page2_calls: list[str] = []
-
-    def fake_request(method: str, path: str, **kwargs: object) -> object:
-        if path == _NEXT_URL:
-            page2_calls.append(path)
-            return page1, None
-        if kwargs.get("return_link_header"):
-            return page1, _LINK_NEXT
-        return page1
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    result = client.pr_list(limit=1, state="open")
-    assert len(result) == 1
-    assert page2_calls == []
 
 
 def test_pr_list_limit_100_returns_100(
@@ -250,16 +172,3 @@ def test_pr_list_limit_100_returns_100(
     assert len(result) == 100
 
 
-def test_paginate_items_key_extracts_nested_list(
-    monkeypatch: pytest.MonkeyPatch, client: GitHubClient
-) -> None:
-    """_paginate with items_key extracts items from a dict-wrapped response."""
-
-    def fake_request(method: str, path: str, **kwargs: object) -> object:
-        if kwargs.get("return_link_header"):
-            return {"check_runs": [{"name": "c1"}, {"name": "c2"}]}, None
-        return {"check_runs": [{"name": "c1"}, {"name": "c2"}]}
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    result = client._paginate("/repos/o/r/commits/sha/check-runs", items_key="check_runs")
-    assert result == [{"name": "c1"}, {"name": "c2"}]

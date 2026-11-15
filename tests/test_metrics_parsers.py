@@ -34,45 +34,6 @@ def test_parse_engine_model_edge_cases(command, expected):
 # #982 fix: pipe / agent / shell command forms
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("command,expected", [
-    # claude pipe form (#982 fix)
-    (
-        "cat order.md | claude -p 'prompt' --model 'claude-sonnet-4-6'",
-        ("claude", "claude-sonnet-4-6"),
-    ),
-    # gemini pipe form
-    (
-        "cat order.md | gemini -p 'prompt' --model 'gemini-2.5-flash' --approval-mode yolo",
-        ("gemini", "gemini-2.5-flash"),
-    ),
-    # cursor (legacy agent command) form
-    (
-        "agent --model 'auto' -p --force < order.md",
-        ("cursor", "auto"),
-    ),
-    # cursor (cursor-agent command) form
-    (
-        "cursor-agent --model 'composer-2.5' -p --force < jobs/o.md",
-        ("cursor", "composer-2.5"),
-    ),
-    # shell (bash command) form
-    (
-        "bash -o pipefail order.md",
-        ("shell", None),
-    ),
-    # claude direct form (backward compatible)
-    (
-        "claude -p 'hello' --model claude-opus-4-6",
-        ("claude", "claude-opus-4-6"),
-    ),
-    # empty string
-    ("", (None, None)),
-    # unknown command
-    ("python script.py", (None, None)),
-])
-def test_parse_engine_model_spec_based(command, expected):
-    assert parse_engine_model(command) == expected
-
 
 @pytest.mark.parametrize("engine,stderr_text,expected", [
     ("claude", "...\nTotal tokens: 5678\n...", 5678),

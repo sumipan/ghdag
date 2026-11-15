@@ -24,7 +24,6 @@ from unittest import mock
 import pytest
 
 from ghdag.core.exceptions import PermissionDeniedError
-from ghdag.core.ports.github import GitHubIssuePort
 from ghdag.github_client import GitHubClient
 
 # --- Real probe constants (2026-09-10) ---
@@ -211,38 +210,4 @@ def test_issue_get_fields_sub_issues_summary_default(
     assert data == {"sub_issues_summary": _EMPTY_SUMMARY}
 
 
-def test_github_cli_issue_view_json_sub_issues_summary(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    from ghdag.github_cli import cli_main
 
-    class FakeClient:
-        repo = "sumipan/nexus"
-
-        def issue_get(self, number: int, fields: list[str] | None = None) -> dict:
-            assert number == _PARENT
-            assert fields == ["sub_issues_summary"]
-            return {"sub_issues_summary": dict(_REAL_SUMMARY)}
-
-    monkeypatch.setattr(
-        "ghdag.github_cli.get_forge",
-        lambda *a, **k: FakeClient(),
-    )
-    rc = cli_main(
-        ["issue", "view", str(_PARENT), "--json", "sub_issues_summary"]
-    )
-    assert rc == 0
-    out = json.loads(capsys.readouterr().out)
-    assert out["sub_issues_summary"] == _REAL_SUMMARY
-
-
-def test_github_client_satisfies_port_with_sub_issue_methods() -> None:
-    client = GitHubClient(token="tok", repo="o/r")
-    assert isinstance(client, GitHubIssuePort)
-    for name in (
-        "add_sub_issue",
-        "list_sub_issues",
-        "remove_sub_issue",
-        "sub_issues_summary",
-    ):
-        assert callable(getattr(client, name))

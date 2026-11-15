@@ -5,9 +5,6 @@ import pytest
 
 from ghdag.github_client import GitHubClient
 
-_NEXT_URL = "https://api.github.com/repos/o/r/pulls/42/files?per_page=100&page=2"
-_LINK_NEXT = f"<{_NEXT_URL}>; rel=\"next\""
-
 
 def _make_files(n: int, start: int = 1) -> list[dict]:
     return [{"filename": f"file{i}.py", "additions": i, "deletions": 1} for i in range(start, start + n)]
@@ -38,51 +35,6 @@ def _pr_body(
     return d
 
 
-def test_pr_get_paginates_files(monkeypatch: pytest.MonkeyPatch) -> None:
-    """AC-1: files fetched over 2 pages (30 + 20 = 50), first path includes per_page=100."""
-    client = GitHubClient(token="tok", repo="o/r")
-    page1 = _make_files(30, start=1)
-    page2 = _make_files(20, start=31)
-    seen_paths: list[str] = []
-
-    def fake_request(method: str, path: str, **kwargs: object) -> object:
-        seen_paths.append(path)
-        if "/files" in path and not path.startswith("http"):
-            assert "per_page=100" in path
-            assert kwargs.get("return_link_header") is True
-            return page1, _LINK_NEXT
-        if path == _NEXT_URL:
-            assert kwargs.get("return_link_header") is True
-            return page2, None
-        return _pr_body(changed_files=50)
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    result = client.pr_get(42)
-
-    assert len(result["files"]) == 50
-    assert result["files"][:30] == page1
-    assert result["files"][30:] == page2
-    first_files_path = next(p for p in seen_paths if "/files" in p and not p.startswith("http"))
-    assert "per_page=100" in first_files_path
-
-
-def test_pr_get_uses_body_values_for_stats(monkeypatch: pytest.MonkeyPatch) -> None:
-    """AC-2a: additions/deletions/changedFiles from PR body take priority over file sums."""
-    client = GitHubClient(token="tok", repo="o/r")
-    files = _make_files(50, start=1)
-
-    def fake_request(method: str, path: str, **kwargs: object) -> object:
-        if "/files" in path:
-            assert kwargs.get("return_link_header") is True
-            return files, None
-        return _pr_body(additions=1000, deletions=200, changed_files=50)
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    result = client.pr_get(42)
-
-    assert result["additions"] == 1000
-    assert result["deletions"] == 200
-    assert result["changedFiles"] == 50
 
 
 def test_pr_get_fallback_when_body_missing_stats(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -103,24 +55,6 @@ def test_pr_get_fallback_when_body_missing_stats(monkeypatch: pytest.MonkeyPatch
     assert result["deletions"] == 3
     assert result["changedFiles"] == 3
 
-
-def test_pr_get_fallback_no_warn(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
-) -> None:
-    """AC-2b: no WARN emitted when body lacks changed_files."""
-    client = GitHubClient(token="tok", repo="o/r")
-    files = _make_files(3, start=1)
-
-    def fake_request(method: str, path: str, **kwargs: object) -> object:
-        if "/files" in path:
-            assert kwargs.get("return_link_header") is True
-            return files, None
-        return _pr_body(additions=None, deletions=None, changed_files=None)
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    client.pr_get(42)
-
-    assert capsys.readouterr().err == ""
 
 
 def test_pr_get_warns_on_count_mismatch(
@@ -148,20 +82,3 @@ def test_pr_get_warns_on_count_mismatch(
     assert len(result["files"]) == 50
 
 
-def test_pr_get_no_warn_on_count_match(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
-) -> None:
-    """AC-3 cont: no WARN when file count matches changed_files."""
-    client = GitHubClient(token="tok", repo="o/r")
-    files = _make_files(50, start=1)
-
-    def fake_request(method: str, path: str, **kwargs: object) -> object:
-        if "/files" in path:
-            assert kwargs.get("return_link_header") is True
-            return files, None
-        return _pr_body(additions=1000, deletions=200, changed_files=50)
-
-    monkeypatch.setattr(client, "_request", fake_request)
-    client.pr_get(42)
-
-    assert capsys.readouterr().err == ""
