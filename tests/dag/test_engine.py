@@ -114,6 +114,24 @@ class TestDepFailed:
 class TestAppendTask:
     """§5.4 append_task exclusivity"""
 
+    def test_append_task_writes_audit_to_config_audit_path(self, tmp_path):
+        """Refs sumipan/nexus#6801."""
+        jobs = tmp_path / "jobs"
+        jobs.mkdir()
+        exec_path = jobs / "exec.jsonl"
+        other_audit = tmp_path / "other" / "audit.jsonl"
+        other_audit.parent.mkdir(parents=True)
+        config = DagConfig(
+            exec_jsonl_path=exec_path,
+            audit_path=other_audit,
+        )
+        engine = DagEngine(config, hooks=MagicMock())
+        engine._lock_fh = open(str(config.lock_file), "w")
+        line = json.dumps({"uuid": "u1", "command": "echo x", "depends": []})
+        engine.append_task(line)
+        assert other_audit.exists()
+        assert not (jobs / "audit.jsonl").exists()
+
     def test_append_task_concurrent(self, tmp_path):
         """Concurrent append_task() from 2 threads must not interleave lines"""
         config = _make_config(tmp_path, "")

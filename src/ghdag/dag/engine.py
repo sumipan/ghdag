@@ -205,7 +205,8 @@ class DagEngine:
             path,
             [record],
             audit_context or AuditContext(source="dag"),
-            audit_path=path.parent / "audit.jsonl",
+            audit_path=self._config.audit_path,
+            done_dir=self._config.exec_done_dir,
             quota_gate=self._quota_gate,
         )
 

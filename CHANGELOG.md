@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.139.1 - 2026-11-15
+
+### Changed
+
+- `exec_jsonl.append` resolves duplicate-task checks against `resolve_runtime_paths(...).done_dir` (optional `done_dir` override); `DagEngine.append_task`, MCP `ghdag_status`, `ghdag quota status`, `ghdag audit-query`, and UI `/api/correlation-bursts` use the same runtime path resolution as `ghdag status` and the Web UI dashboard (sumipan/nexus#6801).
+- README identity messaging, release badge alignment, LocalForge GitHub-free quick start, and execution review artifacts are unchanged since 0.133.4 (sumipan/nexus#6610).
+
 ## 0.139.0 - 2026-11-15
 
 ### Removed

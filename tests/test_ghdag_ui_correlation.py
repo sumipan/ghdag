@@ -20,6 +20,7 @@ _JST = timezone(timedelta(hours=9))
 def _fixed_audit_clock(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = types.SimpleNamespace(time=lambda: FIXED_NOW)
     monkeypatch.setattr("ghdag.io.audit_query.time", fake)
+    monkeypatch.delenv("GHDAG_AUDIT_PATH", raising=False)
 
 
 def _ts(offset_sec: float = 0.0) -> str:
@@ -224,6 +225,24 @@ class TestCorrelationBurstsEndpoint:
         try:
             data = _get_json(port, "/api/correlation-bursts?hours=1&top_n=10")
             assert data == {"bursts": []}
+        finally:
+            server.shutdown()
+
+    def test_correlation_bursts_use_ghdag_audit_path(self, tmp_path, monkeypatch):
+        """Refs sumipan/nexus#6801."""
+        audit = tmp_path / "a.jsonl"
+        monkeypatch.setenv("GHDAG_AUDIT_PATH", str(audit))
+        repo = _make_repo(tmp_path)
+        (repo / "jobs" / "audit.jsonl").write_text("", encoding="utf-8")
+        _write_audit(audit, [
+            {"event_type": "task_complete", "uuid": "u1", "status": "success",
+             "correlation_id": "cid-env", "timestamp": _ts(30)},
+        ])
+
+        server, port = _start_server(repo)
+        try:
+            data = _get_json(port, "/api/correlation-bursts?hours=1&top_n=10")
+            assert data["bursts"][0]["correlation_id"] == "cid-env"
         finally:
             server.shutdown()
 

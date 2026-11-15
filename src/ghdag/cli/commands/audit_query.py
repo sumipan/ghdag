@@ -11,6 +11,7 @@ def cmd_audit_query(args) -> None:
     from datetime import datetime
     from pathlib import Path
 
+    from ghdag.config.env import ghdag_audit_path
     from ghdag.io.audit_query import (
         detect_correlation_bursts,
         read_task_exit_events,
@@ -32,7 +33,7 @@ def cmd_audit_query(args) -> None:
         )
         sys.exit(2)
 
-    audit_path = Path(args.audit_path)
+    audit_path = Path(args.audit_path or ghdag_audit_path() or "jobs/audit.jsonl")
 
     if has_burst:
         bursts = detect_correlation_bursts(

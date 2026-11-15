@@ -407,7 +407,7 @@ class _Handler(BaseHTTPRequestHandler):
         qs = parse_qs(urlparse(self.path).query)
         hours = float(qs.get("hours", ["1"])[0])
         top_n = int(qs.get("top_n", ["20"])[0])
-        audit_path = Path(self.repo_root) / "jobs" / "audit.jsonl"
+        audit_path = resolve_audit_path(self.repo_root)
         bursts = get_correlation_top_n(audit_path, since_sec=hours * 3600, top_n=top_n)
         self._send_json_response(200, {"bursts": bursts})
 

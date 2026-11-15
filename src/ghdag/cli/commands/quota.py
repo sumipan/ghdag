@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ghdag.config.env import resolve_runtime_paths
 from ghdag.config.env import state_dir as resolve_state_dir
 from ghdag.io import exec_jsonl
 from ghdag.io.done import load_done_from_dir
@@ -84,9 +85,15 @@ def cmd_quota_status(args) -> None:
             running_by_engine.get(running_state.engine, 0) + 1
         )
 
+    exec_path = Path(args.exec_path)
+    done_dir = (
+        Path(args.done_dir)
+        if args.done_dir is not None
+        else resolve_runtime_paths(exec_path).done_dir
+    )
     queued_by_engine, unresolved = _collect_queued_counts(
-        exec_path=Path(args.exec_path),
-        done_dir=Path(args.done_dir),
+        exec_path=exec_path,
+        done_dir=done_dir,
         running_task_ids=set(snapshot.running_tasks.keys()),
     )
 

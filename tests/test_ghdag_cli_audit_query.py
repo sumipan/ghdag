@@ -198,6 +198,36 @@ class TestAuditQueryErrors:
         assert captured.err
 
 
+class TestAuditQueryGhdagAuditPath:
+    def test_correlation_query_uses_ghdag_audit_path_when_flag_omitted(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        """Refs sumipan/nexus#6801."""
+        from ghdag.cli import main
+
+        cid = "issuesmith:impl:99"
+        audit = tmp_path / "custom-audit.jsonl"
+        audit.write_text(
+            json.dumps(
+                {
+                    "event_type": "task_complete",
+                    "uuid": "u1",
+                    "status": "success",
+                    "correlation_id": cid,
+                    "timestamp": "2026-06-08T10:00:00+09:00",
+                },
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("GHDAG_AUDIT_PATH", str(audit))
+        main(["audit-query", "--correlation-id", cid])
+        out = capsys.readouterr().out.strip()
+        rec = json.loads(out)
+        assert rec["correlation_id"] == cid
+
+
 class TestAuditQueryMissingFile:
     def test_missing_audit_path_empty_output_exit_0(self, tmp_path, capsys):
         from ghdag.cli import main

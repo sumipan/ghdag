@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from ghdag.config.env import resolve_runtime_paths
 from ghdag.config.env import state_dir as resolve_state_dir
 from ghdag.mcp.server import McpServer
 from ghdag.mcp.tools import McpRuntime, McpToolRegistry
@@ -32,6 +33,7 @@ def cmd_mcp(args) -> None:
         state_dir=str(state_dir),
         exec_jsonl_path=str(exec_jsonl),
     )
+    paths = resolve_runtime_paths(exec_jsonl)
     pipeline = LLMPipelineAPI(
         pipeline_state=pipeline_state,
         order_builder=InlineOrderBuilder(),
@@ -41,8 +43,8 @@ def cmd_mcp(args) -> None:
         state=pipeline_state,
         pipeline=pipeline,
         queue_dir=queue_dir,
-        done_dir=exec_jsonl.parent / "done",
-        running_dir=exec_jsonl.parent / "running",
+        done_dir=paths.done_dir,
+        running_dir=paths.running_dir,
     )
     server = McpServer(McpToolRegistry(runtime))
     server.serve(sys.stdin, sys.stdout)
