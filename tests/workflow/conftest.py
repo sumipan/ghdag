@@ -160,9 +160,7 @@ class _RecordingPipelineState:
     def find_records_by_idempotency_key(self, key: str) -> list:
         return []
 
-    def remove_idempotency_for_handler(
-        self, workflow_name: str, handler_name: str, issue_number: int
-    ) -> int:
+    def remove_idempotency_for_handler(self, workflow_name: str, handler_name: str, issue_number: int) -> int:
         return 0
 
 
@@ -202,7 +200,9 @@ class _RecordingGitHubClient:
         self.updated_labels.append((args, kwargs))
 
 
-def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tuple[WorkflowDispatcher, _RecordingGitHubClient, _RecordingPipelineState, _RecordingOrderBuilder]:
+def _make_dispatcher(
+    workflow: WorkflowConfig, queue_dir: str = "queue"
+) -> tuple[WorkflowDispatcher, _RecordingGitHubClient, _RecordingPipelineState, _RecordingOrderBuilder]:
     github_client = _RecordingGitHubClient()
     pipeline_state = _RecordingPipelineState()
     order_builder = _RecordingOrderBuilder()
@@ -221,11 +221,6 @@ def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tupl
     return dispatcher, github_client, pipeline_state, order_builder
 
 
-def _last_records(pipeline_state: _RecordingPipelineState) -> list:
-    assert pipeline_state.appended, "expected append_exec_records to run"
-    return pipeline_state.appended[-1]
-
-
 _helpers = types.ModuleType("ghdag_workflow_conftest_helpers")
 sys.modules["ghdag_workflow_conftest_helpers"] = _helpers
 for _name in (
@@ -238,6 +233,5 @@ for _name in (
     "_RecordingOrderBuilder",
     "_RecordingGitHubClient",
     "_make_dispatcher",
-    "_last_records",
 ):
     setattr(_helpers, _name, globals()[_name])

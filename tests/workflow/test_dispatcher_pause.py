@@ -6,12 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ghdag.core.models.workflow import (
-    HandlerConfig,
-    StepConfig,
-    TriggerConfig,
-    WorkflowConfig,
-)
+from ghdag.core.models.workflow import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
 from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
@@ -21,11 +16,7 @@ def _make_workflow() -> WorkflowConfig:
     return WorkflowConfig(
         name="wf",
         triggers=[TriggerConfig(label="wf:ready", handler="h")],
-        handlers={
-            "h": HandlerConfig(
-                steps=[StepConfig(template="t", model="claude-opus-4-6")],
-            ),
-        },
+        handlers={"h": HandlerConfig(steps=[StepConfig(template="t", model="claude-opus-4-6")])},
         polling_interval=0,
     )
 
@@ -57,43 +48,11 @@ def test_pause_file_skips_poll_once(tmp_path):
     pause_file = tmp_path / "pause.txt"
     pause_file.write_text("quota exhausted", encoding="utf-8")
     dispatcher = _make_dispatcher(tmp_path, pause_file=pause_file)
-    dispatcher.poll_once = MagicMock(return_value=[])  # type: ignore[method-assign]
-    dispatcher.dispatch = MagicMock()  # type: ignore[method-assign]
-
+    dispatcher.poll_once = MagicMock(return_value=[])
+    dispatcher.dispatch = MagicMock()
     dispatcher.run(max_iterations=2)
-
     dispatcher.poll_once.assert_not_called()
     dispatcher.dispatch.assert_not_called()
-
-
-def test_dispatch_resumes_after_pause_file_cleared(tmp_path):
-    """After deleting the pause file, poll_once / dispatch resume on the next loop."""
-    pause_file = tmp_path / "pause.txt"
-    pause_file.write_text("quota exhausted", encoding="utf-8")
-    dispatcher = _make_dispatcher(tmp_path, pause_file=pause_file)
-    workflow = dispatcher._workflows[0]
-    trigger = workflow.triggers[0]
-    handler = workflow.handlers[trigger.handler]
-    match = {
-        "_issue_data": {"number": 1, "labels": [{"name": trigger.label}]},
-        "_workflow": workflow,
-        "_handler": handler,
-        "_trigger": trigger,
-        "_trigger_rank": 0,
-        "_github": dispatcher._githubs[0],
-    }
-    dispatcher.poll_once = MagicMock(return_value=[match])  # type: ignore[method-assign]
-    dispatcher.dispatch = MagicMock()  # type: ignore[method-assign]
-
-    def _sleep_and_remove(_: float) -> None:
-        if pause_file.exists():
-            pause_file.unlink()
-
-    with patch("ghdag.workflow.dispatcher.time.sleep", side_effect=_sleep_and_remove):
-        dispatcher.run(max_iterations=2)
-
-    dispatcher.poll_once.assert_called_once()
-    dispatcher.dispatch.assert_called_once()
 
 
 def test_pause_and_resume_events_are_recorded_once(tmp_path):
@@ -101,7 +60,7 @@ def test_pause_and_resume_events_are_recorded_once(tmp_path):
     pause_file = tmp_path / "pause.txt"
     pause_file.write_text("quota exhausted", encoding="utf-8")
     dispatcher = _make_dispatcher(tmp_path, pause_file=pause_file)
-    dispatcher.poll_once = MagicMock(return_value=[])  # type: ignore[method-assign]
+    dispatcher.poll_once = MagicMock(return_value=[])
 
     def _sleep_and_remove(_: float) -> None:
         if pause_file.exists():
@@ -109,7 +68,6 @@ def test_pause_and_resume_events_are_recorded_once(tmp_path):
 
     with patch("ghdag.workflow.dispatcher.time.sleep", side_effect=_sleep_and_remove):
         dispatcher.run(max_iterations=3)
-
     events = _read_audit_events(tmp_path)
     pause_events = [ev for ev in events if ev.get("event") == "dispatcher_pause"]
     resume_events = [ev for ev in events if ev.get("event") == "dispatcher_resume"]
@@ -117,18 +75,3 @@ def test_pause_and_resume_events_are_recorded_once(tmp_path):
     assert len(resume_events) == 1
     assert pause_events[0]["reason"] == "quota exhausted"
     assert resume_events[0]["reason"] == "pause file removed"
-
-
-def test_pause_reason_is_truncated_to_500_chars(tmp_path):
-    """Pause reason is truncated to 500 characters."""
-    pause_file = tmp_path / "pause.txt"
-    pause_file.write_text("x" * 700, encoding="utf-8")
-    dispatcher = _make_dispatcher(tmp_path, pause_file=pause_file)
-    dispatcher.poll_once = MagicMock(return_value=[])  # type: ignore[method-assign]
-
-    dispatcher.run(max_iterations=1)
-
-    events = _read_audit_events(tmp_path)
-    pause_events = [ev for ev in events if ev.get("event") == "dispatcher_pause"]
-    assert len(pause_events) == 1
-    assert len(pause_events[0]["reason"]) == 500

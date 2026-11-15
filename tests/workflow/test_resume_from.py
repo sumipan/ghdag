@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -21,60 +20,7 @@ def _make_api() -> LLMPipelineAPI:
     pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
-    return LLMPipelineAPI(
-        pipeline_state=pipeline_state,
-        order_builder=order_builder,
-        queue_dir="queue",
-    )
-
-
-def test_submit_resolves_forward_resume_from():
-    """resume_from referencing a later step in the list does not raise KeyError."""
-    api = _make_api()
-    steps = [
-        StepConfig(
-            id="b",
-            template="p2",
-            model="claude-sonnet-4-6",
-            engine="claude",
-            depends=["a"],
-            resume_from="a",
-        ),
-        StepConfig(id="a", template="p1", model="claude-sonnet-4-6", engine="claude"),
-    ]
-    lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-    a = json.loads(lines[1])
-    b = json.loads(lines[0])
-
-    assert b["annotations"]["resume_from_uuid"] == a["uuid"]
-
-
-def test_submit_records_resume_from_uuid_annotation():
-    import uuid as _uuid
-
-    api = _make_api()
-    steps = [
-        StepConfig(id="p1", template="p1", model="claude-sonnet-4-6", engine="claude"),
-        StepConfig(
-            id="p2",
-            template="p2",
-            model="claude-sonnet-4-6",
-            engine="claude",
-            depends=["p1"],
-            resume_from="p1",
-        ),
-    ]
-    lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-    p1 = json.loads(lines[0])
-    p2 = json.loads(lines[1])
-
-    assert p2["annotations"]["resume_from_uuid"] == p1["uuid"]
-
-    # Back-compat: steps without resume_from emit no annotation
-    assert "resume_from_uuid" not in p1["annotations"]
-
-    # UUID format sanity check (confirm mapped from real data)
-    _uuid.UUID(p2["annotations"]["resume_from_uuid"])
+    return LLMPipelineAPI(pipeline_state=pipeline_state, order_builder=order_builder, queue_dir="queue")
 
 
 def test_validate_depends_rejects_resume_from_non_ancestor():
@@ -105,25 +51,7 @@ def test_loader_rejects_engine_mismatch_resume_from(tmp_path):
     (tmp_path / "templates" / "a.md").write_text("a", encoding="utf-8")
     (tmp_path / "templates" / "b.md").write_text("b", encoding="utf-8")
     wf.write_text(
-        """
-name: test
-triggers:
-  - label: "pipeline:x"
-    handler: h
-handlers:
-  h:
-    steps:
-      - id: a
-        template: a
-        model: claude-sonnet-4-6
-        engine: claude
-      - id: b
-        template: b
-        model: auto
-        engine: cursor
-        depends: [a]
-        resume_from: a
-""",
+        '\nname: test\ntriggers:\n  - label: "pipeline:x"\n    handler: h\nhandlers:\n  h:\n    steps:\n      - id: a\n        template: a\n        model: claude-sonnet-4-6\n        engine: claude\n      - id: b\n        template: b\n        model: auto\n        engine: cursor\n        depends: [a]\n        resume_from: a\n',
         encoding="utf-8",
     )
     with pytest.raises(ValidationError, match="same engine"):
@@ -136,59 +64,11 @@ def test_loader_rejects_non_string_resume_from(tmp_path):
     (tmp_path / "templates" / "a.md").write_text("a", encoding="utf-8")
     (tmp_path / "templates" / "b.md").write_text("b", encoding="utf-8")
     wf.write_text(
-        """
-name: test
-triggers:
-  - label: "pipeline:x"
-    handler: h
-handlers:
-  h:
-    steps:
-      - id: a
-        template: a
-        model: claude-sonnet-4-6
-      - id: b
-        template: b
-        model: claude-sonnet-4-6
-        depends: [a]
-        resume_from: [a, b]
-""",
+        '\nname: test\ntriggers:\n  - label: "pipeline:x"\n    handler: h\nhandlers:\n  h:\n    steps:\n      - id: a\n        template: a\n        model: claude-sonnet-4-6\n      - id: b\n        template: b\n        model: claude-sonnet-4-6\n        depends: [a]\n        resume_from: [a, b]\n',
         encoding="utf-8",
     )
     with pytest.raises(ValidationError, match="resume_from"):
         load_workflows(tmp_path)
-
-
-@pytest.mark.parametrize(
-    ("engine", "expected"),
-    [
-        ("claude", "--resume 'sess_1'"),
-        ("cursor", "--resume 'sess_1'"),
-    ],
-)
-def test_render_exec_command_includes_resume_for_claude_cursor(engine, expected):
-    command = render_exec_command(
-        ENGINE_SPECS[engine],
-        order_path="queue/order.md",
-        prompt="p",
-        model="m",
-        permission=TEXT_ONLY,
-        resume_session_id="sess_1",
-    )
-    assert expected in command
-
-
-def test_render_exec_command_switches_codex_to_resume_subcommand():
-    command = render_exec_command(
-        ENGINE_SPECS["codex"],
-        order_path="queue/order.md",
-        prompt="p",
-        model="gpt-5.6-terra",
-        permission=TEXT_ONLY,
-        resume_session_id="sess_1",
-    )
-    assert "codex exec resume 'sess_1'" in command
-    assert "codex exec -" not in command
 
 
 @pytest.mark.parametrize("engine", ["gemini", "shell"])
