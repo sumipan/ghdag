@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ghdag.core.capabilities import PERMISSIONS
@@ -19,9 +19,12 @@ from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.pipeline.state import PipelineState
 from ghdag.status import issue_status, running_tasks
 
+MAX_READ_BYTES = 65536
+
 TOOL_NAMES: tuple[str, ...] = (
     "ghdag_enqueue",
     "ghdag_status",
+    "ghdag_read",
 )
 
 _ENQUEUE_KEYS = frozenset({"steps", "correlation_id"})
@@ -33,6 +36,23 @@ _STATUS_ISSUE_KEYS = frozenset({"issue", "handler", "workflow"})
 _MODEL_DESCRIPTION = (
     "Omit for the engine default; ghdag llm --list-models lists the allowed models."
 )
+
+
+def _read_capped(path: Path) -> tuple[str | None, bool, str | None]:
+    """Read at most MAX_READ_BYTES from path; return (text, truncated, reason)."""
+    try:
+        with path.open("rb") as handle:
+            data = handle.read(MAX_READ_BYTES + 1)
+    except FileNotFoundError:
+        return None, False, "not_found"
+    except IsADirectoryError:
+        return None, False, "not_found"
+    except OSError:
+        return None, False, "unreadable"
+    truncated = len(data) > MAX_READ_BYTES
+    if truncated:
+        data = data[:MAX_READ_BYTES]
+    return data.decode("utf-8", errors="replace"), truncated, None
 
 
 def _schema_object(
@@ -126,11 +146,22 @@ def _status_schema() -> dict[str, Any]:
             "items": {"type": "string"},
             "description": "Task UUIDs to inspect",
         },
+        "include_result": {
+            "type": "boolean",
+            "description": "When true with uuids, embed capped result file bodies",
+        },
         **issue_props,
     }
     return _schema_object(
         props,
         examples=[{"uuids": ["00000000-0000-0000-0000-000000000001"]}],
+    )
+
+
+def _read_schema() -> dict[str, Any]:
+    return _schema_object(
+        {"path": {"type": "string", "description": "Relative path under --repo-root"}},
+        required=["path"],
     )
 
 
@@ -210,6 +241,11 @@ _TOOL_SPECS: list[dict[str, Any]] = [
         "description": "Read task status by uuid or Issue handler workflow",
         "inputSchema": _status_schema(),
     },
+    {
+        "name": "ghdag_read",
+        "description": "Read a repo file listed by ghdag mcp --read-path",
+        "inputSchema": _read_schema(),
+    },
 ]
 
 
@@ -222,6 +258,8 @@ class McpRuntime:
     queue_dir: str
     done_dir: Path
     running_dir: Path
+    repo_root: Path
+    read_paths: frozenset[str] = frozenset()
 
 
 class McpToolRegistry:
@@ -240,6 +278,8 @@ class McpToolRegistry:
             return self._enqueue(arguments)
         if name == "ghdag_status":
             return self._status(arguments)
+        if name == "ghdag_read":
+            return self._read(arguments)
         raise KeyError(name)
 
     def _mcp_invalid(self, hint: str) -> ConfigError:
@@ -253,6 +293,49 @@ class McpToolRegistry:
         extra = set(args) - allowed
         if extra:
             raise self._mcp_invalid(f"remove unknown keys: {sorted(extra)}")
+
+    def _resolve_result_path(self, result_path: str) -> Path:
+        path = Path(result_path)
+        if not path.is_absolute():
+            path = self._runtime.repo_root / path
+        return path
+
+    def _include_result_fields(
+        self,
+        *,
+        status: str,
+        result_path: str | None,
+    ) -> dict[str, Any]:
+        if status in ("pending", "running"):
+            return {
+                "result": None,
+                "result_truncated": False,
+                "result_reason": "not_finished",
+            }
+        if not result_path:
+            return {
+                "result": None,
+                "result_truncated": False,
+                "result_reason": "no_result_path",
+            }
+        content, truncated, reason = _read_capped(self._resolve_result_path(result_path))
+        return {
+            "result": content,
+            "result_truncated": truncated,
+            "result_reason": reason,
+        }
+
+    def _normalize_relative_path(self, raw: str) -> str:
+        return str(PurePosixPath(raw))
+
+    def _validate_read_path_arg(self, raw: Any) -> str:
+        if not isinstance(raw, str) or not raw:
+            raise self._mcp_invalid("path must be a non-empty string")
+        if Path(raw).is_absolute() or raw.startswith("/"):
+            raise self._mcp_invalid("path must be relative to --repo-root")
+        if ".." in PurePosixPath(raw).parts:
+            raise self._mcp_invalid("path must not contain '..'")
+        return self._normalize_relative_path(raw)
 
     def _validate_engine_body(
         self,
@@ -393,7 +476,7 @@ class McpToolRegistry:
         return out
 
     def _status(self, args: dict[str, Any]) -> dict[str, Any]:
-        allowed = _STATUS_ISSUE_KEYS | frozenset({"uuids"})
+        allowed = _STATUS_ISSUE_KEYS | frozenset({"uuids", "include_result"})
         self._validate_keys(args, allowed)
         has_uuids = "uuids" in args
         has_issue = any(k in args for k in _STATUS_ISSUE_KEYS)
@@ -401,6 +484,15 @@ class McpToolRegistry:
             raise self._mcp_invalid("use either uuids or issue/handler/workflow, not both")
         if not has_uuids and not has_issue:
             raise self._mcp_invalid("provide uuids or issue, handler, and workflow")
+
+        include_result = False
+        if "include_result" in args:
+            if has_issue:
+                raise self._mcp_invalid("include_result is only supported with uuids")
+            value = args["include_result"]
+            if not isinstance(value, bool):
+                raise self._mcp_invalid("include_result must be a boolean")
+            include_result = value
 
         if has_issue:
             issue = args.get("issue")
@@ -475,15 +567,40 @@ class McpToolRegistry:
                 done_raw,
                 status=status,
             )
-            tasks.append(
-                {
-                    "uuid": uid,
-                    "status": status,
-                    "done_value": done_value,
-                    "failure_class": failure_class,
-                    "cause": cause,
-                    "retry_policy": retry_policy,
-                    "result_path": record.get("result_path") if record else None,
-                }
-            )
+            entry: dict[str, Any] = {
+                "uuid": uid,
+                "status": status,
+                "done_value": done_value,
+                "failure_class": failure_class,
+                "cause": cause,
+                "retry_policy": retry_policy,
+                "result_path": record.get("result_path") if record else None,
+            }
+            if include_result:
+                rp = record.get("result_path") if record else None
+                rp_str = rp if isinstance(rp, str) else None
+                entry.update(
+                    self._include_result_fields(status=status, result_path=rp_str)
+                )
+            tasks.append(entry)
         return {"tasks": tasks}
+
+    def _read(self, args: dict[str, Any]) -> dict[str, Any]:
+        self._validate_keys(args, frozenset({"path"}))
+        normalized = self._validate_read_path_arg(args.get("path"))
+        allowed = self._runtime.read_paths
+        if normalized not in allowed:
+            if allowed:
+                raise self._mcp_invalid(
+                    f"path is not listed by --read-path; allowed: {sorted(allowed)}"
+                )
+            raise self._mcp_invalid(
+                "no paths are readable; start ghdag mcp with --read-path"
+            )
+        content, truncated, reason = _read_capped(self._runtime.repo_root / normalized)
+        return {
+            "path": normalized,
+            "content": content,
+            "truncated": truncated,
+            "reason": reason,
+        }

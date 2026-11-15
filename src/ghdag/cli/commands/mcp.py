@@ -3,15 +3,37 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from ghdag.config.env import resolve_runtime_paths
 from ghdag.config.env import state_dir as resolve_state_dir
+from ghdag.core.exceptions import ConfigError
 from ghdag.mcp.server import McpServer
 from ghdag.mcp.tools import McpRuntime, McpToolRegistry
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.pipeline.state import PipelineState
+
+
+def _normalize_read_paths(paths: list[str] | None) -> frozenset[str]:
+    if not paths:
+        return frozenset()
+    normalized: set[str] = set()
+    for raw in paths:
+        if Path(raw).is_absolute() or raw.startswith("/"):
+            raise ConfigError(
+                "Invalid MCP startup arguments",
+                code="MCP_ARGUMENT_INVALID",
+                hint="path must be relative to --repo-root",
+            )
+        if ".." in PurePosixPath(raw).parts:
+            raise ConfigError(
+                "Invalid MCP startup arguments",
+                code="MCP_ARGUMENT_INVALID",
+                hint="path must not contain '..'",
+            )
+        normalized.add(str(PurePosixPath(raw)))
+    return frozenset(normalized)
 
 
 def cmd_mcp(args) -> None:
@@ -29,6 +51,8 @@ def cmd_mcp(args) -> None:
     else:
         state_dir = resolve_state_dir(repo_root) / ".pipeline-state"
 
+    read_paths = _normalize_read_paths(getattr(args, "read_path", None))
+
     pipeline_state = PipelineState(
         state_dir=str(state_dir),
         exec_jsonl_path=str(exec_jsonl),
@@ -45,6 +69,8 @@ def cmd_mcp(args) -> None:
         queue_dir=queue_dir,
         done_dir=paths.done_dir,
         running_dir=paths.running_dir,
+        repo_root=repo_root,
+        read_paths=read_paths,
     )
     server = McpServer(McpToolRegistry(runtime))
     server.serve(sys.stdin, sys.stdout)

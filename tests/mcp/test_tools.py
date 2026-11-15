@@ -32,13 +32,17 @@ from ghdag.core.vocabulary import (
 )
 from ghdag.io.done import mark_done
 from ghdag.mcp.server import McpServer
-from ghdag.mcp.tools import TOOL_NAMES, McpRuntime, McpToolRegistry
+from ghdag.mcp.tools import MAX_READ_BYTES, TOOL_NAMES, McpRuntime, McpToolRegistry
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.pipeline.state import PipelineState
 
 
-def _runtime(tmp_path: Path) -> McpRuntime:
+def _runtime(
+    tmp_path: Path,
+    *,
+    read_paths: frozenset[str] | None = None,
+) -> McpRuntime:
     jobs = tmp_path / "jobs"
     jobs.mkdir()
     exec_jsonl = jobs / "exec.jsonl"
@@ -59,7 +63,25 @@ def _runtime(tmp_path: Path) -> McpRuntime:
         queue_dir=str(jobs),
         done_dir=jobs / "done",
         running_dir=jobs / "running",
+        repo_root=tmp_path,
+        read_paths=read_paths or frozenset(),
     )
+
+
+def _seed_uuid_record(
+    runtime: McpRuntime,
+    uid: str,
+    *,
+    result_path: str | None = None,
+    done_marker: str | None = None,
+) -> None:
+    record: dict = {"uuid": uid, "command": "echo", "depends": []}
+    if result_path is not None:
+        record["result_path"] = result_path
+    exec_path = Path(runtime.state._exec_jsonl_path)
+    exec_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+    if done_marker is not None:
+        mark_done(runtime.done_dir, uid, done_marker)
 
 
 def _server(runtime: McpRuntime) -> McpServer:
@@ -85,7 +107,7 @@ class TestToolCatalog:
         tools = McpToolRegistry(runtime).list_tools()
         names = {t["name"] for t in tools}
         assert names == set(TOOL_NAMES)
-        assert names == {"ghdag_enqueue", "ghdag_status"}
+        assert names == {"ghdag_enqueue", "ghdag_status", "ghdag_read"}
         for tool in tools:
             assert tool["inputSchema"]["type"] == "object"
             assert tool["inputSchema"]["additionalProperties"] is False
@@ -372,3 +394,168 @@ class TestStatus:
         )
         assert result["isError"] is True
         assert result["structuredContent"]["code"] == "MCP_ARGUMENT_INVALID"
+
+
+class TestStatusIncludeResult:
+    def test_status_include_result_returns_body(self, tmp_path):
+        """Refs sumipan/nexus#6837 — finished task returns result file body."""
+        runtime = _runtime(tmp_path)
+        server = _server(runtime)
+        uid = "00000000-0000-0000-0000-0000000000aa"
+        rel = "jobs/results/out.md"
+        body = "hello result"
+        (tmp_path / "jobs" / "results").mkdir(parents=True)
+        (tmp_path / rel).write_text(body, encoding="utf-8")
+        _seed_uuid_record(
+            runtime,
+            uid,
+            result_path=rel,
+            done_marker=DONE_SUCCESS,
+        )
+        st = _call(
+            server,
+            "ghdag_status",
+            {"uuids": [uid], "include_result": True},
+        )
+        assert st["isError"] is False
+        task = st["structuredContent"]["tasks"][0]
+        assert task["result"] == body
+        assert task["result_truncated"] is False
+        assert task["result_reason"] is None
+
+    def test_status_include_result_truncates(self, tmp_path):
+        """Refs sumipan/nexus#6837 — oversized result files are capped."""
+        runtime = _runtime(tmp_path)
+        server = _server(runtime)
+        uid = "00000000-0000-0000-0000-0000000000ab"
+        rel = "jobs/results/big.md"
+        (tmp_path / "jobs" / "results").mkdir(parents=True)
+        payload = "x" * (MAX_READ_BYTES + 100)
+        (tmp_path / rel).write_bytes(payload.encode("utf-8"))
+        _seed_uuid_record(
+            runtime,
+            uid,
+            result_path=rel,
+            done_marker=DONE_SUCCESS,
+        )
+        st = _call(
+            server,
+            "ghdag_status",
+            {"uuids": [uid], "include_result": True},
+        )
+        task = st["structuredContent"]["tasks"][0]
+        assert len(task["result"]) == MAX_READ_BYTES
+        assert task["result_truncated"] is True
+        assert task["result_reason"] is None
+
+    def test_status_include_result_missing_file(self, tmp_path):
+        """Refs sumipan/nexus#6837 — missing result_path target is soft failure."""
+        runtime = _runtime(tmp_path)
+        server = _server(runtime)
+        uid = "00000000-0000-0000-0000-0000000000ac"
+        _seed_uuid_record(
+            runtime,
+            uid,
+            result_path="jobs/results/missing.md",
+            done_marker=DONE_SUCCESS,
+        )
+        st = _call(
+            server,
+            "ghdag_status",
+            {"uuids": [uid], "include_result": True},
+        )
+        assert st["isError"] is False
+        task = st["structuredContent"]["tasks"][0]
+        assert task["result"] is None
+        assert task["result_reason"] == "not_found"
+
+    def test_status_without_include_result_keys_unchanged(self, tmp_path):
+        """Refs sumipan/nexus#6837 — default status shape stays seven keys."""
+        runtime = _runtime(tmp_path)
+        server = _server(runtime)
+        uid = "00000000-0000-0000-0000-0000000000ad"
+        _seed_uuid_record(runtime, uid, done_marker=DONE_SUCCESS)
+        st = _call(server, "ghdag_status", {"uuids": [uid]})
+        task = st["structuredContent"]["tasks"][0]
+        assert set(task) == {
+            "uuid",
+            "status",
+            "done_value",
+            "failure_class",
+            "cause",
+            "retry_policy",
+            "result_path",
+        }
+
+    def test_status_include_result_with_issue_rejected(self, tmp_path):
+        """Refs sumipan/nexus#6837 — include_result is uuid-only."""
+        runtime = _runtime(tmp_path)
+        result = _call(
+            _server(runtime),
+            "ghdag_status",
+            {
+                "issue": 1,
+                "handler": "h",
+                "workflow": "w",
+                "include_result": True,
+            },
+        )
+        assert result["isError"] is True
+        assert result["structuredContent"]["code"] == "MCP_ARGUMENT_INVALID"
+
+
+class TestGhdagRead:
+    def test_read_listed_path_returns_body(self, tmp_path):
+        """Refs sumipan/nexus#6837 — ghdag_read returns listed file content."""
+        rel = "state/x.json"
+        body = '{"ok": true}'
+        (tmp_path / "state").mkdir()
+        (tmp_path / rel).write_text(body, encoding="utf-8")
+        runtime = _runtime(tmp_path, read_paths=frozenset({rel}))
+        result = _call(_server(runtime), "ghdag_read", {"path": rel})
+        assert result["isError"] is False
+        payload = result["structuredContent"]
+        assert payload["content"] == body
+        assert payload["truncated"] is False
+        assert payload["reason"] is None
+
+    @pytest.mark.parametrize(
+        ("arguments", "secret_rel"),
+        [
+            ({"path": "state/other.json"}, "state/listed.json"),
+            ({"path": "../secrets.txt"}, "state/listed.json"),
+            ({"path": "/etc/passwd"}, "state/listed.json"),
+        ],
+    )
+    def test_read_rejects_unlisted_dotdot_absolute(
+        self, tmp_path, arguments, secret_rel
+    ):
+        """Refs sumipan/nexus#6837 — invalid paths never return file bodies."""
+        (tmp_path / "state").mkdir()
+        secret = "TOP SECRET"
+        (tmp_path / secret_rel).write_text(secret, encoding="utf-8")
+        runtime = _runtime(tmp_path, read_paths=frozenset({secret_rel}))
+        result = _call(_server(runtime), "ghdag_read", arguments)
+        assert result["isError"] is True
+        assert result["structuredContent"]["code"] == "MCP_ARGUMENT_INVALID"
+        assert result["structuredContent"]["hint"]
+        assert secret not in json.dumps(result)
+
+    def test_read_without_read_paths_rejects_all(self, tmp_path):
+        """Refs sumipan/nexus#6837 — empty allowlist rejects every path."""
+        (tmp_path / "state").mkdir()
+        (tmp_path / "state" / "x.json").write_text("{}", encoding="utf-8")
+        runtime = _runtime(tmp_path)
+        result = _call(_server(runtime), "ghdag_read", {"path": "state/x.json"})
+        assert result["isError"] is True
+        assert result["structuredContent"]["code"] == "MCP_ARGUMENT_INVALID"
+
+    def test_read_listed_missing_file_returns_null(self, tmp_path):
+        """Refs sumipan/nexus#6837 — listed but missing file is not an error."""
+        rel = "state/y.json"
+        runtime = _runtime(tmp_path, read_paths=frozenset({rel}))
+        result = _call(_server(runtime), "ghdag_read", {"path": rel})
+        assert result["isError"] is False
+        payload = result["structuredContent"]
+        assert payload["content"] is None
+        assert payload["reason"] == "not_found"

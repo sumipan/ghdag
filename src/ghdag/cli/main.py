@@ -230,6 +230,13 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Pipeline state directory (default: derived like ghdag watch)",
     )
+    mcp_parser.add_argument(
+        "--read-path",
+        action="append",
+        default=None,
+        metavar="PATH",
+        help="Repo-relative path allowed for ghdag_read (repeatable)",
+    )
     mcp_parser.set_defaults(func=cmd_mcp)
     _add_json_flag(mcp_parser)
 
