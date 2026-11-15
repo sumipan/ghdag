@@ -210,6 +210,35 @@ class TestAppend:
         assert "u1" not in snap.running_tasks
         assert snap.engines["claude"].status == "paused"
 
+    def test_append_records_safe_default_uuids_in_audit(self, tmp_path: Path) -> None:
+        """Refs sumipan/nexus#6799."""
+        from ghdag.io.audit import AuditContext
+        from ghdag.io.exec_jsonl import append
+
+        path = tmp_path / "exec.jsonl"
+        audit = tmp_path / "audit.jsonl"
+        records = [
+            {"uuid": "u1", "command": "echo", "annotations": {"safe_default_applied": True}},
+            {"uuid": "u2", "command": "echo"},
+        ]
+        append(path, records, AuditContext(source="test"), audit_path=audit)
+
+        audit_rec = json.loads(audit.read_text(encoding="utf-8").strip())
+        assert audit_rec["default_permission_uuids"] == ["u1"]
+
+    def test_append_omits_default_permission_uuids_without_mark(self, tmp_path: Path) -> None:
+        """Refs sumipan/nexus#6799."""
+        from ghdag.io.audit import AuditContext
+        from ghdag.io.exec_jsonl import append
+
+        path = tmp_path / "exec.jsonl"
+        audit = tmp_path / "audit.jsonl"
+        records = [{"uuid": "u1", "command": "echo"}]
+        append(path, records, AuditContext(source="test"), audit_path=audit)
+
+        audit_rec = json.loads(audit.read_text(encoding="utf-8").strip())
+        assert "default_permission_uuids" not in audit_rec
+
 
 class TestRemove:
     def test_remove_by_predicate(self, tmp_path: Path) -> None:

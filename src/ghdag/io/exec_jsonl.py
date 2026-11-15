@@ -318,7 +318,7 @@ def append(
         dp_uuids = [
             r["uuid"]
             for r in records
-            if r.get("annotations", {}).get("default_permission_applied")
+            if r.get("annotations", {}).get("safe_default_applied")
         ]
     write_audit_log(
         Path(audit_path),
