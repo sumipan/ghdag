@@ -12,7 +12,6 @@ import json
 import subprocess
 import threading
 from pathlib import Path
-from unittest.mock import MagicMock
 
 from ghdag.dag._util import _stdout_line_reader, _stdout_reader
 from ghdag.dag.engine import DagEngine
@@ -203,20 +202,6 @@ def _make_config(tmp_path: Path, records: list[dict], **overrides) -> DagConfig:
     )
     defaults.update(overrides)
     return DagConfig(**defaults)
-
-
-def _run_engine_until_success(engine: DagEngine, hooks: MagicMock) -> None:
-    finished = threading.Event()
-
-    def on_success(*_args, **_kwargs) -> None:
-        finished.set()
-
-    hooks.on_task_success.side_effect = on_success
-    t = threading.Thread(target=engine.run, daemon=True)
-    t.start()
-    finished.wait()
-    engine._shutdown = True
-    t.join()
 
 
 class TestExtractStreamResultShared:

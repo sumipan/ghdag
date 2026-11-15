@@ -77,14 +77,6 @@ def test_corrupted_state_is_fail_closed(tmp_path: Path) -> None:
         gate.admit(task_uuid="task-1", engine="claude", phase="launch", now=_dt(12))
 
 
-_DEFAULT_STATE = {
-    "schema_version": 1,
-    "engines": {},
-    "draining_engines": {},
-    "running_tasks": {},
-}
-
-
 def test_modify_exception_propagates_and_state_is_unchanged(tmp_path: Path) -> None:
     state_path = tmp_path / "quota-gate.json"
     gate = QuotaGate(state_path)
