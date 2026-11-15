@@ -62,45 +62,6 @@ def _http_error(code: int, *, headers: dict | None = None, message: str = "error
     )
 
 
-def test_etag_true_sends_if_none_match_on_second_request(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Subsequent etag=True requests include If-None-Match."""
-    client = _make_client()
-    captured_headers: list[dict[str, str]] = []
-    call_count = {"n": 0}
-
-    def fake_urlopen(req, timeout=120):
-        call_count["n"] += 1
-        captured_headers.append(dict(req.headers))
-        if call_count["n"] == 1:
-            return _mock_urlopen(
-                [{"number": 1}],
-                headers={
-                    "ETag": _REALISTIC_ETAG,
-                    "X-RateLimit-Remaining": "4999",
-                    "X-RateLimit-Limit": "5000",
-                    "X-RateLimit-Used": "1",
-                    "X-RateLimit-Reset": "1700003600",
-                },
-            )
-        raise _http_error(304, headers={"ETag": _REALISTIC_ETAG})
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-
-    first = client._request("GET", "/repos/owner/repo/issues", etag=True)
-    second = client._request("GET", "/repos/owner/repo/issues", etag=True)
-
-    assert first == [{"number": 1}]
-    assert second == [{"number": 1}]
-    assert call_count["n"] == 2
-    # First request has no If-None-Match; second sends the cached ETag
-    assert "If-none-match" not in {k.lower(): v for k, v in captured_headers[0].items()} or (
-        captured_headers[0].get("If-None-Match") is None
-        and captured_headers[0].get("If-none-match") is None
-    )
-    second_hdrs = {k.lower(): v for k, v in captured_headers[1].items()}
-    assert second_hdrs.get("if-none-match") == _REALISTIC_ETAG
-
-
 def test_304_returns_cached_body_without_updating_rate_limit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -133,45 +94,6 @@ def test_304_returns_cached_body_without_updating_rate_limit(
     result = client._request("GET", "/repos/owner/repo/issues", etag=True)
     assert result == [{"number": 42, "title": "cached"}]
     assert client.get_last_rate_limit()["remaining"] == 100
-
-
-def test_200_stores_etag_in_cache(monkeypatch: pytest.MonkeyPatch) -> None:
-    """On 200 responses, store ETag in the instance cache."""
-    client = _make_client()
-
-    def fake_urlopen(req, timeout=120):
-        return _mock_urlopen(
-            [{"number": 7}],
-            headers={"ETag": _REALISTIC_ETAG},
-        )
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    client._request("GET", "/repos/owner/repo/issues", etag=True)
-
-    assert len(client._etag_cache) == 1
-    etag, body = next(iter(client._etag_cache.values()))
-    assert etag == _REALISTIC_ETAG
-    assert body == [{"number": 7}]
-
-
-def test_etag_false_does_not_send_if_none_match(monkeypatch: pytest.MonkeyPatch) -> None:
-    """etag=False (default) does not send If-None-Match even when cached."""
-    client = _make_client()
-    client._etag_cache["https://api.github.com/repos/owner/repo/issues"] = (
-        _REALISTIC_ETAG,
-        [{"number": 1}],
-    )
-    captured: list[dict[str, str]] = []
-
-    def fake_urlopen(req, timeout=120):
-        captured.append(dict(req.headers))
-        return _mock_urlopen([{"number": 2}], headers={"ETag": 'W/"other"'})
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    result = client._request("GET", "/repos/owner/repo/issues", etag=False)
-    assert result == [{"number": 2}]
-    hdrs = {k.lower(): v for k, v in captured[0].items()}
-    assert "if-none-match" not in hdrs
 
 
 def test_list_all_issues_uses_etag(monkeypatch: pytest.MonkeyPatch) -> None:

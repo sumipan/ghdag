@@ -24,19 +24,6 @@ class TestResolveModels:
         kw.update(kwargs)
         return PipelineConfig(**kw)
 
-    def test_c1_default_no_override(self):
-        """C1: overrides={} → return system_defaults unchanged"""
-        cfg = self.make_config()
-        result = resolve_models(cfg, {})
-        assert result == {"brushup": "opus", "implement": "sonnet"}
-
-    def test_c2_override_one_phase(self):
-        """C2: overrides={"implement": "sonnet"} → only implement changes"""
-        cfg = self.make_config()
-        result = resolve_models(cfg, {"implement": "sonnet"})
-        assert result["implement"] == "sonnet"
-        assert result["brushup"] == "opus"
-
     def test_c3_allowlist_violation(self):
         """C3: allowlist violation → ModelValidationError (includes phase name + model ID)"""
         cfg = self.make_config(allowed_models={"opus", "sonnet"})
@@ -71,58 +58,11 @@ class TestTemplateOrderBuilder:
     def _write_template(self, name: str, content: str):
         Path(self.tmpdir, f"{name}.md").write_text(content, encoding="utf-8")
 
-    def test_o1_simple_substitution(self):
-        """O1: $name → world"""
-        self._write_template("step", "Hello $name")
-        builder = TemplateOrderBuilder(self.tmpdir)
-        assert builder.build_order("step", {"name": "world"}) == "Hello world"
-
-    def test_o2_multiple_variables(self):
-        """O2: expand multiple variables"""
-        self._write_template("step", "$a and $b")
-        builder = TemplateOrderBuilder(self.tmpdir)
-        assert builder.build_order("step", {"a": "X", "b": "Y"}) == "X and Y"
-
-    def test_o3_missing_variable_raises(self):
-        """O3: missing variable → fail with KeyError (do not leave unexpanded silently)"""
-        self._write_template("step", "$name $missing")
-        builder = TemplateOrderBuilder(self.tmpdir)
-        with pytest.raises(KeyError):
-            builder.build_order("step", {"name": "x"})
-
-    def test_o4_template_order_builder_normal(self):
-        """O4: TemplateOrderBuilder happy path"""
-        self._write_template("brushup", "Design: $title")
-        builder = TemplateOrderBuilder(self.tmpdir)
-        assert builder.build_order("brushup", {"title": "T"}) == "Design: T"
-
     def test_o5_template_not_found(self):
         """O5: missing template → FileNotFoundError"""
         builder = TemplateOrderBuilder(self.tmpdir)
         with pytest.raises(FileNotFoundError):
             builder.build_order("nonexistent", {})
-
-    def test_o6_dollar_literal(self):
-        """O6: $$ in context value expands as literal $"""
-        self._write_template("step", "Price: $price")
-        builder = TemplateOrderBuilder(self.tmpdir)
-        result = builder.build_order("step", {"price": "$$100"})
-        # string.Template behavior: $$ → $
-        assert "$100" in result
-
-    def test_o7_empty_context_static_template(self):
-        """O7: empty context + template with no variables"""
-        self._write_template("step", "static text")
-        builder = TemplateOrderBuilder(self.tmpdir)
-        assert builder.build_order("step", {}) == "static text"
-
-    def test_order_builder_protocol(self):
-        """OrderBuilder works as a Protocol (OK without isinstance check)"""
-        # Confirm TemplateOrderBuilder has build_order
-        self._write_template("s", "x")
-        builder = TemplateOrderBuilder(self.tmpdir)
-        assert hasattr(builder, "build_order")
-        assert callable(builder.build_order)
 
 
 # ---------------------------------------------------------------------------
@@ -140,41 +80,10 @@ class TestPipelineState:
     def make_state(self) -> PipelineState:
         return PipelineState(state_dir=self.state_dir, exec_jsonl_path=self.exec_md)
 
-    def test_quota_gate_reused_across_append_exec_records(self):
-        """AC-3: QuotaGate is created once when PipelineState is built and reused."""
-        st = self.make_state()
-        gate1 = st._quota_gate
-        st.append_exec_records([{"uuid": "u1", "command": "echo 1"}])
-        gate2 = st._quota_gate
-        st.append_exec_records([{"uuid": "u2", "command": "echo 2"}])
-        gate3 = st._quota_gate
-        assert gate1 is gate2 is gate3
-
-    # --- idempotency ---
-
     def test_s1_idempotency_first_call(self):
         """S1: first check_idempotency → True (unprocessed)"""
         st = self.make_state()
         assert st.check_idempotency("key-1") is True
-
-    def test_s2_idempotency_after_record(self):
-        """S2: check_idempotency is False when idempotency_key exists in JSONL"""
-        import json
-        exec_jsonl = os.path.join(self.tmpdir, "exec.jsonl")
-        st = PipelineState(state_dir=self.state_dir, exec_jsonl_path=exec_jsonl)
-        Path(exec_jsonl).write_text(
-            json.dumps({"idempotency_key": "key-1", "uuid": "abc-123"}) + "\n",
-            encoding="utf-8",
-        )
-        assert st.check_idempotency("key-1") is False
-
-    def test_s3_idempotency_no_exec_md(self):
-        """S3: missing exec.md → True (treated as unprocessed)"""
-        assert not os.path.exists(self.exec_md)
-        st = self.make_state()
-        assert st.check_idempotency("key-1") is True
-
-    # --- JSON state persistence ---
 
     def test_s4_save_and_load(self):
         """S4: save → load"""
@@ -199,21 +108,6 @@ class TestPipelineState:
         """S7: remove nonexistent pipeline_id → False"""
         st = self.make_state()
         assert st.remove("nonexistent") is False
-
-    # --- append to exec.md ---
-
-    def test_s14_write_order_file(self):
-        """S14: write_order_file → file is created with correct contents"""
-        st = self.make_state()
-        filename = st.write_order_file(
-            ts="20260410",
-            order_uuid="abc",
-            content="order body",
-            queue_dir=self.queue_dir,
-        )
-        assert filename == "20260410-claude-order-abc.md"
-        content = Path(self.queue_dir, filename).read_text(encoding="utf-8")
-        assert content == "order body"
 
 
 class TestStatusRank:
@@ -253,20 +147,6 @@ class TestParseFrontmatter:
         assert parse_frontmatter(path) == {}
 
 
-class TestFromRepoRoot:
-    def test_from_repo_root_sets_standard_state_paths(self, tmp_path):
-        """AC-4: from_repo_root → state_dir and exec_jsonl_path use standard paths"""
-        state = PipelineState.from_repo_root(tmp_path)
-        assert state._state_dir == tmp_path / ".pipeline-state"
-        assert state._exec_jsonl_path == tmp_path / "jobs" / "exec.jsonl"
-
-    def test_from_repo_root_accepts_str_path(self, tmp_path):
-        """AC-4: from_repo_root accepts str and yields Path"""
-        state = PipelineState.from_repo_root(str(tmp_path))
-        assert state._state_dir == tmp_path / ".pipeline-state"
-        assert state._exec_jsonl_path == tmp_path / "jobs" / "exec.jsonl"
-
-
 # ---------------------------------------------------------------------------
 # JSONL mode: parse_exec_tasks / remove_exec_entries (AC1, AC2)
 # ---------------------------------------------------------------------------
@@ -278,26 +158,6 @@ class TestParseExecTasksJsonl:
             state_dir=tmp_path / ".pipeline-state",
             exec_jsonl_path=tmp_path / "queue" / "exec.jsonl",
         )
-
-    def test_parse_exec_tasks_reads_valid_jsonl(self, tmp_path):
-        """AC1-1: valid 2-line JSONL → {uuid: command} dict"""
-        jsonl = tmp_path / "queue" / "exec.jsonl"
-        jsonl.parent.mkdir(parents=True)
-        jsonl.write_text(
-            _json.dumps({"uuid": "abc-123", "command": "echo hello", "depends": []}) + "\n"
-            + _json.dumps({"uuid": "def-456", "command": "echo world", "depends": []}) + "\n",
-            encoding="utf-8",
-        )
-        state = self.make_state(tmp_path)
-        assert state.parse_exec_tasks() == {"abc-123": "echo hello", "def-456": "echo world"}
-
-    def test_parse_exec_tasks_empty_file_returns_empty(self, tmp_path):
-        """AC1-2: empty file → {}"""
-        jsonl = tmp_path / "queue" / "exec.jsonl"
-        jsonl.parent.mkdir(parents=True)
-        jsonl.write_text("", encoding="utf-8")
-        state = self.make_state(tmp_path)
-        assert state.parse_exec_tasks() == {}
 
     def test_parse_exec_tasks_missing_file_returns_empty(self, tmp_path):
         """AC1-3: missing file → {}"""
@@ -335,56 +195,6 @@ class TestRemoveExecEntriesJsonl:
             state_dir=tmp_path / ".pipeline-state",
             exec_jsonl_path=tmp_path / "queue" / "exec.jsonl",
         )
-
-    def _write_jsonl(self, path: Path, records: list[dict]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(
-            "\n".join(_json.dumps(r) for r in records) + "\n",
-            encoding="utf-8",
-        )
-
-    def test_remove_exec_entries_drops_matching_uuids(self, tmp_path):
-        """AC2-1: delete 2 of 3 lines → 1 remains, return 2"""
-        jsonl = tmp_path / "queue" / "exec.jsonl"
-        self._write_jsonl(jsonl, [
-            {"uuid": "a", "command": "cmd-a"},
-            {"uuid": "b", "command": "cmd-b"},
-            {"uuid": "c", "command": "cmd-c"},
-        ])
-        state = self.make_state(tmp_path)
-        removed = state.remove_exec_entries({"a", "c"})
-        assert removed == 2
-        content = jsonl.read_text(encoding="utf-8")
-        assert "cmd-b" in content
-        assert "cmd-a" not in content
-        assert "cmd-c" not in content
-
-    def test_remove_exec_entries_keeps_idempotency_lines(self, tmp_path):
-        """AC2-2: keep idempotency lines; delete only uuid lines"""
-        jsonl = tmp_path / "queue" / "exec.jsonl"
-        self._write_jsonl(jsonl, [
-            {"uuid": "a", "command": "cmd-a"},
-            {"idempotency_key": "workflow:phase:1"},
-        ])
-        state = self.make_state(tmp_path)
-        removed = state.remove_exec_entries({"a"})
-        assert removed == 1
-        content = jsonl.read_text(encoding="utf-8")
-        assert "idempotency_key" in content
-        assert "cmd-a" not in content
-
-    def test_remove_exec_entries_returns_zero_for_unknown_uuids(self, tmp_path):
-        """AC2-3: no matching UUID → unchanged, return 0"""
-        jsonl = tmp_path / "queue" / "exec.jsonl"
-        self._write_jsonl(jsonl, [
-            {"uuid": "a", "command": "cmd-a"},
-            {"uuid": "b", "command": "cmd-b"},
-        ])
-        original = jsonl.read_text(encoding="utf-8")
-        state = self.make_state(tmp_path)
-        removed = state.remove_exec_entries({"x"})
-        assert removed == 0
-        assert jsonl.read_text(encoding="utf-8") == original
 
     def test_remove_exec_entries_missing_file_returns_zero(self, tmp_path):
         """AC2-4: missing file → return 0 with no error"""

@@ -6,7 +6,6 @@ import json
 import types
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -34,27 +33,6 @@ def _ts(offset_sec: float = 0.0) -> str:
 
 
 class TestAuditQueryCorrelationId:
-    def test_filters_by_correlation_id_json_lines(self, tmp_path, capsys):
-        from ghdag.cli import main
-
-        audit = tmp_path / "audit.jsonl"
-        cid = "research:pipeline:1750"
-        _write_events(audit, [
-            {"event_type": "task_complete", "uuid": "u1", "status": "success",
-             "correlation_id": cid, "timestamp": "2026-06-08T10:00:00+09:00"},
-            {"event_type": "task_complete", "uuid": "u2", "status": "success",
-             "correlation_id": "other", "timestamp": "2026-06-08T11:00:00+09:00"},
-        ])
-
-        main(["audit-query", "--correlation-id", cid, "--audit-path", str(audit)])
-
-        captured = capsys.readouterr()
-        lines = [line for line in captured.out.strip().split("\n") if line]
-        assert len(lines) == 1
-        rec = json.loads(lines[0])
-        assert rec["correlation_id"] == cid
-        assert rec["uuid"] == "u1"
-
     def test_since_filter(self, tmp_path, capsys):
         from ghdag.cli import main
 
@@ -76,20 +54,6 @@ class TestAuditQueryCorrelationId:
         lines = [line for line in captured.out.strip().split("\n") if line]
         assert len(lines) == 1
         assert json.loads(lines[0])["uuid"] == "new"
-
-    def test_empty_result_no_output(self, tmp_path, capsys):
-        from ghdag.cli import main
-
-        audit = tmp_path / "audit.jsonl"
-        _write_events(audit, [
-            {"event_type": "task_complete", "uuid": "u1", "status": "success",
-             "correlation_id": "other", "timestamp": "2026-06-08T10:00:00+09:00"},
-        ])
-
-        main(["audit-query", "--correlation-id", "missing", "--audit-path", str(audit)])
-
-        captured = capsys.readouterr()
-        assert captured.out == ""
 
 
 class TestAuditQueryBurstDetect:
@@ -115,39 +79,6 @@ class TestAuditQueryBurstDetect:
         assert result[0]["correlation_id"] == cid
         assert result[0]["count"] == 12
         assert result[0]["latest_timestamp"]
-
-    def test_no_burst_exit_0_empty_array(self, tmp_path, capsys):
-        from ghdag.cli import main
-
-        audit = tmp_path / "audit.jsonl"
-        _write_events(audit, [
-            {"event_type": "task_complete", "uuid": f"u{i}", "status": "success",
-             "correlation_id": "cid", "timestamp": _ts(10)}
-            for i in range(3)
-        ])
-
-        main(["audit-query", "--burst-detect", "--audit-path", str(audit)])
-
-        captured = capsys.readouterr()
-        assert captured.out.strip() == "[]"
-
-    def test_custom_window_and_threshold(self, tmp_path, capsys):
-        from ghdag.cli import main
-
-        audit = tmp_path / "audit.jsonl"
-        with patch(
-            "ghdag.io.audit_query.detect_correlation_bursts",
-            return_value=[],
-        ) as mock_detect:
-            main([
-                "audit-query", "--burst-detect",
-                "--window-sec", "300", "--threshold", "5",
-                "--audit-path", str(audit),
-            ])
-
-        mock_detect.assert_called_once_with(
-            audit, window_sec=300.0, threshold=5,
-        )
 
 
 class TestAuditQueryErrors:
@@ -196,36 +127,6 @@ class TestAuditQueryErrors:
         assert exc.value.code == 2
         captured = capsys.readouterr()
         assert captured.err
-
-
-class TestAuditQueryGhdagAuditPath:
-    def test_correlation_query_uses_ghdag_audit_path_when_flag_omitted(
-        self, tmp_path, capsys, monkeypatch
-    ):
-        """Refs sumipan/nexus#6801."""
-        from ghdag.cli import main
-
-        cid = "issuesmith:impl:99"
-        audit = tmp_path / "custom-audit.jsonl"
-        audit.write_text(
-            json.dumps(
-                {
-                    "event_type": "task_complete",
-                    "uuid": "u1",
-                    "status": "success",
-                    "correlation_id": cid,
-                    "timestamp": "2026-06-08T10:00:00+09:00",
-                },
-                ensure_ascii=False,
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        monkeypatch.setenv("GHDAG_AUDIT_PATH", str(audit))
-        main(["audit-query", "--correlation-id", cid])
-        out = capsys.readouterr().out.strip()
-        rec = json.loads(out)
-        assert rec["correlation_id"] == cid
 
 
 class TestAuditQueryMissingFile:

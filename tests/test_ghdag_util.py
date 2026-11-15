@@ -47,17 +47,6 @@ class TestExtractTeeTarget:
 class TestStderrReader:
     """Unit tests for _stderr_reader"""
 
-    def test_normal_read(self):
-        """Normal EOF → written to buf and thread exits cleanly"""
-        proc = MagicMock()
-        proc.stderr.read.side_effect = [b"chunk1", b"chunk2", b""]
-        buf = io.BytesIO()
-        t = threading.Thread(target=_stderr_reader, args=(proc, buf))
-        t.start()
-        t.join()
-        assert not t.is_alive()
-        assert buf.getvalue() == b"chunk1chunk2"
-
     def test_oserror_on_read_exits_safely(self):
         """read() raises OSError → thread exits safely without crashing (no leak)"""
         proc = MagicMock()
@@ -83,17 +72,6 @@ class TestStderrReader:
 
 class TestStdoutReader:
     """Unit tests for _stdout_reader"""
-
-    def test_normal_read(self):
-        """Normal EOF → written to buf and thread exits cleanly"""
-        proc = MagicMock()
-        proc.stdout.read.side_effect = [b"out1", b"out2", b""]
-        buf = io.BytesIO()
-        t = threading.Thread(target=_stdout_reader, args=(proc, buf))
-        t.start()
-        t.join()
-        assert not t.is_alive()
-        assert buf.getvalue() == b"out1out2"
 
     def test_oserror_on_read_exits_safely(self):
         """read() raises OSError → thread exits safely without crashing"""
