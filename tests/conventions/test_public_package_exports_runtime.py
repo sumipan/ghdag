@@ -129,7 +129,6 @@ REMOVED_REEXPORTS: tuple[tuple[str, str, str], ...] = (
     ("ghdag.tool", "FallbackEntry", "ghdag.tool.schema"),
     ("ghdag.tool", "TOOL_EXIT_CODES", "ghdag.tool.schema"),
     ("ghdag.tool", "ToolRegistry", "ghdag.tool.registry"),
-    ("ghdag.tool", "write_tool_fallback_audit", "ghdag.tool.audit"),
     ("ghdag.vcs", "GitSink", "ghdag.vcs.sink"),
     ("ghdag.workflow", "DispatchResult", "ghdag.core.models.workflow"),
     ("ghdag.workflow", "OnTriggerConfig", "ghdag.core.models.workflow"),

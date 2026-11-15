@@ -237,16 +237,6 @@ def running_uuids_from_queue_dir(queue_dir: str | Path) -> set[str]:
     return {p.stem for p in running_dir.glob("*.json")}
 
 
-def collect_running_uuids(
-    done_dir: str | Path,
-    *,
-    candidate_uuids: set[str],
-    running_uuids: set[str],
-) -> set[str]:
-    """Return candidate UUIDs that are currently marked as running."""
-    return {uuid for uuid in candidate_uuids if uuid in running_uuids}
-
-
 def _find_step_uuid(step_infos: list[RecoverStepInfo], step_name: str) -> str | None:
     for info in step_infos:
         if info.step_name == step_name:

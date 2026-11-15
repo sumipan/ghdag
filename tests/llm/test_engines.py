@@ -271,8 +271,6 @@ class TestCallResumeSessionId:
     @patch("ghdag.llm.engines.subprocess.run")
     def test_call_cursor_extracts_result_from_json(self, mock_run: MagicMock):
         """call(cursor, route=[("claude", None)]) puts JSON result in body and keeps session_id."""
-        from ghdag.llm.adapters.cursor import CursorAdapter
-
         stdout = (
             '{"type":"result","subtype":"success","is_error":false,'
             '"result":"pong",'
@@ -283,9 +281,6 @@ class TestCallResumeSessionId:
         result = call("hello", permission=Permission(), route=[("cursor", None)])
         assert result.body == "pong"
         assert result.session_id == "85105031-11df-48a2-a791-812a0128b4cf"
-        usage = CursorAdapter().extract_token_usage(stdout.encode("utf-8"), b"")
-        assert usage is not None
-        assert usage.token_count == 7217
 
 
 class TestCodexUnsupportedCapabilities:

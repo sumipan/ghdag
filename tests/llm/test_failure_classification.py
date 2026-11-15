@@ -14,7 +14,6 @@ from ghdag.core.ports.output import EngineErrorKind
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.adapters.codex import CodexAdapter
-from ghdag.llm.adapters.cursor import CursorAdapter
 from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
 from ghdag.llm.adapters.failure_classification import (
     QUOTA_DEFAULT_PAUSE_SECONDS,
@@ -226,22 +225,24 @@ class TestAuthErrorRules:
         )
 
 
+@pytest.mark.parametrize("engine", ("claude", "codex"))
+def test_binary_missing_fixture(engine: str) -> None:
+    data = _load_fixture(f"{engine}_binary_missing.json")
+    stdout = data["stdout"].encode()
+    stderr = data["stderr"].encode()
+    assert (
+        classify_common_failure(engine, stdout, stderr, returncode=data["returncode"])
+        == FailureClass.ENGINE_ENVIRONMENT_ERROR
+    )
+    adapter = get_output_adapter(engine)
+    assert (
+        adapter.classify_failure(data["returncode"], stdout, stderr)
+        == FailureClass.ENGINE_ENVIRONMENT_ERROR
+    )
+
+
 @pytest.mark.parametrize("engine", ENGINES)
 class TestRealOutputFixtures:
-    def test_binary_missing(self, engine):
-        data = _load_fixture(f"{engine}_binary_missing.json")
-        stdout = data["stdout"].encode()
-        stderr = data["stderr"].encode()
-        assert (
-            classify_common_failure(engine, stdout, stderr, returncode=data["returncode"])
-            == FailureClass.ENGINE_ENVIRONMENT_ERROR
-        )
-        adapter = get_output_adapter(engine)
-        assert (
-            adapter.classify_failure(data["returncode"], stdout, stderr)
-            == FailureClass.ENGINE_ENVIRONMENT_ERROR
-        )
-
     def test_auth_fail(self, engine):
         data = _load_fixture(f"{engine}_auth_fail.json")
         stdout = data["stdout"].encode()
@@ -259,16 +260,6 @@ def test_fixtures_have_no_cjk():
     cjk = re.compile("[" + "".join(f"{chr(lo)}-{chr(hi)}" for lo, hi in ranges) + "]")
     for path in FIXTURE_DIR.glob("*.json"):
         assert not cjk.search(path.read_text(encoding="utf-8")), path
-
-
-def test_legacy_cursor_adapter_classifies_binary_missing():
-    data = _load_fixture("cursor_binary_missing.json")
-    assert (
-        CursorAdapter().classify_failure(
-            data["returncode"], data["stdout"].encode(), data["stderr"].encode()
-        )
-        == FailureClass.ENGINE_ENVIRONMENT_ERROR
-    )
 
 
 def test_codex_capacity_classifies_as_engine_error() -> None:

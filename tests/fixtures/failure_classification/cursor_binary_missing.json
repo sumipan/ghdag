@@ -1,5 +1,0 @@
-{
-  "returncode": 127,
-  "stdout": "",
-  "stderr": "/bin/bash: agent: command not found\n"
-}

@@ -4,7 +4,6 @@ from ghdag.core.ports.output import EngineErrorKind
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.adapters.codex import CodexAdapter
-from ghdag.llm.adapters.cursor import CursorAdapter
 
 
 def test_codex_extract_error_capacity_event() -> None:
@@ -82,12 +81,6 @@ def test_claude_rate_limit_is_not_quota_exhausted() -> None:
     err = adapter.extract_error(stdout, b"")
     assert err is not None
     assert err.kind is EngineErrorKind.RATE_LIMIT
-
-
-def test_cursor_extract_error_always_none() -> None:
-    adapter = CursorAdapter()
-    stdout = b'{"type":"error","message":"boom"}\n'
-    assert adapter.extract_error(stdout, b"") is None
 
 
 def test_passthrough_extract_error_always_none() -> None:

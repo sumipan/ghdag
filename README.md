@@ -323,7 +323,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `build_order_builders` | `(workflows) -> dict[str, OrderBuilder]` — build per-workflow `TemplateOrderBuilder` map (`ghdag.pipeline.llm_pipeline`) |
 | `LLMPipelineAPI.submit` | `(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None) -> list[str]` |
 | `PipelineState` | `(state_dir, exec_jsonl_path)`; also `PipelineState.from_repo_root(repo_root)` |
-| `QuotaGate` | `(state_path, audit_path=None, pause_ttl_seconds=3600, limits=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `wait_idle`, `observe` |
+| `QuotaGate` | `(state_path, audit_path=None, pause_ttl_seconds=3600, limits=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `observe` |
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
 | `issue_status` | `(issue_number, *, handler=None, workflow=None, exec_jsonl_path, state_dir, done_dir, running_uuids=None, audit_path=None, running_dir=None) -> IssueStatus` |
 | `running_tasks` | `(running_dir) -> list[RunningTask]` |
@@ -710,7 +710,6 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `llm/adapters/claude_json.py` | claude JSON / stream-json output adapter |
 | `llm/adapters/codex.py` | codex `--json` output adapter |
 | `llm/adapters/codex_jsonl.py` | codex JSONL stream adapter |
-| `llm/adapters/cursor.py` | cursor JSON / text output adapter |
 | `llm/adapters/cursor_stream.py` | cursor stream-json adapter and `RetriableError:` classification |
 | `llm/adapters/failure_classification.py` | Shared failure classification (`looks_like_question`, missing binary, auth, quota pause) |
 | `metrics/__init__.py` | `MetricsRecorder`, `TaskMetrics` |
@@ -727,7 +726,6 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `pipeline/status.py` | Task state identifiers (`task_status`, `STATE_*`) and display labels (`state_label`) |
 | `pipeline/wait.py` | `wait_for_result` done-marker polling |
 | `tool/__init__.py` | Tool definition API |
-| `tool/audit.py` | `write_tool_fallback_audit` |
 | `tool/cli.py` | `ghdag tools list` handler |
 | `tool/exceptions.py` | `ToolRegistryError` |
 | `tool/registry.py` | `ToolRegistry` discovery |

@@ -9,7 +9,6 @@ import pytest
 from ghdag.core.models.metrics import TokenUsage
 from ghdag.llm.adapters import get_output_adapter
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
-from ghdag.llm.adapters.cursor import CursorAdapter
 from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
 
 # ---------------------------------------------------------------------------
@@ -108,46 +107,6 @@ class TestClaudeJsonAdapterExtractTokenUsage:
         usage = adapter.extract_token_usage(json.dumps(payload).encode(), b"")
         assert usage is not None
         assert usage.token_count is None
-
-
-# ---------------------------------------------------------------------------
-# CursorAdapter
-# ---------------------------------------------------------------------------
-
-_CURSOR_REAL_JSON = (
-    b'{"type":"result","subtype":"success","is_error":false,'
-    b'"result":"pong",'
-    b'"session_id":"85105031-11df-48a2-a791-812a0128b4cf",'
-    b'"usage":{"inputTokens":7144,"outputTokens":73,'
-    b'"cacheReadTokens":8064,"cacheWriteTokens":0}}'
-)
-
-
-class TestCursorAdapter:
-    def test_extract_result_text_from_json(self):
-        """JSON stdout → return bytes of the result field."""
-        adapter = CursorAdapter()
-        assert adapter.extract_result_text(_CURSOR_REAL_JSON, b"") == b"pong"
-
-    def test_extract_result_text_passthrough_for_plain_text(self):
-        """Non-JSON stdout is returned as-is (legacy behavior)."""
-        raw = b"pong"
-        adapter = CursorAdapter()
-        out = adapter.extract_result_text(raw, b"stderr")
-        assert out == raw
-
-    def test_extract_token_usage_from_json(self):
-        """usage.inputTokens + usage.outputTokens become token_count."""
-        adapter = CursorAdapter()
-        usage = adapter.extract_token_usage(_CURSOR_REAL_JSON, b"")
-        assert usage is not None
-        assert usage.token_count == 7217
-
-    def test_extract_token_usage_none_for_plain_text(self):
-        """Non-JSON stdout → TokenUsage is None."""
-        adapter = CursorAdapter()
-        usage = adapter.extract_token_usage(b"stdout", b"stderr")
-        assert usage is None
 
 
 # ---------------------------------------------------------------------------

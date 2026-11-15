@@ -138,29 +138,3 @@ class TestWritersUseAppendAuditRecord:
         assert len(calls) == 1
         assert calls[0][1]["event"] == "md_promote"
         assert calls[0][1]["source_path"] == "order/a.md"
-
-    def test_tool_fallback_uses_append(self, tmp_path: Path, monkeypatch) -> None:
-        from ghdag.tool import audit as tool_audit
-
-        calls: list[tuple] = []
-
-        def spy(path, record):
-            calls.append((path, dict(record)))
-
-        monkeypatch.setattr(tool_audit, "append_audit_record", spy)
-
-        audit_path = tmp_path / "audit.jsonl"
-        tool_audit.write_tool_fallback_audit(
-            audit_path,
-            tool="code_review",
-            original_engine="claude-code",
-            original_model="opus",
-            fallback_engine="claude-code",
-            fallback_model="sonnet",
-            fallback_index=0,
-            reason="model_unavailable",
-        )
-
-        assert len(calls) == 1
-        assert calls[0][1]["event"] == "tool.fallback"
-        assert calls[0][1]["tool"] == "code_review"

@@ -168,7 +168,6 @@ def test_launch_popen_failure_rolls_back_running_reservation(tmp_path: Path) -> 
 
     snapshot = engine._quota_gate.snapshot()
     assert "task-1" not in snapshot.running_tasks
-    assert engine._quota_gate.wait_idle("claude", timeout=0.1, poll_interval=0.01) is True
 
 
 def test_resume_fallback_relaunches_async_without_blocking(tmp_path: Path) -> None:

@@ -4,18 +4,8 @@ import json
 
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.adapters.codex import CodexAdapter
-from ghdag.llm.adapters.cursor import CursorAdapter
 
 # Measured stdout fixtures (Issue #2968)
-_CURSOR_REAL_JSON = (
-    b'{"type":"result","subtype":"success","is_error":false,'
-    b'"duration_ms":5607,"duration_api_ms":5607,"result":"pong",'
-    b'"session_id":"85105031-11df-48a2-a791-812a0128b4cf",'
-    b'"request_id":"4425966d-...",'
-    b'"usage":{"inputTokens":7144,"outputTokens":73,'
-    b'"cacheReadTokens":8064,"cacheWriteTokens":0}}'
-)
-
 _CODEX_REAL_JSONL = (
     b'{"type":"thread.started","thread_id":"01a0842c-88a5-7993-afd5-13562483ca9b"}\n'
     b'{"type":"turn.started"}\n'
@@ -35,34 +25,6 @@ def test_claude_json_extracts_none_when_missing_session_id():
     adapter = ClaudeJsonAdapter()
     stdout = json.dumps({"result": "ok"}).encode("utf-8")
     assert adapter.extract_session_id(stdout, b"") is None
-
-
-def test_cursor_extracts_session_id_from_real_json():
-    """Extract session_id from measured cursor JSON."""
-    adapter = CursorAdapter()
-    assert adapter.extract_session_id(_CURSOR_REAL_JSON, b"") == (
-        "85105031-11df-48a2-a791-812a0128b4cf"
-    )
-
-
-def test_cursor_extracts_chat_id_from_jsonl():
-    """Backward compat for legacy chat_id."""
-    adapter = CursorAdapter()
-    stdout = b'{"type":"meta","chat_id":"chat_123"}\n{"type":"result","result":"ok"}\n'
-    assert adapter.extract_session_id(stdout, b"") == "chat_123"
-
-
-def test_cursor_prefers_session_id_over_chat_id():
-    adapter = CursorAdapter()
-    stdout = (
-        b'{"chat_id":"chat_old","session_id":"sess_new","result":"ok"}\n'
-    )
-    assert adapter.extract_session_id(stdout, b"") == "sess_new"
-
-
-def test_cursor_text_stdout_has_no_session_id():
-    adapter = CursorAdapter()
-    assert adapter.extract_session_id(b"pong", b"") is None
 
 
 def test_codex_extracts_thread_id_from_real_jsonl():
