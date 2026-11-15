@@ -1,5 +1,6 @@
 # One repo-relative path per line; shrink only when wall-clock usage is removed.
 tests/dag/conftest.py
+tests/dag/test_engine.py
 tests/dag/test_engine_circuit_breaker.py
 tests/dag/test_engine_drain.py
 tests/dag/test_engine_fail_result.py

@@ -2,6 +2,8 @@
 
 import json
 import threading
+import time
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -11,8 +13,10 @@ from ghdag_dag_conftest_helpers import (
     _run_engine_with_timeout,
 )
 
+from ghdag.core.models.metrics import TaskMetrics
+from ghdag.dag.audit_hooks import AuditHooks
 from ghdag.dag.engine import DagEngine
-from ghdag.dag.models import DagConfig
+from ghdag.dag.models import DagConfig, Task
 from ghdag.io.done import is_done, load_succeeded_from_dir
 
 
@@ -158,3 +162,46 @@ class TestEngineModelFromStructuredFields:
         return DagConfig(**defaults)
 
 
+_TZ_UUID = "tz-test-uuid-0000-0000-0000-000000000001"
+
+
+def _make_tz_task() -> Task:
+    return Task(uuid=_TZ_UUID, command="echo hello")
+
+
+def _make_tz_metrics() -> TaskMetrics:
+    now = time.time()
+    return TaskMetrics(
+        uuid=_TZ_UUID,
+        engine="claude",
+        model="claude-sonnet-4-6",
+        wall_time_sec=1.0,
+        token_count=10,
+        status="success",
+        started_at=now,
+        finished_at=now + 1.0,
+    )
+
+
+def test_audit_hooks_none_uses_machine_timezone(tmp_path, monkeypatch):
+    """Refs sumipan/nexus#6872."""
+    import os
+
+    old_tz = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "Pacific/Auckland")
+    time.tzset()
+    try:
+        audit_path = tmp_path / "audit.jsonl"
+        hooks = AuditHooks(audit_path=audit_path, tz_name=None)
+        hooks.on_task_success(_TZ_UUID, _make_tz_task(), _make_tz_metrics())
+
+        record = json.loads(audit_path.read_text(encoding="utf-8").strip())
+        off = datetime.now().astimezone().strftime("%z")
+        iso_off = f"{off[:3]}:{off[3:]}"
+        assert record["timestamp"].endswith(iso_off)
+    finally:
+        if old_tz is None:
+            monkeypatch.delenv("TZ", raising=False)
+        else:
+            monkeypatch.setenv("TZ", old_tz)
+        time.tzset()
