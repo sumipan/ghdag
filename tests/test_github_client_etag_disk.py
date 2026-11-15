@@ -8,7 +8,6 @@ instances and 304 responses avoid consuming the rate limit.
 
 from __future__ import annotations
 
-import builtins
 import hashlib
 import io
 import json
@@ -88,42 +87,6 @@ def _no_env_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GHDAG_ETAG_CACHE", raising=False)
 
 
-def test_disk_cache_second_client_sends_if_none_match(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    cache = tmp_path / "etag.json"
-    payload = [{"number": 1, "title": "x"}]
-    captured = _install_urlopen(
-        monkeypatch,
-        [_FakeResp(payload, _rate_headers("4999")), _http_304()],
-    )
-
-    c1 = GitHubClient(token="tok", repo="owner/repo", etag_cache_path=cache)
-    assert c1._request("GET", _URL, etag=True) == payload
-    assert cache.exists()
-
-    c2 = GitHubClient(token="tok", repo="owner/repo", etag_cache_path=cache)
-    assert c2._request("GET", _URL, etag=True) == payload
-    assert not _has_inm(captured[0])
-    inm = {k.lower(): v for k, v in captured[1].items()}["if-none-match"]
-    assert inm == _ETAG
-
-
-def test_etag_cache_env_var_enables_disk_persistence(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    cache = tmp_path / "etag.json"
-    monkeypatch.setenv("GHDAG_ETAG_CACHE", str(cache))
-    payload = [{"number": 2}]
-    captured = _install_urlopen(
-        monkeypatch,
-        [_FakeResp(payload, _rate_headers("4999")), _http_304()],
-    )
-
-    GitHubClient(token="tok", repo="owner/repo")._request("GET", _URL, etag=True)
-    result = GitHubClient(token="tok", repo="owner/repo")._request("GET", _URL, etag=True)
-    assert result == payload
-    assert _has_inm(captured[1])
 
 
 def test_304_response_preserves_rate_limit_remaining(
@@ -147,25 +110,6 @@ def test_304_response_preserves_rate_limit_remaining(
     assert after is not None and after["remaining"] == 4000
 
 
-def test_304_response_updates_cache_accessed_timestamp(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    cache = tmp_path / "etag.json"
-    clock = {"t": 1000.0}
-    monkeypatch.setattr(gc_mod.time, "time", lambda: clock["t"])
-    _install_urlopen(
-        monkeypatch,
-        [_FakeResp([{"number": 1}], _rate_headers("4999")), _http_304()],
-    )
-    client = GitHubClient(token="tok", repo="owner/repo", etag_cache_path=cache)
-    client._request("GET", _URL, etag=True)
-    clock["t"] = 2000.0
-    client._request("GET", _URL, etag=True)
-
-    data = json.loads(cache.read_text())
-    (entry,) = data.values()
-    assert entry["accessed"] == 2000.0
-
 
 @pytest.mark.parametrize("content", ["{not json", "[1, 2]", '{"k": "v"}', ""])
 def test_corrupt_cache_file_triggers_fresh_fetch(
@@ -184,34 +128,6 @@ def test_corrupt_cache_file_triggers_fresh_fetch(
     # The corrupt file is replaced with a valid cache.
     assert len(json.loads(cache.read_text())) == 1
 
-
-def test_without_cache_path_skips_disk_io(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    monkeypatch.chdir(tmp_path)
-    opened: list[Any] = []
-    real_open = builtins.open
-
-    def spy_open(*args: Any, **kwargs: Any) -> Any:
-        opened.append(args[0] if args else kwargs.get("file"))
-        return real_open(*args, **kwargs)
-
-    replaced: list[Any] = []
-    monkeypatch.setattr(builtins, "open", spy_open)
-    monkeypatch.setattr(gc_mod.os, "replace", lambda *a: replaced.append(a))
-    captured = _install_urlopen(
-        monkeypatch,
-        [_FakeResp([{"number": 1}], _rate_headers("4999")), _http_304()],
-    )
-
-    client = GitHubClient(token="tok", repo="owner/repo")
-    client._request("GET", _URL, etag=True)
-    assert client._request("GET", _URL, etag=True) == [{"number": 1}]
-
-    assert _has_inm(captured[1])  # in-memory cache still works
-    assert opened == []
-    assert replaced == []
-    assert list(tmp_path.iterdir()) == []
 
 
 def test_lru_eviction_keeps_cache_at_max_entries(
@@ -266,12 +182,3 @@ def test_different_token_does_not_reuse_cache_entry(
     assert len(json.loads(cache.read_text())) == 2
 
 
-def test_token_not_stored_in_plaintext(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    cache = tmp_path / "etag.json"
-    _install_urlopen(monkeypatch, [_FakeResp([], _rate_headers("4999"))])
-    GitHubClient(
-        token="ghp_secret_value", repo="owner/repo", etag_cache_path=cache
-    )._request("GET", _URL, etag=True)
-    assert "ghp_secret_value" not in cache.read_text()

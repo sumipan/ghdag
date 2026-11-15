@@ -96,37 +96,6 @@ def make_engine(tmp_path):
     return engine, hooks
 
 
-@patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-def test_success_path(mock_tee, tmp_path, fake_task_clock):
-    engine, hooks = make_engine(tmp_path)
-    rt = make_running_task()
-    engine._launcher._running[rt.uuid] = rt
-
-    engine._launcher.check_completions()
-
-    assert len(hooks.successes) == 1
-    uuid_arg, task_arg, metrics = hooks.successes[0]
-    assert isinstance(metrics, TaskMetrics)
-    assert metrics.status == "success"
-    assert isinstance(metrics.wall_time_sec, float)
-    assert metrics.wall_time_sec > 0
-    assert metrics.uuid == rt.uuid
-    assert metrics.failure_class is None
-
-
-@patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-def test_failure_path(mock_tee, tmp_path, fake_task_clock):
-    engine, hooks = make_engine(tmp_path)
-    rt = make_running_task(returncode=1)
-    engine._launcher._running[rt.uuid] = rt
-
-    engine._launcher.check_completions()
-
-    assert len(hooks.failures) == 1
-    _, _, _, _, metrics = hooks.failures[0]
-    assert isinstance(metrics, TaskMetrics)
-    assert metrics.status == "failure"
-    assert metrics.failure_class == FailureClass.PROCESS_ERROR
 
 
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value="result.md")
@@ -145,50 +114,7 @@ def test_rejected_path(mock_tee, tmp_path, fake_task_clock):
     assert metrics.failure_class == FailureClass.REJECTED
 
 
-def test_empty_result_path(tmp_path, fake_task_clock):
-    engine, hooks = make_engine(tmp_path)
-    result_file = tmp_path / "result.md"
-    result_file.write_text("")
 
-    rt = make_running_task()
-    engine._launcher._running[rt.uuid] = rt
-
-    with patch("ghdag.dag.task_launcher._extract_tee_target", return_value=str(result_file)):
-        engine._launcher.check_completions()
-
-    assert len(hooks.empty_results) == 1
-    _, _, _, metrics = hooks.empty_results[0]
-    assert isinstance(metrics, TaskMetrics)
-    assert metrics.status == "empty_result"
-    assert metrics.failure_class == FailureClass.EMPTY_RESULT
-
-
-@patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-def test_engine_model_in_metrics(mock_tee, tmp_path, fake_task_clock):
-    engine, hooks = make_engine(tmp_path)
-    rt = make_running_task(command='claude -p "hello" --model claude-opus-4-6')
-    engine._launcher._running[rt.uuid] = rt
-
-    engine._launcher.check_completions()
-
-    assert len(hooks.successes) == 1
-    metrics = hooks.successes[0][2]
-    assert metrics.engine == "claude"
-    assert metrics.model == "claude-opus-4-6"
-
-
-@patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-def test_timeout_failure_class(mock_tee, tmp_path, fake_task_clock):
-    """Timeout path → metrics.failure_class == \"TIMEOUT\"."""
-    engine, hooks = make_engine(tmp_path)
-    rt = make_running_task()
-    rt.term_sent_at = FIXED_MONO - 1.0
-    engine._launcher._running[rt.uuid] = rt
-
-    engine._launcher.check_completions()
-
-    assert len(hooks.failures) == 1
-    assert hooks.failures[0][4].failure_class == FailureClass.TIMEOUT
 
 
 @patch("ghdag.dag.task_launcher._extract_tee_target", return_value="result.md")

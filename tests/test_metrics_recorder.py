@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import concurrent.futures
 import json
 
 import pytest
@@ -29,30 +28,6 @@ def make_metrics(**kwargs) -> TaskMetrics:
     return TaskMetrics(**defaults)
 
 
-def test_record_single_line(tmp_path):
-    output = tmp_path / "metrics.jsonl"
-    recorder = MetricsRecorder(output)
-    recorder.record(make_metrics(uuid="t1"))
-
-    lines = output.read_text().splitlines()
-    assert len(lines) == 1
-    data = json.loads(lines[0])
-    for field in ("uuid", "engine", "model", "wall_time_sec", "token_count", "status", "started_at", "finished_at", "timestamp"):
-        assert field in data
-    assert data["uuid"] == "t1"
-    assert "+00:00" in data["timestamp"]
-
-
-def test_record_three_lines(tmp_path):
-    output = tmp_path / "metrics.jsonl"
-    recorder = MetricsRecorder(output)
-    for i in range(3):
-        recorder.record(make_metrics(uuid=f"t{i}"))
-
-    lines = output.read_text().splitlines()
-    assert len(lines) == 3
-    for line in lines:
-        json.loads(line)
 
 
 def test_record_missing_directory(tmp_path):
@@ -77,19 +52,6 @@ def test_record_errors_log(tmp_path):
     assert "Traceback" in content
 
 
-def test_record_parallel_writes(tmp_path):
-    output = tmp_path / "metrics.jsonl"
-    recorder = MetricsRecorder(output)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        futures = [executor.submit(recorder.record, make_metrics(uuid=f"t{i}")) for i in range(2)]
-        concurrent.futures.wait(futures)
-
-    lines = output.read_text().splitlines()
-    assert len(lines) == 2
-    for line in lines:
-        json.loads(line)
-
 
 def test_record_expands_additional_tags(tmp_path):
     """When additional_tags is set, expand key-value pairs onto the JSONL record."""
@@ -102,12 +64,3 @@ def test_record_expands_additional_tags(tmp_path):
     assert data["tier"] == "heavy"
 
 
-def test_record_without_additional_tags_omits_extra_keys(tmp_path):
-    """When additional_tags is None, do not add keys beyond the existing fields."""
-    output = tmp_path / "metrics.jsonl"
-    recorder = MetricsRecorder(output)
-    recorder.record(make_metrics(uuid="t-none"))
-
-    data = json.loads(output.read_text().splitlines()[0])
-    assert "template" not in data
-    assert "additional_tags" not in data

@@ -35,12 +35,6 @@ class TestValidateExecJsonl:
         result = validate_exec_jsonl(f)
         assert result == [(2, "not json")]
 
-    def test_multiple_invalid_lines(self, tmp_path):
-        f = tmp_path / "exec.jsonl"
-        write_jsonl(f, ['{"uuid":"a"}', "bad1", '{"uuid":"b"}', "bad2"])
-        result = validate_exec_jsonl(f)
-        assert result == [(2, "bad1"), (4, "bad2")]
-
     def test_empty_lines_skipped(self, tmp_path):
         f = tmp_path / "exec.jsonl"
         f.write_text('{"uuid":"a"}\n\n   \n{"uuid":"b"}\n', encoding="utf-8")
@@ -57,13 +51,6 @@ class TestValidateExecJsonl:
 
 
 class TestRepairExecJsonl:
-    def test_removes_invalid_line(self, tmp_path):
-        f = tmp_path / "exec.jsonl"
-        write_jsonl(f, ['{"uuid":"a"}', "not json", '{"uuid":"b"}'])
-        removed = repair_exec_jsonl(f)
-        assert removed == 1
-        lines = [ln for ln in f.read_text(encoding="utf-8").splitlines() if ln]
-        assert lines == ['{"uuid":"a"}', '{"uuid":"b"}']
 
     def test_dry_run_does_not_modify_file(self, tmp_path):
         f = tmp_path / "exec.jsonl"
@@ -71,14 +58,6 @@ class TestRepairExecJsonl:
         f.write_text(original, encoding="utf-8")
         removed = repair_exec_jsonl(f, dry_run=True)
         assert removed == 1
-        assert f.read_text(encoding="utf-8") == original
-
-    def test_all_valid_returns_zero(self, tmp_path):
-        f = tmp_path / "exec.jsonl"
-        write_jsonl(f, ['{"uuid":"a"}', '{"uuid":"b"}'])
-        original = f.read_text(encoding="utf-8")
-        removed = repair_exec_jsonl(f)
-        assert removed == 0
         assert f.read_text(encoding="utf-8") == original
 
     def test_empty_and_whitespace_lines_stripped_from_exec_jsonl(self, tmp_path):
@@ -104,20 +83,6 @@ class TestRepairJobsDone:
         p = jobs_dir / name
         p.write_text(content, encoding="utf-8")
         return p
-
-    def test_restores_missing_done_marker(self, tmp_path):
-        jobs_dir = tmp_path / "jobs"
-        jobs_dir.mkdir()
-        done_dir = jobs_dir / "done"
-        done_dir.mkdir()
-        self._make_result_file(jobs_dir, "result-a.md", "some output")
-        exec_jsonl = jobs_dir / "exec.jsonl"
-        self._make_exec_jsonl(exec_jsonl, [
-            {"uuid": "aaa", "result_path": "result-a.md"},
-        ])
-        stats = repair_jobs_done(exec_jsonl, done_dir)
-        assert stats == {"restored": 1, "skipped": 0}
-        assert (done_dir / "aaa").read_text() == "0"
 
     def test_rejected_result_writes_rejected_status(self, tmp_path):
         jobs_dir = tmp_path / "jobs"

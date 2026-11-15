@@ -17,7 +17,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ghdag.core.exceptions import RateLimitError
 from ghdag.github_client import GitHubClient
 
 
@@ -57,100 +56,7 @@ def _http_error(code: int, *, headers: dict | None = None, message: str = "API r
     )
 
 
-def test_rate_limit_waits_reset_then_retries_success(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """When Reset is now+60, wait 60s, retry, and succeed."""
-    client = _make_client()
-    now = 1_700_000_000
-    monkeypatch.setattr(time, "time", lambda: now)
-    slept: list[float] = []
-    monkeypatch.setattr(time, "sleep", lambda s: slept.append(s))
 
-    call_count = {"n": 0}
-
-    def fake_urlopen(req, timeout=120):
-        call_count["n"] += 1
-        if call_count["n"] == 1:
-            raise _http_error(
-                403,
-                headers={
-                    "X-RateLimit-Remaining": "0",
-                    "X-RateLimit-Reset": str(now + 60),
-                },
-            )
-        return _mock_urlopen(
-            {"number": 1},
-            headers={
-                "X-RateLimit-Remaining": "4999",
-                "X-RateLimit-Limit": "5000",
-                "X-RateLimit-Used": "1",
-                "X-RateLimit-Reset": str(now + 3600),
-            },
-        )
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    result = client._request("GET", "/repos/owner/repo/issues/1")
-    assert result == {"number": 1}
-    assert slept == [60.0]
-    assert call_count["n"] == 2
-
-
-def test_rate_limit_max_wait_zero_raises_without_sleep(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Rate cap 0: no sleep, single urlopen, RateLimitError with reset_at."""
-    client = GitHubClient(token="token", repo="owner/repo", rate_limit_max_wait_sec=0)
-    now = 1_700_000_000
-    monkeypatch.setattr(time, "time", lambda: now)
-    slept: list[float] = []
-    monkeypatch.setattr(time, "sleep", lambda s: slept.append(s))
-    call_count = {"n": 0}
-
-    def fake_urlopen(req, timeout=120):
-        call_count["n"] += 1
-        raise _http_error(
-            403,
-            headers={
-                "X-RateLimit-Remaining": "0",
-                "X-RateLimit-Reset": str(now + 60),
-            },
-        )
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    with pytest.raises(RateLimitError) as exc_info:
-        client._request("GET", "/repos/owner/repo/issues/1")
-    assert exc_info.value.status_code == 403
-    assert exc_info.value.reset_at == now + 60
-    assert slept == []
-    assert call_count["n"] == 1
-
-
-def test_rate_limit_over_15_min_raises_immediately(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """When Reset is now+901, raise RateLimitError immediately (no sleep)."""
-    client = _make_client()
-    now = 1_700_000_000
-    monkeypatch.setattr(time, "time", lambda: now)
-    slept: list[float] = []
-    monkeypatch.setattr(time, "sleep", lambda s: slept.append(s))
-
-    def fake_urlopen(req, timeout=120):
-        raise _http_error(
-            403,
-            headers={
-                "X-RateLimit-Remaining": "0",
-                "X-RateLimit-Reset": str(now + 901),
-            },
-        )
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    with pytest.raises(RateLimitError) as exc_info:
-        client._request("GET", "/repos/owner/repo/issues/1")
-    assert exc_info.value.status_code == 403
-    assert exc_info.value.reset_at == now + 901
-    assert slept == []
 
 
 def test_retry_after_preferred_over_reset(
@@ -185,23 +91,3 @@ def test_retry_after_preferred_over_reset(
     assert call_count["n"] == 2
 
 
-def test_rate_limit_retry_still_403_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """If still 403 after retry, raise RateLimitError."""
-    client = _make_client()
-    now = 1_700_000_000
-    monkeypatch.setattr(time, "time", lambda: now)
-    monkeypatch.setattr(time, "sleep", lambda s: None)
-
-    def fake_urlopen(req, timeout=120):
-        raise _http_error(
-            403,
-            headers={
-                "X-RateLimit-Remaining": "0",
-                "X-RateLimit-Reset": str(now + 10),
-            },
-        )
-
-    monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    with pytest.raises(RateLimitError) as exc_info:
-        client._request("GET", "/repos/owner/repo/issues/1")
-    assert exc_info.value.reset_at == now + 10

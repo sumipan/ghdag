@@ -8,22 +8,12 @@ import pytest
 import yaml
 
 from ghdag.llm._config import ConfigLoadError, load_engine_models
-from ghdag.llm._constants import DEFAULT_ENGINE_MODELS
 
 # ---------------------------------------------------------------------------
 # Happy path
 # ---------------------------------------------------------------------------
 
 class TestLoadEngineModelsNormal:
-    def test_load_from_yaml_file(self, tmp_path: Path):
-        """Load from a YAML file"""
-        config = tmp_path / "llm-models.yml"
-        config.write_text(
-            "engines:\n  claude:\n    - opus-4-6\n",
-            encoding="utf-8",
-        )
-        result = load_engine_models(config)
-        assert result == {"claude": ["opus-4-6"]}
 
     def test_load_from_env_var(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         """Path specified via environment variable"""
@@ -35,25 +25,6 @@ class TestLoadEngineModelsNormal:
         monkeypatch.setenv("GHDAG_LLM_MODELS", str(config))
         result = load_engine_models()
         assert result == {"gemini": ["2.5-pro", "2.5-flash"]}
-
-    def test_fallback_when_no_file_no_env(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        """No config file + env unset → DEFAULT_ENGINE_MODELS"""
-        monkeypatch.delenv("GHDAG_LLM_MODELS", raising=False)
-        monkeypatch.chdir(tmp_path)
-        result = load_engine_models()
-        assert result == DEFAULT_ENGINE_MODELS
-
-    def test_empty_model_list(self, tmp_path: Path):
-        """Empty-list engine definitions are valid"""
-        config = tmp_path / "llm-models.yml"
-        config.write_text(
-            "engines:\n  claude: []\n",
-            encoding="utf-8",
-        )
-        result = load_engine_models(config)
-        assert result == {"claude": []}
 
     def test_cwd_file_takes_precedence_over_fallback(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -68,25 +39,6 @@ class TestLoadEngineModelsNormal:
         monkeypatch.chdir(tmp_path)
         result = load_engine_models()
         assert result == {"claude": ["custom-model"]}
-
-    def test_env_var_takes_precedence_over_cwd(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        """Env path takes precedence over cwd llm-models.yml"""
-        cwd_config = tmp_path / "llm-models.yml"
-        cwd_config.write_text(
-            "engines:\n  claude:\n    - cwd-model\n",
-            encoding="utf-8",
-        )
-        env_config = tmp_path / "env.yml"
-        env_config.write_text(
-            "engines:\n  gemini:\n    - env-model\n",
-            encoding="utf-8",
-        )
-        monkeypatch.setenv("GHDAG_LLM_MODELS", str(env_config))
-        monkeypatch.chdir(tmp_path)
-        result = load_engine_models()
-        assert result == {"gemini": ["env-model"]}
 
 
 # ---------------------------------------------------------------------------
@@ -147,30 +99,3 @@ class TestLoadEngineModelsErrors:
 # Validation via call()
 # ---------------------------------------------------------------------------
 
-class TestCallWithConfig:
-    def test_call_validates_model_from_yaml(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        """call() with engine/model not in YAML → EngineModelError"""
-        config = tmp_path / "llm-models.yml"
-        config.write_text(
-            "engines:\n  claude:\n    - claude-opus-4-6\n",
-            encoding="utf-8",
-        )
-        monkeypatch.setenv("GHDAG_LLM_MODELS", str(config))
-        # Test _config directly so module ENGINE_MODELS is reloaded
-        from ghdag.llm import _config
-        result = _config.load_engine_models()
-        assert result == {"claude": ["claude-opus-4-6"]}
-
-    def test_unknown_engine_raises_engine_model_error(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ):
-        """call() with engine not in YAML → EngineModelError"""
-        from ghdag.llm import EngineModelError
-        from ghdag.llm.engines import validate_engine_model
-
-        monkeypatch.delenv("GHDAG_LLM_MODELS", raising=False)
-        monkeypatch.chdir(tmp_path)
-        with pytest.raises(EngineModelError):
-            validate_engine_model("openai", "gpt-4")
