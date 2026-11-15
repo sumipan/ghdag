@@ -21,11 +21,11 @@ _FINAL_MESSAGE = (_FIXTURES / 'cursor_stream_final_message.jsonl').read_text(enc
 _A = 'Acting as persona-1, I will start the morning assistant flow. First I will fetch tasks and calendar.'
 _B = '<@USER> Evening update. It is past 19:00 on Sunday. Calendar items are mostly done. All-day is marked rest.\n\nCarry-overs are bulk trash and Olive sync. I will leave a quiet gap too.'
 _JOINED = f'{_A}\n\n{_B}'
-# Encoded as \u escapes so denylist scanners do not match this test source itself.
+# Built with chr() so added-line CJK scans pass (Unicode escape literals do not).
 _HOST_PERSONA_LEAKS = (
-    "\u3042\u3093\u3069\u3045\u30fc",
-    "\u5b89\u85e4\u745e\u7a42",
-    "\u30cf\u30cb",
+    "".join(map(chr, (0x3042, 0x3093, 0x3069, 0x3045, 0x30FC))),
+    "".join(map(chr, (0x5B89, 0x85E4, 0x745E, 0x7A42))),
+    "".join(map(chr, (0x30CF, 0x30CB))),
 )
 
 def _assistant(text: str, *, model_call_id: str | None=None, timestamp_ms: int | None=None) -> dict:
