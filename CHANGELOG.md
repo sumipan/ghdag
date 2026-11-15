@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.137.0 - 2026-11-15
+
 ### Added
 
 - `ghdag.core.ports.quota.QuotaCallPort` plus view Protocols for quota snapshots and per-engine state (sumipan/nexus#6800).
