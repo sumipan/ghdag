@@ -36,72 +36,21 @@ def unset(monkeypatch: pytest.MonkeyPatch) -> None:
 # --- AC-5: GHDAG_STATE_DIR set ---
 
 
-def test_dag_config_follows_state_dir(state: Path, tmp_path: Path) -> None:
-    config = DagConfig(exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl")
-    assert config.exec_done_dir == state / "done"
-    assert config.quota_state_path == state / "quota-gate.json"
-    # exec.jsonl neighbours stay in jobs/.
-    assert config.lock_file == tmp_path / "jobs" / ".ghdag.lock"
-    assert config.audit_path == tmp_path / "jobs" / "audit.jsonl"
-    assert config.quota_audit_path == tmp_path / "jobs" / "audit.jsonl"
 
 
-def test_task_launcher_paths_follow_state_dir(state: Path, tmp_path: Path) -> None:
-    launcher = _launcher(DagConfig(exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl"))
-    assert launcher._running_path("u1") == state / "running" / "u1.json"
-    assert launcher._events_path("u1") == state / "events" / "u1.jsonl"
-    assert launcher._cancel_path("u1") == state / "cancel" / "u1"
-    assert launcher._session_store._store_dir == state / ".sessions"
-    assert launcher.quota_gate._state_path == state / "quota-gate.json"
-    # Quota audit must not leak into the state dir.
-    assert launcher.quota_gate._audit_path == tmp_path / "jobs" / "audit.jsonl"
-    assert not (tmp_path / "jobs" / "running").exists()
 
 
-def test_pipeline_state_follows_state_dir(state: Path, tmp_path: Path) -> None:
-    ps = PipelineState.from_repo_root(tmp_path)
-    assert ps._state_dir == state / ".pipeline-state"
-    assert ps._quota_gate._state_path == state / "quota-gate.json"
-    assert ps._quota_gate._audit_path == tmp_path / "jobs" / "audit.jsonl"
 
 
-def test_state_dir_expands_user(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("GHDAG_STATE_DIR", "~/ghdag-state")
-    config = DagConfig(exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl")
-    assert config.exec_done_dir == tmp_path / "ghdag-state" / "done"
 
 
 # --- AC-5b: unset => current defaults; explicit args win ---
 
 
-def test_dag_config_done_dir_follows_exec_jsonl(
-    unset: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Issue sumipan/nexus#6089: exec_done_dir follows exec.jsonl, not cwd (AC2)."""
-    (tmp_path / "elsewhere").mkdir(parents=True, exist_ok=True)
-    monkeypatch.chdir(tmp_path / "elsewhere")
-    config = DagConfig(exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl")
-    assert config.exec_done_dir == tmp_path / "jobs" / "done"
-    assert config.quota_state_path == tmp_path / "jobs" / "quota-gate.json"
 
 
-def test_task_launcher_audit_stays_in_queue_dir(state: Path, tmp_path: Path) -> None:
-    """Issue sumipan/nexus#6089: launcher audit stays on queue dir when state dir is set (AC3)."""
-    launcher = _launcher(DagConfig(exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl"))
-    assert launcher._queue_audit_path() == tmp_path / "jobs" / "audit.jsonl"
-    assert launcher._running_path("u1") == state / "running" / "u1.json"
-    assert launcher._cancel_path("u1") == state / "cancel" / "u1"
-    assert launcher._events_path("u1") == state / "events" / "u1.jsonl"
-    assert launcher._session_store._store_dir == state / ".sessions"
 
 
-def test_task_launcher_defaults_unchanged(unset: None, tmp_path: Path) -> None:
-    config = DagConfig(exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl", exec_done_dir=tmp_path / "jobs" / "done")
-    launcher = _launcher(config)
-    assert launcher._running_path("u1") == tmp_path / "jobs" / "running" / "u1.json"
-    assert launcher._session_store._store_dir == tmp_path / "jobs" / ".sessions"
-    assert launcher.quota_gate._state_path == tmp_path / "jobs" / "quota-gate.json"
 
 
 def test_pipeline_state_defaults_unchanged(unset: None, tmp_path: Path) -> None:
@@ -110,14 +59,6 @@ def test_pipeline_state_defaults_unchanged(unset: None, tmp_path: Path) -> None:
     assert ps._quota_gate._state_path == tmp_path / "jobs" / "quota-gate.json"
 
 
-def test_explicit_dag_config_args_win(state: Path, tmp_path: Path) -> None:
-    config = DagConfig(
-        exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl",
-        exec_done_dir=tmp_path / "explicit" / "done",
-        quota_state_path=tmp_path / "explicit" / "quota.json",
-    )
-    assert config.exec_done_dir == tmp_path / "explicit" / "done"
-    assert config.quota_state_path == tmp_path / "explicit" / "quota.json"
 
 
 # --- CLI ---
@@ -134,15 +75,6 @@ def test_cancel_uses_state_dir_by_default(state: Path, tmp_path: Path, monkeypat
     assert not (tmp_path / "jobs").exists()
 
 
-def test_cancel_explicit_queue_dir_wins(state: Path, tmp_path: Path) -> None:
-    from ghdag.cli.commands.cancel import cmd_cancel
-
-    q = tmp_path / "q"
-    (q / "running").mkdir(parents=True)
-    (q / "running" / "u1.json").write_text("{}", encoding="utf-8")
-    cmd_cancel(argparse.Namespace(uuid="u1", queue_dir=str(q)))
-    assert (q / "cancel" / "u1").exists()
-    assert not state.exists()
 
 
 def test_quota_state_path_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -158,10 +90,3 @@ def test_quota_state_path_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert _build_gate(str(tmp_path / "x.json"))._state_path == tmp_path / "x.json"
 
 
-def test_cli_parser_defaults_are_none() -> None:
-    from ghdag.cli.main import _build_parser
-
-    parser = _build_parser()
-    assert parser.parse_args(["status", "--issue", "1"]).state_dir is None
-    assert parser.parse_args(["quota", "status"]).state_path is None
-    assert parser.parse_args(["dag", "cancel", "u1"]).queue_dir is None

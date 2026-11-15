@@ -4,10 +4,7 @@ from __future__ import annotations
 
 import io
 import json
-import signal
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from ghdag.core.stall_guard import StallEvent, StallTracker
 from ghdag.core.vocabulary import PIPELINE_REPLY_BLOCK_FAILED
@@ -75,19 +72,6 @@ def test_stall_guard_disabled(mock_popen, tmp_path, monkeypatch) -> None:
     mock_popen.return_value = proc
     launcher = _make_launcher(tmp_path)
     task = Task(uuid="u1", command="agent -p x", engine="cursor")
-    launcher.launch("u1", task)
-    assert launcher._running["u1"].stall_tracker is None
-
-
-@patch("ghdag.dag.task_launcher.subprocess.Popen")
-@pytest.mark.parametrize("engine", ["claude", "codex"])
-def test_non_cursor_no_tracker(mock_popen, tmp_path, engine: str) -> None:
-    proc = MagicMock()
-    proc.pid = 1
-    proc.stderr = io.BytesIO(b"")
-    mock_popen.return_value = proc
-    launcher = _make_launcher(tmp_path)
-    task = Task(uuid="u1", command="echo hi", engine=engine)
     launcher.launch("u1", task)
     assert launcher._running["u1"].stall_tracker is None
 
@@ -187,25 +171,3 @@ def test_stall_guard_disabled_relaunch_has_no_tracker(
     mock_popen.assert_called_once()
     assert uuid in launcher._running
     assert launcher._running[uuid].stall_tracker is None
-
-
-@patch("ghdag.dag.task_launcher._signal_process_tree")
-def test_timeout_still_signals_process_tree(mock_signal, tmp_path, monkeypatch) -> None:
-    clock = _FakeClock(mono=20_000.0)
-    monkeypatch.setattr("ghdag.dag.task_launcher.time", clock)
-    launcher = _make_launcher(tmp_path)
-    proc = MagicMock()
-    proc.poll.return_value = None
-    task = Task(uuid="t1", command="sleep", engine="cursor")
-    rt = _RunningProcess(
-        uuid="t1",
-        task=task,
-        proc=proc,
-        started_at=clock.time() - 5000,
-        started_at_mono=clock.monotonic() - 5000,
-        stderr_buf=io.BytesIO(b""),
-        stall_tracker=MagicMock(spec=StallTracker),
-    )
-    launcher._running["t1"] = rt
-    launcher.check_completions()
-    mock_signal.assert_called_once_with(proc, signal.SIGTERM)

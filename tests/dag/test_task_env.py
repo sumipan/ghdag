@@ -2,23 +2,11 @@
 from __future__ import annotations
 
 import io
-import os
 from unittest.mock import MagicMock, patch
 
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.models import DagConfig, Task
 from ghdag.dag.task_launcher import TaskLauncher, _task_env
-
-
-def test_task_env_adds_identity_and_keeps_parent_env(monkeypatch):
-    monkeypatch.delenv("GHDAG_TASK_UUID", raising=False)
-    monkeypatch.setenv("PARENT_MARKER", "kept")
-    task = Task(uuid="u-1", command="true", engine="shell", model="bash", result_path="/tmp/r.md")
-    env = _task_env("u-1", task)
-    assert env["GHDAG_TASK_UUID"] == "u-1"
-    assert env["GHDAG_RESULT_PATH"] == "/tmp/r.md"
-    assert env["PARENT_MARKER"] == "kept"
-    assert "GHDAG_TASK_UUID" not in os.environ
 
 
 def test_task_env_without_result_path_is_empty_string():

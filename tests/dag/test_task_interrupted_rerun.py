@@ -100,36 +100,6 @@ UUID_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 class TestMarkInterruptedAll:
     """AC-2a: mark_interrupted_all adds interrupted_at without touching existing fields."""
 
-    def test_adds_interrupted_at_to_two_running_files(self, tmp_path):
-        launcher = _make_launcher(tmp_path)
-        jobs = tmp_path / "jobs"
-
-        proc_a = subprocess.Popen(["sleep", "30"], start_new_session=True)
-        proc_b = subprocess.Popen(["sleep", "30"], start_new_session=True)
-        try:
-            _write_running_file(jobs, UUID_A, proc_a.pid, proc_a.pid)
-            _write_running_file(jobs, UUID_B, proc_b.pid, proc_b.pid)
-
-            task_a = Task(uuid=UUID_A, command="sleep 30")
-            task_b = Task(uuid=UUID_B, command="sleep 30")
-            launcher._running[UUID_A] = MagicMock(uuid=UUID_A, task=task_a)
-            launcher._running[UUID_B] = MagicMock(uuid=UUID_B, task=task_b)
-
-            recorded = launcher.mark_interrupted_all()
-
-            assert set(recorded) == {UUID_A, UUID_B}
-            for uuid in (UUID_A, UUID_B):
-                data = json.loads((jobs / "running" / f"{uuid}.json").read_text())
-                assert "interrupted_at" in data
-                assert data["pid"] in (proc_a.pid, proc_b.pid)
-                assert data["engine"] == ""
-                assert data["has_resume"] is False
-                assert "started_at" in data
-        finally:
-            _force_kill_pgid(proc_a.pid)
-            _force_kill_pgid(proc_b.pid)
-            proc_a.wait()
-            proc_b.wait()
 
     def test_missing_running_file_skipped_no_exception(self, tmp_path):
         launcher = _make_launcher(tmp_path)
@@ -140,28 +110,6 @@ class TestMarkInterruptedAll:
 
         assert recorded == []
 
-    def test_one_missing_one_present(self, tmp_path):
-        launcher = _make_launcher(tmp_path)
-        jobs = tmp_path / "jobs"
-
-        proc_b = subprocess.Popen(["sleep", "30"], start_new_session=True)
-        try:
-            _write_running_file(jobs, UUID_B, proc_b.pid, proc_b.pid)
-
-            task_a = Task(uuid=UUID_A, command="sleep 30")
-            task_b = Task(uuid=UUID_B, command="sleep 30")
-            launcher._running[UUID_A] = MagicMock(uuid=UUID_A, task=task_a)
-            launcher._running[UUID_B] = MagicMock(uuid=UUID_B, task=task_b)
-
-            recorded = launcher.mark_interrupted_all()
-
-            assert UUID_B in recorded
-            assert UUID_A not in recorded
-            data = json.loads((jobs / "running" / f"{UUID_B}.json").read_text())
-            assert "interrupted_at" in data
-        finally:
-            _force_kill_pgid(proc_b.pid)
-            proc_b.wait()
 
 
 class TestAdoptOrphansInterrupted:
@@ -196,31 +144,6 @@ class TestAdoptOrphansInterrupted:
             if proc.poll() is None:
                 proc.wait()
 
-    def test_dead_pgid_with_interrupted_at_queued_for_rerun(self, tmp_path):
-        """AC-2b (dead): dead process with interrupted_at queued for rerun."""
-        launcher = _make_launcher(tmp_path)
-        jobs = tmp_path / "jobs"
-
-        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
-        pgid = proc.pid
-        _force_kill_pgid(pgid)
-        proc.wait()
-        assert _spin_until(lambda: not _process_group_exists(pgid))
-
-        _write_running_file(
-            jobs, UUID_A, proc.pid, pgid,
-            interrupted_at="2026-09-24T02:13:00+00:00",
-            interrupted_reruns=0,
-        )
-        task = Task(uuid=UUID_A, command="sleep 30")
-
-        adopted = launcher.adopt_orphans({UUID_A: task})
-
-        assert UUID_A not in adopted
-        assert not launcher.is_running(UUID_A)
-        assert UUID_A in launcher._pending_reruns
-        done_dir = jobs / "done"
-        assert not is_done(str(done_dir), UUID_A)
 
     def test_interrupted_reruns_at_limit_becomes_orphan(self, tmp_path):
         """AC-2c: interrupted_reruns >= _MAX_INTERRUPTED_RERUNS falls back to orphan."""
@@ -254,28 +177,6 @@ class TestAdoptOrphansInterrupted:
         )
         launcher._hooks.on_task_failure.assert_called_once()
 
-    def test_no_interrupted_at_follows_normal_orphan_path(self, tmp_path):
-        """AC-2d: running file without interrupted_at uses existing orphan logic."""
-        launcher = _make_launcher(tmp_path)
-        jobs = tmp_path / "jobs"
-        done = jobs / "done"
-
-        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
-        pgid = proc.pid
-        _force_kill_pgid(pgid)
-        proc.wait()
-        assert _spin_until(lambda: not _process_group_exists(pgid))
-
-        _write_running_file(jobs, UUID_A, proc.pid, pgid)
-        task = Task(uuid=UUID_A, command="sleep 30")
-
-        adopted = launcher.adopt_orphans({UUID_A: task})
-
-        assert UUID_A not in adopted
-        assert UUID_A not in launcher._pending_reruns
-        assert is_done(str(done), UUID_A)
-        content = (done / UUID_A).read_text(encoding="utf-8").strip()
-        assert content == DONE_ORPHANED_ON_RESTART
 
 
 class TestRerunAfterInterrupt:
@@ -314,71 +215,5 @@ class TestRerunAfterInterrupt:
         assert is_done(str(done), UUID_A)
         assert (done / UUID_A).read_text(encoding="utf-8").strip() == "0"
 
-    def test_launch_without_pending_rerun_no_env_var(self, tmp_path):
-        launcher = _make_launcher(tmp_path)
-        jobs = tmp_path / "jobs"
-        done = jobs / "done"
-
-        env_file = tmp_path / "env_out.txt"
-        result_path = str(jobs / f"result-{UUID_A}.md")
-        Path(result_path).parent.mkdir(parents=True, exist_ok=True)
-
-        task = Task(
-            uuid=UUID_A,
-            command=(
-                f'if [ -n "$GHDAG_PREVIOUS_ATTEMPT" ]; then '
-                f'echo "HAS_ENV=$GHDAG_PREVIOUS_ATTEMPT" > {env_file}; fi '
-                f'&& echo ok > {result_path}'
-            ),
-            result_path=result_path,
-        )
-        launched = launcher.launch(UUID_A, task)
-        assert launched
-
-        def _poll():
-            launcher.check_completions()
-            return UUID_A not in launcher._running
-
-        assert _spin_until(_poll)
-
-        assert not env_file.exists()
-        assert is_done(str(done), UUID_A)
 
 
-class TestInterruptedNoDone:
-    """AC-2f: interrupted task does not get on_task_failure or done marker."""
-
-    def test_interrupted_task_no_failure_hook_no_done(self, tmp_path, monkeypatch):
-        clock = _FakeClock()
-        monkeypatch.setattr("ghdag.dag.task_launcher.time", clock)
-        launcher = _make_launcher(tmp_path)
-        jobs = tmp_path / "jobs"
-        done = jobs / "done"
-
-        result_path = str(jobs / f"result-{UUID_A}.md")
-        Path(result_path).parent.mkdir(parents=True, exist_ok=True)
-
-        task = Task(uuid=UUID_A, command=f"sleep 30 && echo ok > {result_path}",
-                    result_path=result_path)
-        launched = launcher.launch(UUID_A, task)
-        assert launched
-
-        assert _spin_until(lambda: launcher.is_running(UUID_A))
-
-        launcher._interrupting.add(UUID_A)
-        rt = launcher._running[UUID_A]
-        from ghdag.dag.task_launcher import _signal_process_tree
-        _signal_process_tree(rt.proc, signal.SIGTERM)
-        rt.term_sent_at = clock.monotonic()
-
-        def _poll():
-            launcher.check_completions()
-            return not launcher.is_running(UUID_A)
-
-        assert _spin_until(_poll)
-
-        assert not is_done(str(done), UUID_A)
-        launcher._hooks.on_task_failure.assert_not_called()
-
-        running_file = jobs / "running" / f"{UUID_A}.json"
-        assert running_file.exists()

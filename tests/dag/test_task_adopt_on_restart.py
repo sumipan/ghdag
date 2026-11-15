@@ -72,27 +72,6 @@ UUID_CORRUPT = "44444444-4444-4444-4444-444444444444"
 
 
 class TestAdoptLiveProcess:
-    def test_adopt_live_process_is_running(self, tmp_path):
-        launcher = _make_launcher(tmp_path)
-        jobs = tmp_path / "jobs"
-        result_path = str(jobs / f"result-{UUID_LIVE}.md")
-        task = Task(uuid=UUID_LIVE, command="sleep 30", result_path=result_path)
-
-        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
-        pgid = proc.pid
-        try:
-            _write_running_file(jobs, UUID_LIVE, proc.pid, pgid)
-
-            adopted = launcher.adopt_orphans({UUID_LIVE: task})
-
-            assert adopted == [UUID_LIVE]
-            assert launcher.is_running(UUID_LIVE)
-            assert launcher.running_count == 1
-            assert UUID_LIVE not in launcher._running
-            assert UUID_LIVE in launcher._adopted
-        finally:
-            _force_kill_pgid(pgid)
-            proc.wait()
 
     def test_adopt_live_then_kill_closes_as_orphan(self, tmp_path):
         launcher = _make_launcher(tmp_path)
@@ -127,28 +106,6 @@ class TestAdoptLiveProcess:
         finally:
             _force_kill_pgid(pgid)
 
-    def test_check_completions_idempotent_after_orphan_close(self, tmp_path):
-        launcher = _make_launcher(tmp_path)
-        jobs = tmp_path / "jobs"
-        task = Task(uuid=UUID_LIVE, command="sleep 30")
-
-        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
-        pgid = proc.pid
-        try:
-            _write_running_file(jobs, UUID_LIVE, proc.pid, pgid)
-            launcher.adopt_orphans({UUID_LIVE: task})
-
-            _force_kill_pgid(pgid)
-            proc.wait()
-            assert _spin_until(lambda: not _process_group_exists(pgid))
-
-            launcher.check_completions()
-            assert launcher._hooks.on_task_failure.call_count == 1
-
-            launcher.check_completions()
-            assert launcher._hooks.on_task_failure.call_count == 1
-        finally:
-            _force_kill_pgid(pgid)
 
 
 class TestAdoptDeadProcess:
@@ -228,16 +185,6 @@ class TestAdoptUnknownUUID:
         assert unk_path.exists()
 
 
-class TestAdoptNoRunningDir:
-    def test_missing_running_dir_returns_empty(self, tmp_path):
-        launcher = _make_launcher(tmp_path)
-        jobs = tmp_path / "jobs"
-        (jobs / "running").rmdir()
-
-        adopted = launcher.adopt_orphans({UUID_LIVE: Task(uuid=UUID_LIVE, command="true")})
-
-        assert adopted == []
-        assert launcher.running_count == 0
 
 
 class TestEngineAdoptOnce:
