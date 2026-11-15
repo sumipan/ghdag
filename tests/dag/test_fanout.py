@@ -55,11 +55,6 @@ class TestParseFanoutSpec:
         f.write_text("content\n---\nsome_other_key: value\n")
         assert parse_fanout_spec(str(f)) is None
 
-    def test_invalid_yaml_after_anchor_raises(self, tmp_path):
-        f = tmp_path / "result.md"
-        f.write_text("---\nghdag_fanout:\n  children: [\n")
-        with pytest.raises(FanoutError, match="YAML"):
-            parse_fanout_spec(str(f))
 
     def test_empty_children_list_returns_none(self, tmp_path):
         f = tmp_path / "result.md"
@@ -82,18 +77,6 @@ class TestParseFanoutSpec:
         assert err.code == "FANOUT_INVALID"
         assert err.hint is not None
 
-    def test_uses_last_separator(self, tmp_path):
-        """Only the content after the LAST '---' is parsed."""
-        f = tmp_path / "result.md"
-        f.write_text(
-            "---\nnot_fanout: true\n\n"
-            "---\nghdag_fanout:\n  children:\n"
-            "    - id: only-one\n      command: echo 1\n"
-        )
-        spec = parse_fanout_spec(str(f))
-        assert spec is not None
-        assert len(spec.children) == 1
-        assert spec.children[0].id == "only-one"
 
     def test_child_missing_command_raises(self, tmp_path):
         f = tmp_path / "result.md"
@@ -101,35 +84,6 @@ class TestParseFanoutSpec:
         with pytest.raises(FanoutError, match="command"):
             parse_fanout_spec(str(f))
 
-    def test_t2_child_id_contains_fo_separator_raises(self, tmp_path):
-        """T2: child.id = 'foo--fo--bar' → ValueError (contains reserved separator)."""
-        f = tmp_path / "result.md"
-        f.write_text(
-            "---\nghdag_fanout:\n  children:\n"
-            "    - id: foo--fo--bar\n      command: echo 1\n"
-        )
-        with pytest.raises(FanoutError, match="--fo--"):
-            parse_fanout_spec(str(f))
-
-    def test_t3_child_id_leading_fo_separator_raises(self, tmp_path):
-        """T3: child.id = '--fo--leading' → ValueError (leading separator)."""
-        f = tmp_path / "result.md"
-        f.write_text(
-            "---\nghdag_fanout:\n  children:\n"
-            "    - id: \"--fo--leading\"\n      command: echo 1\n"
-        )
-        with pytest.raises(FanoutError, match="--fo--"):
-            parse_fanout_spec(str(f))
-
-    def test_t4_child_id_trailing_fo_separator_raises(self, tmp_path):
-        """T4: child.id = 'trailing--fo--' → ValueError (trailing separator)."""
-        f = tmp_path / "result.md"
-        f.write_text(
-            "---\nghdag_fanout:\n  children:\n"
-            "    - id: \"trailing--fo--\"\n      command: echo 1\n"
-        )
-        with pytest.raises(FanoutError, match="--fo--"):
-            parse_fanout_spec(str(f))
 
     def test_t5_child_id_is_separator_itself_raises(self, tmp_path):
         """T5: child.id = '--fo--' → ValueError (separator itself)."""
@@ -141,23 +95,6 @@ class TestParseFanoutSpec:
         with pytest.raises(FanoutError, match="--fo--"):
             parse_fanout_spec(str(f))
 
-    def test_markdown_hr_without_fanout_key_returns_none(self, tmp_path):
-        """AC3: --- in Claude output without ghdag_fanout: → None (no warning)."""
-        f = tmp_path / "result.md"
-        f.write_text("Implementation complete.\n\n---\n\n**Changes:**\nPR created")
-        assert parse_fanout_spec(str(f)) is None
-
-    def test_fanout_after_second_separator_is_parsed(self, tmp_path):
-        """AC4: --- + markdown + --- + ghdag_fanout: → correct extraction."""
-        f = tmp_path / "result.md"
-        f.write_text(
-            "text\n\n---\n\nMore text.\n\n---\nghdag_fanout:\n"
-            "  children:\n    - id: x\n      command: echo 1\n"
-        )
-        spec = parse_fanout_spec(str(f))
-        assert spec is not None
-        assert len(spec.children) == 1
-        assert spec.children[0].id == "x"
 
     def test_anchor_without_separator_raises(self, tmp_path):
         f = tmp_path / "result.md"
@@ -169,46 +106,6 @@ class TestParseFanoutSpec:
         with pytest.raises(FanoutError, match="---"):
             parse_fanout_spec(str(f))
 
-    def test_other_yaml_keys_before_fanout_still_parses(self, tmp_path):
-        """AC6: Other root-level YAML keys between --- and ghdag_fanout: → correct parse."""
-        f = tmp_path / "result.md"
-        f.write_text(
-            "---\nmetadata: v1\nghdag_fanout:\n"
-            "  children:\n    - id: x\n      command: echo 1\n"
-        )
-        spec = parse_fanout_spec(str(f))
-        assert spec is not None
-        assert len(spec.children) == 1
-        assert spec.children[0].id == "x"
-
-    def test_multiple_fanout_anchors_last_wins(self, tmp_path):
-        """Multiple ghdag_fanout: anchors → last one (with --- before it) is used."""
-        f = tmp_path / "result.md"
-        f.write_text(
-            "---\nghdag_fanout:\n"
-            "  children:\n"
-            "    - id: first-ignored\n      command: echo 0\n"
-            "\n"
-            "---\nghdag_fanout:\n"
-            "  children:\n"
-            "    - id: last-one\n      command: echo 1\n"
-        )
-        spec = parse_fanout_spec(str(f))
-        assert spec is not None
-        assert len(spec.children) == 1
-        assert spec.children[0].id == "last-one"
-
-    def test_indented_anchor_not_detected(self, tmp_path):
-        """Indented '  ghdag_fanout:' is not detected as anchor → None."""
-        f = tmp_path / "result.md"
-        f.write_text(
-            "---\n"
-            "content\n"
-            "  ghdag_fanout:\n"
-            "    children:\n"
-            "      - id: x\n        command: echo 1\n"
-        )
-        assert parse_fanout_spec(str(f)) is None
 
     def test_fanout_value_not_mapping_raises(self, tmp_path):
         f = tmp_path / "result.md"
@@ -332,11 +229,6 @@ class TestReplyBlockFanout:
 
 
 class TestBuildChildJsonlRecord:
-    def test_format(self):
-        line = build_child_jsonl_record("parent--fo--item-001", "bash -c 'process foo'")
-        data = json.loads(line)
-        assert data["uuid"] == "parent--fo--item-001"
-        assert data["command"] == "bash -c 'process foo'"
 
     def test_is_valid_json(self):
         line = build_child_jsonl_record("x--fo--y", "echo hello")

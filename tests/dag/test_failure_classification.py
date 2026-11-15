@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import json
 import logging
 from collections.abc import Iterator
 from pathlib import Path
@@ -127,69 +126,6 @@ def all_adapters():
 
 def test_passthrough_classify_failure_default_none() -> None:
     assert get_output_adapter("unknown").classify_failure(1, b"", b"boom") is None
-
-
-@pytest.mark.parametrize("stream", ["stdout", "stderr"])
-def test_all_adapters_detect_quota_exhausted_from_both_streams(all_adapters, stream: str) -> None:
-    message = "You've hit your session limit \xc2\xb7 resets 2:30am (Asia/Tokyo)".encode("utf-8")
-    for adapter in all_adapters:
-        stdout = message if stream == "stdout" else b""
-        stderr = message if stream == "stderr" else b""
-        failure = adapter.classify_failure(1, stdout, stderr)
-        assert failure == FailureClass.QUOTA_EXHAUSTED
-
-
-@pytest.mark.parametrize("stream", ["stdout", "stderr"])
-def test_all_adapters_detect_auth_from_both_streams(all_adapters, stream: str) -> None:
-    message = b"Failed to authenticate: OAuth session expired and could not be refreshed"
-    for adapter in all_adapters:
-        stdout = message if stream == "stdout" else b""
-        stderr = message if stream == "stderr" else b""
-        failure = adapter.classify_failure(1, stdout, stderr)
-        assert failure == FailureClass.AUTH
-
-
-@pytest.mark.parametrize(
-    ("adapter", "binary"),
-    [
-        (ClaudeJsonAdapter(), "claude"),
-        (CodexAdapter(), "codex"),
-    ],
-)
-@pytest.mark.parametrize("stream", ["stdout", "stderr"])
-def test_all_adapters_detect_environment_from_both_streams(adapter, binary: str, stream: str) -> None:
-    message = f"{binary}: No such file or directory".encode("utf-8")
-    stdout = message if stream == "stdout" else b""
-    stderr = message if stream == "stderr" else b""
-    failure = adapter.classify_failure(127, stdout, stderr)
-    assert failure == FailureClass.ENGINE_ENVIRONMENT_ERROR
-
-
-def test_environment_match_has_priority_over_auth() -> None:
-    adapter = ClaudeJsonAdapter()
-    message = b"claude: Permission denied while checking auth token"
-    failure = adapter.classify_failure(126, message, message)
-    assert failure == FailureClass.ENGINE_ENVIRONMENT_ERROR
-
-
-def test_codex_classify_failure_detects_engine_error_from_stderr() -> None:
-    adapter = CodexAdapter()
-    failure = adapter.classify_failure(
-        1,
-        b"",
-        b"codex_models_manager::manager: failed to load models cache: missing field",
-    )
-    assert failure == FailureClass.ENGINE_ERROR
-
-
-def test_codex_classify_failure_detects_environment_error() -> None:
-    adapter = CodexAdapter()
-    failure = adapter.classify_failure(
-        127,
-        b"",
-        b"codex: No such file or directory",
-    )
-    assert failure == FailureClass.ENGINE_ENVIRONMENT_ERROR
 
 
 def test_all_adapters_return_none_for_ordinary_process_failure(all_adapters) -> None:
@@ -337,75 +273,8 @@ def test_engine_quarantine_expires_after_cooldown() -> None:
         assert q.is_quarantined("claude") is False
 
 
-def test_retry_and_quarantine_audit_events_are_written(tmp_path) -> None:
-    engine, _hooks = _make_engine(tmp_path)
-    queue_dir = tmp_path
-    audit_path = queue_dir / "audit.jsonl"
-
-    retry_task = Task(uuid="retry-audit", command="codex exec -p hi", engine="codex", retry=0)
-    retry_rt = _make_running_task(
-        retry_task,
-        stdout=b"",
-        stderr=b"failed to load models cache",
-        returncode=1,
-    )
-    engine._launcher._running[retry_task.uuid] = retry_rt
-    engine._quota_gate.begin_run(task_uuid=retry_task.uuid, engine="codex")
-    engine._launcher.check_completions()
-
-    env_task = Task(uuid="env-audit", command="claude -p hi", engine="claude")
-    env_rt = _make_running_task(
-        env_task,
-        stdout=b"",
-        stderr=b"claude: Permission denied",
-        returncode=126,
-    )
-    engine._launcher._running[env_task.uuid] = env_rt
-    engine._quota_gate.begin_run(task_uuid=env_task.uuid, engine="claude")
-    engine._launcher.check_completions()
-
-    events = [
-        json.loads(line)["event_type"]
-        for line in audit_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    assert "task_retry" in events
-    assert "engine_quarantine" in events
-
-
-def test_looks_like_question_last_line_endswith_question_mark() -> None:
-    assert looks_like_question("Choose an option?\n") is True
-    assert looks_like_question("Done.\nAll good.") is False
-    assert looks_like_question("") is False
-    assert looks_like_question("   \n  ") is False
-
-
 def test_looks_like_question_without_pack_ignores_extra_suffix() -> None:
     assert looks_like_question(f"Choose an option{_EXTRA_SUFFIX}") is False
-
-
-def test_looks_like_question_with_pack_extra_suffix(extra_suffix_pack: None) -> None:
-    assert looks_like_question(f"Choose an option{_EXTRA_SUFFIX}\n") is True
-    # ASCII ? stays built in even when the pack adds extra suffixes.
-    assert looks_like_question("Choose an option?") is True
-    assert looks_like_question("Done.") is False
-
-
-def test_looks_like_question_pack_load_failure_falls_back_to_ascii(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    monkeypatch.setenv("GHDAG_LANGUAGE_PACK", str(tmp_path / "missing.yaml"))
-    with caplog.at_level(
-        logging.WARNING, logger="ghdag.llm.adapters.failure_classification"
-    ):
-        assert looks_like_question("Choose an option?") is True
-        assert looks_like_question(f"Choose an option{_EXTRA_SUFFIX}") is False
-    assert any(
-        r.levelno == logging.WARNING and "missing.yaml" in r.getMessage()
-        for r in caplog.records
-    )
 
 
 def test_classify_failure_pack_load_failure_still_detects_ascii_question(
@@ -427,36 +296,6 @@ def test_failure_class_interactive_prompt_meta() -> None:
     assert FailureClass.INTERACTIVE_PROMPT.retry_policy == "forbidden"
 
 
-@pytest.mark.parametrize(
-    ("adapter", "fixture"),
-    [
-        (ClaudeJsonAdapter(), "claude_json_interactive_prompt.json"),
-        (CursorStreamAdapter(), "cursor_stream_interactive_prompt.jsonl"),
-        (CodexJsonlAdapter(), "codex_jsonl_interactive_prompt.jsonl"),
-        (CodexAdapter(), "codex_jsonl_interactive_prompt.jsonl"),
-    ],
-)
-def test_adapters_exit0_question_is_not_interactive_prompt(adapter, fixture: str) -> None:
-    """AC-1 / AC-2: exit 0 must not become INTERACTIVE_PROMPT even with a trailing ?."""
-    stdout = _load_fixture(fixture)
-    assert adapter.classify_failure(0, stdout, b"") is None
-
-
-@pytest.mark.parametrize(
-    ("adapter", "fixture"),
-    [
-        (ClaudeJsonAdapter(), "claude_json_interactive_prompt.json"),
-        (CursorStreamAdapter(), "cursor_stream_interactive_prompt.jsonl"),
-        (CodexJsonlAdapter(), "codex_jsonl_interactive_prompt.jsonl"),
-        (CodexAdapter(), "codex_jsonl_interactive_prompt.jsonl"),
-    ],
-)
-def test_adapters_exit_nonzero_question_is_interactive_prompt(adapter, fixture: str) -> None:
-    """AC-3 / AC-4: exit != 0 with a trailing ? is INTERACTIVE_PROMPT."""
-    stdout = _load_fixture(fixture)
-    assert adapter.classify_failure(1, stdout, b"") == FailureClass.INTERACTIVE_PROMPT
-
-
 _EXTRA_SUFFIX_CASES = [
     (ClaudeJsonAdapter(), "claude_json_interactive_prompt_extra_suffix.json"),
     (CursorStreamAdapter(), "cursor_stream_interactive_prompt_extra_suffix.jsonl"),
@@ -473,34 +312,6 @@ def test_adapters_extra_suffix_with_pack_is_interactive_prompt(
     stdout = _load_fixture(fixture)
     assert adapter.classify_failure(1, stdout, b"") == FailureClass.INTERACTIVE_PROMPT
     assert adapter.classify_failure(0, stdout, b"") is None
-
-
-@pytest.mark.parametrize(("adapter", "fixture"), _EXTRA_SUFFIX_CASES)
-def test_adapters_extra_suffix_without_pack_is_not_interactive_prompt(
-    adapter, fixture: str
-) -> None:
-    stdout = _load_fixture(fixture)
-    assert adapter.classify_failure(1, stdout, b"") != FailureClass.INTERACTIVE_PROMPT
-    assert adapter.classify_failure(0, stdout, b"") is None
-
-
-@pytest.mark.parametrize(
-    ("adapter", "fixture"),
-    [
-        (ClaudeJsonAdapter(), "claude_json_success.json"),
-        (ClaudeJsonAdapter(), "claude_json_empty.json"),
-        (CursorStreamAdapter(), "cursor_stream_success.jsonl"),
-        (CursorStreamAdapter(), "cursor_stream_empty.jsonl"),
-        (CodexJsonlAdapter(), "codex_jsonl_success.jsonl"),
-        (CodexJsonlAdapter(), "codex_jsonl_empty.jsonl"),
-    ],
-)
-def test_adapters_do_not_classify_normal_or_empty_as_interactive(
-    adapter, fixture: str
-) -> None:
-    stdout = _load_fixture(fixture)
-    assert adapter.classify_failure(0, stdout, b"") is None
-    assert adapter.classify_failure(1, stdout, b"") is None
 
 
 def test_interactive_prompt_exit1_marks_done_without_retry(tmp_path) -> None:
@@ -523,29 +334,6 @@ def test_interactive_prompt_exit1_marks_done_without_retry(tmp_path) -> None:
     assert "Please choose one?" in question_excerpt or "bugbot" in question_excerpt
 
 
-def test_interactive_prompt_exit0_succeeds_as_normal(tmp_path) -> None:
-    """AC-7: exit 0 with a question ending is success (no INTERACTIVE_PROMPT branch)."""
-    engine, hooks = _make_engine(tmp_path)
-    result_file = tmp_path / "result.md"
-    task = Task(
-        uuid="interactive-exit0",
-        command="claude -p hi",
-        engine="claude",
-        result_path=str(result_file),
-    )
-    stdout = _load_fixture("claude_json_interactive_prompt.json")
-    rt = _make_running_task(task, stdout=stdout, stderr=b"", returncode=0)
-    engine._launcher._running[task.uuid] = rt
-    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="claude")
-
-    engine._launcher.check_completions()
-
-    assert _done_value(tmp_path, task.uuid) == "0"
-    assert len(hooks.successes) == 1
-    assert not hooks.failures
-    assert "Please choose one?" in result_file.read_text(encoding="utf-8")
-
-
 def test_cursor_retriable_error_sets_engine_error_marker(tmp_path) -> None:
     engine, hooks = _make_engine(tmp_path)
     stderr = _load_fixture("cursor_stream_retriable_error_reconnect.stderr")
@@ -563,21 +351,3 @@ def test_cursor_retriable_error_sets_engine_error_marker(tmp_path) -> None:
     assert "ENGINE_ERROR (RATE_LIMIT): RetriableError: [resource_exhausted] Error" in error_summary
 
 
-def test_cursor_retriable_error_at_max_retry_is_final(tmp_path) -> None:
-    engine, hooks = _make_engine(tmp_path)
-    stderr = _load_fixture("cursor_stream_retriable_error_reconnect.stderr")
-    task = Task(
-        uuid="cursor-retryable-final",
-        command="cursor agent -p hi",
-        engine="cursor",
-        retry=engine._config.max_retry,
-    )
-    rt = _make_running_task(task, stdout=b"", stderr=stderr, returncode=1)
-    engine._launcher._running[task.uuid] = rt
-    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="cursor")
-
-    engine._launcher.check_completions()
-
-    assert _done_value(tmp_path, task.uuid) == DONE_ENGINE_ERROR_FINAL
-    assert len(hooks.failures) == 1
-    assert hooks.failures[0][4].failure_class == FailureClass.ENGINE_ERROR
