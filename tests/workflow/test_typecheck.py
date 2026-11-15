@@ -2,11 +2,23 @@
 
 from __future__ import annotations
 
-from ghdag.core.models.workflow import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
-from ghdag.workflow.typecheck import ConsumeEntry, SkillIOSpec, TypeCheckError, typecheck_dag
+from ghdag.core.models.workflow import (
+    HandlerConfig,
+    StepConfig,
+    TriggerConfig,
+    WorkflowConfig,
+)
+from ghdag.workflow.typecheck import (
+    ConsumeEntry,
+    SkillIOSpec,
+    TypeCheckError,
+    typecheck_dag,
+)
 
 
-def _config(handlers: dict[str, list[StepConfig]]) -> WorkflowConfig:
+def _config(
+    handlers: dict[str, list[StepConfig]],
+) -> WorkflowConfig:
     first = next(iter(handlers))
     return WorkflowConfig(
         name="test",
@@ -19,7 +31,9 @@ SKILL_IO_OK = {
     "system-plan-draft": SkillIOSpec(produces_content_type="text/markdown"),
     "system-operate-issuesmith": SkillIOSpec(
         produces_content_type="text/markdown",
-        consumes=[ConsumeEntry(producer="system-plan-draft", content_type="text/markdown")],
+        consumes=[
+            ConsumeEntry(producer="system-plan-draft", content_type="text/markdown"),
+        ],
     ),
 }
 
@@ -27,20 +41,23 @@ SKILL_IO_OK = {
 class TestTypecheckDag:
     def test_tc1_happy_path_two_step_dag(self):
         """TC-1: system-plan-draft → system-operate-issuesmith passes."""
-        config = _config(
-            {
-                "canary": [
-                    StepConfig(id="plan", template="plan", model="m", skill_name="system-plan-draft"),
-                    StepConfig(
-                        id="operate",
-                        template="operate",
-                        model="m",
-                        skill_name="system-operate-issuesmith",
-                        depends=["plan"],
-                    ),
-                ]
-            }
-        )
+        config = _config({
+            "canary": [
+                StepConfig(
+                    id="plan",
+                    template="plan",
+                    model="m",
+                    skill_name="system-plan-draft",
+                ),
+                StepConfig(
+                    id="operate",
+                    template="operate",
+                    model="m",
+                    skill_name="system-operate-issuesmith",
+                    depends=["plan"],
+                ),
+            ],
+        })
         assert typecheck_dag(config, SKILL_IO_OK) == []
 
     def test_tc2_content_type_mismatch(self):
@@ -48,23 +65,28 @@ class TestTypecheckDag:
         skill_io = {
             "system-plan-draft": SkillIOSpec(produces_content_type="text/plain"),
             "system-operate-issuesmith": SkillIOSpec(
-                consumes=[ConsumeEntry(producer="system-plan-draft", content_type="text/markdown")]
+                consumes=[
+                    ConsumeEntry(producer="system-plan-draft", content_type="text/markdown"),
+                ],
             ),
         }
-        config = _config(
-            {
-                "canary": [
-                    StepConfig(id="plan", template="plan", model="m", skill_name="system-plan-draft"),
-                    StepConfig(
-                        id="operate",
-                        template="operate",
-                        model="m",
-                        skill_name="system-operate-issuesmith",
-                        depends=["plan"],
-                    ),
-                ]
-            }
-        )
+        config = _config({
+            "canary": [
+                StepConfig(
+                    id="plan",
+                    template="plan",
+                    model="m",
+                    skill_name="system-plan-draft",
+                ),
+                StepConfig(
+                    id="operate",
+                    template="operate",
+                    model="m",
+                    skill_name="system-operate-issuesmith",
+                    depends=["plan"],
+                ),
+            ],
+        })
         errors = typecheck_dag(config, skill_io)
         assert len(errors) == 1
         assert isinstance(errors[0], TypeCheckError)
@@ -75,7 +97,16 @@ class TestTypecheckDag:
 
     def test_tc3_unregistered_skill(self):
         """TC-3: skill_name not in skill_io dict returns error."""
-        config = _config({"canary": [StepConfig(id="plan", template="plan", model="m", skill_name="unknown-skill")]})
+        config = _config({
+            "canary": [
+                StepConfig(
+                    id="plan",
+                    template="plan",
+                    model="m",
+                    skill_name="unknown-skill",
+                ),
+            ],
+        })
         errors = typecheck_dag(config, SKILL_IO_OK)
         assert len(errors) == 1
         assert errors[0].step_id == "plan"
@@ -83,12 +114,15 @@ class TestTypecheckDag:
 
     def test_tc4_none_skill_name_skipped(self):
         """TC-4: steps without skill_name are not checked."""
-        config = _config(
-            {
-                "canary": [
-                    StepConfig(id="plan", template="plan", model="m"),
-                    StepConfig(id="operate", template="operate", model="m", depends=["plan"]),
-                ]
-            }
-        )
+        config = _config({
+            "canary": [
+                StepConfig(id="plan", template="plan", model="m"),
+                StepConfig(
+                    id="operate",
+                    template="operate",
+                    model="m",
+                    depends=["plan"],
+                ),
+            ],
+        })
         assert typecheck_dag(config, {}) == []

@@ -13,6 +13,9 @@ from ghdag.core.command import (
 )
 from ghdag.core.engine_spec import ENGINE_SPECS
 
+# ---------------------------------------------------------------------------
+# _GenericAdapter — AC3 integration tests
+# ---------------------------------------------------------------------------
 
 class TestGenericAdapter:
     def test_name_from_spec(self):
@@ -25,6 +28,10 @@ class TestGenericAdapter:
             assert adapter.name == name
 
 
+# ---------------------------------------------------------------------------
+# shell adapter via get_command_adapter
+# ---------------------------------------------------------------------------
+
 class TestShellAdapterViaGetCommandAdapter:
     def setup_method(self):
         self.adapter = get_command_adapter("shell")
@@ -35,12 +42,18 @@ class TestShellAdapterViaGetCommandAdapter:
         )
 
 
+# ---------------------------------------------------------------------------
+# get_command_adapter / register_command_adapter — sumipan/nexus#6535
+# ---------------------------------------------------------------------------
+
+
 def test_get_command_adapter_resolves_known_and_unknown_engines() -> None:
     """Issue sumipan/nexus#6535 — built-in engines resolve; unknown names raise AdapterNotFoundError."""
     for name in ("claude", "gemini", "cursor", "shell"):
         adapter = get_command_adapter(name)
         assert isinstance(adapter, _GenericAdapter)
         assert adapter.name == name
+
     with pytest.raises(AdapterNotFoundError, match="Unknown engine"):
         get_command_adapter("unknown")
     with pytest.raises(AdapterNotFoundError) as exc_info:
@@ -49,13 +62,15 @@ def test_get_command_adapter_resolves_known_and_unknown_engines() -> None:
     assert "claude" in msg or "gemini" in msg
 
 
+# ---------------------------------------------------------------------------
+# AC4: virtual engine registration tests
+# ---------------------------------------------------------------------------
+
 class TestVirtualEngineRegistration:
     def test_custom_adapter_takes_precedence_for_unregistered_engine(self):
         """Custom Adapter can be retrieved from _CUSTOM_ADAPTERS"""
-
         class MyAdapter:
             name = "_my_custom_"
-
             def build_exec_record(self, **kwargs):
                 return {"custom": True}
 

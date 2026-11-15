@@ -9,7 +9,12 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from ghdag.core.models.workflow import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
+from ghdag.core.models.workflow import (
+    HandlerConfig,
+    StepConfig,
+    TriggerConfig,
+    WorkflowConfig,
+)
 from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
@@ -19,7 +24,11 @@ def _make_workflow(polling_interval: int = 30) -> WorkflowConfig:
     return WorkflowConfig(
         name="wf",
         triggers=[TriggerConfig(label="wf:ready", handler="h")],
-        handlers={"h": HandlerConfig(steps=[StepConfig(template="t", model="claude-opus-4-6")])},
+        handlers={
+            "h": HandlerConfig(
+                steps=[StepConfig(template="t", model="claude-opus-4-6")],
+            ),
+        },
         polling_interval=polling_interval,
     )
 
@@ -31,14 +40,22 @@ def _make_dispatcher(tmp_path: Path, polling_interval: int = 30) -> tuple[Workfl
     github.get_rate_limit.return_value = None
     pipeline = MagicMock(spec=LLMPipelineAPI)
     dispatcher = WorkflowDispatcher(
-        workflows=[_make_workflow(polling_interval)], github_client=github, pipeline=pipeline, queue_dir=str(tmp_path)
+        workflows=[_make_workflow(polling_interval)],
+        github_client=github,
+        pipeline=pipeline,
+        queue_dir=str(tmp_path),
     )
-    return (dispatcher, github)
+    return dispatcher, github
 
 
 class TestObserveUsesLastRateLimit:
     def test_does_not_call_get_rate_limit_api(self, tmp_path):
         dispatcher, github = _make_dispatcher(tmp_path)
-        github.get_last_rate_limit.return_value = {"remaining": 1000, "limit": 5000, "used": 4000, "reset": 1700000000}
+        github.get_last_rate_limit.return_value = {
+            "remaining": 1000,
+            "limit": 5000,
+            "used": 4000,
+            "reset": 1700000000,
+        }
         dispatcher._observe_rate_limit()
         github.get_rate_limit.assert_not_called()

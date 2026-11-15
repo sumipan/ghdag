@@ -160,7 +160,9 @@ class _RecordingPipelineState:
     def find_records_by_idempotency_key(self, key: str) -> list:
         return []
 
-    def remove_idempotency_for_handler(self, workflow_name: str, handler_name: str, issue_number: int) -> int:
+    def remove_idempotency_for_handler(
+        self, workflow_name: str, handler_name: str, issue_number: int
+    ) -> int:
         return 0
 
 
@@ -200,9 +202,7 @@ class _RecordingGitHubClient:
         self.updated_labels.append((args, kwargs))
 
 
-def _make_dispatcher(
-    workflow: WorkflowConfig, queue_dir: str = "queue"
-) -> tuple[WorkflowDispatcher, _RecordingGitHubClient, _RecordingPipelineState, _RecordingOrderBuilder]:
+def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tuple[WorkflowDispatcher, _RecordingGitHubClient, _RecordingPipelineState, _RecordingOrderBuilder]:
     github_client = _RecordingGitHubClient()
     pipeline_state = _RecordingPipelineState()
     order_builder = _RecordingOrderBuilder()

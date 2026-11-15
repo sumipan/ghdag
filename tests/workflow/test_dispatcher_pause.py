@@ -6,7 +6,12 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from ghdag.core.models.workflow import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
+from ghdag.core.models.workflow import (
+    HandlerConfig,
+    StepConfig,
+    TriggerConfig,
+    WorkflowConfig,
+)
 from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
@@ -16,7 +21,11 @@ def _make_workflow() -> WorkflowConfig:
     return WorkflowConfig(
         name="wf",
         triggers=[TriggerConfig(label="wf:ready", handler="h")],
-        handlers={"h": HandlerConfig(steps=[StepConfig(template="t", model="claude-opus-4-6")])},
+        handlers={
+            "h": HandlerConfig(
+                steps=[StepConfig(template="t", model="claude-opus-4-6")],
+            ),
+        },
         polling_interval=0,
     )
 
@@ -48,9 +57,11 @@ def test_pause_file_skips_poll_once(tmp_path):
     pause_file = tmp_path / "pause.txt"
     pause_file.write_text("quota exhausted", encoding="utf-8")
     dispatcher = _make_dispatcher(tmp_path, pause_file=pause_file)
-    dispatcher.poll_once = MagicMock(return_value=[])
-    dispatcher.dispatch = MagicMock()
+    dispatcher.poll_once = MagicMock(return_value=[])  # type: ignore[method-assign]
+    dispatcher.dispatch = MagicMock()  # type: ignore[method-assign]
+
     dispatcher.run(max_iterations=2)
+
     dispatcher.poll_once.assert_not_called()
     dispatcher.dispatch.assert_not_called()
 
@@ -60,7 +71,7 @@ def test_pause_and_resume_events_are_recorded_once(tmp_path):
     pause_file = tmp_path / "pause.txt"
     pause_file.write_text("quota exhausted", encoding="utf-8")
     dispatcher = _make_dispatcher(tmp_path, pause_file=pause_file)
-    dispatcher.poll_once = MagicMock(return_value=[])
+    dispatcher.poll_once = MagicMock(return_value=[])  # type: ignore[method-assign]
 
     def _sleep_and_remove(_: float) -> None:
         if pause_file.exists():
@@ -68,6 +79,7 @@ def test_pause_and_resume_events_are_recorded_once(tmp_path):
 
     with patch("ghdag.workflow.dispatcher.time.sleep", side_effect=_sleep_and_remove):
         dispatcher.run(max_iterations=3)
+
     events = _read_audit_events(tmp_path)
     pause_events = [ev for ev in events if ev.get("event") == "dispatcher_pause"]
     resume_events = [ev for ev in events if ev.get("event") == "dispatcher_resume"]

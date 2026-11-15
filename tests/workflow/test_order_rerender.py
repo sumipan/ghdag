@@ -12,6 +12,7 @@ class TestTemplateHash:
         """AC-12: calling get_template_hash twice returns same result."""
         template = tmp_path / "stable.md"
         template.write_text("content", encoding="utf-8")
+
         builder = TemplateOrderBuilder(tmp_path)
         assert builder.get_template_hash("stable") == builder.get_template_hash("stable")
 

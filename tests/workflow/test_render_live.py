@@ -10,7 +10,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from ghdag.core.exceptions import ConfigError
-from ghdag.core.models.workflow import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
+from ghdag.core.models.workflow import (
+    HandlerConfig,
+    StepConfig,
+    TriggerConfig,
+    WorkflowConfig,
+)
 from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import TemplateOrderBuilder
@@ -21,7 +26,20 @@ from ghdag.workflow.render import main as render_main
 
 def _write_workflow(tmp_path: Path, *, render: str | None, engine: str = "shell") -> Path:
     render_line = f"\n        render: {render}" if render is not None else ""
-    yaml_content = f'name: live-wf\ntemplate_dir: templates\ntriggers:\n  - label: "pipe:ready"\n    handler: run\nhandlers:\n  run:\n    steps:\n      - id: s1\n        template: step\n        model: bash\n        engine: {engine}{render_line}\n'
+    yaml_content = f"""\
+name: live-wf
+template_dir: templates
+triggers:
+  - label: "pipe:ready"
+    handler: run
+handlers:
+  run:
+    steps:
+      - id: s1
+        template: step
+        model: bash
+        engine: {engine}{render_line}
+"""
     (tmp_path / "wf.yml").write_text(yaml_content, encoding="utf-8")
     tdir = tmp_path / "templates"
     tdir.mkdir()
@@ -75,26 +93,36 @@ def test_live_submit_does_not_mutate_pipeline_order_builders(tmp_path: Path) -> 
     _write_workflow(tmp_path, render="live", engine="shell")
     configs = load_workflows(tmp_path)
     workflow = configs[0]
+
     pipeline_state = MagicMock()
     pipeline_state.check_idempotency.return_value = True
     pipeline_state.write_order_file.return_value = "ts-shell-order-u.md"
     pipeline = LLMPipelineAPI(
-        pipeline_state=pipeline_state, order_builder=TemplateOrderBuilder(tmp_path / "templates"), queue_dir=str(queue)
+        pipeline_state=pipeline_state,
+        order_builder=TemplateOrderBuilder(tmp_path / "templates"),
+        queue_dir=str(queue),
     )
+
     mutations: list[object] = []
 
     class _TrackingBuilders(dict):
-        def __setitem__(self, key, value):
+        def __setitem__(self, key, value):  # type: ignore[no-untyped-def]
             mutations.append(("set", key))
             return super().__setitem__(key, value)
 
-        def pop(self, key, *args):
+        def pop(self, key, *args):  # type: ignore[no-untyped-def]
             mutations.append(("pop", key))
             return super().pop(key, *args)
 
     pipeline._order_builders = _TrackingBuilders(pipeline._order_builders)
+
     github = MagicMock(spec=GitHubIssuePort)
-    dispatcher = WorkflowDispatcher(workflows=[workflow], github_client=github, pipeline=pipeline, queue_dir=str(queue))
+    dispatcher = WorkflowDispatcher(
+        workflows=[workflow],
+        github_client=github,
+        pipeline=pipeline,
+        queue_dir=str(queue),
+    )
     issue = {
         "number": 7,
         "title": "t",
@@ -103,7 +131,11 @@ def test_live_submit_does_not_mutate_pipeline_order_builders(tmp_path: Path) -> 
         "url": "https://example/issues/7",
     }
     result = dispatcher.dispatch(
-        issue, workflow, workflow.handlers["run"], trigger=workflow.triggers[0], trigger_rank=0
+        issue,
+        workflow,
+        workflow.handlers["run"],
+        trigger=workflow.triggers[0],
+        trigger_rank=0,
     )
     assert result.status == "dispatched"
     assert mutations == [], f"dispatcher mutated _order_builders: {mutations}"
@@ -113,7 +145,20 @@ def _write_omitted_template_dir_live_workflow(wf_dir: Path) -> None:
     tdir = wf_dir / "templates"
     tdir.mkdir(parents=True)
     (tdir / "step.md").write_text('echo "live-${issue_number}"\n', encoding="utf-8")
-    yaml_content = 'name: live-wf\ntriggers:\n  - label: "pipe:ready"\n    handler: run\nhandlers:\n  run:\n    steps:\n      - id: s1\n        template: step\n        model: bash\n        engine: shell\n        render: live\n'
+    yaml_content = """\
+name: live-wf
+triggers:
+  - label: "pipe:ready"
+    handler: run
+handlers:
+  run:
+    steps:
+      - id: s1
+        template: step
+        model: bash
+        engine: shell
+        render: live
+"""
     (wf_dir / "wf.yml").write_text(yaml_content, encoding="utf-8")
 
 
@@ -124,8 +169,16 @@ def test_live_render_raises_when_template_dir_none_on_config(tmp_path: Path) -> 
         triggers=[TriggerConfig(label="pipe:ready", handler="run")],
         handlers={
             "run": HandlerConfig(
-                steps=[StepConfig(id="s1", template="step", model="bash", engine="shell", render="live")]
-            )
+                steps=[
+                    StepConfig(
+                        id="s1",
+                        template="step",
+                        model="bash",
+                        engine="shell",
+                        render="live",
+                    ),
+                ],
+            ),
         },
         template_dir=None,
     )
@@ -133,9 +186,18 @@ def test_live_render_raises_when_template_dir_none_on_config(tmp_path: Path) -> 
     queue.mkdir()
     pipeline_state = MagicMock()
     pipeline_state.check_idempotency.return_value = True
-    pipeline = LLMPipelineAPI(pipeline_state=pipeline_state, order_builder=MagicMock(), queue_dir=str(queue))
+    pipeline = LLMPipelineAPI(
+        pipeline_state=pipeline_state,
+        order_builder=MagicMock(),
+        queue_dir=str(queue),
+    )
     github = MagicMock(spec=GitHubIssuePort)
-    dispatcher = WorkflowDispatcher(workflows=[workflow], github_client=github, pipeline=pipeline, queue_dir=str(queue))
+    dispatcher = WorkflowDispatcher(
+        workflows=[workflow],
+        github_client=github,
+        pipeline=pipeline,
+        queue_dir=str(queue),
+    )
     issue = {
         "number": 1,
         "title": "t",
@@ -144,4 +206,10 @@ def test_live_render_raises_when_template_dir_none_on_config(tmp_path: Path) -> 
         "url": "https://example/issues/1",
     }
     with pytest.raises(ConfigError, match="live-wf"):
-        dispatcher.dispatch(issue, workflow, workflow.handlers["run"], trigger=workflow.triggers[0], trigger_rank=0)
+        dispatcher.dispatch(
+            issue,
+            workflow,
+            workflow.handlers["run"],
+            trigger=workflow.triggers[0],
+            trigger_rank=0,
+        )

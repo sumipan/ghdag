@@ -9,7 +9,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ghdag.core.models.workflow import HandlerConfig, NonterminalClosedConfig, StepConfig, TriggerConfig, WorkflowConfig
+from ghdag.core.models.workflow import (
+    HandlerConfig,
+    NonterminalClosedConfig,
+    StepConfig,
+    TriggerConfig,
+    WorkflowConfig,
+)
 from ghdag.github_client import GitHubClient, GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
@@ -37,13 +43,18 @@ def _make_workflow(
     return WorkflowConfig(
         name="issuesmith",
         triggers=[
-            TriggerConfig(label=lb, handler=handler_name if lb.endswith("done") else "merge") for lb in trigger_labels
+            TriggerConfig(label=lb, handler=handler_name if lb.endswith("done") else "merge")
+            for lb in trigger_labels
         ]
         if len(trigger_labels) > 1
         else [TriggerConfig(label=trigger_labels[0], handler=handler_name)],
         handlers={
-            handler_name: HandlerConfig(steps=[StepConfig(template="impl", model="claude-opus-4-6")]),
-            "merge": HandlerConfig(steps=[StepConfig(template="merge", model="claude-opus-4-6")]),
+            handler_name: HandlerConfig(
+                steps=[StepConfig(template="impl", model="claude-opus-4-6")],
+            ),
+            "merge": HandlerConfig(
+                steps=[StepConfig(template="merge", model="claude-opus-4-6")],
+            ),
         },
         polling_interval=30,
         nonterminal_closed=nonterminal_closed,
@@ -61,12 +72,19 @@ def _make_dispatcher(workflow: WorkflowConfig):
     pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
-    pipeline = LLMPipelineAPI(pipeline_state=pipeline_state, order_builder=order_builder, queue_dir="queue")
+    pipeline = LLMPipelineAPI(
+        pipeline_state=pipeline_state,
+        order_builder=order_builder,
+        queue_dir="queue",
+    )
     dispatcher = WorkflowDispatcher(
-        workflows=[workflow], github_client=github_client, pipeline=pipeline, queue_dir="queue"
+        workflows=[workflow],
+        github_client=github_client,
+        pipeline=pipeline,
+        queue_dir="queue",
     )
     dispatcher._write_design_md = MagicMock()
-    return (dispatcher, github_client, pipeline_state)
+    return dispatcher, github_client, pipeline_state
 
 
 def _fake_list_all(open_issues=None, closed_issues=None):
@@ -84,13 +102,18 @@ def _fake_list_all(open_issues=None, closed_issues=None):
 class TestReopenAction:
     def test_closed_nonterminal_issue_is_reopened(self):
         config = NonterminalClosedConfig(
-            action="reopen", terminal_labels=["issuesmith:merge-done", "issuesmith:rejected"]
+            action="reopen",
+            terminal_labels=["issuesmith:merge-done", "issuesmith:rejected"],
         )
         workflow = _make_workflow(nonterminal_closed=config)
         dispatcher, github_client, _ = _make_dispatcher(workflow)
         issue = _make_issue(42, ["issuesmith:develop-done"], state="closed")
-        github_client.list_all_issues.side_effect = _fake_list_all(closed_issues=[issue])
+        github_client.list_all_issues.side_effect = _fake_list_all(
+            closed_issues=[issue],
+        )
+
         results = dispatcher.poll_once()
+
         github_client.reopen_issue.assert_called_once_with(42)
         github_client.add_comment.assert_called_once()
         assert "<!-- ghdag:nonterminal_closed:reopen:42 -->" in github_client.add_comment.call_args[0][1]
@@ -99,7 +122,10 @@ class TestReopenAction:
 
 class TestIdempotency:
     def test_marker_prevents_duplicate_reopen(self):
-        config = NonterminalClosedConfig(action="reopen", terminal_labels=["issuesmith:merge-done"])
+        config = NonterminalClosedConfig(
+            action="reopen",
+            terminal_labels=["issuesmith:merge-done"],
+        )
         workflow = _make_workflow(nonterminal_closed=config)
         dispatcher, github_client, _ = _make_dispatcher(workflow)
         issue = _make_issue(55, ["issuesmith:develop-done"], state="closed")
@@ -111,23 +137,30 @@ class TestIdempotency:
                 "body": "<!-- ghdag:nonterminal_closed:reopen:55 -->",
             }
         ]
+
         dispatcher.poll_once()
         dispatcher.poll_once()
+
         github_client.reopen_issue.assert_not_called()
 
 
 class TestTriggerAction:
     def test_trigger_action_dispatches_handler_while_issue_stays_closed(self):
         config = NonterminalClosedConfig(
-            action="trigger", trigger="issuesmith:merge-ready", terminal_labels=["issuesmith:merge-done"]
+            action="trigger",
+            trigger="issuesmith:merge-ready",
+            terminal_labels=["issuesmith:merge-done"],
         )
         workflow = _make_workflow(
-            triggers=["issuesmith:develop-done", "issuesmith:merge-ready"], nonterminal_closed=config
+            triggers=["issuesmith:develop-done", "issuesmith:merge-ready"],
+            nonterminal_closed=config,
         )
         dispatcher, github_client, _ = _make_dispatcher(workflow)
         issue = _make_issue(88, ["issuesmith:develop-done"], state="closed")
         github_client.list_all_issues.side_effect = _fake_list_all(closed_issues=[issue])
+
         matches = dispatcher.poll_once()
+
         assert len(matches) == 1
         assert matches[0]["issue"] == 88
         assert matches[0]["handler"] == "merge"
@@ -135,6 +168,7 @@ class TestTriggerAction:
         github_client.reopen_issue.assert_not_called()
         github_client.add_comment.assert_called_once()
         assert "<!-- ghdag:nonterminal_closed:trigger:88 -->" in github_client.add_comment.call_args[0][1]
+
         result = dispatcher.dispatch(
             matches[0]["_issue_data"],
             matches[0]["_workflow"],
@@ -151,8 +185,13 @@ class TestLoaderParse:
         data = {
             "name": "issuesmith",
             "triggers": [{"label": "issuesmith:develop-done", "handler": "impl"}],
-            "handlers": {"impl": {"steps": [{"template": "impl", "model": "claude-opus-4-6"}]}},
-            "nonterminal_closed": {"action": "reopen", "terminal_labels": ["issuesmith:merge-done"]},
+            "handlers": {
+                "impl": {"steps": [{"template": "impl", "model": "claude-opus-4-6"}]},
+            },
+            "nonterminal_closed": {
+                "action": "reopen",
+                "terminal_labels": ["issuesmith:merge-done"],
+            },
         }
         config = _parse(data)
         assert config.nonterminal_closed is not None

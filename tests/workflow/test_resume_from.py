@@ -20,7 +20,11 @@ def _make_api() -> LLMPipelineAPI:
     pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
-    return LLMPipelineAPI(pipeline_state=pipeline_state, order_builder=order_builder, queue_dir="queue")
+    return LLMPipelineAPI(
+        pipeline_state=pipeline_state,
+        order_builder=order_builder,
+        queue_dir="queue",
+    )
 
 
 def test_validate_depends_rejects_resume_from_non_ancestor():
@@ -51,7 +55,25 @@ def test_loader_rejects_engine_mismatch_resume_from(tmp_path):
     (tmp_path / "templates" / "a.md").write_text("a", encoding="utf-8")
     (tmp_path / "templates" / "b.md").write_text("b", encoding="utf-8")
     wf.write_text(
-        '\nname: test\ntriggers:\n  - label: "pipeline:x"\n    handler: h\nhandlers:\n  h:\n    steps:\n      - id: a\n        template: a\n        model: claude-sonnet-4-6\n        engine: claude\n      - id: b\n        template: b\n        model: auto\n        engine: cursor\n        depends: [a]\n        resume_from: a\n',
+        """
+name: test
+triggers:
+  - label: "pipeline:x"
+    handler: h
+handlers:
+  h:
+    steps:
+      - id: a
+        template: a
+        model: claude-sonnet-4-6
+        engine: claude
+      - id: b
+        template: b
+        model: auto
+        engine: cursor
+        depends: [a]
+        resume_from: a
+""",
         encoding="utf-8",
     )
     with pytest.raises(ValidationError, match="same engine"):
@@ -64,7 +86,23 @@ def test_loader_rejects_non_string_resume_from(tmp_path):
     (tmp_path / "templates" / "a.md").write_text("a", encoding="utf-8")
     (tmp_path / "templates" / "b.md").write_text("b", encoding="utf-8")
     wf.write_text(
-        '\nname: test\ntriggers:\n  - label: "pipeline:x"\n    handler: h\nhandlers:\n  h:\n    steps:\n      - id: a\n        template: a\n        model: claude-sonnet-4-6\n      - id: b\n        template: b\n        model: claude-sonnet-4-6\n        depends: [a]\n        resume_from: [a, b]\n',
+        """
+name: test
+triggers:
+  - label: "pipeline:x"
+    handler: h
+handlers:
+  h:
+    steps:
+      - id: a
+        template: a
+        model: claude-sonnet-4-6
+      - id: b
+        template: b
+        model: claude-sonnet-4-6
+        depends: [a]
+        resume_from: [a, b]
+""",
         encoding="utf-8",
     )
     with pytest.raises(ValidationError, match="resume_from"):

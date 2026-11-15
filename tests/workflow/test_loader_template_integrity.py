@@ -23,23 +23,54 @@ def _make_templates(base_dir: Path, *names: str) -> None:
 class TestAC3DependsResolution:
     def test_result_filename_without_depends_raises(self, tmp_path):
         """AC-3: ${p1_result_filename} in template without depends: [p1] → ValidationError."""
-        yaml = 'name: test\ntriggers:\n  - label: "test:ready"\n    handler: impl\nhandlers:\n  impl:\n    steps:\n      - id: p1\n        template: p1\n        model: claude-sonnet-4-6\n      - id: p2\n        template: p2\n        model: claude-sonnet-4-6\n'
+        yaml = """\
+name: test
+triggers:
+  - label: "test:ready"
+    handler: impl
+handlers:
+  impl:
+    steps:
+      - id: p1
+        template: p1
+        model: claude-sonnet-4-6
+      - id: p2
+        template: p2
+        model: claude-sonnet-4-6
+"""
         _write_workflow(tmp_path, yaml)
         tdir = tmp_path / "templates"
         tdir.mkdir()
         (tdir / "p1.md").write_text("# step 1")
+        # p2 references p1 result but has no depends: [p1]
         (tdir / "p2.md").write_text("Result: ${p1_result_filename}")
+
         with pytest.raises(ValidationError, match="p1"):
             load_workflows(tmp_path)
 
     def test_result_content_without_depends_raises(self, tmp_path):
         """Same-handler ${p1_result_content} is rejected even without depends: [p1]."""
-        yaml = 'name: test\ntriggers:\n  - label: "test:ready"\n    handler: impl\nhandlers:\n  impl:\n    steps:\n      - id: p1\n        template: p1\n        model: claude-sonnet-4-6\n      - id: p2\n        template: p2\n        model: claude-sonnet-4-6\n'
+        yaml = """\
+name: test
+triggers:
+  - label: "test:ready"
+    handler: impl
+handlers:
+  impl:
+    steps:
+      - id: p1
+        template: p1
+        model: claude-sonnet-4-6
+      - id: p2
+        template: p2
+        model: claude-sonnet-4-6
+"""
         _write_workflow(tmp_path, yaml)
         tdir = tmp_path / "templates"
         tdir.mkdir()
         (tdir / "p1.md").write_text("# step 1")
         (tdir / "p2.md").write_text("Content: ${p1_result_content}")
+
         with pytest.raises(ValidationError) as exc_info:
             load_workflows(tmp_path)
         msg = str(exc_info.value)
@@ -54,21 +85,49 @@ class TestAC3DependsResolution:
 
     def test_result_filename_with_depends_passes(self, tmp_path):
         """AC-3: ${p1_result_filename} with depends: [p1] → no error."""
-        yaml = 'name: test\ntriggers:\n  - label: "test:ready"\n    handler: impl\nhandlers:\n  impl:\n    steps:\n      - id: p1\n        template: p1\n        model: claude-sonnet-4-6\n      - id: p2\n        template: p2\n        model: claude-sonnet-4-6\n        depends: [p1]\n'
+        yaml = """\
+name: test
+triggers:
+  - label: "test:ready"
+    handler: impl
+handlers:
+  impl:
+    steps:
+      - id: p1
+        template: p1
+        model: claude-sonnet-4-6
+      - id: p2
+        template: p2
+        model: claude-sonnet-4-6
+        depends: [p1]
+"""
         _write_workflow(tmp_path, yaml)
         tdir = tmp_path / "templates"
         tdir.mkdir()
         (tdir / "p1.md").write_text("# step 1")
         (tdir / "p2.md").write_text("Result: ${p1_result_filename}")
+
         configs = load_workflows(tmp_path)
         assert len(configs) == 1
 
     def test_unknown_id_in_result_content_passes(self, tmp_path):
         """${unknown_result_content} where 'unknown' is not a prior step id → no error."""
-        yaml = 'name: test\ntriggers:\n  - label: "test:ready"\n    handler: impl\nhandlers:\n  impl:\n    steps:\n      - id: p1\n        template: p1\n        model: claude-sonnet-4-6\n'
+        yaml = """\
+name: test
+triggers:
+  - label: "test:ready"
+    handler: impl
+handlers:
+  impl:
+    steps:
+      - id: p1
+        template: p1
+        model: claude-sonnet-4-6
+"""
         _write_workflow(tmp_path, yaml)
         tdir = tmp_path / "templates"
         tdir.mkdir()
         (tdir / "p1.md").write_text("${unknown_result_content}")
+
         configs = load_workflows(tmp_path)
         assert len(configs) == 1

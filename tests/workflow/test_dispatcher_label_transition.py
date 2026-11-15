@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from ghdag.core.models.workflow import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
+from ghdag.core.models.workflow import (
+    HandlerConfig,
+    StepConfig,
+    TriggerConfig,
+    WorkflowConfig,
+)
 from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.workflow.dispatcher import WorkflowDispatcher
@@ -12,7 +17,9 @@ from ghdag.workflow.dispatcher import WorkflowDispatcher
 
 def _make_workflow(trigger_labels: list[str]) -> WorkflowConfig:
     triggers = [TriggerConfig(label=lb, handler="brushup") for lb in trigger_labels]
-    handlers = {"brushup": HandlerConfig(steps=[StepConfig(template="brushup", model="claude-opus-4-6")])}
+    handlers = {
+        "brushup": HandlerConfig(steps=[StepConfig(template="brushup", model="claude-opus-4-6")])
+    }
     return WorkflowConfig(name="wf", triggers=triggers, handlers=handlers, polling_interval=30)
 
 
@@ -24,12 +31,19 @@ def _make_dispatcher(workflow: WorkflowConfig):
     pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
-    pipeline = LLMPipelineAPI(pipeline_state=pipeline_state, order_builder=order_builder, queue_dir="queue")
+    pipeline = LLMPipelineAPI(
+        pipeline_state=pipeline_state,
+        order_builder=order_builder,
+        queue_dir="queue",
+    )
     dispatcher = WorkflowDispatcher(
-        workflows=[workflow], github_client=github_client, pipeline=pipeline, queue_dir="queue"
+        workflows=[workflow],
+        github_client=github_client,
+        pipeline=pipeline,
+        queue_dir="queue",
     )
     dispatcher._write_design_md = MagicMock()
-    return (dispatcher, github_client, pipeline_state)
+    return dispatcher, github_client, pipeline_state
 
 
 def _make_issue(number: int, labels: list[str]) -> dict:
@@ -50,6 +64,8 @@ class TestDispatchHyphenLabelTransition:
         issue = _make_issue(1, ["research-foo"])
         handler = workflow.handlers["brushup"]
         trigger = workflow.triggers[0]
+
         result = dispatcher.dispatch(issue, workflow, handler, trigger=trigger, trigger_rank=0)
+
         assert result.status == "dispatched"
         github_client.update_label.assert_not_called()

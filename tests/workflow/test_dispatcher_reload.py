@@ -16,7 +16,7 @@ from ghdag.workflow.loader import load_workflows
 
 def _bump_mtime_ahead(path: Path) -> None:
     stat = path.stat()
-    bumped = stat.st_mtime_ns + 1000000000
+    bumped = stat.st_mtime_ns + 1_000_000_000
     os.utime(path, ns=(bumped, bumped))
 
 
@@ -31,8 +31,37 @@ def _make_pipeline_mock():
     return MagicMock(spec=LLMPipelineAPI)
 
 
-_INITIAL_YAML = 'name: test-workflow\ntriggers:\n  - label: "test:ready"\n    handler: brushup\nhandlers:\n  brushup:\n    steps:\n      - template: brushup\n        model: claude-opus-4-6\npolling_interval: 0\n'
-_UPDATED_YAML = 'name: test-workflow\ntriggers:\n  - label: "test:ready"\n    handler: brushup\n  - label: "test:develop-ready"\n    handler: impl\nhandlers:\n  brushup:\n    steps:\n      - template: brushup\n        model: claude-opus-4-6\n  impl:\n    steps:\n      - template: impl\n        model: claude-sonnet-4-6\npolling_interval: 0\n'
+_INITIAL_YAML = """\
+name: test-workflow
+triggers:
+  - label: "test:ready"
+    handler: brushup
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+polling_interval: 0
+"""
+
+_UPDATED_YAML = """\
+name: test-workflow
+triggers:
+  - label: "test:ready"
+    handler: brushup
+  - label: "test:develop-ready"
+    handler: impl
+handlers:
+  brushup:
+    steps:
+      - template: brushup
+        model: claude-opus-4-6
+  impl:
+    steps:
+      - template: impl
+        model: claude-sonnet-4-6
+polling_interval: 0
+"""
 
 
 def _setup_workflow_dir(tmp_path: Path, yaml_content: str, templates: list[str]) -> Path:
@@ -51,6 +80,7 @@ class TestAC2InvalidYamlFallback:
         """AC-2: dispatcher.run() does not crash when yml becomes invalid mid-run."""
         workflows_dir = _setup_workflow_dir(tmp_path, _INITIAL_YAML, ["brushup"])
         initial_workflows = load_workflows(workflows_dir)
+
         dispatcher = WorkflowDispatcher(
             workflows=initial_workflows,
             workflows_dir=workflows_dir,
@@ -58,12 +88,17 @@ class TestAC2InvalidYamlFallback:
             pipeline=_make_pipeline_mock(),
             queue_dir=str(tmp_path),
         )
+
+        # Corrupt the yml before run
         (workflows_dir / "test.yml").write_text("invalid: yaml: {broken")
-        dispatcher.run(max_iterations=1)
+
+        dispatcher.run(max_iterations=1)  # must not raise
 
 
 def _make_real_pipeline(tmp_path: Path, workflows: list[WorkflowConfig]) -> LLMPipelineAPI:
-    default_template_dir = next((wf.template_dir for wf in workflows if wf.template_dir), "templates")
+    default_template_dir = next(
+        (wf.template_dir for wf in workflows if wf.template_dir), "templates"
+    )
     return LLMPipelineAPI(
         pipeline_state=MagicMock(),
         order_builder=TemplateOrderBuilder(default_template_dir),
@@ -92,9 +127,47 @@ def _write_workflow_bundle(
         (workflows_dir / "wf2.yml").write_text(wf2_yaml)
 
 
-_WF_TPL_A = 'name: wf\ntemplate_dir: tpl_a\ntriggers:\n  - label: "wf:ready"\n    handler: h\nhandlers:\n  h:\n    steps:\n      - template: step\n        model: claude-opus-4-6\npolling_interval: 0\n'
-_WF2_TPL_B = 'name: wf2\ntemplate_dir: tpl_b\ntriggers:\n  - label: "wf2:ready"\n    handler: h\nhandlers:\n  h:\n    steps:\n      - template: step\n        model: claude-opus-4-6\npolling_interval: 0\n'
-_WF_TPL_B = 'name: wf\ntemplate_dir: tpl_b\ntriggers:\n  - label: "wf:ready"\n    handler: h\nhandlers:\n  h:\n    steps:\n      - template: step\n        model: claude-opus-4-6\npolling_interval: 0\n'
+_WF_TPL_A = """\
+name: wf
+template_dir: tpl_a
+triggers:
+  - label: "wf:ready"
+    handler: h
+handlers:
+  h:
+    steps:
+      - template: step
+        model: claude-opus-4-6
+polling_interval: 0
+"""
+
+_WF2_TPL_B = """\
+name: wf2
+template_dir: tpl_b
+triggers:
+  - label: "wf2:ready"
+    handler: h
+handlers:
+  h:
+    steps:
+      - template: step
+        model: claude-opus-4-6
+polling_interval: 0
+"""
+
+_WF_TPL_B = """\
+name: wf
+template_dir: tpl_b
+triggers:
+  - label: "wf:ready"
+    handler: h
+handlers:
+  h:
+    steps:
+      - template: step
+        model: claude-opus-4-6
+polling_interval: 0
+"""
 
 
 class TestHotReloadOrderBuilders:
@@ -114,7 +187,9 @@ class TestHotReloadOrderBuilders:
             queue_dir=str(tmp_path),
         )
         assert pipeline._resolve_order_builder("wf").build_order("step", {}) == "from tpl_a"
+
         (workflows_dir / "wf.yml").write_text(_WF_TPL_B)
         _bump_mtime_ahead(workflows_dir / "wf.yml")
         dispatcher._maybe_reload_workflows()
+
         assert pipeline._resolve_order_builder("wf").build_order("step", {}) == "from tpl_b"

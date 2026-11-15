@@ -8,7 +8,18 @@ from ghdag.workflow.loader import ValidationError, load_workflows
 
 
 def _workflow_yaml(extra: str = "") -> str:
-    return f"name: example\ntriggers:\n  - label: ready\n    handler: impl\nhandlers:\n  impl:\n    steps:\n      - id: build\n        template: build\n        model: test-model\n{extra}"
+    return f"""\
+name: example
+triggers:
+  - label: ready
+    handler: impl
+handlers:
+  impl:
+    steps:
+      - id: build
+        template: build
+        model: test-model
+{extra}"""
 
 
 def _write_workflow(tmp_path: Path, text: str) -> Path:
@@ -24,33 +35,49 @@ def _write_workflow(tmp_path: Path, text: str) -> Path:
     ("text", "unknown_path"),
     [
         (_workflow_yaml("mystery: true\n"), "workflow.mystery"),
-        (_workflow_yaml().replace("    handler: impl", "    handler: impl\n    event: opened"), "triggers[0].event"),
-        (_workflow_yaml().replace("  impl:", "  impl:\n    on_complete: archive"), "handlers.impl.on_complete"),
         (
-            _workflow_yaml().replace("  impl:", "  impl:\n    on_trigger:\n      add_label: active"),
-            "handlers.impl.on_trigger.add_label",
+            _workflow_yaml().replace("    handler: impl", "    handler: impl\n    event: opened"),
+            "triggers[0].event",
+        ),
+        (
+            _workflow_yaml().replace("  impl:", "  impl:\n    on_complete: archive"),
+            "handlers.impl.on_complete",
         ),
         (
             _workflow_yaml().replace(
-                "        model: test-model", "        model: test-model\n        requires: [deps]"
+                "  impl:", "  impl:\n    on_trigger:\n      add_label: active"
             ),
+            "handlers.impl.on_trigger.add_label",
+        ),
+        (
+            _workflow_yaml().replace("        model: test-model", "        model: test-model\n        requires: [deps]"),
             "handlers.impl.steps[0].requires",
         ),
         (
             _workflow_yaml("nonterminal_closed:\n  action: reopen\n  terminal_labels: [done]\n  stale: true\n"),
             "nonterminal_closed.stale",
         ),
-        (_workflow_yaml("roles:\n  impl: [claude]\n"), "workflow.roles"),
         (
-            _workflow_yaml().replace("        model: test-model", "        model: test-model\n        role: impl"),
+            _workflow_yaml("roles:\n  impl: [claude]\n"),
+            "workflow.roles",
+        ),
+        (
+            _workflow_yaml().replace(
+                "        model: test-model",
+                "        model: test-model\n        role: impl",
+            ),
             "handlers.impl.steps[0].role",
         ),
     ],
 )
-def test_load_workflows_rejects_unknown_keys(tmp_path: Path, text: str, unknown_path: str) -> None:
+def test_load_workflows_rejects_unknown_keys(
+    tmp_path: Path, text: str, unknown_path: str
+) -> None:
     _write_workflow(tmp_path, text)
+
     with pytest.raises(ValidationError) as exc_info:
         load_workflows(tmp_path)
+
     err = exc_info.value
     assert unknown_path in str(err)
     assert err.code == "WORKFLOW_UNKNOWN_KEY"
@@ -74,5 +101,5 @@ class _TrackingDict(dict):
 def test_top_level_roles_map_key_is_rejected(tmp_path: Path) -> None:
     """Refs sumipan/nexus#6680."""
     _write_workflow(tmp_path, _workflow_yaml("roles:\n  impl: [claude]\n"))
-    with pytest.raises(ValidationError, match="workflow\\.roles"):
+    with pytest.raises(ValidationError, match=r"workflow\.roles"):
         load_workflows(tmp_path)
