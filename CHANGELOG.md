@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - MCP `ghdag_status` uuid lookup: remove dead dependency-scan and status-collapse branches; observable four-value status mapping is unchanged (sumipan/nexus#6807).
+- README identity messaging, release badge alignment, LocalForge GitHub-free quick start, and execution review artifacts are unchanged since 0.133.4 (sumipan/nexus#6610).
 
 ## 0.139.2 - 2026-11-15
 
