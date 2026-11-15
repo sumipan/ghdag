@@ -1,6 +1,10 @@
 """Tests for ghdag.dag.engine — §5.4 acceptance criteria."""
 
-from unittest.mock import MagicMock
+from datetime import datetime
+from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
+
+from ghdag.io.audit import file_ts as audit_file_ts
 
 from ghdag_dag_conftest_helpers import (
     MemoryHooks,
@@ -219,9 +223,6 @@ class TestFanOutManagerUnit:
 
     def test_fanout_child_order_ts_uses_config_timezone(self, tmp_path):
         """Refs sumipan/nexus#6872."""
-        from datetime import datetime
-        from zoneinfo import ZoneInfo
-
         from ghdag.dag.fanout import FanOutItem, FanOutSpec
         from ghdag.dag.fanout_manager import FanOutManager
         from ghdag.dag.hooks import DagHooks
@@ -253,12 +254,15 @@ class TestFanOutManagerUnit:
             started_at=t,
             finished_at=t,
         )
-        tz = ZoneInfo("America/New_York")
-        before = datetime.now(tz).strftime("%Y%m%d%H%M%S")
-        fm.spawn(parent_uuid, task, spec, metrics, queue_dir=queue)
-        after = datetime.now(tz).strftime("%Y%m%d%H%M%S")
+        fixed = datetime(2024, 7, 4, 16, 0, 0, tzinfo=ZoneInfo("UTC"))
+        expected = audit_file_ts("America/New_York", now=fixed)
+
+        def _file_ts(tz_name: str | None) -> str:
+            return audit_file_ts(tz_name, now=fixed)
+
         child_uuid = f"{parent_uuid}--fo--a"
+        with patch("ghdag.dag.fanout_manager.file_ts", side_effect=_file_ts):
+            fm.spawn(parent_uuid, task, spec, metrics, queue_dir=queue)
         order_files = list(queue.glob(f"*-claude-order-{child_uuid}.md"))
         assert len(order_files) == 1
-        ts = order_files[0].name[:14]
-        assert before <= ts <= after
+        assert order_files[0].name.startswith(expected)

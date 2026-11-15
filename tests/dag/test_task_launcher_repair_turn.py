@@ -360,6 +360,9 @@ class TestRepairTurn:
         """Refs sumipan/nexus#6872."""
         import os
         import time
+        from zoneinfo import ZoneInfo
+
+        from ghdag.io.audit import file_ts as audit_file_ts
 
         old_tz = os.environ.get("TZ")
         monkeypatch.setenv("TZ", "Pacific/Auckland")
@@ -381,20 +384,26 @@ class TestRepairTurn:
             _seed_running(launcher, uuid, task)
             launcher._session_store.record(uuid, "claude", "sess-1")
 
-            before = datetime.now().astimezone().strftime("%Y%m%d%H%M%S")
+            fixed = datetime(2024, 7, 4, 16, 0, 0, tzinfo=ZoneInfo("UTC"))
+            expected = audit_file_ts(None, now=fixed)
+
+            def _file_ts(tz_name: str | None) -> str:
+                return audit_file_ts(tz_name, now=fixed)
+
             real_popen = subprocess.Popen
 
             def fake_popen(*args, **kwargs):
                 return real_popen(["true"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-            with patch("ghdag.dag.task_launcher.subprocess.Popen", new=fake_popen):
+            with (
+                patch("ghdag.dag.task_launcher.file_ts", side_effect=_file_ts),
+                patch("ghdag.dag.task_launcher.subprocess.Popen", new=fake_popen),
+            ):
                 launcher.check_completions()
-            after = datetime.now().astimezone().strftime("%Y%m%d%H%M%S")
 
             repair_orders = list(tmp_path.glob(f"jobs/*-claude-order-{uuid}-repair1.md"))
             assert repair_orders
-            ts = repair_orders[0].name[:14]
-            assert before <= ts <= after
+            assert repair_orders[0].name.startswith(expected)
         finally:
             if old_tz is None:
                 monkeypatch.delenv("TZ", raising=False)

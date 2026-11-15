@@ -626,6 +626,7 @@ class TestSubmitFileTimestampTimezone:
         from datetime import datetime
         from zoneinfo import ZoneInfo
 
+        from ghdag.io.audit import file_ts as audit_file_ts
         from ghdag.pipeline.order import InlineOrderBuilder
         from ghdag.pipeline.state import PipelineState
 
@@ -634,8 +635,12 @@ class TestSubmitFileTimestampTimezone:
         exec_jsonl = tmp_path / "exec.jsonl"
         exec_jsonl.write_text("", encoding="utf-8")
         state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
-        tz = ZoneInfo("America/New_York")
-        before = datetime.now(tz).strftime("%Y%m%d%H%M%S")
+        fixed = datetime(2024, 7, 4, 16, 0, 0, tzinfo=ZoneInfo("UTC"))
+        expected = audit_file_ts("America/New_York", now=fixed)
+
+        def _file_ts(tz_name: str | None) -> str:
+            return audit_file_ts(tz_name, now=fixed)
+
         api = LLMPipelineAPI(
             state,
             InlineOrderBuilder(),
@@ -643,18 +648,19 @@ class TestSubmitFileTimestampTimezone:
             timezone="America/New_York",
         )
         steps = [StepConfig(template="run", engine="claude", model="claude-sonnet-4-6")]
-        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-        after = datetime.now(tz).strftime("%Y%m%d%H%M%S")
+        with patch("ghdag.pipeline.llm_pipeline.file_ts", side_effect=_file_ts):
+            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
         orders = list(queue.glob("*-claude-order-*.md"))
         assert len(orders) == 1
-        ts = orders[0].name[:14]
-        assert before <= ts <= after
+        assert orders[0].name.startswith(expected)
 
     def test_submit_file_ts_defaults_to_machine_timezone(self, tmp_path, monkeypatch):
         import os
         import time
         from datetime import datetime
+        from zoneinfo import ZoneInfo
 
+        from ghdag.io.audit import file_ts as audit_file_ts
         from ghdag.pipeline.order import InlineOrderBuilder
         from ghdag.pipeline.state import PipelineState
 
@@ -667,15 +673,19 @@ class TestSubmitFileTimestampTimezone:
             exec_jsonl = tmp_path / "exec.jsonl"
             exec_jsonl.write_text("", encoding="utf-8")
             state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
-            before = datetime.now().astimezone().strftime("%Y%m%d%H%M%S")
+            fixed = datetime(2024, 7, 4, 16, 0, 0, tzinfo=ZoneInfo("UTC"))
+            expected = audit_file_ts(None, now=fixed)
+
+            def _file_ts(tz_name: str | None) -> str:
+                return audit_file_ts(tz_name, now=fixed)
+
             api = LLMPipelineAPI(state, InlineOrderBuilder(), queue_dir=str(queue))
             steps = [StepConfig(template="run", engine="claude", model="claude-sonnet-4-6")]
-            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
-            after = datetime.now().astimezone().strftime("%Y%m%d%H%M%S")
+            with patch("ghdag.pipeline.llm_pipeline.file_ts", side_effect=_file_ts):
+                api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
             orders = list(queue.glob("*-claude-order-*.md"))
             assert len(orders) == 1
-            ts = orders[0].name[:14]
-            assert before <= ts <= after
+            assert orders[0].name.startswith(expected)
         finally:
             if old_tz is None:
                 monkeypatch.delenv("TZ", raising=False)
