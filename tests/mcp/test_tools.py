@@ -9,7 +9,27 @@ import pytest
 
 from ghdag.core.capabilities import PERMISSIONS
 from ghdag.core.engine_spec import ENGINE_SPECS
-from ghdag.core.vocabulary import DONE_ENGINE_ERROR
+from ghdag.core.vocabulary import (
+    DONE_CANCELLED,
+    DONE_DEP_FAILED,
+    DONE_EMPTY_RESULT,
+    DONE_ENGINE_ENV_ERROR,
+    DONE_ENGINE_ERROR,
+    DONE_ENGINE_ERROR_FINAL,
+    DONE_FANOUT_CHILD_FAILED,
+    DONE_FANOUT_PARSE_FAILED,
+    DONE_INTERACTIVE_PROMPT,
+    DONE_ORPHAN_ARCHIVED,
+    DONE_ORPHANED_ON_RESTART,
+    DONE_PIPELINE_FAILED_PREFIX,
+    DONE_REJECTED,
+    DONE_REJECTED_FINAL,
+    DONE_SKIPPED_MISSING_INPUT,
+    DONE_SUCCESS,
+    DONE_TIMEOUT,
+    DONE_UNKNOWN_FAILURE,
+    LEGACY_DONE_DEFERRED,
+)
 from ghdag.io.done import mark_done
 from ghdag.mcp.server import McpServer
 from ghdag.mcp.tools import TOOL_NAMES, McpRuntime, McpToolRegistry
@@ -259,6 +279,88 @@ class TestStatus:
         assert task["status"] == "failed"
         assert task["failure_class"] == "ENGINE_ERROR"
         assert task["cause"] == "transient"
+
+    @pytest.mark.parametrize(
+        ("marker", "expected"),
+        [
+            (DONE_SUCCESS, "success"),
+            ('{"status": "ok"}', "success"),
+            (DONE_REJECTED, "failed"),
+            (DONE_REJECTED_FINAL, "failed"),
+            (DONE_ENGINE_ERROR, "failed"),
+            (DONE_ENGINE_ERROR_FINAL, "failed"),
+            (DONE_ENGINE_ENV_ERROR, "failed"),
+            (DONE_INTERACTIVE_PROMPT, "failed"),
+            (DONE_TIMEOUT, "failed"),
+            (DONE_CANCELLED, "failed"),
+            (DONE_DEP_FAILED, "failed"),
+            (DONE_EMPTY_RESULT, "failed"),
+            (f"{DONE_PIPELINE_FAILED_PREFIX}x", "failed"),
+            (DONE_FANOUT_CHILD_FAILED, "failed"),
+            (DONE_FANOUT_PARSE_FAILED, "failed"),
+            (DONE_SKIPPED_MISSING_INPUT, "failed"),
+            (DONE_UNKNOWN_FAILURE, "failed"),
+            (DONE_ORPHAN_ARCHIVED, "failed"),
+            (DONE_ORPHANED_ON_RESTART, "failed"),
+            (LEGACY_DONE_DEFERRED, "failed"),
+            ("1", "failed"),
+        ],
+    )
+    def test_uuid_status_per_done_marker(self, tmp_path, marker, expected):
+        """Refs sumipan/nexus#6807 — uuid ghdag_status maps done markers to four values."""
+        runtime = _runtime(tmp_path)
+        server = _server(runtime)
+        enq = _call(
+            server,
+            "ghdag_enqueue",
+            {"steps": [{"engine": "shell", "command": "echo x"}]},
+        )
+        uid = enq["structuredContent"]["uuids"]["step-1"]
+        mark_done(runtime.done_dir, uid, marker)
+        st = _call(server, "ghdag_status", {"uuids": [uid]})
+        assert st["structuredContent"]["tasks"][0]["status"] == expected
+
+    @pytest.mark.parametrize(
+        "dep_setup",
+        [
+            "no_done",
+            "success",
+            "engine_error",
+            "running",
+        ],
+    )
+    def test_uuid_status_pending_regardless_of_depends(
+        self, tmp_path, dep_setup: str
+    ):
+        """Refs sumipan/nexus#6807 — undoned uuid stays pending regardless of deps."""
+        runtime = _runtime(tmp_path)
+        server = _server(runtime)
+        enq = _call(
+            server,
+            "ghdag_enqueue",
+            {
+                "steps": [
+                    {"id": "step-1", "engine": "shell", "command": "echo a"},
+                    {
+                        "id": "step-2",
+                        "engine": "shell",
+                        "command": "echo b",
+                        "depends": ["step-1"],
+                    },
+                ]
+            },
+        )
+        uuids = enq["structuredContent"]["uuids"]
+        dep_uid = uuids["step-1"]
+        target_uid = uuids["step-2"]
+        if dep_setup == "success":
+            mark_done(runtime.done_dir, dep_uid, DONE_SUCCESS)
+        elif dep_setup == "engine_error":
+            mark_done(runtime.done_dir, dep_uid, DONE_ENGINE_ERROR)
+        elif dep_setup == "running":
+            (runtime.running_dir / f"{dep_uid}.json").write_text("{}", encoding="utf-8")
+        st = _call(server, "ghdag_status", {"uuids": [target_uid]})
+        assert st["structuredContent"]["tasks"][0]["status"] == "pending"
 
     def test_uuids_and_issue_are_exclusive(self, tmp_path):
         runtime = _runtime(tmp_path)

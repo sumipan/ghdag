@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- MCP `ghdag_status` uuid lookup: remove dead dependency-scan and status-collapse branches; observable four-value status mapping is unchanged (sumipan/nexus#6807).
+
 ## 0.139.2 - 2026-11-15
 
 ### Changed

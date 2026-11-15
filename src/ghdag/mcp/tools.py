@@ -14,7 +14,7 @@ from ghdag.core.exceptions import ConfigError
 from ghdag.core.models.workflow import StepConfig
 from ghdag.io import exec_jsonl
 from ghdag.io.audit import AuditContext
-from ghdag.io.done import dep_succeeded, done_failure_class, interpret_done, read_done_content
+from ghdag.io.done import done_failure_class, interpret_done, read_done_content
 from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.pipeline.state import PipelineState
 from ghdag.status import issue_status, running_tasks
@@ -134,53 +134,16 @@ def _status_schema() -> dict[str, Any]:
     )
 
 
-_MCP_ISSUE_STATUS = frozenset(
-    {"success", "failed", "pending", "running", "skipped", "cancelled", "dep_failed"}
-)
-_MCP_COLLAPSE_FAILED = frozenset(
-    {"rejected", "empty_result", "engine_error", "other", "failed_exit"}
-)
-
-
-def _collapse_task_status(core: str) -> str:
-    if core in _MCP_ISSUE_STATUS:
-        return core
-    if core in _MCP_COLLAPSE_FAILED:
-        return "failed"
-    if core == "deferred":
-        return "pending"
-    return "failed"
-
-
-def _mcp_core_status(
-    uuid: str,
-    done_dir: Path,
-    *,
-    depends: list[str],
-    running: set[str],
-) -> str:
+def _mcp_task_status(uuid: str, done_dir: Path, *, running: set[str]) -> str:
+    """Task status for uuid-scoped ghdag_status: success | failed | pending | running."""
     if uuid in running:
         return "running"
     raw = read_done_content(done_dir, uuid)
-    if raw is not None:
-        kind = interpret_done(raw)
-        if kind == "success":
-            return "success"
-        if kind is not None:
-            if kind == "failed_exit":
-                return "failed_exit"
-            return kind
-    for dep in depends:
-        if dep in running:
-            return "pending"
-        dep_raw = read_done_content(done_dir, dep)
-        if dep_raw is None:
-            return "pending"
-        if interpret_done(dep_raw) != "success":
-            return "pending"
-        if not dep_succeeded(done_dir, dep):
-            return "pending"
-    return "pending"
+    if raw is None:
+        return "pending"
+    if interpret_done(raw) == "success":
+        return "success"
+    return "failed"
 
 
 def _mcp_done_fields(raw: str | None, *, status: str) -> tuple[
@@ -502,14 +465,11 @@ class McpToolRegistry:
         tasks = []
         for uid in uuids:
             record = records.get(uid)
-            depends = list(record.get("depends", [])) if record else []
-            core = _mcp_core_status(
+            status = _mcp_task_status(
                 uid,
                 self._runtime.done_dir,
-                depends=depends,
                 running=running,
             )
-            status = _collapse_task_status(core)
             done_raw = read_done_content(self._runtime.done_dir, uid)
             done_value, failure_class, cause, retry_policy = _mcp_done_fields(
                 done_raw,
