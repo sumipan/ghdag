@@ -270,7 +270,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         dest="permission",
         choices=sorted(PERMISSIONS),
-        help="Capabilities preset (permission profile)",
+        help="Permission preset (permission profile)",
     )
     llm_parser.add_argument(
         "--stdin",

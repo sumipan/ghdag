@@ -36,7 +36,7 @@ class TestArchivedDone:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
         )
 
@@ -60,7 +60,7 @@ class TestArchivedDone:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
         )
 
@@ -80,7 +80,7 @@ class TestArchivedDone:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
         )
 
@@ -100,7 +100,7 @@ class TestArchivedOrphan:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             orphan_days=7,
             auto_repair=True,
         )
@@ -122,7 +122,7 @@ class TestArchivedOrphan:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             orphan_days=7,
             auto_repair=True,
         )
@@ -141,7 +141,7 @@ class TestArchivedOrphan:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             orphan_days=7,
         )
 
@@ -161,7 +161,7 @@ class TestResultOnlyDone:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
         )
 
@@ -185,7 +185,7 @@ class TestOrderOnlyOrphan:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             orphan_days=7,
             auto_repair=True,
         )
@@ -215,7 +215,7 @@ class TestBoundaryValues:
                 queue_dir=queue_dir,
                 archive_dir=archive_dir,
                 done_dir=done_dir,
-                exec_md=exec_md,
+                exec_jsonl=exec_md,
                 cutoff_days=1,
             )
 
@@ -239,7 +239,7 @@ class TestExecMdMissing:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
         )
 
@@ -261,7 +261,7 @@ class TestUUIDCaseInsensitive:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
         )
 
@@ -285,7 +285,7 @@ class TestCompoundToolName:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
         )
 
@@ -306,7 +306,7 @@ class TestCompoundToolName:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
         )
 
@@ -325,7 +325,7 @@ class TestCompoundToolName:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             orphan_days=7,
             auto_repair=True,
         )
@@ -348,7 +348,7 @@ class TestStderrKind:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             cutoff_days=1,
         )
 
@@ -367,7 +367,7 @@ class TestStderrKind:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_md,
+            exec_jsonl=exec_md,
             orphan_days=7,
             auto_repair=True,
         )
@@ -394,7 +394,7 @@ class TestOrphanDoneMark:
             queue_dir=queue_dir,
             archive_dir=archive_dir,
             done_dir=done_dir,
-            exec_md=exec_jsonl,
+            exec_jsonl=exec_jsonl,
             orphan_days=7,
             auto_repair=True,
         )
@@ -425,7 +425,7 @@ class TestOrphanDoneMark:
                     queue_dir=queue_dir,
                     archive_dir=archive_dir,
                     done_dir=done_dir,
-                    exec_md=exec_jsonl,
+                    exec_jsonl=exec_jsonl,
                     orphan_days=7,
                     auto_repair=True,
                 )

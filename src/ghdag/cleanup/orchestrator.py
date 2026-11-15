@@ -37,7 +37,7 @@ def cleanup_queue(
     queue_dir: Path,
     archive_dir: Path,
     done_dir: Path,
-    exec_md: Path,
+    exec_jsonl: Path,
     cutoff_days: int = 1,
     orphan_days: int = 7,
     dry_run: bool = False,
@@ -74,7 +74,7 @@ def cleanup_queue(
         _rec[kind] = path
 
     archiver = QueueArchiver(archive_dir, dry_run)
-    pruner = ExecJsonlPruner(exec_md, dry_run)
+    pruner = ExecJsonlPruner(exec_jsonl, dry_run)
 
     exec_lines, all_exec_uuids = pruner.load()
 

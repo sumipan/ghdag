@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.139.1-blue)
+![version](https://img.shields.io/badge/version-v0.139.2-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.139.1** (`pyproject.toml` `version = "0.139.1"`) |
+| Current release | **v0.139.2** (`pyproject.toml` `version = "0.139.2"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.139.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.139.2"
 ```
 
 Install from a checkout with the development tools:
@@ -338,7 +338,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `ghdag.pipeline.status.state_label` | `(state_id, pack=None) -> str`; label from `pack` (default: the active language pack); unknown identifiers are returned unchanged |
 | `ghdag.dag.recover.plan_recover` | `(*, state_dir, exec_jsonl_path, workflow_name, handler_name, issue_number, queue_dir, done_dir, from_step=None, running_uuids=None) -> RecoverPlan` |
 | `ghdag.dag.recover.execute_recover` | `(plan, *, queue_dir, done_dir, dry_run=False, running_uuids=None, keep_results=False, now=None) -> RecoverResult` |
-| `ghdag.cleanup.cleanup_queue` | `(queue_dir, archive_dir, done_dir, exec_md, cutoff_days=1, orphan_days=7, dry_run=False, auto_repair=False) -> CleanupResult` |
+| `ghdag.cleanup.cleanup_queue` | `(queue_dir, archive_dir, done_dir, exec_jsonl, cutoff_days=1, orphan_days=7, dry_run=False, auto_repair=False) -> CleanupResult` |
 | `ghdag.maintenance.validate_exec_jsonl` | `(exec_jsonl_path) -> list[tuple[int, str]]` |
 | `ghdag.maintenance.repair_exec_jsonl` | `(exec_jsonl_path, *, dry_run=False) -> int` |
 | `ghdag.maintenance.repair_jobs_done` | `(exec_jsonl_path, done_dir, *, dry_run=False) -> dict[str, int]` |
@@ -1170,7 +1170,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.139.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.139.2"
 ```
 
 and read `CHANGELOG.md` before upgrading.

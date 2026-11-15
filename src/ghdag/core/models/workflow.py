@@ -1,4 +1,4 @@
-"""workflow/schema.py — WorkflowConfig dataclass, YAML → dataclass conversion"""
+"""core/models/workflow.py — WorkflowConfig dataclass, YAML → dataclass conversion"""
 
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ class StepConfig:
     engine: str = "claude"  # LLM engine name ("claude", "gemini", "cursor", etc.)
     depends: list[str] = field(default_factory=list)  # list of dependency step IDs
     resume_from: str | None = None  # ID of the parent step whose session is continued
-    permission: str | None = None  # capabilities preset name (None = engine default)
+    permission: str | None = None  # permission preset name (None = engine default)
     skill_name: str | None = None  # skill name invoked by this step
     render: str = "frozen"  # "frozen" (expanded at enqueue) | "live" (re-expanded at run time via trampoline)
     env_passthrough: list[str] = field(default_factory=list)  # env var names exempt from deny
