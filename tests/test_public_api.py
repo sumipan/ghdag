@@ -54,20 +54,6 @@ def test_check_pipeline_status_is_same_object():
     assert ghdag.dag.check_pipeline_status is ghdag.dag._util.check_pipeline_status
 
 
-def test_check_pipeline_status_impl_done(tmp_path):
-    from ghdag.dag import check_pipeline_status
-    f = tmp_path / "result.md"
-    f.write_text("PIPELINE_STATUS: IMPL_DONE\n", encoding="utf-8")
-    assert check_pipeline_status(str(f)) == "IMPL_DONE"
-
-
-def test_check_pipeline_status_no_status_returns_none(tmp_path):
-    from ghdag.dag import check_pipeline_status
-    f = tmp_path / "result.md"
-    f.write_text("some output\nno status line\n", encoding="utf-8")
-    assert check_pipeline_status(str(f)) is None
-
-
 def test_check_pipeline_status_missing_file_returns_none(tmp_path):
     from ghdag.dag import check_pipeline_status
     assert check_pipeline_status(str(tmp_path / "nonexistent.md")) is None

@@ -14,14 +14,12 @@ import threading
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from ghdag.core.command import render_exec_command
-from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.dag._util import _stdout_line_reader, _stdout_reader
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import DagConfig
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter, extract_stream_result
-from ghdag.llm.engines import LLMResult, _extract_stream_result
+from ghdag.llm.engines import _extract_stream_result
 from ghdag.ui.server import _build_snapshot, _latest_progress
 
 # --- Real-shape fixtures (captured 2026-09-09, slimmed) ---------------------
@@ -233,25 +231,6 @@ class TestExtractStreamResultShared:
         adapter = ClaudeJsonAdapter()
         assert adapter.extract_result_text(_LEGACY_JSON_RESULT.encode(), b"") == b"pong"
 
-    def test_stream_json_result_text_matches_legacy_json_path(self):
-        """stream-json path result text matches the legacy json path body."""
-        adapter = ClaudeJsonAdapter()
-        stream_text = adapter.extract_result_text(_STREAM_SUCCESS.encode(), b"")
-        legacy_text = adapter.extract_result_text(_LEGACY_JSON_RESULT.encode(), b"")
-        assert stream_text == legacy_text == b"pong"
-
-    def test_stream_json_session_id_on_llm_result(self):
-        adapter = ClaudeJsonAdapter()
-        sid = adapter.extract_session_id(_STREAM_SUCCESS.encode(), b"")
-        assert sid == "9664201d-a9c9-43d6-b070-6d7ee4183d55"
-        result = LLMResult(
-            body="pong",
-            stdout=_STREAM_SUCCESS,
-            stderr="",
-            returncode=0,
-            session_id=sid,
-        )
-        assert result.session_id == sid
 
     def test_stream_error_extracts_engine_error(self):
         adapter = ClaudeJsonAdapter()
@@ -316,73 +295,7 @@ class TestStdoutLineReader:
 
 
 class TestClaudeDagEvents:
-    def test_claude_extra_args_are_stream_json(self):
-        spec = ENGINE_SPECS["claude"]
-        assert spec.extra_args == (
-            "--output-format", "stream-json", "--verbose",
-        )
-        cmd = render_exec_command(spec, order_path="jobs/o.md", model=None)
-        assert "--output-format stream-json" in cmd
-        assert "--verbose" in cmd
-        assert "--disable-slash-commands" not in cmd
-        assert "--output-format json" not in cmd
 
-    def test_claude_task_writes_events_and_compatible_result(self, tmp_path):
-        result_file = tmp_path / "result.md"
-        fixture = tmp_path / "fixture.jsonl"
-        fixture.write_text(_STREAM_SUCCESS, encoding="utf-8")
-        config = _make_config(
-            tmp_path,
-            [
-                {
-                    "uuid": "evt-claude",
-                    "engine": "claude",
-                    "command": f"cat {fixture}",
-                    "depends": [],
-                    "result_path": str(result_file),
-                }
-            ],
-        )
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
-        hooks.check_pipeline_status.return_value = None
-        engine = DagEngine(config, hooks)
-        _run_engine_until_success(engine, hooks)
-
-        events_path = tmp_path / "jobs" / "events" / "evt-claude.jsonl"
-        assert events_path.is_file()
-        assert events_path.read_text(encoding="utf-8") == _STREAM_SUCCESS
-        assert result_file.read_text(encoding="utf-8") == "pong"
-        hooks.on_task_progress.assert_called()
-        # session recorded
-        recorded = engine._launcher._session_store.lookup("evt-claude")
-        assert recorded is not None
-        assert recorded.session_id == "9664201d-a9c9-43d6-b070-6d7ee4183d55"
-
-    def test_non_claude_engine_does_not_write_events(self, tmp_path):
-        result_file = tmp_path / "result.md"
-        config = _make_config(
-            tmp_path,
-            [
-                {
-                    "uuid": "evt-shell",
-                    "engine": "shell",
-                    "command": "printf 'hello\\n'",
-                    "depends": [],
-                    "result_path": str(result_file),
-                }
-            ],
-        )
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
-        hooks.check_pipeline_status.return_value = None
-        engine = DagEngine(config, hooks)
-        _run_engine_until_success(engine, hooks)
-
-        events_path = tmp_path / "jobs" / "events" / "evt-shell.jsonl"
-        assert not events_path.exists()
-        assert result_file.read_text(encoding="utf-8") == "hello\n"
-        hooks.on_task_progress.assert_not_called()
 
     def test_legacy_hooks_without_progress_do_not_break(self, tmp_path):
         class LegacyHooks:

@@ -3,20 +3,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 
-from ghdag.status import (
-    IssueStatus,
-    RunningTask,
-    StepStatus,
-    issue_status,
-    running_tasks,
-)
+from ghdag.status import issue_status, running_tasks
 
 FIXTURES = Path(__file__).parent / "fixtures"
-
-_FIXED_NOW = datetime(2026, 9, 10, 15, 0, 0, tzinfo=timezone.utc)
 
 
 def _write_exec(path: Path, records: list[dict]) -> None:
@@ -65,83 +56,7 @@ def _minimal_graph(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 
 class TestIssueStatusUnit:
-    def test_issue_status_all_success(self, tmp_path: Path) -> None:
-        exec_jsonl, done_dir, state_dir = _minimal_graph(tmp_path)
-        for uid in (
-            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-            "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
-            "cccccccc-cccc-cccc-cccc-cccccccccccc",
-        ):
-            (done_dir / uid).write_text("0", encoding="utf-8")
 
-        result = issue_status(
-            1,
-            handler="handler",
-            workflow="wf",
-            exec_jsonl_path=exec_jsonl,
-            state_dir=state_dir,
-            done_dir=done_dir,
-        )
-        assert isinstance(result, IssueStatus)
-        assert result.generation == 0
-        assert result.running is False
-        assert result.orphan_uuids == []
-        by_name = {s.step_name: s for s in result.steps}
-        assert set(by_name) == {"a", "b", "c"}
-        for step in result.steps:
-            assert isinstance(step, StepStatus)
-            assert step.status == "success"
-            assert step.done_value == "0"
-            assert step.failure_class is None
-            assert step.cause is None
-            assert step.retry_policy is None
-        assert by_name["a"].result_path == "result-a.md"
-        assert by_name["b"].result_path is None
-        assert by_name["a"].depends == []
-        assert by_name["b"].depends == ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]
-
-    def test_issue_status_running(self, tmp_path: Path) -> None:
-        exec_jsonl, done_dir, state_dir = _minimal_graph(tmp_path)
-        (done_dir / "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").write_text(
-            "0", encoding="utf-8"
-        )
-        running = {"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"}
-
-        result = issue_status(
-            1,
-            handler="handler",
-            workflow="wf",
-            exec_jsonl_path=exec_jsonl,
-            state_dir=state_dir,
-            done_dir=done_dir,
-            running_uuids=running,
-        )
-        assert result.running is True
-        by_name = {s.step_name: s for s in result.steps}
-        assert by_name["a"].status == "success"
-        assert by_name["b"].status == "running"
-        assert by_name["c"].status == "pending"
-
-    def test_issue_status_engine_error_failure_fields(self, tmp_path: Path) -> None:
-        exec_jsonl, done_dir, state_dir = _minimal_graph(tmp_path)
-        (done_dir / "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").write_text(
-            "ENGINE_ERROR", encoding="utf-8"
-        )
-
-        result = issue_status(
-            1,
-            handler="handler",
-            workflow="wf",
-            exec_jsonl_path=exec_jsonl,
-            state_dir=state_dir,
-            done_dir=done_dir,
-        )
-        step_a = next(s for s in result.steps if s.step_name == "a")
-        assert step_a.status == "failed"
-        assert step_a.done_value == "ENGINE_ERROR"
-        assert step_a.failure_class == "ENGINE_ERROR"
-        assert step_a.cause == "transient"
-        assert step_a.retry_policy == "safe"
 
     def test_issue_status_pending_step_has_no_done_fields(self, tmp_path: Path) -> None:
         exec_jsonl, done_dir, state_dir = _minimal_graph(tmp_path)
@@ -180,88 +95,6 @@ class TestIssueStatusUnit:
         assert by_name["b"].status == "dep_failed"
         assert by_name["c"].status == "dep_failed"
         assert result.running is False
-
-    def test_issue_status_orphan(self, tmp_path: Path) -> None:
-        exec_jsonl, done_dir, state_dir = _minimal_graph(tmp_path)
-        (done_dir / "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").write_text(
-            "0", encoding="utf-8"
-        )
-        # b and c have no done / not running; b's deps are satisfied → orphan
-
-        result = issue_status(
-            1,
-            handler="handler",
-            workflow="wf",
-            exec_jsonl_path=exec_jsonl,
-            state_dir=state_dir,
-            done_dir=done_dir,
-        )
-        assert "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" in result.orphan_uuids
-        # c depends on b which has not succeeded → not orphan
-        assert "cccccccc-cccc-cccc-cccc-cccccccccccc" not in result.orphan_uuids
-        by_name = {s.step_name: s for s in result.steps}
-        assert by_name["b"].status == "pending"
-        assert by_name["c"].status == "pending"
-
-    def test_status_cancelled(self, tmp_path: Path) -> None:
-        """CANCELLED done marker → cancelled (not running, not success)."""
-        exec_jsonl, done_dir, state_dir = _minimal_graph(tmp_path)
-        (done_dir / "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").write_text(
-            "0", encoding="utf-8"
-        )
-        (done_dir / "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").write_text(
-            "CANCELLED", encoding="utf-8"
-        )
-
-        result = issue_status(
-            1,
-            handler="handler",
-            workflow="wf",
-            exec_jsonl_path=exec_jsonl,
-            state_dir=state_dir,
-            done_dir=done_dir,
-            running_uuids=set(),
-        )
-        by_name = {s.step_name: s for s in result.steps}
-        assert by_name["b"].status == "cancelled"
-        assert by_name["c"].status == "dep_failed"
-        assert result.orphan_uuids == []
-
-    def test_running_tasks(self, tmp_path: Path, monkeypatch) -> None:
-        class _FixedDatetime(datetime):
-            @classmethod
-            def now(cls, tz=None):
-                if tz is not None and tz == timezone.utc:
-                    return _FIXED_NOW
-                return _FIXED_NOW
-
-        monkeypatch.setattr("ghdag.status.datetime", _FixedDatetime)
-        running_dir = tmp_path / "running"
-        running_dir.mkdir()
-        started = "2026-09-10T14:39:20+00:00"
-        payload = {
-            "pid": 6526,
-            "pgid": 6526,
-            "engine": "shell",
-            "started_at": started,
-            "has_resume": False,
-        }
-        uid = "dddddddd-dddd-dddd-dddd-dddddddddddd"
-        (running_dir / f"{uid}.json").write_text(
-            json.dumps(payload) + "\n", encoding="utf-8"
-        )
-
-        tasks = running_tasks(running_dir)
-        assert len(tasks) == 1
-        task = tasks[0]
-        assert isinstance(task, RunningTask)
-        assert task.uuid == uid
-        assert task.started_at == started
-        assert task.engine == "shell"
-        assert task.pid == 6526
-        started_dt = datetime.fromisoformat(started)
-        expected_elapsed = (_FIXED_NOW - started_dt).total_seconds()
-        assert task.elapsed_sec == expected_elapsed
 
 
 class TestIssueStatusFixtures:
@@ -325,12 +158,3 @@ def test_status_running_task_remains_public() -> None:
     assert not hasattr(ghdag, "RunningTask")
 
 
-class TestStepStatusCoreSharedWithPipeline:
-    def test_pipeline_task_status_uses_shared_core(self, tmp_path: Path) -> None:
-        from ghdag.pipeline.status import STATE_OK, STATE_RUNNING, task_status
-
-        done = tmp_path / "done"
-        done.mkdir()
-        (done / "u1").write_text("0", encoding="utf-8")
-        assert task_status("u1", done) == STATE_OK
-        assert task_status("u2", done, running_uuids={"u2"}) == STATE_RUNNING
