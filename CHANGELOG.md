@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.143.2 - 2026-11-17
+
 ### Added
 
 - Persist fan-out parent wait state under `fanout-pending/<uuid>.json` and restore it on `DagEngine` startup (sumipan/nexus#6936).
