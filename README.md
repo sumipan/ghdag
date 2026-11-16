@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.143.0-blue)
+![version](https://img.shields.io/badge/version-v0.143.1-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.143.0** (`pyproject.toml` `version = "0.143.0"`) |
+| Current release | **v0.143.1** (`pyproject.toml` `version = "0.143.1"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.143.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.143.1"
 ```
 
 Install from a checkout with the development tools:
@@ -553,13 +553,13 @@ Register in Claude Code (example):
 | First SIGTERM / SIGINT | Writes `interrupted_at` into every `running/<uuid>.json`, stops launching, and drains running tasks until `task_timeout` elapses (no drain when `task_timeout` is `None`); the remaining tasks are then terminated and the runner exits |
 | Second SIGTERM / SIGINT | Exits immediately |
 | Restart | After the first `exec.jsonl` load, `adopt_orphans` inspects `running/*.json`: live tasks are adopted and tracked to completion, dead tasks are closed with `ORPHANED_ON_RESTART`, and interrupted tasks (`interrupted_at` set) are killed if still alive and relaunched once with the same UUID and `GHDAG_PREVIOUS_ATTEMPT=interrupted` |
-| Engine stall guard | When `stall_guard_enabled()` is true (default), `TaskLauncher.check_completions` uses `ghdag.core.stall_guard.StallTracker` (`read_ps` is injected from `ghdag.llm.engines`) to detect cursor DAG tasks whose shell state-transfer `cat` children are stuck at zero CPU; after `stall_guard_stall_sec()` (default 180s) it sends SIGTERM and writes a `stall_guard` audit event |
+| Engine stall guard | When `stall_guard_enabled()` is true (default), `TaskLauncher.check_completions` uses `ghdag.core.stall_guard.StallTracker` (`read_ps` is injected from `ghdag.llm.engines`) to detect cursor DAG tasks whose shell state-transfer `cat` children are stuck at zero CPU; after `stall_guard_stall_sec()` (default 180s) it sends SIGTERM and writes a `stall_guard` audit event. Every cursor subprocess the runner starts attaches the tracker when enabled, including repair-turn relaunches and resume-driven restarts |
 
 ### Engine output and failure classification
 
 | Topic | Behavior |
 |---|---|
-| Progress events | For claude (`--output-format stream-json`), cursor (`--output-format stream-json`) and codex (`--json`) tasks with a `result_path`, stdout is drained line by line into `events/<uuid>.jsonl` (secrets redacted; see [Secret redaction](#secret-redaction)). Without stream flags the runner reads stdout in one piece and sets `annotations.stream_fallback=true` |
+| Progress events | For claude (`--output-format stream-json`), cursor (`--output-format stream-json`) and codex (`--json`) tasks with a `result_path`, stdout is drained line by line into `events/<uuid>.jsonl` (secrets redacted; see [Secret redaction](#secret-redaction)). Without stream flags the runner reads stdout in one piece and sets `annotations.stream_fallback=true`. Tasks launched without `result_path` (for example some resume fallbacks) do not pipe or drain engine stdout at all |
 | cursor result text | Assistant turns are rebuilt at `tool_call` boundaries and joined with a blank line |
 | Interactive prompts | A failed run whose last non-empty output line ends with `?` (or with one of the language pack's `question_suffixes.extra`) is `FailureClass.INTERACTIVE_PROMPT`: permanent, no retry, done marker `INTERACTIVE_PROMPT`. Checked by `looks_like_question`; if the pack cannot be loaded, only `?` is used |
 | Missing engine binary | The engine's real CLI name (for example `cursor-agent` for cursor) followed by `command not found` / `No such file or directory` / `permission denied`, or exit `127` with `command not found`, is `ENGINE_ENVIRONMENT_ERROR` |
@@ -1158,6 +1158,7 @@ Any other content is the task's non-zero exit code.
 | `REJECTED`, `REJECTED_FINAL` | `REJECTED` |
 | `ENGINE_ERROR`, `ENGINE_ERROR_FINAL`, `ENGINE_ENVIRONMENT_ERROR`, `INTERACTIVE_PROMPT`, `TIMEOUT`, `EMPTY_RESULT`, `FANOUT_CHILD_FAILED`, `FANOUT_PARSE_FAILED`, `DEP_FAILED`, `UNKNOWN_FAILURE` | same name |
 | `PIPELINE_FAILED:<reason>` | `PIPELINE_FAILED` |
+| Legacy `PIPELINE_STATUS: DEFERRED` / `DEFERRED` done bodies | No longer supported (removed in 0.140.10); treat as an unclassified failure |
 | Non-zero integer | `PROCESS_ERROR` |
 | `CANCELLED`, `SKIPPED_MISSING_INPUT`, `ORPHAN_ARCHIVED`, `ORPHANED_ON_RESTART` | *(none — terminal state, not a failure class)* |
 | Anything else | `UNKNOWN_FAILURE` |
@@ -1175,7 +1176,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.143.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.143.1"
 ```
 
 and read `CHANGELOG.md` before upgrading.
