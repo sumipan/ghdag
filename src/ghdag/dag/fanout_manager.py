@@ -231,6 +231,9 @@ class FanOutManager:
             except (OSError, json.JSONDecodeError):
                 logger.warning("Corrupt fanout-pending file %s — ignoring", path)
                 continue
+            if not isinstance(payload, dict):
+                logger.warning("Corrupt fanout-pending file %s — ignoring", path)
+                continue
             children = payload.get("children")
             metrics_data = payload.get("metrics")
             if not isinstance(children, list) or not all(

@@ -1524,6 +1524,9 @@ class TaskLauncher:
             except (OSError, json.JSONDecodeError):
                 logger.warning("Corrupt quota-waiting file %s — ignoring", path)
                 continue
+            if not isinstance(payload, dict):
+                logger.warning("Corrupt quota-waiting file %s — ignoring", path)
+                continue
             engines = payload.get("engines")
             if not isinstance(engines, list) or not all(
                 isinstance(e, str) for e in engines
