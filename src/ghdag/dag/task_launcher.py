@@ -841,11 +841,12 @@ class TaskLauncher:
         failure_output = ""
         failure_class_reason: str | None = None
 
-        if (
-            not exit_ctx.was_cancelled
-            and not exit_ctx.was_timeout
-            and exit_ctx.returncode == 0
-        ):
+        decided_early = (
+            exit_ctx.was_cancelled
+            or exit_ctx.was_timeout
+            or engine_error_fact is not None
+        )
+        if not decided_early and exit_ctx.returncode == 0:
             session_id = adapter.extract_session_id(
                 exit_ctx.stdout_data, exit_ctx.stderr_bytes
             )
@@ -909,7 +910,7 @@ class TaskLauncher:
                             fanout = FanoutFact(state=FanoutState.PRESENT)
                         else:
                             fanout = FanoutFact(state=FanoutState.NONE)
-        elif not exit_ctx.was_cancelled and not exit_ctx.was_timeout:
+        elif not decided_early:
             failure_class = adapter.classify_failure(
                 exit_ctx.returncode,
                 exit_ctx.stdout_data,
@@ -995,6 +996,7 @@ class TaskLauncher:
         if not engines and isinstance(engine, str):
             engines = (engine,)
         observed = datetime.now(timezone.utc)
+        extra = {"set_by": pause.set_by} if pause.set_by is not None else {}
         for eng in engines:
             if not eng:
                 continue
@@ -1004,25 +1006,12 @@ class TaskLauncher:
                 observed_at=observed,
                 resume_at=pause.resume_at,
                 reason=pause.reason,
-                set_by=pause.set_by,
+                **extra,
             )
 
-    def _unlink_task_result(
-        self,
-        task: Task,
-        effective_result_path: str | None,
-    ) -> None:
-        target = effective_result_path or task.result_path
-        if not target:
-            return
-        try:
-            Path(target).unlink()
-        except OSError:
-            logger.warning(
-                "Failed to remove result file for [%s]",
-                task.idempotency_key or "?",
-                exc_info=True,
-            )
+    def _unlink_task_result(self, task: Task) -> None:
+        if task.result_path and Path(task.result_path).exists():
+            Path(task.result_path).unlink()
 
     def _apply_result_action(
         self,
@@ -1066,27 +1055,21 @@ class TaskLauncher:
                 return True
             assert decision.fallback is not None
             decision = decision.fallback
+            if decision.failure_class == FailureClass.FANOUT_PARSE_FAILED:
+                logger.warning("FanOut error for [%s]: %s", uuid, rep.message)
 
         self._apply_result_action(exit_ctx.task, effective_result_path, decision)
 
         if decision.quota_pause is not None:
             self._report_quota_pause(decision.quota_pause, exit_ctx.engine, uuid)
 
-        defer_result_unlink = (
-            decision.hook is not None
-            and decision.hook.kind == HookKind.REJECTED
-            and decision.result_action == ResultActionKind.UNLINK
-        )
         wait_quota_active = (
             decision.wait_quota is not None
             and decision.wait_quota.invalid_reason is None
         )
-        if (
-            decision.result_action == ResultActionKind.UNLINK
-            and not defer_result_unlink
-            and not wait_quota_active
-        ):
-            self._unlink_task_result(exit_ctx.task, effective_result_path)
+        if decision.result_action == ResultActionKind.UNLINK and decision.done is None:
+            if not wait_quota_active:
+                self._unlink_task_result(exit_ctx.task)
 
         if (
             decision.wait_quota is not None
@@ -1131,8 +1114,30 @@ class TaskLauncher:
                         exc_info=True,
                     )
 
+        if decision.quarantine and isinstance(exit_ctx.engine, str):
+            self._engine_quarantine.enter(exit_ctx.engine, cooldown=300)
+            write_quarantine_audit(
+                self._queue_audit_path(),
+                engine=exit_ctx.engine,
+                action="enter",
+                cooldown_sec=300,
+            )
+
         if decision.done is not None:
             state_mark_done(self._config.exec_done_dir, uuid, decision.done)
+            if decision.result_action == ResultActionKind.UNLINK:
+                self._unlink_task_result(exit_ctx.task)
+
+        if decision.retry_audit:
+            write_task_retry_audit(
+                self._queue_audit_path(),
+                uuid=uuid,
+                attempt=exit_ctx.task.retry + 1,
+                failure_class=FailureClass.ENGINE_ERROR,
+                stderr_excerpt=(
+                    exit_ctx.stderr_text[:200] if exit_ctx.stderr_text else None
+                ),
+            )
 
         metrics = self._build_completion_metrics(
             uuid,
@@ -1178,10 +1183,6 @@ class TaskLauncher:
                     lambda: self._hooks.on_task_success(uuid, exit_ctx.task, metrics),
                 )
 
-        if defer_result_unlink:
-            if exit_ctx.task.result_path and Path(exit_ctx.task.result_path).exists():
-                Path(exit_ctx.task.result_path).unlink()
-
         if decision.circuit == CircuitAction.RECORD_FAILURE:
             self._circuit_breaker.record_failure()
         elif decision.circuit == CircuitAction.RESET:
@@ -1190,26 +1191,6 @@ class TaskLauncher:
                 exit_ctx.task,
                 "circuit_breaker.reset",
                 self._circuit_breaker.reset,
-            )
-
-        if decision.quarantine and isinstance(exit_ctx.engine, str):
-            self._engine_quarantine.enter(exit_ctx.engine, cooldown=300)
-            write_quarantine_audit(
-                self._queue_audit_path(),
-                engine=exit_ctx.engine,
-                action="enter",
-                cooldown_sec=300,
-            )
-
-        if decision.retry_audit:
-            write_task_retry_audit(
-                self._queue_audit_path(),
-                uuid=uuid,
-                attempt=exit_ctx.task.retry + 1,
-                failure_class=FailureClass.ENGINE_ERROR,
-                stderr_excerpt=(
-                    exit_ctx.stderr_text[:200] if exit_ctx.stderr_text else None
-                ),
             )
 
         if decision.fanout_spawn and metrics is not None:
@@ -1222,18 +1203,6 @@ class TaskLauncher:
                     queue_dir=self._queue_dir(),
                 )
             except FanoutError as exc:
-                if self._try_contract_repair_turn(
-                    uuid,
-                    exit_ctx.task,
-                    exit_ctx.engine if isinstance(exit_ctx.engine, str) else None,
-                    code=exc.code,
-                    message=exc.message,
-                    hint=exc.hint,
-                    result_path=effective_result_path,
-                    cwd=cwd,
-                ):
-                    return True
-                logger.warning("FanOut spawn error for [%s]: %s", uuid, exc)
                 spawn_facts = replace(
                     facts,
                     fanout=FanoutFact(
@@ -1246,7 +1215,7 @@ class TaskLauncher:
                     max_retry=self._config.max_retry,
                     task_timeout=self._config.task_timeout,
                 )
-                self._apply_completion_decision(
+                return self._apply_completion_decision(
                     uuid,
                     exit_ctx,
                     spawn_facts,
@@ -1259,7 +1228,7 @@ class TaskLauncher:
                     cache_creation_tokens=cache_creation_tokens,
                 )
 
-        if decision.promote and effective_result_path:
+        if decision.promote:
             self._run_success_postprocess(
                 uuid,
                 exit_ctx.task,
@@ -1275,8 +1244,16 @@ class TaskLauncher:
         cwd: str | None,
     ) -> bool:
         """Read facts, decide, and apply. Return True to continue the outer loop."""
+        facts, effective_result_path = self._read_completion_facts(uuid, exit_ctx)
+        # Shell failure output is written only on the plain non-zero exit path.
         adapter = get_output_adapter(exit_ctx.engine)
-        if exit_ctx.returncode != 0 and exit_ctx.engine == "shell":
+        if (
+            exit_ctx.returncode != 0
+            and exit_ctx.engine == "shell"
+            and not facts.cancelled
+            and not facts.timed_out
+            and facts.engine_error is None
+        ):
             task = exit_ctx.task
             if task.result_path is not None:
                 failure_output = adapter.extract_result_text(
@@ -1294,7 +1271,6 @@ class TaskLauncher:
                         exc_info=True,
                     )
 
-        facts, effective_result_path = self._read_completion_facts(uuid, exit_ctx)
         decision = decide_completion(
             facts,
             max_retry=self._config.max_retry,
