@@ -676,6 +676,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `dag/_util.py` | Internal DAG helpers |
 | `dag/audit_hooks.py` | `AuditHooks`: `DefaultHooks` plus `audit.jsonl` writes |
 | `dag/circuit_breaker.py` | `CircuitBreakerPolicy`: consecutive-failure breaker |
+| `dag/completion.py` | `decide_completion` and completion fact/decision types (internal; used by `TaskLauncher`) |
 | `dag/engine.py` | `DagEngine` main loop, signal handling, dependency resolution |
 | `dag/engine_quarantine.py` | `EngineQuarantine`: temporarily blocks launches for broken engines |
 | `dag/fanout.py` | Fan-out spec parsing and child record building (`FanoutError`) |
