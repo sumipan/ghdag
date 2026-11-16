@@ -24,7 +24,6 @@ from ghdag.core.models.workflow import (
 )
 from ghdag.dag.fanout import FanOutItem
 from ghdag.io.audit import AuditContext
-from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.schemas import SCHEMA_NAMES, load_schema

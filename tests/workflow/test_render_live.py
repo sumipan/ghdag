@@ -17,8 +17,8 @@ from ghdag.core.models.workflow import (
     WorkflowConfig,
 )
 from ghdag.github_client import GitHubIssuePort
-from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.pipeline.order import TemplateOrderBuilder
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.loader import load_workflows
 from ghdag.workflow.render import main as render_main

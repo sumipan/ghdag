@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 from ghdag.core.models.workflow import WorkflowConfig
 from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import build_order_builders
-from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.pipeline.order import TemplateOrderBuilder
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.loader import load_workflows
 
