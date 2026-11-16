@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ghdag.core import engine_spec
 from ghdag.core.capabilities import TEXT_ONLY
 from ghdag.llm import DANGEROUS_FULL_ACCESS, Permission, call
 from ghdag.llm.engines import EngineModelError, build_llm_cmd
@@ -85,6 +87,42 @@ class TestCall:
         """Disallowed model → EngineModelError (before subprocess call)"""
         with pytest.raises(EngineModelError):
             call("hello", route=[("claude", "bad-model")])
+
+
+class TestUnverifiedEngineWarning:
+    """Refs sumipan/nexus#6937 — warn once when launching unverified engine definitions."""
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_gemini_call_emits_single_unverified_warning(
+        self,
+        mock_run: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.setattr(engine_spec, "_WARNED_ENGINES", set())
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        with caplog.at_level(logging.WARNING, logger="ghdag.core.engine_spec"):
+            call("hello", permission=Permission(), route=[("gemini", None)])
+        gemini_warnings = [
+            r for r in caplog.records if r.levelno == logging.WARNING and "gemini" in r.message
+        ]
+        assert len(gemini_warnings) == 1
+
+    @patch("ghdag.llm.engines.subprocess.run")
+    def test_claude_call_emits_no_unverified_warning(
+        self,
+        mock_run: MagicMock,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.setattr(engine_spec, "_WARNED_ENGINES", set())
+        mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)
+        with caplog.at_level(logging.WARNING, logger="ghdag.core.engine_spec"):
+            call("hello", permission=TEXT_ONLY, route=[("claude", None)])
+        spec_warnings = [
+            r for r in caplog.records if r.name == "ghdag.core.engine_spec" and r.levelno == logging.WARNING
+        ]
+        assert len(spec_warnings) == 0
 
 
 class TestCallCapabilities:

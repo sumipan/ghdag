@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.140.11-blue)
+![version](https://img.shields.io/badge/version-v0.141.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.140.11** (`pyproject.toml` `version = "0.140.11"`) |
+| Current release | **v0.141.0** (`pyproject.toml` `version = "0.141.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.140.11"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.141.0"
 ```
 
 Install from a checkout with the development tools:
@@ -457,6 +457,8 @@ With `sandbox="container"`, `render_exec_command` (which builds `exec.jsonl` com
 | `cursor` | `cursor-agent` (`agent` is a legacy alias in logs only, not used to build argv) | `auto` | `auto`, `composer-2`, `composer-2-fast`, `gpt-5.2`, `gpt-5.3-codex`, `gpt-5.3-codex-fast`, `gpt-5.3-codex-high`, `gpt-5.3-codex-high-fast`, `gpt-5.4-medium-fast` |
 | `gemini` | `gemini` | `gemini-2.5-flash` | `gemini-2.5-pro`, `gemini-2.5-flash` |
 | `shell` | `bash -o pipefail` | none | `bash` (runs the order file as a bash script; no LLM call) |
+
+The `gemini` row is defined in ghdag but **not verified in day-to-day maintenance**; its CLI wiring may lag upstream CLI changes. Starting a gemini task or a `ghdag.llm.call` route that actually launches gemini logs a one-time `WARNING` from `ghdag.core.engine_spec` for that process.
 
 claude, cursor, gemini and codex receive the prompt on stdin (`InputMode.STDIN`), which avoids the Linux per-argument size limit for large prompts; `shell` gets the order path on argv (`InputMode.ARGV`). Replace the allowed-model list with [`llm-models.yml`](#llm-modelsyml).
 
@@ -1170,7 +1172,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.140.11"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.141.0"
 ```
 
 and read `CHANGELOG.md` before upgrading.

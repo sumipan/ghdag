@@ -32,7 +32,7 @@ from ghdag.core.command import (
     _build_cursor_flags,
     build_llm_cmd,
 )
-from ghdag.core.engine_spec import ENGINE_SPECS, InputMode
+from ghdag.core.engine_spec import ENGINE_SPECS, InputMode, warn_if_unverified
 from ghdag.core.exceptions import ConfigError, LLMParseError
 from ghdag.core.models.metrics import FailureClass, TokenUsage
 from ghdag.core.ports.output import EngineError
@@ -658,6 +658,7 @@ def _call_once(
         resume_session_id=resume_session_id,
         isolation=resolved_isolation,
     )
+    warn_if_unverified(spec)
 
     t0 = time.monotonic()
     run_kwargs: dict = {

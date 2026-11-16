@@ -30,7 +30,7 @@ from ghdag.config.env import (
     stall_guard_stall_sec,
 )
 from ghdag.core.command import inject_resume
-from ghdag.core.engine_spec import ENGINE_SPECS
+from ghdag.core.engine_spec import ENGINE_SPECS, warn_if_unverified
 from ghdag.core.models.metrics import FailureClass, TaskMetrics
 from ghdag.core.reply_block import ReplyBlockError, parse_reply_block
 from ghdag.core.stall_guard import StallTracker
@@ -436,6 +436,7 @@ class TaskLauncher:
         *,
         previous_attempt: str | None = None,
     ) -> _RunningProcess:
+        warn_if_unverified(ENGINE_SPECS.get(engine) if engine else None)
         popen_kwargs: dict[str, object] = {
             "stderr": subprocess.PIPE,
             "cwd": cwd,
