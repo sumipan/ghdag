@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ghdag.core import engine_spec
-from ghdag.core.capabilities import TEXT_ONLY, Permission
+from ghdag.core.capabilities import TEXT_ONLY
 from ghdag.llm import DANGEROUS_FULL_ACCESS, Permission, call
 from ghdag.llm.engines import EngineModelError, build_llm_cmd
 
