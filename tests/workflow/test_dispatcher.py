@@ -16,7 +16,7 @@ from ghdag.core.models.workflow import (
     WorkflowConfig,
 )
 from ghdag.github_client import GitHubIssuePort
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 
 _FIXED_WALL_EPOCH = 1_700_000_000
@@ -42,7 +42,7 @@ def _make_dispatcher(tmp_path: Path) -> tuple[WorkflowDispatcher, MagicMock]:
     dispatcher = WorkflowDispatcher(
         workflows=[_make_workflow()],
         github_client=github_client,
-        pipeline=MagicMock(spec=LLMPipelineAPI),
+        task_queue=MagicMock(spec=TaskQueue),
         queue_dir=str(tmp_path),
     )
     return dispatcher, github_client

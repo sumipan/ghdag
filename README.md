@@ -4,7 +4,7 @@ ghdag is a local workflow foundation. It **intakes** work from labelled GitHub I
 
 Two cooperating processes share only files on disk:
 
-- **Intake** — `ghdag watch` polls Issues and `ghdag trigger` dispatches one Issue; both append tasks through `LLMPipelineAPI.submit` (or MCP `ghdag_enqueue`).
+- **Intake** — `ghdag watch` polls Issues and `ghdag trigger` dispatches one Issue; both append tasks through `TaskQueue.enqueue` (or MCP `ghdag_enqueue`).
 - **Execution** — `ghdag run` watches `exec.jsonl`, starts tasks when dependencies succeed, and writes `done/<uuid>` markers while appending to `audit.jsonl`.
 
 Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-agent`, `codex`, `gemini`, or `bash` for shell steps). Coordination uses the queue file, runtime directories, and `fcntl` locks.
@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.141.0-blue)
+![version](https://img.shields.io/badge/version-v0.142.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.141.0** (`pyproject.toml` `version = "0.141.0"`) |
+| Current release | **v0.142.0** (`pyproject.toml` `version = "0.142.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.141.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.142.0"
 ```
 
 Install from a checkout with the development tools:
@@ -318,11 +318,12 @@ Import other supported types from their definition packages (for example `ghdag.
 |---|---|
 | `DagEngine` | `(config: DagConfig, hooks: DagHooks \| None = None)` |
 | `WorkflowDispatcher` | `(workflows, github_client, pipeline, queue_dir="queue", pause_file=None, workflows_dir=None)`; `github_client` is one `GitHubIssuePort` or a list of them |
-| `LLMPipelineAPI` | `(pipeline_state, order_builder, queue_dir="queue", *, order_builders=None, timezone=None)` — `timezone`: IANA name for order/result file name timestamps; `None` = machine local time zone |
-| `LLMPipelineAPI.set_order_builders` | `(mapping) -> None` — replace per-workflow builders; default `order_builder` unchanged |
+| `TaskQueue` | `(state_dir, exec_jsonl_path, *, queue_dir="queue", order_builder=None, order_builders=None, timezone=None)` — `timezone`: IANA name for order/result file name timestamps; `None` = machine local time zone; also `TaskQueue.from_repo_root(repo_root, **kwargs)` |
+| `TaskQueue.set_order_builders` | `(mapping) -> None` — replace per-workflow builders; default `order_builder` unchanged |
 | `build_order_builders` | `(workflows) -> dict[str, OrderBuilder]` — build per-workflow `TemplateOrderBuilder` map (`ghdag.pipeline.llm_pipeline`) |
-| `LLMPipelineAPI.submit` | `(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None) -> list[str]` |
-| `PipelineState` | `(state_dir, exec_jsonl_path)`; also `PipelineState.from_repo_root(repo_root)` |
+| `TaskQueue.enqueue` | `(steps, base_context, *, idempotency_key=None, audit_context, metadata=None, order_builder=None) -> list[str]` |
+| `TaskQueue.enqueue_records` | `(records, audit_context=None) -> None` — append pre-built exec records |
+| `TaskQueue.write_order` | `(ts, order_uuid, content, queue_dir, engine="claude", order_footer_fn=None) -> str` |
 | `QuotaGate` | `(state_path, audit_path=None, pause_ttl_seconds=3600, limits=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `observe` |
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
 | `issue_status` | `(issue_number, *, handler=None, workflow=None, exec_jsonl_path, state_dir, done_dir, running_uuids=None, audit_path=None, running_dir=None) -> IssueStatus` |
@@ -395,7 +396,7 @@ With a `quota_gate`, `call()` walks `route` from front to back: engines marked p
 | `ghdag.llm` | `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PERMISSIONS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `Permission`, `LLMResult`, `SessionRecord`, `TEXT_ONLY`, `DANGEROUS_FULL_ACCESS`, `call`, `get_engine_models`, `list_engines`, `validate_engine_model` |
 | `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
 | `ghdag.metrics` | `FailureClass`, `MetricsRecorder`, `TaskMetrics`, `TokenUsage` |
-| `ghdag.pipeline` | `AuditContext`, `PipelineConfig`, `PipelineState`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_command_adapter`, `resolve_models`, `LLMPipelineAPI`, `wait_for_result`, `write_task_exit_audit` |
+| `ghdag.pipeline` | `AuditContext`, `PipelineConfig`, `TaskQueue`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_command_adapter`, `resolve_models`, `wait_for_result`, `write_task_exit_audit` |
 | `ghdag.quota` | `QuotaGate`, `QuotaSnapshot`, `EngineQuotaState`, `EngineUsage`, `AdmissionDecision`, `Missing` |
 | `ghdag.status` | `StepStatus`, `issue_status` |
 | `ghdag.tool` | `ToolDef` |
@@ -498,7 +499,7 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 
 | File | Written by | Read by | Contents |
 |---|---|---|---|
-| `jobs/exec.jsonl` | `LLMPipelineAPI.submit`, `DagEngine.append_task` | `DagEngine` | One JSON task record per line (see [exec.jsonl task fields](#execjsonl-task-fields)) |
+| `jobs/exec.jsonl` | `TaskQueue.enqueue`, `DagEngine.append_task` | `DagEngine` | One JSON task record per line (see [exec.jsonl task fields](#execjsonl-task-fields)) |
 | `done/<uuid>` | `DagEngine` / `TaskLauncher` | dispatcher, `ghdag status`, `ghdag dag recover`, Web UI | Done marker (see [Done markers](#done-markers)) |
 | `running/<uuid>.json` | `TaskLauncher` at launch | `ghdag dag cancel`, `ghdag status --running`, Web UI, restart adoption | `pgid`, `started_at`; optional `interrupted_at`, `interrupted_reruns`. Removed when the task exits |
 | `cancel/<uuid>` | `ghdag dag cancel`, Web UI `POST /api/stop` | `DagEngine` | Empty marker requesting cancellation |
@@ -512,7 +513,7 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 
 ### MCP server (`ghdag mcp`)
 
-A third process can enqueue and inspect the same queue over newline-delimited JSON-RPC 2.0 on stdio (protocol version `2025-06-18`). It uses the intake tower only: every enqueue goes through `LLMPipelineAPI.submit`, not a parallel writer.
+A third process can enqueue and inspect the same queue over newline-delimited JSON-RPC 2.0 on stdio (protocol version `2025-06-18`). It uses the intake tower only: every enqueue goes through `TaskQueue.enqueue`, not a parallel writer.
 
 | MCP tool | Input | Output (`structuredContent`) |
 |---|---|---|
@@ -723,9 +724,10 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `mcp/tools.py` | `ghdag_enqueue` / `ghdag_status` / `ghdag_read` tool handlers |
 | `pipeline/__init__.py` | Intake pipeline public API |
 | `pipeline/config.py` | `PipelineConfig`, `resolve_models` (`ModelValidationError`) |
-| `pipeline/llm_pipeline.py` | `LLMPipelineAPI`, `SubmittedStep` (`DependencyError`) |
+| `pipeline/task_queue.py` | `TaskQueue` |
+| `pipeline/llm_pipeline.py` | `SubmittedStep`, `DependencyError`, `build_order_builders`, `validate_depends` |
 | `pipeline/order.py` | Template order builders (`TemplateVariableError`) |
-| `pipeline/state.py` | `PipelineState` |
+| `pipeline/state.py` | `status_rank`, `parse_frontmatter`, idempotency key helpers |
 | `pipeline/status.py` | Task state identifiers (`task_status`, `STATE_*`) and display labels (`state_label`) |
 | `pipeline/wait.py` | `wait_for_result` done-marker polling |
 | `tool/__init__.py` | Tool definition API |
@@ -786,7 +788,7 @@ Every variable ghdag reads (`os.environ` / `os.getenv` in `src/ghdag/`). Most re
 
 ### Task environment policy
 
-`TaskLauncher` builds each task environment from a copy of the host `os.environ`, then applies `GHDAG_TASK_ENV_ALLOW` or `GHDAG_TASK_ENV_DENY` (allow wins when both are set). Names in `annotations.env_passthrough` bypass deny patterns. Workflow steps declare passthrough names with `env_passthrough`; `LLMPipelineAPI.submit()` writes that list into each exec record's `annotations` so the launcher receives it without hand-editing `exec.jsonl`. Every `GHDAG_*` variable and the injected task keys (`GHDAG_TASK_UUID`, `GHDAG_RESULT_PATH`, optional `GHDAG_PREVIOUS_ATTEMPT`) are always kept. The number of denied variables is attached to the next `task_started` audit record.
+`TaskLauncher` builds each task environment from a copy of the host `os.environ`, then applies `GHDAG_TASK_ENV_ALLOW` or `GHDAG_TASK_ENV_DENY` (allow wins when both are set). Names in `annotations.env_passthrough` bypass deny patterns. Workflow steps declare passthrough names with `env_passthrough`; `TaskQueue.enqueue()` writes that list into each exec record's `annotations` so the launcher receives it without hand-editing `exec.jsonl`. Every `GHDAG_*` variable and the injected task keys (`GHDAG_TASK_UUID`, `GHDAG_RESULT_PATH`, optional `GHDAG_PREVIOUS_ATTEMPT`) are always kept. The number of denied variables is attached to the next `task_started` audit record.
 
 ### Secret redaction
 
@@ -1172,7 +1174,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.141.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.142.0"
 ```
 
 and read `CHANGELOG.md` before upgrading.

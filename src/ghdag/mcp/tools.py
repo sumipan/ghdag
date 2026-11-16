@@ -16,7 +16,7 @@ from ghdag.io import exec_jsonl
 from ghdag.io.audit import AuditContext
 from ghdag.io.done import done_failure_class, interpret_done, read_done_content
 from ghdag.pipeline.order import InlineOrderBuilder
-from ghdag.pipeline.state import PipelineState
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.status import issue_status, running_tasks
 
 MAX_READ_BYTES = 65536
@@ -233,7 +233,7 @@ def _validate_mcp_depends(steps: list[StepConfig]) -> None:
 _TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "ghdag_enqueue",
-        "description": "Enqueue one or more dependent steps through LLMPipelineAPI.submit",
+        "description": "Enqueue one or more dependent steps through TaskQueue.enqueue",
         "inputSchema": _enqueue_schema(),
     },
     {
@@ -251,10 +251,9 @@ _TOOL_SPECS: list[dict[str, Any]] = [
 
 @dataclass
 class McpRuntime:
-    """Paths and pipeline handles shared by MCP tools."""
+    """Paths and task queue shared by MCP tools."""
 
-    state: PipelineState
-    pipeline: Any
+    task_queue: TaskQueue
     queue_dir: str
     done_dir: Path
     running_dir: Path
@@ -434,7 +433,7 @@ class McpToolRegistry:
 
         _validate_mcp_depends(step_configs)
 
-        lines = self._runtime.pipeline.submit(
+        lines = self._runtime.task_queue.enqueue(
             step_configs,
             {},
             audit_context=AuditContext(
@@ -458,7 +457,7 @@ class McpToolRegistry:
         return {p.stem for p in directory.glob("*.json")}
 
     def _task_records(self) -> dict[str, dict[str, Any]]:
-        path = Path(self._runtime.state._exec_jsonl_path)
+        path = self._runtime.task_queue.exec_jsonl_path
         if not path.is_file():
             return {}
         out: dict[str, dict[str, Any]] = {}
@@ -507,8 +506,8 @@ class McpToolRegistry:
                 issue,
                 handler=handler,
                 workflow=workflow,
-                exec_jsonl_path=self._runtime.state._exec_jsonl_path,
-                state_dir=self._runtime.state._state_dir,
+                exec_jsonl_path=self._runtime.task_queue.exec_jsonl_path,
+                state_dir=self._runtime.task_queue.state_dir,
                 done_dir=self._runtime.done_dir,
                 running_uuids=running,
                 running_dir=self._runtime.running_dir,

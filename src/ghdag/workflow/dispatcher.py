@@ -27,9 +27,10 @@ from ghdag.io.audit import (
     write_rate_limit_audit,
 )
 from ghdag.io.audit_query import detect_correlation_bursts
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
+from ghdag.pipeline.llm_pipeline import build_order_builders
 from ghdag.pipeline.order import OrderBuilder
 from ghdag.pipeline.state import build_idempotency_key
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.loader import load_workflows
 from ghdag.workflow.render import build_live_trampoline
 
@@ -88,7 +89,7 @@ class WorkflowDispatcher:
         self,
         workflows: list[WorkflowConfig],
         github_client: GitHubIssuePort | list[GitHubIssuePort],
-        pipeline: LLMPipelineAPI,
+        task_queue: TaskQueue,
         queue_dir: str = "queue",
         pause_file: str | Path | None = None,
         workflows_dir: Path | None = None,
@@ -100,7 +101,7 @@ class WorkflowDispatcher:
             self._githubs: list[GitHubIssuePort] = list(github_client)
         else:
             self._githubs = [github_client]
-        self._pipeline = pipeline
+        self._task_queue = task_queue
         self._queue_dir = queue_dir
         self._burst_warned: dict[str, float] = {}
         self._pause_file = Path(pause_file) if pause_file is not None else None
@@ -264,7 +265,7 @@ class WorkflowDispatcher:
         handler_name = trigger.handler if trigger else ""
         generation = 0
         if redispatch:
-            generation = self._pipeline.increment_generation(
+            generation = self._task_queue.increment_generation(
                 workflow.name, handler_name, issue_number,
             )
             reason = redispatch_reason if redispatch_reason else "(no reason)"
@@ -276,14 +277,14 @@ class WorkflowDispatcher:
                 reason=reason,
             )
         else:
-            generation = self._pipeline.get_generation(
+            generation = self._task_queue.get_generation(
                 workflow.name, handler_name, issue_number,
             )
 
         idempotency_key = build_idempotency_key(
             workflow.name, handler_name, issue_number, generation,
         )
-        if not self._pipeline.check_idempotency(idempotency_key):
+        if not self._task_queue.check_idempotency(idempotency_key):
             logger.warning(
                 "dispatch skipped (already dispatched) — issue=#%d, handler=%s, key=%s\n"
                 "  → To retry failed steps: ghdag dag recover --issue %d --handler %s --dry-run\n"
@@ -342,7 +343,7 @@ class WorkflowDispatcher:
         """Submit steps, wrapping the order builder when any step uses render: live."""
         live_templates = {s.template for s in steps if s.render == "live"}
         if not live_templates:
-            return self._pipeline.submit(
+            return self._task_queue.enqueue(
                 steps=steps,
                 base_context=base_context,
                 idempotency_key=idempotency_key,
@@ -356,13 +357,13 @@ class WorkflowDispatcher:
                 code="WORKFLOW_TEMPLATE_DIR_MISSING",
             )
         template_dir = Path(workflow.template_dir)
-        inner = self._pipeline._resolve_order_builder(workflow.name)
+        inner = self._task_queue.order_builder_for(workflow.name)
         wrapped = _LiveRenderOrderBuilder(
             inner,
             template_dir=template_dir,
             live_templates=live_templates,
         )
-        return self._pipeline.submit(
+        return self._task_queue.enqueue(
             steps=steps,
             base_context=base_context,
             idempotency_key=idempotency_key,
@@ -480,7 +481,7 @@ class WorkflowDispatcher:
         try:
             new_workflows = load_workflows(self._workflows_dir)
             self._workflows = new_workflows
-            self._pipeline.set_order_builders(build_order_builders(new_workflows))
+            self._task_queue.set_order_builders(build_order_builders(new_workflows))
             logger.info("workflows reloaded from %s", self._workflows_dir)
         except Exception as exc:
             logger.warning(
@@ -847,7 +848,7 @@ class WorkflowDispatcher:
         issue_number = issue["number"]
 
         # Delete the idempotency key
-        self._pipeline.remove_idempotency_matching(workflow.name, issue_number)
+        self._task_queue.remove_idempotency_matching(workflow.name, issue_number)
 
         # Label prefix: label_namespace takes precedence; otherwise extracted from trigger.label
         if workflow.label_namespace:

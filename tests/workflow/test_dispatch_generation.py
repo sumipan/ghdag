@@ -7,9 +7,9 @@ from unittest.mock import MagicMock
 
 from ghdag.core.models.workflow import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
 from ghdag.github_client import GitHubIssuePort
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import TemplateOrderBuilder
-from ghdag.pipeline.state import PipelineState, build_idempotency_key
+from ghdag.pipeline.state import build_idempotency_key
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 
 
@@ -26,16 +26,16 @@ def _make_workflow(name: str = "issuesmith") -> WorkflowConfig:
     )
 
 
-def _make_dispatcher(tmp_path: Path) -> tuple[WorkflowDispatcher, PipelineState, MagicMock]:
+def _make_dispatcher(tmp_path: Path) -> tuple[WorkflowDispatcher, TaskQueue, MagicMock]:
     exec_jsonl = tmp_path / "jobs" / "exec.jsonl"
     exec_jsonl.parent.mkdir(parents=True)
     exec_jsonl.write_text("", encoding="utf-8")
     templates = tmp_path / "templates"
     templates.mkdir()
     (templates / "p1.md").write_text("order ${issue_number}", encoding="utf-8")
-    state = PipelineState(state_dir=tmp_path / ".pipeline-state", exec_jsonl_path=exec_jsonl)
-    pipeline = LLMPipelineAPI(
-        pipeline_state=state,
+    task_queue = TaskQueue(
+        state_dir=tmp_path / ".pipeline-state",
+        exec_jsonl_path=exec_jsonl,
         order_builder=TemplateOrderBuilder(str(templates)),
         queue_dir=str(exec_jsonl.parent),
     )
@@ -44,10 +44,10 @@ def _make_dispatcher(tmp_path: Path) -> tuple[WorkflowDispatcher, PipelineState,
     dispatcher = WorkflowDispatcher(
         workflows=[_make_workflow()],
         github_client=github,
-        pipeline=pipeline,
+        task_queue=task_queue,
         queue_dir=str(exec_jsonl.parent),
     )
-    return dispatcher, state, github
+    return dispatcher, task_queue, github
 
 
 class TestBuildIdempotencyKey:
@@ -63,7 +63,7 @@ class TestBuildIdempotencyKey:
 
 class TestDispatchGeneration:
     def test_second_dispatch_is_skipped(self, tmp_path):
-        dispatcher, state, github = _make_dispatcher(tmp_path)
+        dispatcher, task_queue, github = _make_dispatcher(tmp_path)
         workflow = _make_workflow()
         handler = workflow.handlers["impl"]
         trigger = workflow.triggers[0]

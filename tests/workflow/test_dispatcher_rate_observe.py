@@ -16,7 +16,7 @@ from ghdag.core.models.workflow import (
     WorkflowConfig,
 )
 from ghdag.github_client import GitHubIssuePort
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 
 
@@ -38,11 +38,11 @@ def _make_dispatcher(tmp_path: Path, polling_interval: int = 30) -> tuple[Workfl
     github.list_all_issues.return_value = []
     github.get_last_rate_limit.return_value = None
     github.get_rate_limit.return_value = None
-    pipeline = MagicMock(spec=LLMPipelineAPI)
+    task_queue = MagicMock(spec=TaskQueue)
     dispatcher = WorkflowDispatcher(
         workflows=[_make_workflow(polling_interval)],
         github_client=github,
-        pipeline=pipeline,
+        task_queue=task_queue,
         queue_dir=str(tmp_path),
     )
     return dispatcher, github

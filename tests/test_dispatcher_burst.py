@@ -18,7 +18,7 @@ from ghdag.core.models.workflow import (
     WorkflowConfig,
 )
 from ghdag.github_client import GitHubIssuePort
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import (
     _BURST_THRESHOLD,
     WorkflowDispatcher,
@@ -53,11 +53,11 @@ def _make_dispatcher(tmp_path: Path) -> tuple[WorkflowDispatcher, MagicMock]:
     github_client.list_all_issues.return_value = []
     github_client.get_last_rate_limit.return_value = None
     github_client.get_rate_limit.return_value = None
-    pipeline = MagicMock(spec=LLMPipelineAPI)
+    task_queue = MagicMock(spec=TaskQueue)
     dispatcher = WorkflowDispatcher(
         workflows=[_make_workflow()],
         github_client=github_client,
-        pipeline=pipeline,
+        task_queue=task_queue,
         queue_dir=str(tmp_path),
     )
     return dispatcher, github_client

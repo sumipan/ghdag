@@ -30,9 +30,8 @@ from ghdag.core.vocabulary import (
 from ghdag.io.done import mark_done
 from ghdag.mcp.server import McpServer
 from ghdag.mcp.tools import MAX_READ_BYTES, McpRuntime, McpToolRegistry
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import InlineOrderBuilder
-from ghdag.pipeline.state import PipelineState
+from ghdag.pipeline.task_queue import TaskQueue
 
 
 def _runtime(
@@ -48,15 +47,14 @@ def _runtime(
     state_dir.mkdir()
     (jobs / "done").mkdir()
     (jobs / "running").mkdir()
-    ps = PipelineState(state_dir=state_dir, exec_jsonl_path=exec_jsonl)
-    pipeline = LLMPipelineAPI(
-        pipeline_state=ps,
+    task_queue = TaskQueue(
+        state_dir=state_dir,
+        exec_jsonl_path=exec_jsonl,
         order_builder=InlineOrderBuilder(),
         queue_dir=str(jobs),
     )
     return McpRuntime(
-        state=ps,
-        pipeline=pipeline,
+        task_queue=task_queue,
         queue_dir=str(jobs),
         done_dir=jobs / "done",
         running_dir=jobs / "running",
@@ -75,7 +73,7 @@ def _seed_uuid_record(
     record: dict = {"uuid": uid, "command": "echo", "depends": []}
     if result_path is not None:
         record["result_path"] = result_path
-    exec_path = Path(runtime.state._exec_jsonl_path)
+    exec_path = runtime.task_queue.exec_jsonl_path
     exec_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
     if done_marker is not None:
         mark_done(runtime.done_dir, uid, done_marker)
@@ -116,7 +114,7 @@ class TestEnqueue:
             },
         )
         assert result["isError"] is False
-        line = json.loads(runtime.state._exec_jsonl_path.read_text().strip())
+        line = json.loads(runtime.task_queue.exec_jsonl_path.read_text().strip())
         cmd = line["command"]
         assert "--dangerously-skip-permissions" not in " ".join(cmd)
         assert line["annotations"]["safe_default_preset"] == "text_only"
@@ -143,7 +141,7 @@ class TestEnqueue:
         uuids = result["structuredContent"]["uuids"]
         lines = [
             json.loads(ln)
-            for ln in runtime.state._exec_jsonl_path.read_text().splitlines()
+            for ln in runtime.task_queue.exec_jsonl_path.read_text().splitlines()
             if ln.strip()
         ]
         b_line = next(row for row in lines if row["uuid"] == uuids["b"])
@@ -168,7 +166,7 @@ class TestEnqueue:
         )
         assert result["isError"] is True
         assert result["structuredContent"]["code"] == "STEP_DEPENDENCY_UNKNOWN"
-        assert runtime.state._exec_jsonl_path.read_text() == ""
+        assert runtime.task_queue.exec_jsonl_path.read_text() == ""
 
     def test_unknown_engine(self, tmp_path):
         runtime = _runtime(tmp_path)
@@ -199,7 +197,7 @@ class TestEnqueue:
         )
         assert result["isError"] is True
         assert result["structuredContent"]["code"] == "MCP_ARGUMENT_INVALID"
-        assert runtime.state._exec_jsonl_path.read_text() == ""
+        assert runtime.task_queue.exec_jsonl_path.read_text() == ""
 
     def test_rejects_duplicate_step_ids(self, tmp_path):
         runtime = _runtime(tmp_path)
@@ -215,7 +213,7 @@ class TestEnqueue:
         )
         assert result["isError"] is True
         assert result["structuredContent"]["code"] == "MCP_ARGUMENT_INVALID"
-        assert runtime.state._exec_jsonl_path.read_text() == ""
+        assert runtime.task_queue.exec_jsonl_path.read_text() == ""
 
 
 class TestStatus:

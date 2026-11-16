@@ -19,14 +19,12 @@ def test_top_level_exports_only_ghdag_error():
 def test_definition_packages_importable():
     from ghdag.dag import DagEngine
     from ghdag.io.queue import QueueTask, QueueTaskStore
-    from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
-    from ghdag.pipeline.state import PipelineState
+    from ghdag.pipeline import TaskQueue
     from ghdag.quota import QuotaGate
     from ghdag.status import IssueStatus, RunningTask, issue_status, running_tasks
     from ghdag.workflow import WorkflowDispatcher
 
-    assert LLMPipelineAPI is not None
-    assert PipelineState is not None
+    assert TaskQueue is not None
     assert DagEngine is not None
     assert WorkflowDispatcher is not None
     assert QuotaGate is not None

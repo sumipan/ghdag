@@ -69,32 +69,32 @@ class TestWriteAuditLog:
         assert "[audit] warning:" in captured.err
 
 class TestAppendExecRecordsAudit:
-    """AC6: UUIDs extracted from dicts via append_exec_records are recorded in audit."""
+    """AC6: UUIDs extracted from dicts via enqueue_records are recorded in audit."""
 
-    def test_append_exec_records_skips_dicts_without_uuid(self, tmp_path):
+    def test_enqueue_records_skips_dicts_without_uuid(self, tmp_path):
         """Dicts without a uuid key are skipped."""
-        from ghdag.pipeline.state import PipelineState
+        from ghdag.pipeline.task_queue import TaskQueue
 
         exec_path = tmp_path / "exec.jsonl"
-        state = PipelineState(state_dir=tmp_path / ".state", exec_jsonl_path=exec_path)
+        state = TaskQueue(state_dir=tmp_path / ".state", exec_jsonl_path=exec_path)
         records = [{"command": "cmd", "idempotency_key": "k"}]
 
-        state.append_exec_records(records, audit_context=AuditContext())
+        state.enqueue_records(records, audit_context=AuditContext())
 
         audit_path = tmp_path / "audit.jsonl"
         r = json.loads(audit_path.read_text().strip())
         assert r["task_uuids"] == []
 
     def test_ac_a5_request_id_in_exec_annotations(self, tmp_path):
-        """AC-A5: append_exec_records injects request_id into annotations._request_id."""
-        from ghdag.pipeline.state import PipelineState
+        """AC-A5: enqueue_records injects request_id into annotations._request_id."""
+        from ghdag.pipeline.task_queue import TaskQueue
 
         exec_path = tmp_path / "exec.jsonl"
-        state = PipelineState(state_dir=tmp_path / ".state", exec_jsonl_path=exec_path)
+        state = TaskQueue(state_dir=tmp_path / ".state", exec_jsonl_path=exec_path)
         records = [{"uuid": UUID1, "command": "echo hi"}]
         ctx = AuditContext(source="mltgnt-scheduler", request_id="req-abc")
 
-        state.append_exec_records(records, audit_context=ctx)
+        state.enqueue_records(records, audit_context=ctx)
 
         line = exec_path.read_text().strip()
         rec = json.loads(line)

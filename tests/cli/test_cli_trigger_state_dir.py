@@ -56,14 +56,14 @@ def _watch_args(exec_jsonl: str, workflows_dir: str, state_dir=None) -> MagicMoc
 
 
 class _CaptureStateDir(Exception):
-    """Raised by the PipelineState mock to capture state_dir and stop execution."""
+    """Raised by the TaskQueue mock to capture state_dir and stop execution."""
     def __init__(self, state_dir):
         self.state_dir = str(state_dir)
 
 
 def _make_pipeline_state_mock(captured: dict):
-    """Returns a PipelineState side_effect that records state_dir and aborts."""
-    def _mock(state_dir, exec_jsonl_path):
+    """Returns a TaskQueue side_effect that records state_dir and aborts."""
+    def _mock(state_dir, exec_jsonl_path, **kwargs):
         captured["state_dir"] = str(state_dir)
         raise _CaptureStateDir(state_dir)
     return _mock
@@ -90,7 +90,7 @@ class TestTriggerStateDirDerivation:
         mock_github = MagicMock()
         mock_github.get_issue.return_value = {"number": 1, "labels": [], "title": "t", "body": ""}
 
-        with patch("ghdag.pipeline.state.PipelineState", side_effect=_make_pipeline_state_mock(captured)):
+        with patch("ghdag.pipeline.task_queue.TaskQueue", side_effect=_make_pipeline_state_mock(captured)):
             with patch("ghdag.github_client.create_github_client", return_value=mock_github):
                 try:
                     args = _trigger_args(str(exec_jsonl), str(workflows_dir), state_dir=None)
@@ -120,7 +120,7 @@ class TestTriggerStateDirDerivation:
         mock_github = MagicMock()
         mock_github.get_issue.return_value = {"number": 1, "labels": [], "title": "t", "body": ""}
 
-        with patch("ghdag.pipeline.state.PipelineState", side_effect=_make_pipeline_state_mock(captured)):
+        with patch("ghdag.pipeline.task_queue.TaskQueue", side_effect=_make_pipeline_state_mock(captured)):
             with patch("ghdag.github_client.create_github_client", return_value=mock_github):
                 try:
                     args = _trigger_args(str(exec_jsonl), str(workflows_dir), state_dir=custom_state_dir)
@@ -147,7 +147,7 @@ class TestTriggerStateDirDerivation:
         mock_github = MagicMock()
         mock_github.get_issue.return_value = {"number": 1, "labels": [], "title": "t", "body": ""}
 
-        with patch("ghdag.pipeline.state.PipelineState", side_effect=_make_pipeline_state_mock(captured)):
+        with patch("ghdag.pipeline.task_queue.TaskQueue", side_effect=_make_pipeline_state_mock(captured)):
             with patch("ghdag.github_client.create_github_client", return_value=mock_github):
                 try:
                     args = _trigger_args("jobs/exec.jsonl", str(workflows_dir), state_dir=None)
@@ -180,7 +180,7 @@ class TestWatchStateDirDerivation:
         captured = {}
         mock_github_clients = MagicMock()
 
-        with patch("ghdag.pipeline.state.PipelineState", side_effect=_make_pipeline_state_mock(captured)):
+        with patch("ghdag.pipeline.task_queue.TaskQueue", side_effect=_make_pipeline_state_mock(captured)):
             with patch("ghdag.github_client.create_github_clients", return_value=mock_github_clients):
                 try:
                     args = _watch_args(str(exec_jsonl), str(workflows_dir), state_dir=custom_state_dir)

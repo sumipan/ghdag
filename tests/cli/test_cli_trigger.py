@@ -72,7 +72,7 @@ handlers:
                 "ghdag.github_client.create_github_clients",
                 return_value=[mock_github_client],
             ), \
-             patch("ghdag.pipeline.state.PipelineState"), \
+             patch("ghdag.pipeline.task_queue.TaskQueue"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
             main([
@@ -179,7 +179,7 @@ handlers:
                  "ghdag.github_client.create_github_clients",
                  mock_create_github_clients,
              ), \
-             patch("ghdag.pipeline.state.PipelineState"), \
+             patch("ghdag.pipeline.task_queue.TaskQueue"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             from ghdag.cli import main
             with pytest.raises(SystemExit) as exc:

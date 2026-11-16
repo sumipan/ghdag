@@ -17,8 +17,8 @@ from ghdag.core.models.workflow import (
     WorkflowConfig,
 )
 from ghdag.github_client import GitHubIssuePort
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import TemplateOrderBuilder
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.loader import load_workflows
 from ghdag.workflow.render import main as render_main
@@ -94,11 +94,9 @@ def test_live_submit_does_not_mutate_pipeline_order_builders(tmp_path: Path) -> 
     configs = load_workflows(tmp_path)
     workflow = configs[0]
 
-    pipeline_state = MagicMock()
-    pipeline_state.check_idempotency.return_value = True
-    pipeline_state.write_order_file.return_value = "ts-shell-order-u.md"
-    pipeline = LLMPipelineAPI(
-        pipeline_state=pipeline_state,
+    task_queue = TaskQueue(
+        state_dir=tmp_path / ".pipeline-state",
+        exec_jsonl_path=queue / "exec.jsonl",
         order_builder=TemplateOrderBuilder(tmp_path / "templates"),
         queue_dir=str(queue),
     )
@@ -114,13 +112,13 @@ def test_live_submit_does_not_mutate_pipeline_order_builders(tmp_path: Path) -> 
             mutations.append(("pop", key))
             return super().pop(key, *args)
 
-    pipeline._order_builders = _TrackingBuilders(pipeline._order_builders)
+    task_queue._order_builders = _TrackingBuilders(task_queue._order_builders)
 
     github = MagicMock(spec=GitHubIssuePort)
     dispatcher = WorkflowDispatcher(
         workflows=[workflow],
         github_client=github,
-        pipeline=pipeline,
+        task_queue=task_queue,
         queue_dir=str(queue),
     )
     issue = {
@@ -184,18 +182,14 @@ def test_live_render_raises_when_template_dir_none_on_config(tmp_path: Path) -> 
     )
     queue = tmp_path / "queue"
     queue.mkdir()
-    pipeline_state = MagicMock()
-    pipeline_state.check_idempotency.return_value = True
-    pipeline = LLMPipelineAPI(
-        pipeline_state=pipeline_state,
-        order_builder=MagicMock(),
-        queue_dir=str(queue),
-    )
+    task_queue = MagicMock(spec=TaskQueue)
+    task_queue.check_idempotency.return_value = True
+    task_queue.order_builder_for.return_value = MagicMock()
     github = MagicMock(spec=GitHubIssuePort)
     dispatcher = WorkflowDispatcher(
         workflows=[workflow],
         github_client=github,
-        pipeline=pipeline,
+        task_queue=task_queue,
         queue_dir=str(queue),
     )
     issue = {

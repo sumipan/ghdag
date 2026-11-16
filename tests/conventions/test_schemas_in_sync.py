@@ -24,9 +24,8 @@ from ghdag.core.models.workflow import (
 )
 from ghdag.dag.fanout import FanOutItem
 from ghdag.io.audit import AuditContext
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import InlineOrderBuilder
-from ghdag.pipeline.state import PipelineState
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.schemas import SCHEMA_NAMES, load_schema
 from ghdag.status import StepStatus
 
@@ -79,22 +78,21 @@ def test_workflow_config_key_sets_match_loader() -> None:
 def test_permission_registry_matches_workflow_and_mcp_schema(tmp_path: Path) -> None:
     """Issue sumipan/nexus#6501 — workflow step and MCP enum track PERMISSIONS keys."""
     from ghdag.mcp.tools import McpRuntime, McpToolRegistry
-    from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
     from ghdag.pipeline.order import InlineOrderBuilder
-    from ghdag.pipeline.state import PipelineState
+    from ghdag.pipeline.task_queue import TaskQueue
 
     jobs = tmp_path / "jobs"
     jobs.mkdir()
     exec_jsonl = jobs / "exec.jsonl"
     exec_jsonl.touch()
-    state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
+    task_queue = TaskQueue(
+        state_dir=tmp_path / "state",
+        exec_jsonl_path=exec_jsonl,
+        order_builder=InlineOrderBuilder(),
+        queue_dir=str(jobs),
+    )
     runtime = McpRuntime(
-        state=state,
-        pipeline=LLMPipelineAPI(
-            pipeline_state=state,
-            order_builder=InlineOrderBuilder(),
-            queue_dir=str(jobs),
-        ),
+        task_queue=task_queue,
         queue_dir=str(jobs),
         done_dir=jobs / "done",
         running_dir=jobs / "running",
@@ -149,9 +147,9 @@ def test_exec_record_keys_subset_of_schema(tmp_path: Path) -> None:
     exec_jsonl = tmp_path / "exec.jsonl"
     queue_dir = tmp_path / "queue"
     queue_dir.mkdir()
-    state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
-    api = LLMPipelineAPI(
-        pipeline_state=state,
+    api = TaskQueue(
+        state_dir=tmp_path / "state",
+        exec_jsonl_path=exec_jsonl,
         order_builder=InlineOrderBuilder(),
         queue_dir=str(queue_dir),
     )
@@ -165,7 +163,7 @@ def test_exec_record_keys_subset_of_schema(tmp_path: Path) -> None:
             depends=["prep"],
         ),
     ]
-    lines = api.submit(steps, {}, audit_context=AuditContext(source="test"))
+    lines = api.enqueue(steps, {}, audit_context=AuditContext(source="test"))
     records = [json.loads(line) for line in lines]
     assert len(records) == 2
     for record in records:

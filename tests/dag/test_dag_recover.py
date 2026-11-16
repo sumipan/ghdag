@@ -15,7 +15,7 @@ from ghdag.dag.recover import (
     plan_recover,
 )
 from ghdag.io.done import mark_done
-from ghdag.pipeline.state import PipelineState
+from ghdag.pipeline.task_queue import TaskQueue
 
 FIXED_NOW = datetime(2026, 9, 14, 20, 10, 0, tzinfo=timezone.utc)
 
@@ -25,7 +25,7 @@ UUID_C = "cccccccc-cccc-cccc-cccc-cccccccccccc"
 KEY = "issuesmith:impl:2876"
 
 
-def _make_state(tmp_path: Path) -> tuple[PipelineState, Path, Path, Path, Path]:
+def _make_state(tmp_path: Path) -> tuple[TaskQueue, Path, Path, Path, Path]:
     jobs = tmp_path / "jobs"
     jobs.mkdir()
     done = jobs / "done"
@@ -33,7 +33,7 @@ def _make_state(tmp_path: Path) -> tuple[PipelineState, Path, Path, Path, Path]:
     exec_jsonl = jobs / "exec.jsonl"
     exec_jsonl.write_text("", encoding="utf-8")
     state_dir = tmp_path / ".pipeline-state"
-    state = PipelineState(state_dir=state_dir, exec_jsonl_path=exec_jsonl)
+    state = TaskQueue(state_dir=state_dir, exec_jsonl_path=exec_jsonl)
     return state, state_dir, exec_jsonl, jobs, done
 
 
@@ -87,7 +87,7 @@ class TestPlanRecover:
         state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
         for uid in (UUID_A, UUID_B, UUID_C):
             _write_order(jobs, uid)
-        state.append_exec_records([
+        state.enqueue_records([
             _record(UUID_A, "p1"),
             _record(UUID_B, "cp2-conditional", depends=[UUID_A]),
             _record(UUID_C, "m1-merge", depends=[UUID_B]),
@@ -109,7 +109,7 @@ class TestExecuteRecover:
     def test_dry_run_does_not_modify_done_markers(self, tmp_path):
         state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
         _write_order(jobs, UUID_A)
-        state.append_exec_records([_record(UUID_A, "p1")])
+        state.enqueue_records([_record(UUID_A, "p1")])
         mark_done(done, UUID_A, "1")
 
         plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
@@ -120,7 +120,7 @@ class TestExecuteRecover:
 
     def test_missing_order_file_raises_with_redispatch_guidance(self, tmp_path):
         state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
-        state.append_exec_records([_record(UUID_A, "p1")])
+        state.enqueue_records([_record(UUID_A, "p1")])
 
         plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
         with pytest.raises(RecoverError) as exc_info:
@@ -138,7 +138,7 @@ class TestExecuteRecover:
         """Running uuids are excluded from rerun; done markers are not removed."""
         state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
         _write_order(jobs, UUID_A)
-        state.append_exec_records([_record(UUID_A, "p1")])
+        state.enqueue_records([_record(UUID_A, "p1")])
         mark_done(done, UUID_A, "1")
 
         plan = plan_recover(
@@ -184,7 +184,7 @@ class TestExecuteRecoverResultArchiving:
         _write_order(jobs, UUID_A)
         result = self._result_path(jobs, UUID_A)
         result.write_text("old", encoding="utf-8")
-        state.append_exec_records([_record(UUID_A, "p1")])
+        state.enqueue_records([_record(UUID_A, "p1")])
         mark_done(done, UUID_A, "1")
 
         plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
@@ -202,7 +202,7 @@ class TestExecuteRecoverResultArchiving:
         _write_order(jobs, UUID_A)
         result = self._result_path(jobs, UUID_A)
         result.write_text("old", encoding="utf-8")
-        state.append_exec_records([_record(UUID_A, "p1")])
+        state.enqueue_records([_record(UUID_A, "p1")])
         mark_done(done, UUID_A, "1")
 
         plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))
@@ -221,7 +221,7 @@ class TestExecuteRecoverResultArchiving:
 
         state, state_dir, exec_jsonl, jobs, done = _make_state(tmp_path)
         _write_order(jobs, UUID_A)
-        state.append_exec_records([_record(UUID_A, "p1")])
+        state.enqueue_records([_record(UUID_A, "p1")])
         mark_done(done, UUID_A, DONE_ORPHANED_ON_RESTART)
 
         plan = plan_recover(**_plan_kwargs(state_dir, exec_jsonl, jobs, done))

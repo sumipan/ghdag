@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import types
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -14,7 +15,7 @@ from ghdag.core.models.workflow import (
     TriggerConfig,
     WorkflowConfig,
 )
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 
 # ---------------------------------------------------------------------------
@@ -131,41 +132,6 @@ def _make_issue(number: int, labels: list[str] | None = None) -> dict:
     }
 
 
-class _RecordingPipelineState:
-    def __init__(self) -> None:
-        self.idempotency_ok = True
-        self.appended: list[list] = []
-        self.remove_idempotency_calls: list[tuple[str, int]] = []
-        self.remove_idempotency_return = 3
-
-    def check_idempotency(self, *args, **kwargs) -> bool:
-        return self.idempotency_ok
-
-    def write_order_file(self, *args, **kwargs) -> str:
-        return "ts-claude-order-uuid.md"
-
-    def append_exec_records(self, records, audit_context=None) -> None:
-        self.appended.append(records)
-
-    def remove_idempotency_matching(self, workflow: str, issue: int) -> int:
-        self.remove_idempotency_calls.append((workflow, issue))
-        return self.remove_idempotency_return
-
-    def get_generation(self, workflow_name: str, handler_name: str, issue_number: int) -> int:
-        return 0
-
-    def increment_generation(self, workflow_name: str, handler_name: str, issue_number: int) -> int:
-        return 1
-
-    def find_records_by_idempotency_key(self, key: str) -> list:
-        return []
-
-    def remove_idempotency_for_handler(
-        self, workflow_name: str, handler_name: str, issue_number: int
-    ) -> int:
-        return 0
-
-
 class _RecordingOrderBuilder:
     def __init__(self) -> None:
         self.contexts: list[dict] = []
@@ -175,6 +141,60 @@ class _RecordingOrderBuilder:
         self.build_calls += 1
         self.contexts.append(ctx)
         return "order content"
+
+
+class _RecordingTaskQueue:
+    """Test double for TaskQueue that records enqueue_records calls."""
+
+    def __init__(self, order_builder: _RecordingOrderBuilder, queue_dir: str = "queue") -> None:
+        self.idempotency_ok = True
+        self.appended: list[list] = []
+        self.remove_idempotency_calls: list[tuple[str, int]] = []
+        self.remove_idempotency_return = 3
+        qdir = Path(queue_dir)
+        qdir.mkdir(parents=True, exist_ok=True)
+        self._inner = TaskQueue(
+            state_dir=qdir / ".pipeline-state",
+            exec_jsonl_path=qdir / "exec.jsonl",
+            order_builder=order_builder,
+            queue_dir=queue_dir,
+        )
+
+    def check_idempotency(self, *args, **kwargs) -> bool:
+        return self.idempotency_ok
+
+    def order_builder_for(self, workflow_name: str | None):
+        return self._inner.order_builder_for(workflow_name)
+
+    def set_order_builders(self, mapping) -> None:
+        self._inner.set_order_builders(mapping)
+
+    def enqueue(self, *args, **kwargs):
+        return self._inner.enqueue(*args, **kwargs)
+
+    def enqueue_records(self, records, audit_context=None) -> None:
+        self.appended.append(records)
+        self._inner.enqueue_records(records, audit_context=audit_context)
+
+    def remove_idempotency_matching(self, workflow: str, issue: int) -> int:
+        self.remove_idempotency_calls.append((workflow, issue))
+        return self.remove_idempotency_return
+
+    def get_generation(self, workflow_name: str, handler_name: str, issue_number: int) -> int:
+        return self._inner.get_generation(workflow_name, handler_name, issue_number)
+
+    def increment_generation(self, workflow_name: str, handler_name: str, issue_number: int) -> int:
+        return self._inner.increment_generation(workflow_name, handler_name, issue_number)
+
+    def find_records_by_idempotency_key(self, key: str) -> list:
+        return self._inner.find_records_by_idempotency_key(key)
+
+    def remove_idempotency_for_handler(
+        self, workflow_name: str, handler_name: str, issue_number: int
+    ) -> int:
+        return self._inner.remove_idempotency_for_handler(
+            workflow_name, handler_name, issue_number,
+        )
 
 
 class _RecordingGitHubClient:
@@ -202,23 +222,23 @@ class _RecordingGitHubClient:
         self.updated_labels.append((args, kwargs))
 
 
-def _make_dispatcher(workflow: WorkflowConfig, queue_dir: str = "queue") -> tuple[WorkflowDispatcher, _RecordingGitHubClient, _RecordingPipelineState, _RecordingOrderBuilder]:
+def _make_dispatcher(
+    workflow: WorkflowConfig,
+    queue_dir: str | None = None,
+) -> tuple[WorkflowDispatcher, _RecordingGitHubClient, _RecordingTaskQueue, _RecordingOrderBuilder]:
+    if queue_dir is None:
+        queue_dir = tempfile.mkdtemp(prefix="ghdag-test-queue-")
     github_client = _RecordingGitHubClient()
-    pipeline_state = _RecordingPipelineState()
     order_builder = _RecordingOrderBuilder()
-    pipeline = LLMPipelineAPI(
-        pipeline_state=pipeline_state,
-        order_builder=order_builder,
-        queue_dir=queue_dir,
-    )
+    task_queue = _RecordingTaskQueue(order_builder, queue_dir=queue_dir)
     dispatcher = WorkflowDispatcher(
         workflows=[workflow],
         github_client=github_client,
-        pipeline=pipeline,
+        task_queue=task_queue,
         queue_dir=queue_dir,
     )
     dispatcher._write_design_md = MagicMock()
-    return dispatcher, github_client, pipeline_state, order_builder
+    return dispatcher, github_client, task_queue, order_builder
 
 
 _helpers = types.ModuleType("ghdag_workflow_conftest_helpers")
@@ -229,7 +249,7 @@ for _name in (
     "_setup_extended_yaml",
     "_make_extended_workflow",
     "_make_issue",
-    "_RecordingPipelineState",
+    "_RecordingTaskQueue",
     "_RecordingOrderBuilder",
     "_RecordingGitHubClient",
     "_make_dispatcher",
