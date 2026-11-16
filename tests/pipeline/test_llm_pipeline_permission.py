@@ -48,8 +48,8 @@ class TestStepConfigPermission:
         exec_lines = api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         record = _json.loads(exec_lines[0])
-        assert record["command"].startswith("bash -o pipefail ")
-        assert record["command"].endswith(".md")
+        order_path = record["result_path"].replace("-shell-result-", "-shell-order-")
+        assert record["command"] == f"bash -o pipefail {order_path}"
 
 
 # ---------------------------------------------------------------------------
