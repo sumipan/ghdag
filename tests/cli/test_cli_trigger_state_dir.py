@@ -56,13 +56,13 @@ def _watch_args(exec_jsonl: str, workflows_dir: str, state_dir=None) -> MagicMoc
 
 
 class _CaptureStateDir(Exception):
-    """Raised by the PipelineState mock to capture state_dir and stop execution."""
+    """Raised by the TaskQueue mock to capture state_dir and stop execution."""
     def __init__(self, state_dir):
         self.state_dir = str(state_dir)
 
 
 def _make_pipeline_state_mock(captured: dict):
-    """Returns a PipelineState side_effect that records state_dir and aborts."""
+    """Returns a TaskQueue side_effect that records state_dir and aborts."""
     def _mock(state_dir, exec_jsonl_path, **kwargs):
         captured["state_dir"] = str(state_dir)
         raise _CaptureStateDir(state_dir)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json as _json
 import os
 import tempfile
 from pathlib import Path

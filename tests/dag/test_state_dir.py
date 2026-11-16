@@ -43,8 +43,6 @@ def unset(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_pipeline_state_defaults_unchanged(unset: None, tmp_path: Path) -> None:
-    from ghdag.pipeline.task_queue import TaskQueue
-
     ps = TaskQueue.from_repo_root(tmp_path)
     assert ps.state_dir == tmp_path / ".pipeline-state"
     assert ps._quota_gate._state_path == tmp_path / "jobs" / "quota-gate.json"
