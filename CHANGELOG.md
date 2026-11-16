@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.142.1 - 2026-11-16
+
 ### Added
 
 - `ghdag run --task-timeout SEC` sets `DagConfig.task_timeout`; `--quota-state-path PATH` sets `DagConfig.quota_state_path`. Repeat `--hooks MODULE` to compose multiple hook modules via an internal chain (single `--hooks` behaviour unchanged) (sumipan/nexus#7095).
