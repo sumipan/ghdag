@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import types
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -223,8 +224,10 @@ class _RecordingGitHubClient:
 
 def _make_dispatcher(
     workflow: WorkflowConfig,
-    queue_dir: str = "queue",
+    queue_dir: str | None = None,
 ) -> tuple[WorkflowDispatcher, _RecordingGitHubClient, _RecordingTaskQueue, _RecordingOrderBuilder]:
+    if queue_dir is None:
+        queue_dir = tempfile.mkdtemp(prefix="ghdag-test-queue-")
     github_client = _RecordingGitHubClient()
     order_builder = _RecordingOrderBuilder()
     task_queue = _RecordingTaskQueue(order_builder, queue_dir=queue_dir)
