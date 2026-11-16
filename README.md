@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.142.0-blue)
+![version](https://img.shields.io/badge/version-v0.142.1-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.142.0** (`pyproject.toml` `version = "0.142.0"`) |
+| Current release | **v0.142.1** (`pyproject.toml` `version = "0.142.1"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.142.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.142.1"
 ```
 
 Install from a checkout with the development tools:
@@ -251,7 +251,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 
 | Command | Arguments (defaults) |
 |---|---|
-| `run` | `exec_jsonl`; `--interval-sec SEC` (`1.0`); `--hooks MODULE` (module with a `DagHooks` implementation; default `AuditHooks`); `--max-concurrency N` (unlimited) |
+| `run` | `exec_jsonl`; `--interval-sec SEC` (`1.0`); `--task-timeout SEC` (no limit); `--quota-state-path PATH` (same default pattern as `quota * --state-path`); `--hooks MODULE` (repeatable; default `AuditHooks` when omitted); `--max-concurrency N` (unlimited) |
 | `watch` | `workflows_dir`; `--interval-sec SEC` (`30`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--once`; `--pause-file PATH` (disabled); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `<exec-jsonl parent's parent>/.pipeline-state`) |
 | `trigger` | `issue_number`; `--handler NAME` (required); `--workflows-dir PATH` (`workflows`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto-detected when there is only one workflow); `--redispatch`; `--reason TEXT`; `--state-dir PATH` (same default as `watch`) |
 | `status` | `--issue N` and/or `--running` (at least one); `--handler` and `--workflow` (required with `--issue`); `--json`; `--exec-jsonl PATH` (`$GHDAG_EXEC_JSONL` or `jobs/exec.jsonl`); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `.pipeline-state`); `--done-dir PATH` / `--running-dir PATH` (`$GHDAG_STATE_DIR/done` / `running` or `<exec.jsonl parent>/done` / `running`); `--audit-path PATH` (optional; adds `started_at` / `elapsed_sec` to completed steps) |
@@ -277,7 +277,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 |---|---|
 | `ghdag run` working directory | Tasks run with `cwd` set to the parent of the `exec.jsonl` directory (for `jobs/exec.jsonl`, the repository root) |
 | One runner per queue | `DagEngine` holds `<queue dir>/.ghdag.lock`; a second runner on the same queue logs "Another DagEngine is already running" and stops |
-| `ghdag run --hooks` | Imports the module (the current directory is put on `sys.path`) and instantiates its `HOOKS_CLASS` attribute, or else the first public class in the module that defines `on_task_success` |
+| `ghdag run --hooks` | Repeat `--hooks MODULE` to load several modules (current directory on `sys.path`). Each module uses `HOOKS_CLASS` or the first public class with `on_task_success`. One module: that instance is passed to `DagEngine` unchanged. Two or more: a private chain calls each hook in order for lifecycle methods; `check_rejected` is true if any hook returns true (stops at the first true); `check_pipeline_status` and `check_promote_target` use the first non-`None` return. A failed import exits before `DagEngine.run()`. Default when omitted: `AuditHooks` |
 | `ghdag trigger --redispatch` | Increments the handler generation and starts a new run (for when `dag recover` is not possible); `--reason` is written to `audit.jsonl` |
 | `ghdag watch` and rate limits | Watch builds clients with `rate_limit_max_wait_sec=0` (`GHDAG_RATE_LIMIT_MAX_WAIT_SEC` has no effect). On `RateLimitError` from poll or dispatch, polls are skipped until reset (log: `rate limited: skip poll until <ISO8601>`). Pause-file detection and workflow hot reload keep running; when remaining quota drops to the threshold, the polling interval is doubled temporarily (`_observe_rate_limit`) |
 | `ghdag dag recover` | Clears the done markers of failed and pending steps so the runner runs them again; running steps are left alone. Existing result files are first moved to `<result>.prev-<timestamp>` unless `--keep-results` is given |
@@ -1174,7 +1174,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.142.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.142.1"
 ```
 
 and read `CHANGELOG.md` before upgrading.
