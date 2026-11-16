@@ -11,6 +11,86 @@ if TYPE_CHECKING:
     from ghdag.dag.hooks import DagHooks
 
 
+class _HookChain:
+    """Compose multiple DagHooks: forward lifecycle calls; aggregate check_* hooks."""
+
+    def __init__(self, hooks: list[DagHooks]) -> None:
+        self._hooks = hooks
+
+    def set_engine(self, engine) -> None:
+        for hook in self._hooks:
+            if hasattr(hook, "set_engine"):
+                hook.set_engine(engine)
+
+    def _call_all(self, method: str, *args, **kwargs) -> None:
+        for hook in self._hooks:
+            fn = getattr(hook, method, None)
+            if callable(fn):
+                fn(*args, **kwargs)
+
+    def on_task_start(self, uuid: str, task) -> None:
+        self._call_all("on_task_start", uuid, task)
+
+    def on_task_success(self, uuid: str, task, metrics) -> None:
+        self._call_all("on_task_success", uuid, task, metrics)
+
+    def on_task_failure(self, uuid: str, task, returncode: int, stderr_text: str, metrics) -> None:
+        self._call_all("on_task_failure", uuid, task, returncode, stderr_text, metrics)
+
+    def on_task_rejected(
+        self, uuid: str, task, retry_depth: int, is_final: bool, metrics,
+    ) -> None:
+        self._call_all("on_task_rejected", uuid, task, retry_depth, is_final, metrics)
+
+    def on_task_dep_failed(self, uuid: str, task, failed_dep: str) -> None:
+        self._call_all("on_task_dep_failed", uuid, task, failed_dep)
+
+    def on_task_empty_result(self, uuid: str, task, stderr_text: str, metrics) -> None:
+        self._call_all("on_task_empty_result", uuid, task, stderr_text, metrics)
+
+    def on_task_cancelled(self, uuid: str, task) -> None:
+        self._call_all("on_task_cancelled", uuid, task)
+
+    def on_task_progress(self, uuid: str, event: dict) -> None:
+        self._call_all("on_task_progress", uuid, event)
+
+    def on_shutdown(self, signum: int) -> None:
+        self._call_all("on_shutdown", signum)
+
+    def check_rejected(self, result_path: str) -> bool:
+        saw_checker = False
+        for hook in self._hooks:
+            if hasattr(hook, "check_rejected"):
+                saw_checker = True
+                if hook.check_rejected(result_path):
+                    return True
+        if not saw_checker:
+            from ghdag.dag._util import default_check_rejected
+            return default_check_rejected(result_path)
+        return False
+
+    def check_pipeline_status(self, result_path: str) -> str | None:
+        saw_checker = False
+        for hook in self._hooks:
+            if hasattr(hook, "check_pipeline_status"):
+                saw_checker = True
+                status = hook.check_pipeline_status(result_path)
+                if status is not None:
+                    return status
+        if not saw_checker:
+            from ghdag.dag._util import check_pipeline_status
+            return check_pipeline_status(result_path)
+        return None
+
+    def check_promote_target(self, result_path: str) -> str | None:
+        for hook in self._hooks:
+            if hasattr(hook, "check_promote_target"):
+                target = hook.check_promote_target(result_path)
+                if target is not None:
+                    return target
+        return None
+
+
 def cmd_run(args) -> None:
     """Thin wrapper that builds a DagConfig and calls DagEngine.run()."""
     if not os.path.exists(args.exec_jsonl):
@@ -26,9 +106,13 @@ def cmd_run(args) -> None:
         poll_interval=args.interval,
         cwd=cwd,
         max_concurrency=args.max_concurrency,
+        task_timeout=args.task_timeout,
+        quota_state_path=args.quota_state_path,
     )
-    if args.hooks:
-        hooks: DagHooks = _load_hooks(args.hooks)
+    hook_modules = args.hooks
+    if hook_modules:
+        loaded: list[DagHooks] = [_load_hooks(module_path) for module_path in hook_modules]
+        hooks: DagHooks = loaded[0] if len(loaded) == 1 else _HookChain(loaded)
     else:
         from ghdag.dag.audit_hooks import AuditHooks
         hooks = AuditHooks(audit_path=config.audit_path, tz_name=config.timezone)
