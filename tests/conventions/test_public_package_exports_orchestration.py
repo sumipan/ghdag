@@ -12,7 +12,7 @@ CURATED_ORCHESTRATION_EXPORTS: dict[str, frozenset[str]] = {
         {
             "AuditContext",
             "PipelineConfig",
-            "PipelineState",
+            "TaskQueue",
             "OrderBuilder",
             "TemplateOrderBuilder",
             "InlineOrderBuilder",
@@ -20,7 +20,6 @@ CURATED_ORCHESTRATION_EXPORTS: dict[str, frozenset[str]] = {
             "build_idempotency_key",
             "get_command_adapter",
             "resolve_models",
-            "LLMPipelineAPI",
             "wait_for_result",
             "write_task_exit_audit",
         }

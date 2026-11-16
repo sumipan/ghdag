@@ -61,8 +61,8 @@ def _load_workflow_for_cli(args, *, workflows_path: Path):
 
 def cmd_trigger(args) -> None:
     """ghdag trigger: run a handler one-shot against an Issue."""
-    from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
-    from ghdag.pipeline.state import PipelineState
+    from ghdag.pipeline.llm_pipeline import build_order_builders
+    from ghdag.pipeline.task_queue import TaskQueue
     from ghdag.workflow.dispatcher import WorkflowDispatcher
 
     workflows_path = Path(args.workflows_dir)
@@ -88,15 +88,12 @@ def cmd_trigger(args) -> None:
         state_dir = str(resolve_state_dir(exec_jsonl_resolved.parent.parent) / ".pipeline-state")
     else:
         state_dir = str(resolve_state_dir(".") / ".pipeline-state")
-    pipeline_state = PipelineState(
-        state_dir=state_dir,
-        exec_jsonl_path=str(exec_jsonl_resolved),
-    )
     order_builders = build_order_builders([workflow])
     order_builder = order_builders[workflow.name]
 
-    pipeline = LLMPipelineAPI(
-        pipeline_state=pipeline_state,
+    task_queue = TaskQueue(
+        state_dir=state_dir,
+        exec_jsonl_path=str(exec_jsonl_resolved),
         order_builder=order_builder,
         queue_dir=queue_dir,
         order_builders=order_builders,
@@ -104,7 +101,7 @@ def cmd_trigger(args) -> None:
     dispatcher = WorkflowDispatcher(
         workflows=[workflow],
         github_client=github_client,
-        pipeline=pipeline,
+        task_queue=task_queue,
         queue_dir=queue_dir,
     )
 

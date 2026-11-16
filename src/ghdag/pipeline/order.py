@@ -68,7 +68,7 @@ class InlineOrderBuilder:
         Args:
             step_id: template body (a file name for TemplateOrderBuilder, but the
                      template string itself for InlineOrderBuilder).
-                     LLMPipelineAPI.submit passes StepConfig.template as-is.
+                     TaskQueue.enqueue passes StepConfig.template as-is.
             context: dict used to render template variables
         Returns:
             Rendered order body. Undefined variables and malformed placeholders

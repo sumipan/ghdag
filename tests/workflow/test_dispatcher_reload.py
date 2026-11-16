@@ -8,7 +8,8 @@ from unittest.mock import MagicMock
 
 from ghdag.core.models.workflow import WorkflowConfig
 from ghdag.github_client import GitHubIssuePort
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
+from ghdag.pipeline.llm_pipeline import build_order_builders
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.pipeline.order import TemplateOrderBuilder
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.loader import load_workflows
@@ -28,7 +29,7 @@ def _make_github_mock():
 
 
 def _make_pipeline_mock():
-    return MagicMock(spec=LLMPipelineAPI)
+    return MagicMock(spec=TaskQueue)
 
 
 _INITIAL_YAML = """\
@@ -85,7 +86,7 @@ class TestAC2InvalidYamlFallback:
             workflows=initial_workflows,
             workflows_dir=workflows_dir,
             github_client=_make_github_mock(),
-            pipeline=_make_pipeline_mock(),
+            task_queue=_make_pipeline_mock(),
             queue_dir=str(tmp_path),
         )
 
@@ -95,14 +96,17 @@ class TestAC2InvalidYamlFallback:
         dispatcher.run(max_iterations=1)  # must not raise
 
 
-def _make_real_pipeline(tmp_path: Path, workflows: list[WorkflowConfig]) -> LLMPipelineAPI:
+def _make_real_pipeline(tmp_path: Path, workflows: list[WorkflowConfig]) -> TaskQueue:
     default_template_dir = next(
         (wf.template_dir for wf in workflows if wf.template_dir), "templates"
     )
-    return LLMPipelineAPI(
-        pipeline_state=MagicMock(),
+    queue_dir = tmp_path / "queue"
+    queue_dir.mkdir(parents=True, exist_ok=True)
+    return TaskQueue(
+        state_dir=tmp_path / ".pipeline-state",
+        exec_jsonl_path=queue_dir / "exec.jsonl",
         order_builder=TemplateOrderBuilder(default_template_dir),
-        queue_dir=str(tmp_path / "queue"),
+        queue_dir=str(queue_dir),
         order_builders=build_order_builders(workflows),
     )
 
@@ -178,18 +182,18 @@ class TestHotReloadOrderBuilders:
         workflows_dir = tmp_path / "workflows"
         _write_workflow_bundle(workflows_dir, wf_yaml=_WF_TPL_A)
         initial = load_workflows(workflows_dir)
-        pipeline = _make_real_pipeline(tmp_path, initial)
+        task_queue = _make_real_pipeline(tmp_path, initial)
         dispatcher = WorkflowDispatcher(
             workflows=initial,
             workflows_dir=workflows_dir,
             github_client=_make_github_mock(),
-            pipeline=pipeline,
+            task_queue=task_queue,
             queue_dir=str(tmp_path),
         )
-        assert pipeline._resolve_order_builder("wf").build_order("step", {}) == "from tpl_a"
+        assert task_queue.order_builder_for("wf").build_order("step", {}) == "from tpl_a"
 
         (workflows_dir / "wf.yml").write_text(_WF_TPL_B)
         _bump_mtime_ahead(workflows_dir / "wf.yml")
         dispatcher._maybe_reload_workflows()
 
-        assert pipeline._resolve_order_builder("wf").build_order("step", {}) == "from tpl_b"
+        assert task_queue.order_builder_for("wf").build_order("step", {}) == "from tpl_b"

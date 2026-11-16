@@ -1,4 +1,4 @@
-"""Tests for ghdag.pipeline.llm_pipeline — LLMPipelineAPI (Issue #203)."""
+"""Tests for ghdag.pipeline.llm_pipeline — TaskQueue (Issue #203)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ class TestMetadataInAnnotations:
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata={"k": "v"})
+        exec_lines = api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX, metadata={"k": "v"})
 
         record = _json.loads(exec_lines[0])
         assert record["annotations"].get("k") == "v"

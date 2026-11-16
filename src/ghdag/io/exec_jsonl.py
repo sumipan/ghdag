@@ -193,7 +193,7 @@ def parse(text: str) -> list[Task]:
 
 
 def parse_as_dict(exec_jsonl_path: Path) -> dict[str, str]:
-    """Return {uuid: command} from exec.jsonl (PipelineState.parse_exec_tasks compat)."""
+    """Return {uuid: command} from exec.jsonl."""
     path = Path(exec_jsonl_path)
     if not path.exists():
         return {}

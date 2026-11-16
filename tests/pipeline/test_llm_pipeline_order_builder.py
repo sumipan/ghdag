@@ -1,4 +1,4 @@
-"""Tests for ghdag.pipeline.llm_pipeline — LLMPipelineAPI (Issue #203)."""
+"""Tests for ghdag.pipeline.llm_pipeline — TaskQueue (Issue #203)."""
 
 from __future__ import annotations
 

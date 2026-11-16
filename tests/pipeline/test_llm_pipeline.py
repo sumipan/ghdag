@@ -1,4 +1,4 @@
-"""Tests for ghdag.pipeline.llm_pipeline — LLMPipelineAPI (Issue #203)."""
+"""Tests for ghdag.pipeline.llm_pipeline — TaskQueue (Issue #203)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,8 @@ import pytest
 from ghdag_pipeline_conftest_helpers import _TEST_AUDIT_CTX, _make_api, _track_build_order
 
 from ghdag.core.models.workflow import StepConfig
-from ghdag.pipeline.llm_pipeline import DependencyError, LLMPipelineAPI, validate_depends
+from ghdag.pipeline.llm_pipeline import DependencyError
+from ghdag.pipeline.task_queue import TaskQueue, validate_depends
 
 
 class TestAC3DependsValidation:
@@ -21,7 +22,7 @@ class TestAC3DependsValidation:
             StepConfig(id="b", template="t", model="m", depends=["a"]),
         ]
         with pytest.raises(DependencyError, match="circular dependency"):
-            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+            api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
 _P1_UUID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 _P2_UUID = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 _P3_UUID = "cccccccc-cccc-cccc-cccc-cccccccccccc"
@@ -29,18 +30,16 @@ _TS = "20260523120000"
 
 
 def _make_api_with_tmpdir(tmp_path):
-    """LLMPipelineAPI that uses a real tmp_path as queue_dir."""
-    pipeline_state = MagicMock()
-    pipeline_state.check_idempotency.return_value = True
-    pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+    """TaskQueue that uses a real tmp_path as queue_dir."""
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
-    api = LLMPipelineAPI(
-        pipeline_state=pipeline_state,
+    api = TaskQueue(
+        state_dir=tmp_path / "state",
+        exec_jsonl_path=tmp_path / "exec.jsonl",
         order_builder=order_builder,
         queue_dir=str(tmp_path),
     )
-    return api, pipeline_state, order_builder
+    return api, api, order_builder
 
 
 class TestResultContentInjection:
@@ -60,9 +59,9 @@ class TestResultContentInjection:
             StepConfig(id="p2", template="p2", model="claude-sonnet-4-6"),
             StepConfig(id="p3", template="p3", model="claude-sonnet-4-6", depends=["p1", "p2"]),
         ]
-        with patch("ghdag.pipeline.llm_pipeline.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID, _P3_UUID]), \
-             patch("ghdag.pipeline.llm_pipeline.file_ts", return_value=_TS):
-            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+        with patch("ghdag.pipeline.task_queue.uuid.uuid4", side_effect=[_P1_UUID, _P2_UUID, _P3_UUID]), \
+             patch("ghdag.pipeline.task_queue.file_ts", return_value=_TS):
+            api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         p3_ctx = captured[2][1]
         assert p3_ctx["p1_result_content"] == content_p1
@@ -82,7 +81,7 @@ class TestEnvPassthroughInAnnotations:
                 env_passthrough=["MY_TOKEN"],
             ),
         ]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+        exec_lines = api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         record = _json.loads(exec_lines[0])
         assert record["annotations"]["env_passthrough"] == ["MY_TOKEN"]
@@ -105,7 +104,7 @@ class TestUnknownEngine:
             StepConfig(template="t", model="claude-opus-4-6", engine="nonexistent"),
         ]
         with pytest.raises(EngineModelError) as exc_info:
-            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+            api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
         assert exc_info.value.code == "ENGINE_UNKNOWN"
         assert "claude" in (exc_info.value.hint or "")
 
@@ -119,28 +118,28 @@ class TestSubmitFileTimestampTimezone:
 
         from ghdag.io.audit import file_ts as audit_file_ts
         from ghdag.pipeline.order import InlineOrderBuilder
-        from ghdag.pipeline.state import PipelineState
+        from ghdag.pipeline.task_queue import TaskQueue
 
         queue = tmp_path / "queue"
         queue.mkdir()
         exec_jsonl = tmp_path / "exec.jsonl"
         exec_jsonl.write_text("", encoding="utf-8")
-        state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
         fixed = datetime(2024, 7, 4, 16, 0, 0, tzinfo=ZoneInfo("UTC"))
         expected = audit_file_ts("America/New_York", now=fixed)
 
         def _file_ts(tz_name: str | None) -> str:
             return audit_file_ts(tz_name, now=fixed)
 
-        api = LLMPipelineAPI(
-            state,
-            InlineOrderBuilder(),
+        api = TaskQueue(
+            state_dir=tmp_path / "state",
+            exec_jsonl_path=exec_jsonl,
+            order_builder=InlineOrderBuilder(),
             queue_dir=str(queue),
             timezone="America/New_York",
         )
         steps = [StepConfig(template="run", engine="claude", model="claude-sonnet-4-6")]
-        with patch("ghdag.pipeline.llm_pipeline.file_ts", side_effect=_file_ts):
-            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+        with patch("ghdag.pipeline.task_queue.file_ts", side_effect=_file_ts):
+            api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
         orders = list(queue.glob("*-claude-order-*.md"))
         assert len(orders) == 1
         assert orders[0].name.startswith(expected)
@@ -153,7 +152,7 @@ class TestSubmitFileTimestampTimezone:
 
         from ghdag.io.audit import file_ts as audit_file_ts
         from ghdag.pipeline.order import InlineOrderBuilder
-        from ghdag.pipeline.state import PipelineState
+        from ghdag.pipeline.task_queue import TaskQueue
 
         old_tz = os.environ.get("TZ")
         monkeypatch.setenv("TZ", "Pacific/Auckland")
@@ -163,17 +162,21 @@ class TestSubmitFileTimestampTimezone:
             queue.mkdir()
             exec_jsonl = tmp_path / "exec.jsonl"
             exec_jsonl.write_text("", encoding="utf-8")
-            state = PipelineState(state_dir=tmp_path / "state", exec_jsonl_path=exec_jsonl)
             fixed = datetime(2024, 7, 4, 16, 0, 0, tzinfo=ZoneInfo("UTC"))
             expected = audit_file_ts(None, now=fixed)
 
             def _file_ts(tz_name: str | None) -> str:
                 return audit_file_ts(tz_name, now=fixed)
 
-            api = LLMPipelineAPI(state, InlineOrderBuilder(), queue_dir=str(queue))
+            api = TaskQueue(
+                state_dir=tmp_path / "state",
+                exec_jsonl_path=exec_jsonl,
+                order_builder=InlineOrderBuilder(),
+                queue_dir=str(queue),
+            )
             steps = [StepConfig(template="run", engine="claude", model="claude-sonnet-4-6")]
-            with patch("ghdag.pipeline.llm_pipeline.file_ts", side_effect=_file_ts):
-                api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+            with patch("ghdag.pipeline.task_queue.file_ts", side_effect=_file_ts):
+                api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
             orders = list(queue.glob("*-claude-order-*.md"))
             assert len(orders) == 1
             assert orders[0].name.startswith(expected)

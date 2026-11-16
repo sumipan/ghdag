@@ -9,21 +9,27 @@ from ghdag.core.command import render_exec_command
 from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.models.workflow import StepConfig
 from ghdag.io.audit import AuditContext
-from ghdag.pipeline.llm_pipeline import DependencyError, LLMPipelineAPI
+from ghdag.pipeline.llm_pipeline import DependencyError
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.loader import ValidationError, load_workflows
 
 _TEST_AUDIT_CTX = AuditContext(source="test")
 
 
-def _make_api() -> LLMPipelineAPI:
-    pipeline_state = MagicMock()
-    pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+def _make_api() -> TaskQueue:
+    import tempfile
+    from pathlib import Path
+
+    tmp = Path(tempfile.mkdtemp())
+    queue = tmp / "queue"
+    queue.mkdir(parents=True, exist_ok=True)
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
-    return LLMPipelineAPI(
-        pipeline_state=pipeline_state,
+    return TaskQueue(
+        state_dir=tmp / "state",
+        exec_jsonl_path=tmp / "exec.jsonl",
         order_builder=order_builder,
-        queue_dir="queue",
+        queue_dir=str(queue),
     )
 
 
@@ -35,7 +41,7 @@ def test_validate_depends_rejects_resume_from_non_ancestor():
         StepConfig(id="c", template="t", model="m", depends=["b"], resume_from="a"),
     ]
     with pytest.raises(DependencyError, match="ancestor"):
-        api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+        api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
 
 def test_validate_depends_allows_transitive_ancestor_resume_from():
@@ -45,7 +51,7 @@ def test_validate_depends_allows_transitive_ancestor_resume_from():
         StepConfig(id="b", template="t", model="m", depends=["a"]),
         StepConfig(id="c", template="t", model="m", depends=["b"], resume_from="a"),
     ]
-    lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+    lines = api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
     assert len(lines) == 3
 
 

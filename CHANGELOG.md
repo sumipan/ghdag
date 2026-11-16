@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** Rename intake API to `TaskQueue`: `LLMPipelineAPI.submit` → `TaskQueue.enqueue`, `PipelineState.append_exec_records` → `TaskQueue.enqueue_records`, `PipelineState.write_order_file` → `TaskQueue.write_order`, `WorkflowDispatcher(..., pipeline=...)` → `task_queue=...`, `McpRuntime` → single `task_queue` field. Constructor is `TaskQueue(state_dir, exec_jsonl_path, *, queue_dir="queue", order_builder=None, order_builders=None, timezone=None)` and `TaskQueue.from_repo_root(root, **kwargs)` (sumipan/nexus#6938).
+
+### Removed
+
+- **Breaking:** `LLMPipelineAPI`, `PipelineState`, and unused `PipelineState.save` / `load` / `remove` / `parse_exec_tasks` / `remove_exec_entries`. No compatibility aliases (sumipan/nexus#6938).
+
 ## 0.141.0 - 2026-11-16
 
 ### Changed

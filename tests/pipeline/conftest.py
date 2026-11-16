@@ -1,13 +1,15 @@
-"""Shared helpers for ghdag.pipeline.llm_pipeline tests."""
+"""Shared helpers for ghdag.pipeline task queue tests."""
 
 from __future__ import annotations
 
 import sys
+import tempfile
 import types
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from ghdag.io.audit import AuditContext
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.pipeline.task_queue import TaskQueue
 
 _TEST_AUDIT_CTX = AuditContext(source="test")
 
@@ -26,19 +28,20 @@ def _track_build_order(order_builder: MagicMock) -> list[tuple[str, dict]]:
 
 def _make_api(
     queue_dir: str = "queue",
-) -> tuple[LLMPipelineAPI, MagicMock, MagicMock]:
-    """LLMPipelineAPI with mocked PipelineState and OrderBuilder."""
-    pipeline_state = MagicMock()
-    pipeline_state.check_idempotency.return_value = True
-    pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
+) -> tuple[TaskQueue, TaskQueue, MagicMock]:
+    """TaskQueue with a mocked order builder under a temp directory."""
+    tmp = Path(tempfile.mkdtemp())
+    qdir = tmp / queue_dir
+    qdir.mkdir(parents=True, exist_ok=True)
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
-    api = LLMPipelineAPI(
-        pipeline_state=pipeline_state,
+    task_queue = TaskQueue(
+        state_dir=tmp / "state",
+        exec_jsonl_path=tmp / "exec.jsonl",
         order_builder=order_builder,
-        queue_dir=queue_dir,
+        queue_dir=str(qdir),
     )
-    return api, pipeline_state, order_builder
+    return task_queue, task_queue, order_builder
 
 
 _helpers = types.ModuleType("ghdag_pipeline_conftest_helpers")

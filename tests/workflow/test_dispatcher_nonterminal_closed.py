@@ -17,7 +17,7 @@ from ghdag.core.models.workflow import (
     WorkflowConfig,
 )
 from ghdag.github_client import GitHubClient, GitHubIssuePort
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
+from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.loader import _parse
 
@@ -66,25 +66,21 @@ def _make_dispatcher(workflow: WorkflowConfig):
     github_client.list_all_issues.return_value = []
     github_client.get_last_rate_limit.return_value = None
     github_client.get_issue_comments.return_value = []
-    pipeline_state = MagicMock()
-    pipeline_state.check_idempotency.return_value = True
-    pipeline_state.get_generation.return_value = 0
-    pipeline_state.write_order_file.return_value = "ts-claude-order-uuid.md"
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"
-    pipeline = LLMPipelineAPI(
-        pipeline_state=pipeline_state,
-        order_builder=order_builder,
-        queue_dir="queue",
-    )
+    task_queue = MagicMock(spec=TaskQueue)
+    task_queue.check_idempotency.return_value = True
+    task_queue.get_generation.return_value = 0
+    task_queue.order_builder_for.return_value = order_builder
+    task_queue.enqueue.return_value = ['{"uuid": "u"}']
     dispatcher = WorkflowDispatcher(
         workflows=[workflow],
         github_client=github_client,
-        pipeline=pipeline,
+        task_queue=task_queue,
         queue_dir="queue",
     )
     dispatcher._write_design_md = MagicMock()
-    return dispatcher, github_client, pipeline_state
+    return dispatcher, github_client, task_queue
 
 
 def _fake_list_all(open_issues=None, closed_issues=None):

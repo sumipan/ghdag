@@ -10,9 +10,9 @@ from ghdag.core.exceptions import CliUsageError
 
 def cmd_watch(args) -> None:
     """Thin wrapper that builds a WorkflowDispatcher and calls run()."""
-    from ghdag.pipeline.llm_pipeline import LLMPipelineAPI, build_order_builders
+    from ghdag.pipeline.llm_pipeline import build_order_builders
     from ghdag.pipeline.order import TemplateOrderBuilder
-    from ghdag.pipeline.state import PipelineState
+    from ghdag.pipeline.task_queue import TaskQueue
     from ghdag.workflow.dispatcher import WorkflowDispatcher
     from ghdag.workflow.loader import load_workflows
 
@@ -39,17 +39,14 @@ def cmd_watch(args) -> None:
         state_dir = str(resolve_state_dir(exec_jsonl_resolved.parent.parent) / ".pipeline-state")
     else:
         state_dir = str(resolve_state_dir(".") / ".pipeline-state")
-    pipeline_state = PipelineState(
-        state_dir=state_dir,
-        exec_jsonl_path=str(exec_jsonl_resolved),
-    )
     order_builders = build_order_builders(workflows)
     default_order_builder = TemplateOrderBuilder(
         workflows_path.resolve() / "templates"
     )
 
-    pipeline = LLMPipelineAPI(
-        pipeline_state=pipeline_state,
+    task_queue = TaskQueue(
+        state_dir=state_dir,
+        exec_jsonl_path=str(exec_jsonl_resolved),
         order_builder=default_order_builder,
         queue_dir=queue_dir,
         order_builders=order_builders,
@@ -58,7 +55,7 @@ def cmd_watch(args) -> None:
         workflows=workflows,
         workflows_dir=workflows_path,
         github_client=github_clients,
-        pipeline=pipeline,
+        task_queue=task_queue,
         queue_dir=queue_dir,
         pause_file=args.pause_file,
     )

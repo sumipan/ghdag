@@ -10,9 +10,8 @@ from ghdag.config.env import state_dir as resolve_state_dir
 from ghdag.core.exceptions import ConfigError
 from ghdag.mcp.server import McpServer
 from ghdag.mcp.tools import McpRuntime, McpToolRegistry
-from ghdag.pipeline.llm_pipeline import LLMPipelineAPI
 from ghdag.pipeline.order import InlineOrderBuilder
-from ghdag.pipeline.state import PipelineState
+from ghdag.pipeline.task_queue import TaskQueue
 
 
 def _normalize_read_paths(paths: list[str] | None) -> frozenset[str]:
@@ -53,19 +52,15 @@ def cmd_mcp(args) -> None:
 
     read_paths = _normalize_read_paths(getattr(args, "read_path", None))
 
-    pipeline_state = PipelineState(
+    paths = resolve_runtime_paths(exec_jsonl)
+    task_queue = TaskQueue(
         state_dir=str(state_dir),
         exec_jsonl_path=str(exec_jsonl),
-    )
-    paths = resolve_runtime_paths(exec_jsonl)
-    pipeline = LLMPipelineAPI(
-        pipeline_state=pipeline_state,
         order_builder=InlineOrderBuilder(),
         queue_dir=queue_dir,
     )
     runtime = McpRuntime(
-        state=pipeline_state,
-        pipeline=pipeline,
+        task_queue=task_queue,
         queue_dir=queue_dir,
         done_dir=paths.done_dir,
         running_dir=paths.running_dir,

@@ -31,7 +31,7 @@ class TestWatchNormal:
         with patch("ghdag.workflow.loader.load_workflows", return_value=[]), \
              patch("ghdag.workflow.dispatcher.WorkflowDispatcher") as mock_disp_cls, \
              patch("ghdag.github_client.create_github_clients", side_effect=fake_create_github_clients), \
-             patch("ghdag.pipeline.state.PipelineState"), \
+             patch("ghdag.pipeline.task_queue.TaskQueue"), \
              patch("ghdag.pipeline.order.TemplateOrderBuilder"):
             mock_disp_cls.return_value.run = lambda *a, **k: None
             from ghdag.cli import main

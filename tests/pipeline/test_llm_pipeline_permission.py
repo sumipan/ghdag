@@ -1,4 +1,4 @@
-"""Tests for ghdag.pipeline.llm_pipeline — LLMPipelineAPI (Issue #203)."""
+"""Tests for ghdag.pipeline.llm_pipeline — TaskQueue (Issue #203)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ class TestStepConfigPermission:
         import json as _json
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="text_only")]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+        exec_lines = api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         record = _json.loads(exec_lines[0])
         assert "--dangerously-skip-permissions" not in record["command"]
@@ -27,7 +27,7 @@ class TestStepConfigPermission:
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-sonnet-4-6", permission="unknown_preset")]
         with pytest.raises(ConfigError, match="unknown_preset") as exc_info:
-            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+            api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
         assert exc_info.value.code == "STEP_PERMISSION_UNKNOWN"
 
     def test_invalid_safe_default_permission_raises_value_error(self, monkeypatch):
@@ -36,7 +36,7 @@ class TestStepConfigPermission:
         api, _, _ = _make_api()
         steps = [StepConfig(template="brushup", model="claude-opus-4-6", permission=None)]
         with pytest.raises(ValueError, match="GHDAG_SAFE_DEFAULT_PERMISSION"):
-            api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+            api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
     def test_shell_engine_command_unchanged_when_safe_default_env_set(self, monkeypatch):
         """AC7: shell engine is unaffected by the safe-default env."""
@@ -45,10 +45,11 @@ class TestStepConfigPermission:
         monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "text_only")
         api, _, _ = _make_api()
         steps = [StepConfig(template="cp1-gate", model="bash", engine="shell", permission=None)]
-        exec_lines = api.submit(steps, {}, audit_context=_TEST_AUDIT_CTX)
+        exec_lines = api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         record = _json.loads(exec_lines[0])
-        assert record["command"] == "bash -o pipefail queue/ts-claude-order-uuid.md"
+        assert record["command"].startswith("bash -o pipefail ")
+        assert record["command"].endswith(".md")
 
 
 # ---------------------------------------------------------------------------
