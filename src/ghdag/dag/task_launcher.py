@@ -35,23 +35,11 @@ from ghdag.core.models.metrics import FailureClass, TaskMetrics
 from ghdag.core.reply_block import ReplyBlockError, parse_reply_block
 from ghdag.core.stall_guard import StallTracker
 from ghdag.core.vocabulary import (
-    DONE_CANCELLED,
-    DONE_EMPTY_RESULT,
-    DONE_ENGINE_ENV_ERROR,
-    DONE_ENGINE_ERROR,
-    DONE_ENGINE_ERROR_FINAL,
-    DONE_FANOUT_PARSE_FAILED,
-    DONE_INTERACTIVE_PROMPT,
     DONE_ORPHANED_ON_RESTART,
-    DONE_PIPELINE_FAILED_PREFIX,
-    DONE_REJECTED,
-    DONE_REJECTED_FINAL,
     DONE_SKIPPED_MISSING_INPUT,
-    DONE_TIMEOUT,
     DONE_UNKNOWN_FAILURE,
     PIPELINE_REPLY_BLOCK_FAILED,
     PIPELINE_WAIT_QUOTA,
-    PIPELINE_WAIT_QUOTA_INVALID,
 )
 from ghdag.dag._util import WaitQuotaParseError, parse_wait_quota_result_path
 from ghdag.io.audit import (
@@ -79,6 +67,20 @@ from ghdag.quota import QuotaGate
 
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .circuit_breaker import CircuitBreakerPolicy
+from .completion import (
+    CircuitAction,
+    CompletionDecision,
+    CompletionFacts,
+    ContractErrorFact,
+    EngineErrorFact,
+    FanoutFact,
+    FanoutState,
+    HookKind,
+    QuotaPauseFact,
+    ResultActionKind,
+    WaitQuotaFact,
+    decide_completion,
+)
 from .engine_quarantine import EngineQuarantine
 from .fanout import FanoutError, parse_fanout_spec
 from .fanout_manager import FanOutManager
@@ -101,6 +103,21 @@ _RESUME_ERROR_RE = re.compile(
 )
 
 _REPAIR_RESUME_ENGINES = frozenset({"claude", "cursor", "codex"})
+
+
+@dataclass
+class _ExitContext:
+    was_cancelled: bool
+    was_timeout: bool
+    finished_at: float
+    returncode: int
+    stderr_text: str
+    stdout_data: bytes
+    stderr_bytes: bytes
+    task: Task
+    engine: str | None
+    model: str | None
+    started_at: float
 
 
 def _repair_turn_count(annotations: dict[str, str]) -> int:
@@ -627,6 +644,683 @@ class TaskLauncher:
         _signal_process_tree(rt.proc, signal.SIGTERM)
         rt.term_sent_at = time.monotonic()
 
+    def _poll_running(self, uuid: str, rt: _RunningProcess, now: float) -> bool:
+        """Return True when the process has exited and exit handling should run."""
+        if rt.term_sent_at is None:
+            if rt.proc.poll() is None:
+                task_timeout = _resolve_task_timeout(rt.task, self._config.task_timeout)
+                if (
+                    uuid not in self._cancelled
+                    and task_timeout is not None
+                    and (now - rt.started_at_mono) > task_timeout
+                ):
+                    logger.warning(
+                        "Task [%s] exceeded timeout %.1fs, sending SIGTERM",
+                        uuid,
+                        task_timeout,
+                    )
+                    _signal_process_tree(rt.proc, signal.SIGTERM)
+                    rt.term_sent_at = now
+                else:
+                    if rt.stall_tracker is not None:
+                        for event in rt.stall_tracker.check(now):
+                            logger.warning(
+                                "[stall-guard] task=%s sent SIGTERM to pid=%d after %.0fs: %s",
+                                uuid,
+                                event.pid,
+                                event.stalled_sec,
+                                event.parent_args_head,
+                            )
+                            try:
+                                append_audit_record(
+                                    self._queue_audit_path(),
+                                    {
+                                        "schema_version": 1,
+                                        "event_type": "stall_guard",
+                                        "timestamp": now_ts(self._config.timezone),
+                                        "task_uuid": uuid,
+                                        "pid": event.pid,
+                                        "stalled_sec": event.stalled_sec,
+                                        "parent_args_head": event.parent_args_head,
+                                    },
+                                )
+                            except OSError as exc:
+                                logger.warning(
+                                    "[stall-guard] audit write failed: %s",
+                                    exc,
+                                )
+                    return False
+
+        if rt.term_sent_at is not None:
+            leader_exited = rt.proc.poll() is not None
+            group_alive = (
+                _process_group_exists(rt.proc.pid)
+                if isinstance(rt.proc.pid, int)
+                else (not leader_exited)
+            )
+            if group_alive:
+                if (now - rt.term_sent_at) > self._config.kill_grace:
+                    logger.warning(
+                        "Task [%s] still alive after grace period, sending SIGKILL",
+                        uuid,
+                    )
+                    _signal_process_tree(rt.proc, signal.SIGKILL)
+                    if rt.proc.poll() is None:
+                        return False
+                else:
+                    return False
+            elif not leader_exited:
+                return False
+        elif rt.proc.poll() is None:
+            return False
+        return True
+
+    def _collect_process_exit(
+        self, uuid: str, rt: _RunningProcess, cwd: str | None
+    ) -> _ExitContext | None:
+        """Tear down a finished process; return None to continue the outer loop."""
+        was_cancelled = uuid in self._cancelled
+        was_interrupted = uuid in self._interrupting
+        was_timeout = rt.term_sent_at is not None and not was_cancelled and not was_interrupted
+        finished_at = time.time()
+        del self._running[uuid]
+        self._cancelled.discard(uuid)
+        self._interrupting.discard(uuid)
+        self._join_reader_threads(rt)
+        stderr_bytes = rt.stderr_buf.getvalue()
+        stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
+        returncode = rt.proc.returncode if rt.proc.returncode is not None else 1
+
+        task = rt.task
+        engine = task.engine
+        model = task.model
+        if engine is None:
+            engine, model = parse_engine_model(task.command)
+
+        stdout_data = rt.stdout_buf.getvalue() if rt.stdout_buf else b""
+
+        resume_fallback_relaunched = False
+        try:
+            if (
+                not was_cancelled
+                and not was_timeout
+                and not was_interrupted
+                and returncode != 0
+                and self._is_resume_fallback_target(task, stderr_text)
+            ):
+                original_command = task.annotations.get("_command_without_resume")
+                if original_command:
+                    logger.info(
+                        "Retrying [%s] without --resume due to session-related failure",
+                        uuid,
+                    )
+                    task.annotations["_resume_fallback_launched"] = "true"
+                    task.command = original_command
+                    fallback = self._spawn(uuid, task, original_command, engine, cwd)
+                    self._write_running_file(uuid, fallback.proc, task, engine)
+                    resume_fallback_relaunched = True
+        finally:
+            if not resume_fallback_relaunched:
+                if was_interrupted:
+                    self._cancel_path(uuid).unlink(missing_ok=True)
+                else:
+                    self._cleanup_control_files(uuid)
+                try:
+                    self._quota_gate.finish_run(task_uuid=uuid)
+                except ValueError:
+                    logger.exception("Failed to update running registry for [%s]", uuid)
+
+        if resume_fallback_relaunched or was_interrupted:
+            return None
+
+        return _ExitContext(
+            was_cancelled=was_cancelled,
+            was_timeout=was_timeout,
+            finished_at=finished_at,
+            returncode=returncode,
+            stderr_text=stderr_text,
+            stdout_data=stdout_data,
+            stderr_bytes=stderr_bytes,
+            task=task,
+            engine=engine,
+            model=model,
+            started_at=rt.started_at,
+        )
+
+    def _observe_quota_from_output(
+        self,
+        engine: str | None,
+        adapter,
+        stdout_data: bytes,
+        stderr_bytes: bytes,
+    ) -> None:
+        if not isinstance(engine, str):
+            return
+        try:
+            windows = adapter.extract_quota_windows(stdout_data, stderr_bytes)
+            self._quota_gate.observe(
+                engine=engine,
+                windows=windows,
+                observed_at=datetime.now(timezone.utc),
+            )
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "quota usage observe failed for %s: %s",
+                engine,
+                exc,
+            )
+
+    def _read_completion_facts(
+        self,
+        uuid: str,
+        exit_ctx: _ExitContext,
+    ) -> tuple[CompletionFacts, str | None]:
+        adapter = get_output_adapter(exit_ctx.engine)
+        self._observe_quota_from_output(
+            exit_ctx.engine, adapter, exit_ctx.stdout_data, exit_ctx.stderr_bytes
+        )
+
+        engine_error_fact: EngineErrorFact | None = None
+        err = adapter.extract_error(exit_ctx.stdout_data, exit_ctx.stderr_bytes)
+        if err is not None:
+            engine_error_fact = EngineErrorFact(
+                kind=err.kind.value,
+                message=err.message,
+                retryable=err.retryable,
+                resume_at=err.resume_at,
+            )
+
+        effective_result_path: str | None = None
+        rejected = False
+        pipeline_status: str | None = None
+        wait_quota: WaitQuotaFact | None = None
+        reply_block_error: ContractErrorFact | None = None
+        result_empty = False
+        fanout: FanoutFact | None = None
+        failure_class: FailureClass | None = None
+        failure_output = ""
+        failure_class_reason: str | None = None
+
+        if (
+            not exit_ctx.was_cancelled
+            and not exit_ctx.was_timeout
+            and exit_ctx.returncode == 0
+        ):
+            session_id = adapter.extract_session_id(
+                exit_ctx.stdout_data, exit_ctx.stderr_bytes
+            )
+            if session_id and isinstance(exit_ctx.engine, str):
+                self._session_store.record(uuid, exit_ctx.engine, session_id)
+            transformed = adapter.extract_result_text(
+                exit_ctx.stdout_data, exit_ctx.stderr_bytes
+            )
+            task = exit_ctx.task
+            if task.result_path is not None:
+                rp = Path(task.result_path)
+                policy = task.result_finalize or "preserve_nonempty"
+                if policy == "stdout_only" or not (rp.exists() and rp.stat().st_size > 0):
+                    rp.write_bytes(transformed)
+                effective_result_path = task.result_path
+            else:
+                effective_result_path = _extract_tee_target(task.command)
+
+            if effective_result_path and self._hooks.check_rejected(effective_result_path):
+                rejected = True
+            elif effective_result_path:
+                pipeline_status = self._hooks.check_pipeline_status(effective_result_path)
+                if pipeline_status == PIPELINE_WAIT_QUOTA:
+                    known = frozenset(list_engines())
+                    parsed = parse_wait_quota_result_path(
+                        effective_result_path,
+                        known_engines=known,
+                    )
+                    if isinstance(parsed, WaitQuotaParseError):
+                        wait_quota = WaitQuotaFact(invalid_reason=parsed.reason)
+                    else:
+                        wait_quota = WaitQuotaFact(
+                            engines=tuple(parsed.engines),
+                            after=parsed.after,
+                        )
+                elif pipeline_status == PIPELINE_REPLY_BLOCK_FAILED:
+                    block_err = self._reply_block_error_from_result(effective_result_path)
+                    if block_err is not None:
+                        reply_block_error = ContractErrorFact(
+                            block_err.code,
+                            block_err.message,
+                            block_err.hint,
+                        )
+                elif pipeline_status and pipeline_status.endswith("_FAILED"):
+                    pass
+                elif (
+                    os.path.exists(effective_result_path)
+                    and os.path.getsize(effective_result_path) == 0
+                ):
+                    result_empty = True
+                else:
+                    try:
+                        fanout_spec = parse_fanout_spec(effective_result_path)
+                    except FanoutError as exc:
+                        fanout = FanoutFact(
+                            state=FanoutState.PARSE_FAILED,
+                            error=ContractErrorFact(exc.code, exc.message, exc.hint),
+                        )
+                    else:
+                        if fanout_spec:
+                            fanout = FanoutFact(state=FanoutState.PRESENT)
+                        else:
+                            fanout = FanoutFact(state=FanoutState.NONE)
+        elif not exit_ctx.was_cancelled and not exit_ctx.was_timeout:
+            failure_class = adapter.classify_failure(
+                exit_ctx.returncode,
+                exit_ctx.stdout_data,
+                exit_ctx.stderr_bytes,
+            )
+            if failure_class == FailureClass.INTERACTIVE_PROMPT:
+                full_question = adapter.extract_result_text(
+                    exit_ctx.stdout_data, exit_ctx.stderr_bytes
+                ).decode("utf-8", errors="replace")
+                failure_output = full_question
+                failure_class_reason = last_nonempty_line(full_question) or None
+
+        facts = CompletionFacts(
+            returncode=exit_ctx.returncode,
+            cancelled=exit_ctx.was_cancelled,
+            timed_out=exit_ctx.was_timeout,
+            retry=exit_ctx.task.retry,
+            engine=exit_ctx.engine if isinstance(exit_ctx.engine, str) else None,
+            stderr_text=exit_ctx.stderr_text,
+            engine_error=engine_error_fact,
+            failure_class=failure_class,
+            failure_output=failure_output,
+            failure_class_reason=failure_class_reason,
+            rejected=rejected,
+            pipeline_status=pipeline_status,
+            wait_quota=wait_quota,
+            reply_block_error=reply_block_error,
+            result_empty=result_empty,
+            fanout=fanout,
+        )
+        return facts, effective_result_path
+
+    def _usage_from_output(self, exit_ctx: _ExitContext):
+        adapter = get_output_adapter(exit_ctx.engine)
+        usage = adapter.extract_token_usage(exit_ctx.stdout_data, exit_ctx.stderr_bytes)
+        if usage is None:
+            return None, None, None, None
+        return (
+            usage.token_count,
+            usage.cost_usd,
+            usage.cache_read_tokens,
+            usage.cache_creation_tokens,
+        )
+
+    def _build_completion_metrics(
+        self,
+        uuid: str,
+        exit_ctx: _ExitContext,
+        decision: CompletionDecision,
+        *,
+        token_count,
+        cost_usd,
+        cache_read_tokens,
+        cache_creation_tokens,
+    ) -> TaskMetrics | None:
+        if decision.metrics_status is None:
+            return None
+        return TaskMetrics(
+            uuid=uuid,
+            engine=exit_ctx.engine,
+            model=exit_ctx.model,
+            wall_time_sec=round(exit_ctx.finished_at - exit_ctx.started_at, 3),
+            token_count=token_count,
+            status=decision.metrics_status,
+            started_at=exit_ctx.started_at,
+            finished_at=exit_ctx.finished_at,
+            correlation_id=exit_ctx.task.idempotency_key,
+            failure_class=decision.failure_class,
+            failure_class_reason=decision.failure_class_reason,
+            request_id=_task_request_id(exit_ctx.task),
+            cost_usd=cost_usd,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+        )
+
+    def _report_quota_pause(
+        self,
+        pause: QuotaPauseFact,
+        engine: str | None,
+        uuid: str,
+    ) -> None:
+        engines = pause.engines
+        if not engines and isinstance(engine, str):
+            engines = (engine,)
+        observed = datetime.now(timezone.utc)
+        for eng in engines:
+            if not eng:
+                continue
+            self._quota_gate.report(
+                engine=eng,
+                status="paused",
+                observed_at=observed,
+                resume_at=pause.resume_at,
+                reason=pause.reason,
+                set_by=pause.set_by,
+            )
+
+    def _unlink_task_result(
+        self,
+        task: Task,
+        effective_result_path: str | None,
+    ) -> None:
+        target = effective_result_path or task.result_path
+        if not target:
+            return
+        try:
+            Path(target).unlink()
+        except OSError:
+            logger.warning(
+                "Failed to remove result file for [%s]",
+                task.idempotency_key or "?",
+                exc_info=True,
+            )
+
+    def _apply_result_action(
+        self,
+        task: Task,
+        effective_result_path: str | None,
+        decision: CompletionDecision,
+    ) -> None:
+        if decision.result_action == ResultActionKind.WRITE_ENGINE_ERROR:
+            if task.result_path is not None and decision.engine_error_summary:
+                Path(task.result_path).write_text(
+                    decision.engine_error_summary, encoding="utf-8"
+                )
+
+    def _apply_completion_decision(
+        self,
+        uuid: str,
+        exit_ctx: _ExitContext,
+        facts: CompletionFacts,
+        decision: CompletionDecision,
+        *,
+        effective_result_path: str | None,
+        cwd: str | None,
+        token_count,
+        cost_usd,
+        cache_read_tokens,
+        cache_creation_tokens,
+    ) -> bool:
+        """Apply one decision. Return True when a repair turn relaunched the task."""
+        if decision.repair is not None:
+            rep = decision.repair
+            if self._try_contract_repair_turn(
+                uuid,
+                exit_ctx.task,
+                exit_ctx.engine if isinstance(exit_ctx.engine, str) else None,
+                code=rep.code,
+                message=rep.message,
+                hint=rep.hint,
+                result_path=effective_result_path,
+                cwd=cwd,
+            ):
+                return True
+            assert decision.fallback is not None
+            decision = decision.fallback
+
+        self._apply_result_action(exit_ctx.task, effective_result_path, decision)
+
+        if decision.quota_pause is not None:
+            self._report_quota_pause(decision.quota_pause, exit_ctx.engine, uuid)
+
+        defer_result_unlink = (
+            decision.hook is not None
+            and decision.hook.kind == HookKind.REJECTED
+            and decision.result_action == ResultActionKind.UNLINK
+        )
+        wait_quota_active = (
+            decision.wait_quota is not None
+            and decision.wait_quota.invalid_reason is None
+        )
+        if (
+            decision.result_action == ResultActionKind.UNLINK
+            and not defer_result_unlink
+            and not wait_quota_active
+        ):
+            self._unlink_task_result(exit_ctx.task, effective_result_path)
+
+        if (
+            decision.wait_quota is not None
+            and decision.wait_quota.invalid_reason is None
+            and decision.wait_quota.engines
+        ):
+            observed = datetime.now(timezone.utc)
+            for eng_name in decision.wait_quota.engines:
+                self._quota_gate.report(
+                    engine=eng_name,
+                    status="paused",
+                    observed_at=observed,
+                    resume_at=decision.wait_quota.after,
+                    reason="pipeline WAIT_QUOTA",
+                    set_by=f"task:{uuid}",
+                )
+            append_audit_record(
+                self._queue_audit_path(),
+                {
+                    "schema_version": 1,
+                    "event_type": "task_waiting",
+                    "uuid": uuid,
+                    "engines": list(decision.wait_quota.engines),
+                    "after": (
+                        decision.wait_quota.after.isoformat()
+                        if decision.wait_quota.after is not None
+                        else None
+                    ),
+                    "reason": "pipeline WAIT_QUOTA",
+                    "observed_at": observed.isoformat(),
+                    "correlation_id": uuid,
+                },
+            )
+            self._waiting_engines[uuid] = tuple(decision.wait_quota.engines)
+            if effective_result_path:
+                try:
+                    Path(effective_result_path).unlink()
+                except OSError:
+                    logger.warning(
+                        "Failed to remove WAIT_QUOTA result for [%s]",
+                        uuid,
+                        exc_info=True,
+                    )
+
+        if decision.done is not None:
+            state_mark_done(self._config.exec_done_dir, uuid, decision.done)
+
+        metrics = self._build_completion_metrics(
+            uuid,
+            exit_ctx,
+            decision,
+            token_count=token_count,
+            cost_usd=cost_usd,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+        )
+
+        hook = decision.hook
+        if hook is not None:
+            if hook.kind == HookKind.CANCELLED:
+                on_cancel = getattr(self._hooks, "on_task_cancelled", None)
+                if on_cancel is not None:
+                    on_cancel(uuid, exit_ctx.task)
+            elif hook.kind == HookKind.FAILURE and metrics is not None:
+                self._call_on_task_failure(
+                    uuid,
+                    exit_ctx.task,
+                    hook.returncode if hook.returncode is not None else exit_ctx.returncode,
+                    hook.message or "",
+                    metrics,
+                )
+            elif hook.kind == HookKind.REJECTED and metrics is not None:
+                self._hooks.on_task_rejected(
+                    uuid,
+                    exit_ctx.task,
+                    exit_ctx.task.retry,
+                    bool(hook.is_final),
+                    metrics,
+                )
+            elif hook.kind == HookKind.EMPTY_RESULT and metrics is not None:
+                self._call_on_task_empty_result(
+                    uuid, exit_ctx.task, exit_ctx.stderr_text, metrics
+                )
+            elif hook.kind == HookKind.SUCCESS and metrics is not None:
+                self._run_success_postprocess(
+                    uuid,
+                    exit_ctx.task,
+                    "on_task_success",
+                    lambda: self._hooks.on_task_success(uuid, exit_ctx.task, metrics),
+                )
+
+        if defer_result_unlink:
+            if exit_ctx.task.result_path and Path(exit_ctx.task.result_path).exists():
+                Path(exit_ctx.task.result_path).unlink()
+
+        if decision.circuit == CircuitAction.RECORD_FAILURE:
+            self._circuit_breaker.record_failure()
+        elif decision.circuit == CircuitAction.RESET:
+            self._run_success_postprocess(
+                uuid,
+                exit_ctx.task,
+                "circuit_breaker.reset",
+                self._circuit_breaker.reset,
+            )
+
+        if decision.quarantine and isinstance(exit_ctx.engine, str):
+            self._engine_quarantine.enter(exit_ctx.engine, cooldown=300)
+            write_quarantine_audit(
+                self._queue_audit_path(),
+                engine=exit_ctx.engine,
+                action="enter",
+                cooldown_sec=300,
+            )
+
+        if decision.retry_audit:
+            write_task_retry_audit(
+                self._queue_audit_path(),
+                uuid=uuid,
+                attempt=exit_ctx.task.retry + 1,
+                failure_class=FailureClass.ENGINE_ERROR,
+                stderr_excerpt=(
+                    exit_ctx.stderr_text[:200] if exit_ctx.stderr_text else None
+                ),
+            )
+
+        if decision.fanout_spawn and metrics is not None:
+            try:
+                self._fanout_manager.spawn(
+                    uuid,
+                    exit_ctx.task,
+                    parse_fanout_spec(effective_result_path),
+                    metrics,
+                    queue_dir=self._queue_dir(),
+                )
+            except FanoutError as exc:
+                if self._try_contract_repair_turn(
+                    uuid,
+                    exit_ctx.task,
+                    exit_ctx.engine if isinstance(exit_ctx.engine, str) else None,
+                    code=exc.code,
+                    message=exc.message,
+                    hint=exc.hint,
+                    result_path=effective_result_path,
+                    cwd=cwd,
+                ):
+                    return True
+                logger.warning("FanOut spawn error for [%s]: %s", uuid, exc)
+                spawn_facts = replace(
+                    facts,
+                    fanout=FanoutFact(
+                        state=FanoutState.SPAWN_FAILED,
+                        error=ContractErrorFact(exc.code, exc.message, exc.hint),
+                    ),
+                )
+                spawn_decision = decide_completion(
+                    spawn_facts,
+                    max_retry=self._config.max_retry,
+                    task_timeout=self._config.task_timeout,
+                )
+                self._apply_completion_decision(
+                    uuid,
+                    exit_ctx,
+                    spawn_facts,
+                    spawn_decision,
+                    effective_result_path=effective_result_path,
+                    cwd=cwd,
+                    token_count=token_count,
+                    cost_usd=cost_usd,
+                    cache_read_tokens=cache_read_tokens,
+                    cache_creation_tokens=cache_creation_tokens,
+                )
+
+        if decision.promote and effective_result_path:
+            self._run_success_postprocess(
+                uuid,
+                exit_ctx.task,
+                "promote",
+                lambda: self._promote_fn(effective_result_path),
+            )
+        return False
+
+    def _handle_completed_process(
+        self,
+        uuid: str,
+        exit_ctx: _ExitContext,
+        cwd: str | None,
+    ) -> bool:
+        """Read facts, decide, and apply. Return True to continue the outer loop."""
+        adapter = get_output_adapter(exit_ctx.engine)
+        if exit_ctx.returncode != 0 and exit_ctx.engine == "shell":
+            task = exit_ctx.task
+            if task.result_path is not None:
+                failure_output = adapter.extract_result_text(
+                    exit_ctx.stdout_data, exit_ctx.stderr_bytes
+                ).decode("utf-8", errors="replace")
+                if failure_output and not failure_output.endswith("\n"):
+                    failure_output += "\n"
+                failure_output += f"EXIT_CODE: {exit_ctx.returncode}\n"
+                try:
+                    Path(task.result_path).write_text(failure_output, encoding="utf-8")
+                except OSError:
+                    logger.warning(
+                        "Failed to write failure result for shell task [%s]",
+                        uuid,
+                        exc_info=True,
+                    )
+
+        facts, effective_result_path = self._read_completion_facts(uuid, exit_ctx)
+        decision = decide_completion(
+            facts,
+            max_retry=self._config.max_retry,
+            task_timeout=self._config.task_timeout,
+        )
+        (
+            token_count,
+            cost_usd,
+            cache_read_tokens,
+            cache_creation_tokens,
+        ) = self._usage_from_output(exit_ctx)
+
+        repair_relaunched = self._apply_completion_decision(
+            uuid,
+            exit_ctx,
+            facts,
+            decision,
+            effective_result_path=effective_result_path,
+            cwd=cwd,
+            token_count=token_count,
+            cost_usd=cost_usd,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+        )
+        return repair_relaunched
+
     def check_completions(self) -> None:
         """Inspect running processes and process any that have finished."""
         for uuid in list(self._adopted):
@@ -639,695 +1333,42 @@ class TaskLauncher:
         for uuid in list(self._running):
             rt = self._running[uuid]
             now = time.monotonic()
-
-            if rt.term_sent_at is None:
-                if rt.proc.poll() is None:
-                    task_timeout = _resolve_task_timeout(rt.task, self._config.task_timeout)
-                    if (
-                        uuid not in self._cancelled
-                        and task_timeout is not None
-                        and (now - rt.started_at_mono) > task_timeout
-                    ):
-                        logger.warning(
-                            "Task [%s] exceeded timeout %.1fs, sending SIGTERM",
-                            uuid,
-                            task_timeout,
-                        )
-                        _signal_process_tree(rt.proc, signal.SIGTERM)
-                        rt.term_sent_at = now
-                    else:
-                        if rt.stall_tracker is not None:
-                            for event in rt.stall_tracker.check(now):
-                                logger.warning(
-                                    "[stall-guard] task=%s sent SIGTERM to pid=%d after %.0fs: %s",
-                                    uuid,
-                                    event.pid,
-                                    event.stalled_sec,
-                                    event.parent_args_head,
-                                )
-                                try:
-                                    append_audit_record(
-                                        self._queue_audit_path(),
-                                        {
-                                            "schema_version": 1,
-                                            "event_type": "stall_guard",
-                                            "timestamp": now_ts(self._config.timezone),
-                                            "task_uuid": uuid,
-                                            "pid": event.pid,
-                                            "stalled_sec": event.stalled_sec,
-                                            "parent_args_head": event.parent_args_head,
-                                        },
-                                    )
-                                except OSError as exc:
-                                    logger.warning(
-                                        "[stall-guard] audit write failed: %s",
-                                        exc,
-                                    )
-                        continue
-
-            if rt.term_sent_at is not None:
-                # Reap the leader first so a zombie session leader does not keep
-                # the process group appearing alive after SIGTERM wiped real work.
-                leader_exited = rt.proc.poll() is not None
-                group_alive = (
-                    _process_group_exists(rt.proc.pid)
-                    if isinstance(rt.proc.pid, int)
-                    else (not leader_exited)
-                )
-                if group_alive:
-                    if (now - rt.term_sent_at) > self._config.kill_grace:
-                        logger.warning(
-                            "Task [%s] still alive after grace period, sending SIGKILL",
-                            uuid,
-                        )
-                        _signal_process_tree(rt.proc, signal.SIGKILL)
-                        if rt.proc.poll() is None:
-                            continue
-                    else:
-                        continue
-                elif not leader_exited:
-                    continue
-            elif rt.proc.poll() is None:
+            if not self._poll_running(uuid, rt, now):
                 continue
 
-            was_cancelled = uuid in self._cancelled
-            was_interrupted = uuid in self._interrupting
-            was_timeout = rt.term_sent_at is not None and not was_cancelled and not was_interrupted
-            finished_at = time.time()
-            del self._running[uuid]
-            self._cancelled.discard(uuid)
-            self._interrupting.discard(uuid)
-            self._join_reader_threads(rt)
-            stderr_bytes = rt.stderr_buf.getvalue()
-            stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip()
-            returncode = rt.proc.returncode
+            exit_ctx = self._collect_process_exit(uuid, rt, cwd)
+            if exit_ctx is None:
+                continue
 
-            task = rt.task
-            engine = task.engine
-            model = task.model
-            if engine is None:
-                engine, model = parse_engine_model(task.command)
-
-            stdout_data = rt.stdout_buf.getvalue() if rt.stdout_buf else b""
-            adapter = get_output_adapter(engine)
-
-            resume_fallback_relaunched = False
+            task = exit_ctx.task
+            engine = exit_ctx.engine
+            model = exit_ctx.model
             try:
-                if (
-                    not was_cancelled
-                    and not was_timeout
-                    and not was_interrupted
-                    and returncode != 0
-                    and self._is_resume_fallback_target(task, stderr_text)
-                ):
-                    original_command = task.annotations.get("_command_without_resume")
-                    if original_command:
-                        logger.info(
-                            "Retrying [%s] without --resume due to session-related failure",
-                            uuid,
-                        )
-                        task.annotations["_resume_fallback_launched"] = "true"
-                        task.command = original_command
-                        fallback = self._spawn(uuid, task, original_command, engine, cwd)
-                        self._write_running_file(uuid, fallback.proc, task, engine)
-                        resume_fallback_relaunched = True
-            finally:
-                if not resume_fallback_relaunched:
-                    if was_interrupted:
-                        self._cancel_path(uuid).unlink(missing_ok=True)
-                    else:
-                        self._cleanup_control_files(uuid)
-                    try:
-                        self._quota_gate.finish_run(task_uuid=uuid)
-                    except ValueError:
-                        logger.exception("Failed to update running registry for [%s]", uuid)
-
-            if resume_fallback_relaunched:
-                continue
-
-            if was_interrupted:
-                continue
-
-            engine_error = adapter.extract_error(stdout_data, stderr_bytes)
-            usage = adapter.extract_token_usage(stdout_data, stderr_bytes)
-            if isinstance(engine, str):
-                try:
-                    windows = adapter.extract_quota_windows(stdout_data, stderr_bytes)
-                    self._quota_gate.observe(
-                        engine=engine,
-                        windows=windows,
-                        observed_at=datetime.now(timezone.utc),
-                    )
-                except (OSError, ValueError) as exc:
-                    logger.warning(
-                        "quota usage observe failed for %s: %s",
-                        engine,
-                        exc,
-                    )
-            token_count = usage.token_count if usage else None
-            cost_usd = usage.cost_usd if usage else None
-            cache_read_tokens = usage.cache_read_tokens if usage else None
-            cache_creation_tokens = usage.cache_creation_tokens if usage else None
-
-            try:
-                if was_cancelled:
-                    state_mark_done(self._config.exec_done_dir, uuid, DONE_CANCELLED)
-                    on_task_cancelled = getattr(self._hooks, "on_task_cancelled", None)
-                    if on_task_cancelled is not None:
-                        on_task_cancelled(uuid, task)
+                if self._handle_completed_process(uuid, exit_ctx, cwd):
                     continue
-
-                if was_timeout:
-                    state_mark_done(self._config.exec_done_dir, uuid, DONE_TIMEOUT)
-                    metrics = TaskMetrics(
-                        uuid=uuid, engine=engine, model=model,
-                        wall_time_sec=round(finished_at - rt.started_at, 3),
-                        token_count=token_count, status="failure",
-                        started_at=rt.started_at, finished_at=finished_at,
-                        correlation_id=task.idempotency_key,
-                        failure_class=FailureClass.TIMEOUT,
-                        request_id=_task_request_id(task),
-                        cost_usd=cost_usd,
-                        cache_read_tokens=cache_read_tokens,
-                        cache_creation_tokens=cache_creation_tokens,
-                    )
-                    timeout_msg = (
-                        f"TIMEOUT: task exceeded task_timeout={self._config.task_timeout}s"
-                    )
-                    self._call_on_task_failure(uuid, task, returncode, timeout_msg, metrics)
-                    self._circuit_breaker.record_failure()
-                    continue
-
-                if engine_error is not None:
-                    if engine_error.kind.value == "QUOTA_EXHAUSTED":
-                        observed = datetime.now(timezone.utc)
-                        if isinstance(engine, str):
-                            self._quota_gate.report(
-                                engine=engine,
-                                status="paused",
-                                observed_at=observed,
-                                resume_at=engine_error.resume_at,
-                                reason=engine_error.message,
-                            )
-                        if task.result_path and Path(task.result_path).exists():
-                            Path(task.result_path).unlink()
-                        continue
-                    error_summary = (
-                        f"ENGINE_ERROR ({engine_error.kind.value}): {engine_error.message}"
-                    )
-                    if task.result_path is not None:
-                        Path(task.result_path).write_text(error_summary, encoding="utf-8")
-                    retry_depth = task.retry
-                    is_final = (not engine_error.retryable) or (
-                        retry_depth >= self._config.max_retry
-                    )
-                    state_mark_done(
-                        self._config.exec_done_dir,
-                        uuid,
-                        DONE_ENGINE_ERROR_FINAL if is_final else DONE_ENGINE_ERROR,
-                    )
-                    metrics = TaskMetrics(
-                        uuid=uuid, engine=engine, model=model,
-                        wall_time_sec=round(finished_at - rt.started_at, 3),
-                        token_count=token_count, status="failure",
-                        started_at=rt.started_at, finished_at=finished_at,
-                        correlation_id=task.idempotency_key,
-                        failure_class=FailureClass.ENGINE_ERROR,
-                        request_id=_task_request_id(task),
-                        cost_usd=cost_usd,
-                        cache_read_tokens=cache_read_tokens,
-                        cache_creation_tokens=cache_creation_tokens,
-                    )
-                    self._call_on_task_failure(
-                        uuid, task, returncode, error_summary, metrics
-                    )
-                    self._circuit_breaker.record_failure()
-                    continue
-
-                if returncode == 0:
-                    session_id = adapter.extract_session_id(stdout_data, stderr_bytes)
-                    if session_id and isinstance(engine, str):
-                        self._session_store.record(uuid, engine, session_id)
-                    transformed = adapter.extract_result_text(stdout_data, stderr_bytes)
-                    if task.result_path is not None:
-                        rp = Path(task.result_path)
-                        policy = task.result_finalize or "preserve_nonempty"
-                        if policy == "stdout_only" or not (rp.exists() and rp.stat().st_size > 0):
-                            rp.write_bytes(transformed)
-                        effective_result_path: str | None = task.result_path
-                    else:
-                        effective_result_path = _extract_tee_target(task.command)
-
-                    if effective_result_path and self._hooks.check_rejected(effective_result_path):
-                        retry_depth = task.retry
-                        is_final = retry_depth >= self._config.max_retry
-                        if is_final:
-                            state_mark_done(self._config.exec_done_dir, uuid, DONE_REJECTED_FINAL)
-                        else:
-                            state_mark_done(self._config.exec_done_dir, uuid, DONE_REJECTED)
-                            if task.result_path and Path(task.result_path).exists():
-                                Path(task.result_path).unlink()
-                        metrics = TaskMetrics(
-                            uuid=uuid, engine=engine, model=model,
-                            wall_time_sec=round(finished_at - rt.started_at, 3),
-                            token_count=token_count, status="rejected",
-                            started_at=rt.started_at, finished_at=finished_at,
-                            correlation_id=task.idempotency_key,
-                            failure_class=FailureClass.REJECTED,
-                            request_id=_task_request_id(task),
-                            cost_usd=cost_usd,
-                            cache_read_tokens=cache_read_tokens,
-                            cache_creation_tokens=cache_creation_tokens,
-                        )
-                        self._hooks.on_task_rejected(uuid, task, retry_depth, is_final, metrics)
-
-                    else:
-                        pipeline_status = (
-                            self._hooks.check_pipeline_status(effective_result_path)
-                            if effective_result_path
-                            else None
-                        )
-                        if pipeline_status == PIPELINE_WAIT_QUOTA:
-                            known = frozenset(list_engines())
-                            parsed = parse_wait_quota_result_path(
-                                effective_result_path,
-                                known_engines=known,
-                            )
-                            if isinstance(parsed, WaitQuotaParseError):
-                                pipeline_failed = (
-                                    f"{DONE_PIPELINE_FAILED_PREFIX}"
-                                    f"{PIPELINE_WAIT_QUOTA_INVALID}"
-                                )
-                                state_mark_done(
-                                    self._config.exec_done_dir, uuid, pipeline_failed
-                                )
-                                metrics = TaskMetrics(
-                                    uuid=uuid, engine=engine, model=model,
-                                    wall_time_sec=round(finished_at - rt.started_at, 3),
-                                    token_count=token_count, status="failure",
-                                    started_at=rt.started_at, finished_at=finished_at,
-                                    correlation_id=task.idempotency_key,
-                                    failure_class=FailureClass.PIPELINE_FAILED,
-                                    request_id=_task_request_id(task),
-                                    cost_usd=cost_usd,
-                                    cache_read_tokens=cache_read_tokens,
-                                    cache_creation_tokens=cache_creation_tokens,
-                                )
-                                self._call_on_task_failure(
-                                    uuid, task, 0, parsed.reason, metrics
-                                )
-                                self._circuit_breaker.record_failure()
-                            else:
-                                observed = datetime.now(timezone.utc)
-                                for eng_name in parsed.engines:
-                                    self._quota_gate.report(
-                                        engine=eng_name,
-                                        status="paused",
-                                        observed_at=observed,
-                                        resume_at=parsed.after,
-                                        reason="pipeline WAIT_QUOTA",
-                                        set_by=f"task:{uuid}",
-                                    )
-                                append_audit_record(
-                                    self._queue_audit_path(),
-                                    {
-                                        "schema_version": 1,
-                                        "event_type": "task_waiting",
-                                        "uuid": uuid,
-                                        "engines": list(parsed.engines),
-                                        "after": (
-                                            parsed.after.isoformat()
-                                            if parsed.after is not None
-                                            else None
-                                        ),
-                                        "reason": "pipeline WAIT_QUOTA",
-                                        "observed_at": observed.isoformat(),
-                                        "correlation_id": uuid,
-                                    },
-                                )
-                                self._waiting_engines[uuid] = tuple(parsed.engines)
-                                try:
-                                    Path(effective_result_path).unlink()
-                                except OSError:
-                                    logger.warning(
-                                        "Failed to remove WAIT_QUOTA result for [%s]",
-                                        uuid,
-                                        exc_info=True,
-                                    )
-                        elif pipeline_status == PIPELINE_REPLY_BLOCK_FAILED:
-                            block_err = self._reply_block_error_from_result(
-                                effective_result_path
-                            )
-                            if block_err is not None and self._try_contract_repair_turn(
-                                uuid,
-                                task,
-                                engine if isinstance(engine, str) else None,
-                                code=block_err.code,
-                                message=block_err.message,
-                                hint=block_err.hint,
-                                result_path=effective_result_path,
-                                cwd=cwd,
-                            ):
-                                continue
-                            pipeline_failed = (
-                                f"{DONE_PIPELINE_FAILED_PREFIX}{pipeline_status}"
-                            )
-                            state_mark_done(
-                                self._config.exec_done_dir, uuid,
-                                pipeline_failed,
-                            )
-                            metrics = TaskMetrics(
-                                uuid=uuid, engine=engine, model=model,
-                                wall_time_sec=round(finished_at - rt.started_at, 3),
-                                token_count=token_count, status="failure",
-                                started_at=rt.started_at, finished_at=finished_at,
-                                correlation_id=task.idempotency_key,
-                                failure_class=FailureClass.PIPELINE_FAILED,
-                                request_id=_task_request_id(task),
-                                cost_usd=cost_usd,
-                                cache_read_tokens=cache_read_tokens,
-                                cache_creation_tokens=cache_creation_tokens,
-                            )
-                            self._call_on_task_failure(
-                                uuid, task, 0, pipeline_failed, metrics
-                            )
-                            self._circuit_breaker.record_failure()
-                        elif pipeline_status and pipeline_status.endswith("_FAILED"):
-                            pipeline_failed = f"{DONE_PIPELINE_FAILED_PREFIX}{pipeline_status}"
-                            state_mark_done(
-                                self._config.exec_done_dir, uuid,
-                                pipeline_failed,
-                            )
-                            metrics = TaskMetrics(
-                                uuid=uuid, engine=engine, model=model,
-                                wall_time_sec=round(finished_at - rt.started_at, 3),
-                                token_count=token_count, status="failure",
-                                started_at=rt.started_at, finished_at=finished_at,
-                                correlation_id=task.idempotency_key,
-                                failure_class=FailureClass.PIPELINE_FAILED,
-                                request_id=_task_request_id(task),
-                                cost_usd=cost_usd,
-                                cache_read_tokens=cache_read_tokens,
-                                cache_creation_tokens=cache_creation_tokens,
-                            )
-                            self._call_on_task_failure(
-                                uuid, task, 0, pipeline_failed, metrics
-                            )
-                            self._circuit_breaker.record_failure()
-
-                        elif (
-                            effective_result_path
-                            and os.path.exists(effective_result_path)
-                            and os.path.getsize(effective_result_path) == 0
-                        ):
-                            state_mark_done(self._config.exec_done_dir, uuid, DONE_EMPTY_RESULT)
-                            metrics = TaskMetrics(
-                                uuid=uuid, engine=engine, model=model,
-                                wall_time_sec=round(finished_at - rt.started_at, 3),
-                                token_count=token_count, status="empty_result",
-                                started_at=rt.started_at, finished_at=finished_at,
-                                correlation_id=task.idempotency_key,
-                                failure_class=FailureClass.EMPTY_RESULT,
-                                request_id=_task_request_id(task),
-                                cost_usd=cost_usd,
-                                cache_read_tokens=cache_read_tokens,
-                                cache_creation_tokens=cache_creation_tokens,
-                            )
-                            self._call_on_task_empty_result(uuid, task, stderr_text, metrics)
-
-                        else:
-                            metrics = TaskMetrics(
-                                uuid=uuid, engine=engine, model=model,
-                                wall_time_sec=round(finished_at - rt.started_at, 3),
-                                token_count=token_count, status="success",
-                                started_at=rt.started_at, finished_at=finished_at,
-                                correlation_id=task.idempotency_key,
-                                request_id=_task_request_id(task),
-                                cost_usd=cost_usd,
-                                cache_read_tokens=cache_read_tokens,
-                                cache_creation_tokens=cache_creation_tokens,
-                            )
-                            try:
-                                fanout_spec = parse_fanout_spec(effective_result_path)
-                            except FanoutError as exc:
-                                if self._try_contract_repair_turn(
-                                    uuid,
-                                    task,
-                                    engine if isinstance(engine, str) else None,
-                                    code=exc.code,
-                                    message=exc.message,
-                                    hint=exc.hint,
-                                    result_path=effective_result_path,
-                                    cwd=cwd,
-                                ):
-                                    continue
-                                logger.warning("FanOut parse error for [%s]: %s", uuid, exc)
-                                failure_metrics = TaskMetrics(
-                                    uuid=uuid, engine=engine, model=model,
-                                    wall_time_sec=round(finished_at - rt.started_at, 3),
-                                    token_count=token_count, status="failure",
-                                    started_at=rt.started_at, finished_at=finished_at,
-                                    correlation_id=task.idempotency_key,
-                                    failure_class=FailureClass.FANOUT_PARSE_FAILED,
-                                    request_id=_task_request_id(task),
-                                    cost_usd=cost_usd,
-                                    cache_read_tokens=cache_read_tokens,
-                                    cache_creation_tokens=cache_creation_tokens,
-                                )
-                                state_mark_done(
-                                    self._config.exec_done_dir, uuid, DONE_FANOUT_PARSE_FAILED
-                                )
-                                self._call_on_task_failure(uuid, task, 0, str(exc), failure_metrics)
-                                continue
-                            if fanout_spec:
-                                try:
-                                    self._fanout_manager.spawn(
-                                        uuid,
-                                        task,
-                                        fanout_spec,
-                                        metrics,
-                                        queue_dir=self._queue_dir(),
-                                    )
-                                except FanoutError as exc:
-                                    if self._try_contract_repair_turn(
-                                        uuid,
-                                        task,
-                                        engine if isinstance(engine, str) else None,
-                                        code=exc.code,
-                                        message=exc.message,
-                                        hint=exc.hint,
-                                        result_path=effective_result_path,
-                                        cwd=cwd,
-                                    ):
-                                        continue
-                                    logger.warning(
-                                        "FanOut spawn error for [%s]: %s", uuid, exc
-                                    )
-                                    failure_metrics = TaskMetrics(
-                                        uuid=uuid, engine=engine, model=model,
-                                        wall_time_sec=round(finished_at - rt.started_at, 3),
-                                        token_count=token_count, status="failure",
-                                        started_at=rt.started_at, finished_at=finished_at,
-                                        correlation_id=task.idempotency_key,
-                                        failure_class=FailureClass.FANOUT_PARSE_FAILED,
-                                        request_id=_task_request_id(task),
-                                        cost_usd=cost_usd,
-                                        cache_read_tokens=cache_read_tokens,
-                                        cache_creation_tokens=cache_creation_tokens,
-                                    )
-                                    state_mark_done(
-                                        self._config.exec_done_dir, uuid, DONE_FANOUT_PARSE_FAILED
-                                    )
-                                    self._call_on_task_failure(
-                                        uuid, task, 0, str(exc), failure_metrics
-                                    )
-                                    continue
-                            else:
-                                state_mark_done(self._config.exec_done_dir, uuid, 0)
-                                self._run_success_postprocess(
-                                    uuid,
-                                    task,
-                                    "on_task_success",
-                                    lambda: self._hooks.on_task_success(uuid, task, metrics),
-                                )
-                                self._run_success_postprocess(
-                                    uuid,
-                                    task,
-                                    "circuit_breaker.reset",
-                                    self._circuit_breaker.reset,
-                                )
-                                self._run_success_postprocess(
-                                    uuid,
-                                    task,
-                                    "promote",
-                                    lambda: self._promote_fn(effective_result_path),
-                                )
-
-                else:
-                    classified = adapter.classify_failure(returncode, stdout_data, stderr_bytes)
-                    if engine == "shell" and task.result_path is not None:
-                        failure_output = adapter.extract_result_text(
-                            stdout_data, stderr_bytes
-                        ).decode("utf-8", errors="replace")
-                        if failure_output and not failure_output.endswith("\n"):
-                            failure_output += "\n"
-                        failure_output += f"EXIT_CODE: {returncode}\n"
-                        try:
-                            Path(task.result_path).write_text(failure_output, encoding="utf-8")
-                        except OSError:
-                            logger.warning(
-                                "Failed to write failure result for shell task [%s]",
-                                uuid,
-                                exc_info=True,
-                            )
-                    if classified == FailureClass.QUOTA_EXHAUSTED:
-                        observed = datetime.now(timezone.utc)
-                        if isinstance(engine, str):
-                            self._quota_gate.report(
-                                engine=engine,
-                                status="paused",
-                                observed_at=observed,
-                                reason=stderr_text,
-                            )
-                        if task.result_path and Path(task.result_path).exists():
-                            Path(task.result_path).unlink()
-                        continue
-
-                    if classified == FailureClass.ENGINE_ENVIRONMENT_ERROR:
-                        if isinstance(engine, str):
-                            self._engine_quarantine.enter(engine, cooldown=300)
-                            write_quarantine_audit(
-                                self._queue_audit_path(),
-                                engine=engine,
-                                action="enter",
-                                cooldown_sec=300,
-                            )
-                        state_mark_done(self._config.exec_done_dir, uuid, DONE_ENGINE_ENV_ERROR)
-                        metrics = TaskMetrics(
-                            uuid=uuid, engine=engine, model=model,
-                            wall_time_sec=round(finished_at - rt.started_at, 3),
-                            token_count=token_count, status="failure",
-                            started_at=rt.started_at, finished_at=finished_at,
-                            correlation_id=task.idempotency_key,
-                            failure_class=FailureClass.ENGINE_ENVIRONMENT_ERROR,
-                            request_id=_task_request_id(task),
-                            cost_usd=cost_usd,
-                            cache_read_tokens=cache_read_tokens,
-                            cache_creation_tokens=cache_creation_tokens,
-                        )
-                        self._call_on_task_failure(uuid, task, returncode, stderr_text, metrics)
-                        self._circuit_breaker.record_failure()
-                        continue
-
-                    if classified == FailureClass.INTERACTIVE_PROMPT:
-                        full_question = adapter.extract_result_text(
-                            stdout_data, stderr_bytes
-                        ).decode("utf-8", errors="replace")
-                        question_text = full_question[:200]
-                        reason = last_nonempty_line(full_question) or None
-                        state_mark_done(self._config.exec_done_dir, uuid, DONE_INTERACTIVE_PROMPT)
-                        metrics = TaskMetrics(
-                            uuid=uuid, engine=engine, model=model,
-                            wall_time_sec=round(finished_at - rt.started_at, 3),
-                            token_count=token_count, status="failure",
-                            started_at=rt.started_at, finished_at=finished_at,
-                            correlation_id=task.idempotency_key,
-                            failure_class=FailureClass.INTERACTIVE_PROMPT,
-                            failure_class_reason=reason,
-                            request_id=_task_request_id(task),
-                            cost_usd=cost_usd,
-                            cache_read_tokens=cache_read_tokens,
-                            cache_creation_tokens=cache_creation_tokens,
-                        )
-                        self._call_on_task_failure(uuid, task, returncode, question_text, metrics)
-                        self._circuit_breaker.record_failure()
-                        continue
-
-                    if classified == FailureClass.ENGINE_ERROR:
-                        retry_depth = task.retry
-                        is_final = retry_depth >= self._config.max_retry
-                        state_mark_done(
-                            self._config.exec_done_dir,
-                            uuid,
-                            DONE_ENGINE_ERROR_FINAL if is_final else DONE_ENGINE_ERROR,
-                        )
-                        if not is_final:
-                            write_task_retry_audit(
-                                self._queue_audit_path(),
-                                uuid=uuid,
-                                attempt=retry_depth + 1,
-                                failure_class=FailureClass.ENGINE_ERROR,
-                                stderr_excerpt=stderr_text[:200] if stderr_text else None,
-                            )
-                        metrics = TaskMetrics(
-                            uuid=uuid, engine=engine, model=model,
-                            wall_time_sec=round(finished_at - rt.started_at, 3),
-                            token_count=token_count, status="failure",
-                            started_at=rt.started_at, finished_at=finished_at,
-                            correlation_id=task.idempotency_key,
-                            failure_class=FailureClass.ENGINE_ERROR,
-                            request_id=_task_request_id(task),
-                            cost_usd=cost_usd,
-                            cache_read_tokens=cache_read_tokens,
-                            cache_creation_tokens=cache_creation_tokens,
-                        )
-                        self._call_on_task_failure(uuid, task, returncode, stderr_text, metrics)
-                        self._circuit_breaker.record_failure()
-                        continue
-
-                    if classified == FailureClass.AUTH:
-                        state_mark_done(self._config.exec_done_dir, uuid, returncode)
-                        metrics = TaskMetrics(
-                            uuid=uuid, engine=engine, model=model,
-                            wall_time_sec=round(finished_at - rt.started_at, 3),
-                            token_count=token_count, status="failure",
-                            started_at=rt.started_at, finished_at=finished_at,
-                            correlation_id=task.idempotency_key,
-                            failure_class=FailureClass.AUTH,
-                            request_id=_task_request_id(task),
-                            cost_usd=cost_usd,
-                            cache_read_tokens=cache_read_tokens,
-                            cache_creation_tokens=cache_creation_tokens,
-                        )
-                        self._call_on_task_failure(uuid, task, returncode, stderr_text, metrics)
-                        self._circuit_breaker.record_failure()
-                        continue
-
-                    state_mark_done(self._config.exec_done_dir, uuid, returncode)
-                    metrics = TaskMetrics(
-                        uuid=uuid, engine=engine, model=model,
-                        wall_time_sec=round(finished_at - rt.started_at, 3),
-                        token_count=token_count, status="failure",
-                        started_at=rt.started_at, finished_at=finished_at,
-                        correlation_id=task.idempotency_key,
-                        failure_class=FailureClass.PROCESS_ERROR,
-                        request_id=_task_request_id(task),
-                        cost_usd=cost_usd,
-                        cache_read_tokens=cache_read_tokens,
-                        cache_creation_tokens=cache_creation_tokens,
-                    )
-                    self._call_on_task_failure(uuid, task, returncode, stderr_text, metrics)
-                    self._circuit_breaker.record_failure()
-
             except Exception as exc:
                 logger.exception(
                     "Unexpected error handling completion for task [%s]: %s", uuid, exc
                 )
                 state_mark_done(self._config.exec_done_dir, uuid, DONE_UNKNOWN_FAILURE)
+                token_count, cost_usd, cr, cc = self._usage_from_output(exit_ctx)
                 metrics = TaskMetrics(
-                    uuid=uuid, engine=engine, model=model,
-                    wall_time_sec=round(finished_at - rt.started_at, 3),
-                    token_count=token_count, status="failure",
-                    started_at=rt.started_at, finished_at=finished_at,
+                    uuid=uuid,
+                    engine=engine,
+                    model=model,
+                    wall_time_sec=round(exit_ctx.finished_at - exit_ctx.started_at, 3),
+                    token_count=token_count,
+                    status="failure",
+                    started_at=exit_ctx.started_at,
+                    finished_at=exit_ctx.finished_at,
                     correlation_id=task.idempotency_key,
                     failure_class=FailureClass.UNKNOWN_FAILURE,
                     request_id=_task_request_id(task),
                     cost_usd=cost_usd,
-                    cache_read_tokens=cache_read_tokens,
-                    cache_creation_tokens=cache_creation_tokens,
+                    cache_read_tokens=cr,
+                    cache_creation_tokens=cc,
                 )
                 self._call_on_task_failure(uuid, task, -1, str(exc), metrics)
-
     def _run_success_postprocess(
         self,
         uuid: str,

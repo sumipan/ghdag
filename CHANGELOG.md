@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Split `TaskLauncher.check_completions` into read, pure `decide_completion`, and apply phases (`ghdag.dag.completion`; no public API change) (sumipan/nexus#6876).
+
 ## 0.142.1 - 2026-11-16
 
 ### Added
