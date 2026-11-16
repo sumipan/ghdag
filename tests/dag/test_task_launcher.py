@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ghdag.core import engine_spec
 from ghdag.dag.audit_hooks import AuditHooks
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig, Task
@@ -43,6 +44,30 @@ def _make_launcher(tmp_path: Path):
 
 
 
+
+
+@patch("ghdag.dag.task_launcher.subprocess.Popen")
+def test_gemini_spawn_logs_unverified_warning_once(
+    mock_popen: MagicMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Refs sumipan/nexus#6937 — TaskLauncher warns once per process for gemini."""
+    proc = MagicMock()
+    proc.pid = 1
+    proc.stderr = None
+    mock_popen.return_value = proc
+    monkeypatch.setattr(engine_spec, "_WARNED_ENGINES", set())
+    launcher = _make_launcher(tmp_path)
+    task = Task(uuid="g1", command="gemini -p hi", engine="gemini")
+    with caplog.at_level(logging.WARNING, logger="ghdag.core.engine_spec"):
+        launcher._spawn("g1", task, task.command, "gemini", None)
+        launcher._spawn("g2", task, task.command, "gemini", None)
+    gemini_warnings = [
+        r for r in caplog.records if r.levelno == logging.WARNING and "gemini" in r.message
+    ]
+    assert len(gemini_warnings) == 1
 
 
 def test_popen_failure_restores_command_without_resume(tmp_path: Path) -> None:

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
+from ghdag.core import engine_spec as engine_spec_mod
 from ghdag.core.command import render_exec_command
-from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec
+from ghdag.core.engine_spec import ENGINE_SPECS, EngineSpec, warn_if_unverified
 
 
 class TestEngineSpec:
@@ -55,6 +58,47 @@ class TestEngineSpec:
     def test_shell_extra_args_pipefail(self):
         assert "-o" in ENGINE_SPECS["shell"].extra_args
         assert "pipefail" in ENGINE_SPECS["shell"].extra_args
+
+    def test_gemini_spec_not_verified(self):
+        assert ENGINE_SPECS["gemini"].verified is False
+
+    def test_claude_spec_verified(self):
+        assert ENGINE_SPECS["claude"].verified is True
+
+
+class TestWarnIfUnverified:
+    """Refs sumipan/nexus#6937 — unverified engine warning helper."""
+
+    def test_unverified_spec_logs_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.setattr(engine_spec_mod, "_WARNED_ENGINES", set())
+        spec = EngineSpec(
+            name="sample",
+            cli="sample-cli",
+            input_mode=ENGINE_SPECS["shell"].input_mode,
+            prompt_flag=ENGINE_SPECS["shell"].prompt_flag,
+            prompt_flag_token=None,
+            model_flag=None,
+            default_model=None,
+            verified=False,
+        )
+        with caplog.at_level(logging.WARNING, logger="ghdag.core.engine_spec"):
+            warn_if_unverified(spec)
+        assert sum(r.levelno == logging.WARNING for r in caplog.records) == 1
+
+    def test_verified_spec_and_none_emit_no_warning(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        monkeypatch.setattr(engine_spec_mod, "_WARNED_ENGINES", set())
+        with caplog.at_level(logging.WARNING, logger="ghdag.core.engine_spec"):
+            warn_if_unverified(ENGINE_SPECS["claude"])
+            warn_if_unverified(None)
+        assert sum(r.levelno == logging.WARNING for r in caplog.records) == 0
 
 
 class TestRenderExecCommand:

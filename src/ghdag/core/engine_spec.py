@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Literal
+
+logger = logging.getLogger(__name__)
+
+_WARNED_ENGINES: set[str] = set()
 
 
 class InputMode(Enum):
@@ -35,6 +40,21 @@ class EngineSpec:
     subcommand: tuple[str, ...] = ()  # subcommand expanded right after cli (e.g. codex → ("exec", "-"))
     pre_subcommand_args: tuple[str, ...] = ()  # static args after cli, before subcommand
     cli_aliases: tuple[str, ...] = ()  # legacy CLI names for matching only (not used to build argv)
+    verified: bool = True
+
+
+def warn_if_unverified(spec: EngineSpec | None) -> None:
+    """Log once per process when launching an engine the maintainers have not verified."""
+    if spec is None or spec.verified:
+        return
+    if spec.name in _WARNED_ENGINES:
+        return
+    _WARNED_ENGINES.add(spec.name)
+    logger.warning(
+        "engine %r is defined but not verified by the maintainers; "
+        "its CLI integration may be out of date",
+        spec.name,
+    )
 
 
 ENGINE_SPECS: dict[str, EngineSpec] = {
@@ -60,6 +80,7 @@ ENGINE_SPECS: dict[str, EngineSpec] = {
         danger_flag=None,
         danger_flag_position="trailing",
         extra_args=("--approval-mode", "yolo"),
+        verified=False,
     ),
     "cursor": EngineSpec(
         name="cursor", cli="cursor-agent",

@@ -458,6 +458,8 @@ With `sandbox="container"`, `render_exec_command` (which builds `exec.jsonl` com
 | `gemini` | `gemini` | `gemini-2.5-flash` | `gemini-2.5-pro`, `gemini-2.5-flash` |
 | `shell` | `bash -o pipefail` | none | `bash` (runs the order file as a bash script; no LLM call) |
 
+The `gemini` row is defined in ghdag but **not verified in day-to-day maintenance**; its CLI wiring may lag upstream CLI changes. Starting a gemini task or a `ghdag.llm.call` route that actually launches gemini logs a one-time `WARNING` from `ghdag.core.engine_spec` for that process.
+
 claude, cursor, gemini and codex receive the prompt on stdin (`InputMode.STDIN`), which avoids the Linux per-argument size limit for large prompts; `shell` gets the order path on argv (`InputMode.ARGV`). Replace the allowed-model list with [`llm-models.yml`](#llm-modelsyml).
 
 ### Protocols (extension points)

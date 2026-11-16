@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `EngineSpec.verified` marks whether maintainers routinely exercise an engine; `gemini` is `verified=False`. Launching gemini via `ghdag.llm.call` or `TaskLauncher` logs a one-time warning that the CLI integration may be out of date (sumipan/nexus#6937).
+
 ## 0.140.10 - 2026-11-16
 
 ### Removed
