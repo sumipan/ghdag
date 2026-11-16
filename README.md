@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.142.1-blue)
+![version](https://img.shields.io/badge/version-v0.143.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.142.1** (`pyproject.toml` `version = "0.142.1"`) |
+| Current release | **v0.143.0** (`pyproject.toml` `version = "0.143.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.142.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.143.0"
 ```
 
 Install from a checkout with the development tools:
@@ -676,6 +676,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `dag/_util.py` | Internal DAG helpers |
 | `dag/audit_hooks.py` | `AuditHooks`: `DefaultHooks` plus `audit.jsonl` writes |
 | `dag/circuit_breaker.py` | `CircuitBreakerPolicy`: consecutive-failure breaker |
+| `dag/completion.py` | `decide_completion` and completion fact/decision types (internal; used by `TaskLauncher`) |
 | `dag/engine.py` | `DagEngine` main loop, signal handling, dependency resolution |
 | `dag/engine_quarantine.py` | `EngineQuarantine`: temporarily blocks launches for broken engines |
 | `dag/fanout.py` | Fan-out spec parsing and child record building (`FanoutError`) |
@@ -1174,7 +1175,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.142.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.143.0"
 ```
 
 and read `CHANGELOG.md` before upgrading.
