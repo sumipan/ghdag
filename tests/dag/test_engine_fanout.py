@@ -10,6 +10,7 @@ from pathlib import Path
 
 from ghdag.core.models.metrics import FailureClass, TaskMetrics
 from ghdag.dag.engine import DagEngine
+from ghdag.dag.fanout import FanOutItem, FanOutSpec
 from ghdag.dag.models import DagConfig, Task, _RunningProcess
 
 
@@ -54,7 +55,7 @@ def _make_engine(tmp_path: Path) -> tuple[DagEngine, _CapturingHooks, Path]:
     exec_file = tmp_path / "exec.jsonl"
     exec_file.write_text("")
     done_dir = tmp_path / "done"
-    done_dir.mkdir()
+    done_dir.mkdir(exist_ok=True)
     hooks = _CapturingHooks()
     config = DagConfig(
         exec_jsonl_path=exec_file,
@@ -243,5 +244,106 @@ ghdag_fanout:
 
         lines = [ln for ln in exec_file.read_text().splitlines() if ln.strip()]
         assert len(lines) == 0
+
+
+def _spawn_command_children(engine: DagEngine, exec_file: Path, parent_uuid: str) -> set[str]:
+    """Refs sumipan/nexus#6936 AC1."""
+    appended: list[str] = []
+
+    def capture(line: str, _parent: str) -> None:
+        exec_file.write_text(
+            (exec_file.read_text() if exec_file.exists() else "") + line + "\n",
+            encoding="utf-8",
+        )
+        appended.append(line)
+
+    engine._fanout_manager._append_task_fn = capture
+    task = Task(uuid=parent_uuid, command="true")
+    spec = FanOutSpec(
+        children=[
+            FanOutItem(id="c1", command="echo 1"),
+            FanOutItem(id="c2", command="echo 2"),
+        ]
+    )
+    metrics = _base_metrics(parent_uuid)
+    engine._fanout_manager.spawn(parent_uuid, task, spec, metrics)
+    return {f"{parent_uuid}--fo--c1", f"{parent_uuid}--fo--c2"}
+
+
+class TestPersistedFanoutPending:
+    def test_restore_after_spawn_marks_parent_pending(self, tmp_path):
+        """Refs sumipan/nexus#6936 AC1."""
+        engine1, _, exec_file = _make_engine(tmp_path)
+        parent_uuid = "parent-restore"
+        _spawn_command_children(engine1, exec_file, parent_uuid)
+
+        engine2, _, _ = _make_engine(tmp_path)
+        tasks = {parent_uuid: Task(uuid=parent_uuid, command="true")}
+        restored = engine2._fanout_manager.restore(tasks, set())
+
+        assert restored == [parent_uuid]
+        assert engine2._fanout_manager.is_pending(parent_uuid)
+
+    def test_restored_parent_completes_when_children_done(self, tmp_path):
+        """Refs sumipan/nexus#6936 AC2."""
+        engine1, hooks, exec_file = _make_engine(tmp_path)
+        parent_uuid = "parent-join-restore"
+        child_uuids = _spawn_command_children(engine1, exec_file, parent_uuid)
+
+        engine2, hooks2, _ = _make_engine(tmp_path)
+        tasks = {parent_uuid: Task(uuid=parent_uuid, command="true")}
+        engine2._fanout_manager.restore(tasks, set())
+
+        for child in child_uuids:
+            (tmp_path / "done" / child).write_text("0", encoding="utf-8")
+        known_done = set(child_uuids)
+        known_succeeded = set(child_uuids)
+        engine2._fanout_manager.check_completions(known_done, known_succeeded)
+
+        assert (tmp_path / "done" / parent_uuid).read_text() == "0"
+        assert len(hooks2.success) == 1
+        assert hooks2.success[0][0] == parent_uuid
+        pending_path = tmp_path / "fanout-pending" / f"{parent_uuid}.json"
+        assert not pending_path.exists()
+
+    def test_restore_drops_file_when_parent_already_done(self, tmp_path):
+        """Refs sumipan/nexus#6936 AC6."""
+        engine1, _, _ = _make_engine(tmp_path)
+        parent_uuid = "parent-stale"
+        task = Task(uuid=parent_uuid, command="true")
+        metrics = _base_metrics(parent_uuid)
+        payload = {
+            "children": [f"{parent_uuid}--fo--c1"],
+            "metrics": {
+                "uuid": parent_uuid,
+                "engine": None,
+                "model": None,
+                "wall_time_sec": 1.0,
+                "token_count": None,
+                "status": "success",
+                "started_at": metrics.started_at,
+                "finished_at": metrics.finished_at,
+                "correlation_id": None,
+                "failure_class": None,
+                "failure_class_reason": None,
+                "request_id": None,
+                "cost_usd": None,
+                "cache_read_tokens": None,
+                "cache_creation_tokens": None,
+                "additional_tags": None,
+                "stderr_path": None,
+            },
+        }
+        pending_dir = tmp_path / "fanout-pending"
+        pending_dir.mkdir(parents=True)
+        pending_file = pending_dir / f"{parent_uuid}.json"
+        pending_file.write_text(json.dumps(payload), encoding="utf-8")
+        (tmp_path / "done" / parent_uuid).write_text("0", encoding="utf-8")
+
+        restored = engine1._fanout_manager.restore({parent_uuid: task}, {parent_uuid})
+
+        assert restored == []
+        assert not engine1._fanout_manager.is_pending(parent_uuid)
+        assert not pending_file.exists()
 
 

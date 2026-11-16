@@ -32,6 +32,8 @@ class CircuitBreakerPolicy:
         self._consecutive_failures += 1
 
         if self._consecutive_failures >= self._max_consecutive_failures:
+            if self._tripped:
+                return False
             self._tripped = True
             return True
         return False
@@ -45,3 +47,8 @@ class CircuitBreakerPolicy:
     def tripped(self) -> bool:
         """True when the failure threshold has been reached."""
         return self._tripped
+
+    @property
+    def consecutive_failures(self) -> int:
+        """Current consecutive failure count (may exceed threshold after trip)."""
+        return self._consecutive_failures

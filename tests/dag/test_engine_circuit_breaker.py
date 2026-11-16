@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import time
 from unittest.mock import MagicMock, patch
 
@@ -66,6 +67,11 @@ class TestCircuitBreakerPolicy:
         assert cb.record_failure() is False
         assert cb.record_failure() is False
 
+    def test_record_failure_returns_false_after_already_tripped(self):
+        cb = CircuitBreakerPolicy(failure_window_sec=float("inf"), max_consecutive_failures=1)
+        assert cb.record_failure() is True
+        assert cb.record_failure() is False
+
 
 # --- TaskLauncher.check_completions circuit breaker integration tests ---
 
@@ -97,5 +103,38 @@ class TestTaskLauncherCircuitBreakerIntegration:
             engine._launcher.check_completions()
 
         assert engine._circuit_breaker._consecutive_failures == 0
+
+    @patch("ghdag.dag.task_launcher.state_mark_done")
+    @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
+    def test_single_circuit_breaker_trip_audit_per_completion_pass(
+        self, mock_tee, mock_mark_done, tmp_path
+    ):
+        """Refs sumipan/nexus#6936 AC5."""
+        config = DagConfig(
+            exec_jsonl_path=str(tmp_path / "exec.jsonl"),
+            exec_done_dir=str(tmp_path / "done"),
+            max_consecutive_failures=1,
+        )
+        hooks = MagicMock(spec=DagHooks)
+        hooks.check_rejected.return_value = False
+        hooks.check_pipeline_status.return_value = None
+        engine = DagEngine(config, hooks)
+
+        for suffix in ("a", "b"):
+            uuid = f"cb-{suffix}"
+            rt = _make_running_task(uuid=uuid, returncode=1)
+            engine._launcher._running[uuid] = rt
+
+        engine._launcher.check_completions()
+
+        audit_path = tmp_path / "audit.jsonl"
+        events = [
+            json.loads(line)
+            for line in audit_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        tripped = [e for e in events if e.get("event_type") == "circuit_breaker_tripped"]
+        assert len(tripped) == 1
+        assert tripped[0]["consecutive_failures"] == 1
 
 

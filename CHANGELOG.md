@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Persist fan-out parent wait state under `fanout-pending/<uuid>.json` and restore it on `DagEngine` startup (sumipan/nexus#6936).
+- Persist `WAIT_QUOTA` engine wait lists under `quota-waiting/<uuid>.json` and restore them on startup (sumipan/nexus#6936).
+- Write a `circuit_breaker_tripped` audit event when the consecutive-failure breaker trips (sumipan/nexus#6936).
+
+### Changed
+
+- `CircuitBreakerPolicy.record_failure` returns `True` only on the transition into the tripped state, not on every subsequent failure while tripped (sumipan/nexus#6936).
+
 ## 0.143.0 - 2026-11-17
 
 ### Changed
