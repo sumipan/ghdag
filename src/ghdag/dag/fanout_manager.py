@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -96,6 +99,157 @@ class FanOutManager:
         self._pending[parent_uuid] = child_uuids
         self._tasks[parent_uuid] = parent_task
         self._metrics[parent_uuid] = metrics
+        self._write_fanout_pending(parent_uuid)
+
+    def _state_dir(self) -> Path:
+        return Path(self._config.exec_done_dir).parent
+
+    def _fanout_pending_path(self, parent_uuid: str) -> Path:
+        return self._state_dir() / "fanout-pending" / f"{parent_uuid}.json"
+
+    @staticmethod
+    def _metrics_to_dict(metrics: TaskMetrics) -> dict:
+        return {
+            "uuid": metrics.uuid,
+            "engine": metrics.engine,
+            "model": metrics.model,
+            "wall_time_sec": metrics.wall_time_sec,
+            "token_count": metrics.token_count,
+            "status": metrics.status,
+            "started_at": metrics.started_at,
+            "finished_at": metrics.finished_at,
+            "correlation_id": metrics.correlation_id,
+            "failure_class": (
+                metrics.failure_class.name if metrics.failure_class is not None else None
+            ),
+            "failure_class_reason": metrics.failure_class_reason,
+            "request_id": metrics.request_id,
+            "cost_usd": metrics.cost_usd,
+            "cache_read_tokens": metrics.cache_read_tokens,
+            "cache_creation_tokens": metrics.cache_creation_tokens,
+            "additional_tags": metrics.additional_tags,
+            "stderr_path": metrics.stderr_path,
+        }
+
+    @staticmethod
+    def _metrics_from_dict(data: dict) -> TaskMetrics | None:
+        if not isinstance(data, dict):
+            return None
+        required = (
+            "uuid",
+            "wall_time_sec",
+            "status",
+            "started_at",
+            "finished_at",
+        )
+        for key in required:
+            if key not in data:
+                return None
+        fc_raw = data.get("failure_class")
+        failure_class = None
+        if fc_raw is not None:
+            if not isinstance(fc_raw, str):
+                return None
+            try:
+                failure_class = FailureClass[fc_raw]
+            except KeyError:
+                return None
+        try:
+            return TaskMetrics(
+                uuid=str(data["uuid"]),
+                engine=data.get("engine"),
+                model=data.get("model"),
+                wall_time_sec=float(data["wall_time_sec"]),
+                token_count=data.get("token_count"),
+                status=str(data["status"]),
+                started_at=float(data["started_at"]),
+                finished_at=float(data["finished_at"]),
+                correlation_id=data.get("correlation_id"),
+                failure_class=failure_class,
+                failure_class_reason=data.get("failure_class_reason"),
+                request_id=data.get("request_id"),
+                cost_usd=data.get("cost_usd"),
+                cache_read_tokens=data.get("cache_read_tokens"),
+                cache_creation_tokens=data.get("cache_creation_tokens"),
+                additional_tags=data.get("additional_tags"),
+                stderr_path=data.get("stderr_path"),
+            )
+        except (TypeError, ValueError):
+            return None
+
+    def _write_fanout_pending(self, parent_uuid: str) -> None:
+        child_uuids = self._pending.get(parent_uuid)
+        metrics = self._metrics.get(parent_uuid)
+        if child_uuids is None or metrics is None:
+            return
+        path = self._fanout_pending_path(parent_uuid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "children": sorted(child_uuids),
+            "metrics": self._metrics_to_dict(metrics),
+        }
+        fd, tmp = tempfile.mkstemp(
+            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+
+    def _remove_fanout_pending(self, parent_uuid: str) -> None:
+        path = self._fanout_pending_path(parent_uuid)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning(
+                "Failed to remove fanout-pending file for [%s]", parent_uuid, exc_info=True
+            )
+
+    def restore(self, tasks: dict[str, Task], known_done: set[str]) -> list[str]:
+        """Reload fan-out parent wait state from disk after restart."""
+        pending_dir = self._state_dir() / "fanout-pending"
+        if not pending_dir.is_dir():
+            return []
+        restored: list[str] = []
+        for path in sorted(pending_dir.glob("*.json")):
+            parent_uuid = path.stem
+            if parent_uuid not in tasks or parent_uuid in known_done:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning(
+                        "Failed to remove stale fanout-pending file %s",
+                        path,
+                        exc_info=True,
+                    )
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                logger.warning("Corrupt fanout-pending file %s — ignoring", path)
+                continue
+            if not isinstance(payload, dict):
+                logger.warning("Corrupt fanout-pending file %s — ignoring", path)
+                continue
+            children = payload.get("children")
+            metrics_data = payload.get("metrics")
+            if not isinstance(children, list) or not all(
+                isinstance(c, str) for c in children
+            ):
+                logger.warning("Corrupt fanout-pending file %s — ignoring", path)
+                continue
+            metrics = self._metrics_from_dict(metrics_data)
+            if metrics is None:
+                logger.warning("Corrupt fanout-pending file %s — ignoring", path)
+                continue
+            self._pending[parent_uuid] = set(children)
+            self._tasks[parent_uuid] = tasks[parent_uuid]
+            self._metrics[parent_uuid] = metrics
+            restored.append(parent_uuid)
+        return restored
 
     def _spawn_prompt_child(
         self,
@@ -203,6 +357,7 @@ class FanOutManager:
                 parent_result_path = parent_task.result_path or _extract_tee_target(parent_task.command)
                 self._promote_fn(parent_result_path)
 
+            self._remove_fanout_pending(parent_uuid)
             del self._pending[parent_uuid]
             del self._tasks[parent_uuid]
             del self._metrics[parent_uuid]

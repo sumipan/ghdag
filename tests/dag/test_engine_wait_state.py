@@ -195,3 +195,80 @@ def test_wait_quota_task_relaunches_when_one_engine_becomes_available(
     mock_popen.assert_called_once()
 
 
+def _record_wait_quota_codex(engine: DagEngine, tmp_path: Path) -> Task:
+    """Refs sumipan/nexus#6936 AC3."""
+    result_file = tmp_path / "wait_codex.md"
+    result_file.write_text(
+        "```ghdag\nstatus: wait_quota\nengines: [codex]\n```\n",
+        encoding="utf-8",
+    )
+    task = Task(
+        uuid="task-wq",
+        command="claude -p hi",
+        engine="claude",
+        result_path=str(result_file),
+    )
+    proc = MagicMock()
+    proc.poll.return_value = 0
+    proc.returncode = 0
+    engine._launcher._running[task.uuid] = _RunningProcess(
+        uuid=task.uuid,
+        task=task,
+        proc=proc,
+        started_at=time.time(),
+        started_at_mono=time.monotonic(),
+        stderr_buf=io.BytesIO(b""),
+        stdout_buf=io.BytesIO(b""),
+    )
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="claude")
+    engine._launcher.check_completions()
+    engine._quota_gate.finish_run(task_uuid=task.uuid)
+    return task
+
+
+class TestPersistedQuotaWaiting:
+    def test_restored_wait_quota_defers_until_listed_engine_admits(
+        self, tmp_path: Path
+    ) -> None:
+        """Refs sumipan/nexus#6936 AC3."""
+        engine1, _, _ = _make_engine(tmp_path)
+        task = _record_wait_quota_codex(engine1, tmp_path)
+
+        engine2, _, _ = _make_engine(tmp_path)
+        tasks = {task.uuid: task}
+        assert engine2._launcher.restore_waiting(tasks, set()) == [task.uuid]
+
+        proc = MagicMock()
+        proc.poll.return_value = None
+        proc.stdout = io.BytesIO(b"")
+        proc.stderr = io.BytesIO(b"")
+        with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=proc) as mock_popen:
+            assert engine2._launcher.launch(task.uuid, task) is False
+        mock_popen.assert_not_called()
+
+    def test_launch_after_waiting_engine_available_clears_quota_file(
+        self, tmp_path: Path
+    ) -> None:
+        """Refs sumipan/nexus#6936 AC4."""
+        engine1, _, _ = _make_engine(tmp_path)
+        task = _record_wait_quota_codex(engine1, tmp_path)
+
+        engine2, _, _ = _make_engine(tmp_path)
+        engine2._launcher.restore_waiting({task.uuid: task}, set())
+
+        quota_path = tmp_path / "jobs" / "quota-waiting" / f"{task.uuid}.json"
+        assert quota_path.exists()
+
+        proc = MagicMock()
+        proc.poll.return_value = None
+        proc.stdout = io.BytesIO(b"")
+        proc.stderr = io.BytesIO(b"")
+        engine2._quota_gate.clear(
+            engine="codex",
+            observed_at=datetime(2099, 6, 1, tzinfo=timezone.utc),
+        )
+        with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=proc):
+            assert engine2._launcher.launch(task.uuid, task) is True
+        assert not quota_path.exists()
+
+

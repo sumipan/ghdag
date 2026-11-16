@@ -107,6 +107,9 @@ class DagEngine:
                 if not self._adopt_done:
                     self._adopt_done = True
                     self._launcher.adopt_orphans(self._tasks)
+                    known_done = load_done_from_dir(self._config.exec_done_dir)
+                    self._fanout_manager.restore(self._tasks, known_done)
+                    self._launcher.restore_waiting(self._tasks, known_done)
                     if self._test_hook_post_adopt is not None:
                         self._test_hook_post_adopt()
 

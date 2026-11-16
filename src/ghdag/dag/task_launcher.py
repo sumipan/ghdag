@@ -585,6 +585,7 @@ class TaskLauncher:
                     self._last_quota_deferred[uuid] = defer_key
                 return False
             self._waiting_engines.pop(uuid, None)
+            self._remove_quota_waiting_file(uuid)
 
         decision = self._quota_gate.begin_run(
             task_uuid=uuid,
@@ -1104,6 +1105,7 @@ class TaskLauncher:
                 },
             )
             self._waiting_engines[uuid] = tuple(decision.wait_quota.engines)
+            self._write_quota_waiting_file(uuid, self._waiting_engines[uuid])
             if effective_result_path:
                 try:
                     Path(effective_result_path).unlink()
@@ -1184,7 +1186,17 @@ class TaskLauncher:
                 )
 
         if decision.circuit == CircuitAction.RECORD_FAILURE:
-            self._circuit_breaker.record_failure()
+            if self._circuit_breaker.record_failure():
+                append_audit_record(
+                    self._queue_audit_path(),
+                    {
+                        "schema_version": 1,
+                        "event_type": "circuit_breaker_tripped",
+                        "trigger_uuid": uuid,
+                        "consecutive_failures": self._circuit_breaker.consecutive_failures,
+                        "observed_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
         elif decision.circuit == CircuitAction.RESET:
             self._run_success_postprocess(
                 uuid,
@@ -1459,6 +1471,71 @@ class TaskLauncher:
 
     def _running_path(self, uuid: str) -> Path:
         return self._queue_dir() / "running" / f"{uuid}.json"
+
+    def _quota_waiting_path(self, uuid: str) -> Path:
+        return self._queue_dir() / "quota-waiting" / f"{uuid}.json"
+
+    def _write_quota_waiting_file(self, uuid: str, engines: tuple[str, ...]) -> None:
+        path = self._quota_waiting_path(uuid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {"engines": list(engines)}
+        fd, tmp = tempfile.mkstemp(
+            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(payload, f)
+            os.replace(tmp, path)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+
+    def _remove_quota_waiting_file(self, uuid: str) -> None:
+        path = self._quota_waiting_path(uuid)
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning(
+                "Failed to remove quota-waiting file for [%s]", uuid, exc_info=True
+            )
+
+    def restore_waiting(
+        self, tasks: dict[str, Task], known_done: set[str]
+    ) -> list[str]:
+        """Reload WAIT_QUOTA engine lists from disk after restart."""
+        waiting_dir = self._queue_dir() / "quota-waiting"
+        if not waiting_dir.is_dir():
+            return []
+        restored: list[str] = []
+        for path in sorted(waiting_dir.glob("*.json")):
+            uuid = path.stem
+            if uuid not in tasks or uuid in known_done:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    logger.warning(
+                        "Failed to remove stale quota-waiting file %s",
+                        path,
+                        exc_info=True,
+                    )
+                continue
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                logger.warning("Corrupt quota-waiting file %s — ignoring", path)
+                continue
+            if not isinstance(payload, dict):
+                logger.warning("Corrupt quota-waiting file %s — ignoring", path)
+                continue
+            engines = payload.get("engines")
+            if not isinstance(engines, list) or not all(
+                isinstance(e, str) for e in engines
+            ):
+                logger.warning("Corrupt quota-waiting file %s — ignoring", path)
+                continue
+            self._waiting_engines[uuid] = tuple(engines)
+            restored.append(uuid)
+        return restored
 
     def _cancel_path(self, uuid: str) -> Path:
         return self._queue_dir() / "cancel" / uuid

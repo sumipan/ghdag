@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.143.1-blue)
+![version](https://img.shields.io/badge/version-v0.143.2-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.143.1** (`pyproject.toml` `version = "0.143.1"`) |
+| Current release | **v0.143.2** (`pyproject.toml` `version = "0.143.1"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.143.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.143.2"
 ```
 
 Install from a checkout with the development tools:
@@ -491,7 +491,7 @@ GitHub Issues / labels   (or LocalForge when GHDAG_FORGE=local)
  execution tower: dag/ DagEngine       (ghdag run)
         | writes
         v
- done/<uuid>, running/, events/, cancel/  (under jobs/ or $GHDAG_STATE_DIR)
+ done/<uuid>, running/, fanout-pending/, quota-waiting/, events/, cancel/  (under jobs/ or $GHDAG_STATE_DIR)
  jobs/audit.jsonl
 ```
 
@@ -502,6 +502,8 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 | `jobs/exec.jsonl` | `TaskQueue.enqueue`, `DagEngine.append_task` | `DagEngine` | One JSON task record per line (see [exec.jsonl task fields](#execjsonl-task-fields)) |
 | `done/<uuid>` | `DagEngine` / `TaskLauncher` | dispatcher, `ghdag status`, `ghdag dag recover`, Web UI | Done marker (see [Done markers](#done-markers)) |
 | `running/<uuid>.json` | `TaskLauncher` at launch | `ghdag dag cancel`, `ghdag status --running`, Web UI, restart adoption | `pgid`, `started_at`; optional `interrupted_at`, `interrupted_reruns`. Removed when the task exits |
+| `fanout-pending/<uuid>.json` | `FanOutManager.spawn` | `DagEngine` on restart (`FanOutManager.restore`) | Child uuid list and parent metrics while a fan-out parent awaits join. Removed when the parent completes |
+| `quota-waiting/<uuid>.json` | `TaskLauncher` on `WAIT_QUOTA` | `DagEngine` on restart (`TaskLauncher.restore_waiting`) | Engine names the task waits on before relaunch. Removed when the task launches |
 | `cancel/<uuid>` | `ghdag dag cancel`, Web UI `POST /api/stop` | `DagEngine` | Empty marker requesting cancellation |
 | `events/<uuid>.jsonl` | `TaskLauncher` stream drain | Web UI `progress` | Raw engine stream events (claude / cursor / codex tasks with `result_path`) |
 | `.sessions/` | `TaskLauncher` | `resume_from` steps | Per-task engine session IDs |
@@ -509,7 +511,7 @@ Import-linter contracts in `pyproject.toml` enforce the layering: the intake and
 | `jobs/audit.jsonl` | `AuditHooks`, `ghdag.io.audit`, `ghdag.vcs` sinks | `ghdag audit-query`, Web UI dashboard | Audit events (rotated by size) |
 | `jobs/latency_span.jsonl` | `ghdag.audit.emit_span` | External tracing tools | One latency span per line |
 
-`done/`, `running/`, `cancel/`, `events/`, `.sessions/` and `quota-gate.json` live under `jobs/` by default and under `$GHDAG_STATE_DIR` when it is set; `exec.jsonl` and `audit.jsonl` always stay in `jobs/`.
+`done/`, `running/`, `fanout-pending/`, `quota-waiting/`, `cancel/`, `events/`, `.sessions/` and `quota-gate.json` live under `jobs/` by default and under `$GHDAG_STATE_DIR` when it is set; `exec.jsonl` and `audit.jsonl` always stay in `jobs/`.
 
 ### MCP server (`ghdag mcp`)
 
@@ -1176,7 +1178,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.143.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.143.2"
 ```
 
 and read `CHANGELOG.md` before upgrading.
