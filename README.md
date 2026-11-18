@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.143.2-blue)
+![version](https://img.shields.io/badge/version-v0.144.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.143.2** (`pyproject.toml` `version = "0.143.2"`) |
+| Current release | **v0.144.0** (`pyproject.toml` `version = "0.143.2"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.143.2"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.144.0"
 ```
 
 Install from a checkout with the development tools:
@@ -252,7 +252,7 @@ A default written as `$GHDAG_STATE_DIR/x or y` means "`x` under `GHDAG_STATE_DIR
 | Command | Arguments (defaults) |
 |---|---|
 | `run` | `exec_jsonl`; `--interval-sec SEC` (`1.0`); `--task-timeout SEC` (no limit); `--quota-state-path PATH` (same default pattern as `quota * --state-path`); `--hooks MODULE` (repeatable; default `AuditHooks` when omitted); `--max-concurrency N` (unlimited) |
-| `watch` | `workflows_dir`; `--interval-sec SEC` (`30`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--once`; `--pause-file PATH` (disabled); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `<exec-jsonl parent's parent>/.pipeline-state`) |
+| `watch` | `workflows_dir`; `--interval-sec SEC` (`30`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--workflow NAME` (repeatable; all workflows when omitted); `--once`; `--pause-file PATH` (disabled); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `<exec-jsonl parent's parent>/.pipeline-state`) |
 | `trigger` | `issue_number`; `--handler NAME` (required); `--workflows-dir PATH` (`workflows`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto-detected when there is only one workflow); `--redispatch`; `--reason TEXT`; `--state-dir PATH` (same default as `watch`) |
 | `status` | `--issue N` and/or `--running` (at least one); `--handler` and `--workflow` (required with `--issue`); `--json`; `--exec-jsonl PATH` (`$GHDAG_EXEC_JSONL` or `jobs/exec.jsonl`); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `.pipeline-state`); `--done-dir PATH` / `--running-dir PATH` (`$GHDAG_STATE_DIR/done` / `running` or `<exec.jsonl parent>/done` / `running`); `--audit-path PATH` (optional; adds `started_at` / `elapsed_sec` to completed steps) |
 | `ui` | `--repo-root PATH` (`.`); `--host HOST` (`127.0.0.1`); `--port PORT` (`8080`); `--interval-sec SEC` (SSE poll, `3.0`); `--max-visible N` (`30`) |
@@ -1178,7 +1178,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.143.2"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.144.0"
 ```
 
 and read `CHANGELOG.md` before upgrading.

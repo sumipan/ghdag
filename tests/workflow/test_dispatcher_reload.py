@@ -11,7 +11,7 @@ from ghdag.github_client import GitHubIssuePort
 from ghdag.pipeline.llm_pipeline import build_order_builders
 from ghdag.pipeline.order import TemplateOrderBuilder
 from ghdag.pipeline.task_queue import TaskQueue
-from ghdag.workflow.dispatcher import WorkflowDispatcher
+from ghdag.workflow.dispatcher import WorkflowDispatcher, select_workflows
 from ghdag.workflow.loader import load_workflows
 
 
@@ -97,9 +97,7 @@ class TestAC2InvalidYamlFallback:
 
 
 def _make_real_pipeline(tmp_path: Path, workflows: list[WorkflowConfig]) -> TaskQueue:
-    default_template_dir = next(
-        (wf.template_dir for wf in workflows if wf.template_dir), "templates"
-    )
+    default_template_dir = next((wf.template_dir for wf in workflows if wf.template_dir), "templates")
     queue_dir = tmp_path / "queue"
     queue_dir.mkdir(parents=True, exist_ok=True)
     return TaskQueue(
@@ -197,3 +195,87 @@ class TestHotReloadOrderBuilders:
         dispatcher._maybe_reload_workflows()
 
         assert task_queue.order_builder_for("wf").build_order("step", {}) == "from tpl_b"
+
+
+_WF_A_RELOAD = """\
+name: wf-a
+template_dir: tpl_a
+triggers:
+  - label: "a:ready"
+    handler: run
+handlers:
+  run:
+    steps:
+      - template: step
+        engine: shell
+        model: bash
+polling_interval: 0
+"""
+
+_WF_B_RELOAD = """\
+name: wf-b
+template_dir: tpl_b
+triggers:
+  - label: "b:ready"
+    handler: run
+handlers:
+  run:
+    steps:
+      - template: step
+        engine: shell
+        model: bash
+polling_interval: 0
+"""
+
+
+def _write_wf_a_b_bundle(workflows_dir: Path) -> None:
+    workflows_dir.mkdir(parents=True, exist_ok=True)
+    (workflows_dir / "wf-a.yml").write_text(_WF_A_RELOAD)
+    (workflows_dir / "wf-b.yml").write_text(_WF_B_RELOAD)
+    for tpl in ("tpl_a", "tpl_b"):
+        tdir = workflows_dir / tpl
+        tdir.mkdir(exist_ok=True)
+        (tdir / "step.md").write_text("step\n")
+
+
+class TestWorkflowSelectionOnReload:
+    """Issue sumipan/nexus#7241 — reload respects workflow_names filter."""
+
+    def test_reload_keeps_workflow_selection(self, tmp_path: Path) -> None:
+        workflows_dir = tmp_path / "workflows"
+        _write_wf_a_b_bundle(workflows_dir)
+        all_workflows = load_workflows(workflows_dir)
+        wf_a_only, _ = select_workflows(all_workflows, ["wf-a"])
+
+        github_client = MagicMock(spec=GitHubIssuePort)
+        github_client.list_all_issues.return_value = [
+            {"number": 1, "labels": [{"name": "a:ready"}]},
+            {"number": 2, "labels": [{"name": "b:ready"}]},
+        ]
+        github_client.get_last_rate_limit.return_value = None
+
+        task_queue = _make_real_pipeline(tmp_path, wf_a_only)
+        enqueue_before = task_queue.enqueue
+
+        def counting_enqueue(*args, **kwargs):
+            counting_enqueue.calls += 1  # type: ignore[attr-defined]
+            return enqueue_before(*args, **kwargs)
+
+        counting_enqueue.calls = 0  # type: ignore[attr-defined]
+        task_queue.enqueue = counting_enqueue  # type: ignore[method-assign]
+
+        dispatcher = WorkflowDispatcher(
+            workflows=wf_a_only,
+            workflows_dir=workflows_dir,
+            github_client=github_client,
+            task_queue=task_queue,
+            queue_dir=str(tmp_path / "queue"),
+            workflow_names=["wf-a"],
+        )
+
+        (workflows_dir / "wf-b.yml").write_text(_WF_B_RELOAD.replace("polling_interval: 0", "polling_interval: 1"))
+        _bump_mtime_ahead(workflows_dir / "wf-b.yml")
+        dispatcher._maybe_reload_workflows()
+
+        dispatcher.run(max_iterations=1)
+        assert counting_enqueue.calls == 1  # type: ignore[attr-defined]

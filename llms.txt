@@ -34,6 +34,7 @@ Bundled JSON Schemas ship under `src/ghdag/schemas/`. Fetch any schema with `ghd
 
 ## CLI
 
+- Watch only selected workflows: `ghdag watch <workflows_dir> --workflow NAME` (repeatable; omit for all)
 - Validate every workflow YAML in a directory: `ghdag validate <workflows_dir>`
 - List schema names: `ghdag schema list`
 - Print one schema: `ghdag schema show <name>`
