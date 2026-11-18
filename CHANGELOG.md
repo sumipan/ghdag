@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.145.0 - 2026-11-18
+
 ### Removed
 
 - `ghdag watch --workflow NAME` (added in 0.144.0). Run one `ghdag watch` per workflows directory instead.
