@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- `ghdag watch --workflow NAME` (added in 0.144.0). Run one `ghdag watch` per workflows directory instead.
+
+## 0.144.0 - 2026-11-18
+
+### Added
+
+- `ghdag watch --workflow NAME` selects workflows by YAML `name` (repeatable); the same filter applies on hot reload.
+
 ## 0.143.2 - 2026-11-17
 
 ### Added
