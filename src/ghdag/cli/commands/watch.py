@@ -13,7 +13,7 @@ def cmd_watch(args) -> None:
     from ghdag.pipeline.llm_pipeline import build_order_builders
     from ghdag.pipeline.order import TemplateOrderBuilder
     from ghdag.pipeline.task_queue import TaskQueue
-    from ghdag.workflow.dispatcher import WorkflowDispatcher
+    from ghdag.workflow.dispatcher import WorkflowDispatcher, select_workflows
     from ghdag.workflow.loader import load_workflows
 
     workflows_path = Path(args.workflows_dir)
@@ -25,6 +25,15 @@ def cmd_watch(args) -> None:
         )
 
     workflows = load_workflows(workflows_path)
+    selected, missing = select_workflows(workflows, args.workflow_names)
+    if missing:
+        names = ", ".join(w.name for w in workflows)
+        raise CliUsageError(
+            f"workflow not found: {', '.join(missing)}",
+            code="WORKFLOW_NOT_FOUND",
+            hint=f"available: {names}",
+        )
+    workflows = selected
     for wf in workflows:
         wf.polling_interval = args.interval
 
@@ -40,9 +49,7 @@ def cmd_watch(args) -> None:
     else:
         state_dir = str(resolve_state_dir(".") / ".pipeline-state")
     order_builders = build_order_builders(workflows)
-    default_order_builder = TemplateOrderBuilder(
-        workflows_path.resolve() / "templates"
-    )
+    default_order_builder = TemplateOrderBuilder(workflows_path.resolve() / "templates")
 
     task_queue = TaskQueue(
         state_dir=state_dir,
@@ -58,5 +65,6 @@ def cmd_watch(args) -> None:
         task_queue=task_queue,
         queue_dir=queue_dir,
         pause_file=args.pause_file,
+        workflow_names=args.workflow_names,
     )
     dispatcher.run(max_iterations=1 if args.once else None)
