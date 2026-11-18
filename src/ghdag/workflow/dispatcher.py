@@ -8,7 +8,6 @@ import re
 import shlex
 import subprocess
 import time
-from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -56,7 +55,6 @@ class _LiveRenderOrderBuilder:
         template_path = (self._template_dir / f"{step_id}.md").resolve()
         return build_live_trampoline(template_path, context)
 
-
 _READY_LABEL_RE = re.compile(r"^(.+)([-:])ready$")
 
 logger = logging.getLogger(__name__)
@@ -74,24 +72,6 @@ def _epoch_to_iso(ts: int) -> str:
 
 
 _CONTEXT_HOOK_HINT = "context_hook must exit 0 and print one flat JSON object"
-
-
-def select_workflows(
-    workflows: list[WorkflowConfig],
-    names: Sequence[str] | None,
-) -> tuple[list[WorkflowConfig], list[str]]:
-    """Filter workflows by YAML ``name``.
-
-    When ``names`` is None, return all workflows. Otherwise return workflows whose
-    ``name`` is in ``names`` (preserving load order) and any requested names that
-    were not found (in request order).
-    """
-    if names is None:
-        return workflows, []
-    present = {wf.name for wf in workflows}
-    selected = [wf for wf in workflows if wf.name in names]
-    missing = [n for n in names if n not in present]
-    return selected, missing
 
 
 class ContextHookError(ConfigError):
@@ -113,10 +93,8 @@ class WorkflowDispatcher:
         queue_dir: str = "queue",
         pause_file: str | Path | None = None,
         workflows_dir: Path | None = None,
-        workflow_names: Sequence[str] | None = None,
     ):
         self._workflows = workflows
-        self._workflow_names = workflow_names
         # Accept both a single client and a list of clients.
         # When watching multiple repos, pass one client per repository.
         if isinstance(github_client, (list, tuple)):
@@ -128,7 +106,9 @@ class WorkflowDispatcher:
         self._burst_warned: dict[str, float] = {}
         self._pause_file = Path(pause_file) if pause_file is not None else None
         self._paused = False
-        self._base_polling_interval = self._workflows[0].polling_interval if self._workflows else 30
+        self._base_polling_interval = (
+            self._workflows[0].polling_interval if self._workflows else 30
+        )
         self._current_polling_interval = self._base_polling_interval
         self._workflows_dir = Path(workflows_dir) if workflows_dir is not None else None
         self._last_mtime: float = self._get_max_mtime()
@@ -153,11 +133,15 @@ class WorkflowDispatcher:
             except RateLimitError as exc:
                 if exc.reset_at is None:
                     logger.warning(
-                        "poll_once: list_all_issues(open) rate limited (%s) — skipping all triggers for this client",
+                        "poll_once: list_all_issues(open) rate limited (%s) — "
+                        "skipping all triggers for this client",
                         exc,
                     )
                     continue
-                if self._rate_limited_until is None or exc.reset_at > self._rate_limited_until:
+                if (
+                    self._rate_limited_until is None
+                    or exc.reset_at > self._rate_limited_until
+                ):
                     self._rate_limited_until = exc.reset_at
                 logger.warning(
                     "rate limited: skip poll until %s",
@@ -166,7 +150,8 @@ class WorkflowDispatcher:
                 continue
             except Exception as exc:
                 logger.warning(
-                    "poll_once: list_all_issues(open) failed (%s: %s) — skipping all triggers for this client",
+                    "poll_once: list_all_issues(open) failed (%s: %s) — "
+                    "skipping all triggers for this client",
                     type(exc).__name__,
                     exc,
                 )
@@ -192,7 +177,9 @@ class WorkflowDispatcher:
                     issues: list[dict] = []
                     for issue in all_open:
                         try:
-                            label_names = {lb["name"] for lb in issue.get("labels", [])}
+                            label_names = {
+                                lb["name"] for lb in issue.get("labels", [])
+                            }
                             if trigger.label in label_names:
                                 issues.append(issue)
                         except Exception as exc:
@@ -263,9 +250,7 @@ class WorkflowDispatcher:
         if current_running_rank is not None and trigger_rank <= current_running_rank:
             logger.info(
                 "Backward transition blocked: issue #%d trigger_rank=%d running_rank=%d",
-                issue_number,
-                trigger_rank,
-                current_running_rank,
+                issue_number, trigger_rank, current_running_rank,
             )
             return DispatchResult(status="skipped", reason="backward transition")
 
@@ -281,9 +266,7 @@ class WorkflowDispatcher:
         generation = 0
         if redispatch:
             generation = self._task_queue.increment_generation(
-                workflow.name,
-                handler_name,
-                issue_number,
+                workflow.name, handler_name, issue_number,
             )
             reason = redispatch_reason if redispatch_reason else "(no reason)"
             self._append_redispatch_audit(
@@ -295,22 +278,17 @@ class WorkflowDispatcher:
             )
         else:
             generation = self._task_queue.get_generation(
-                workflow.name,
-                handler_name,
-                issue_number,
+                workflow.name, handler_name, issue_number,
             )
 
         idempotency_key = build_idempotency_key(
-            workflow.name,
-            handler_name,
-            issue_number,
-            generation,
+            workflow.name, handler_name, issue_number, generation,
         )
         if not self._task_queue.check_idempotency(idempotency_key):
             logger.warning(
                 "dispatch skipped (already dispatched) — issue=#%d, handler=%s, key=%s\n"
                 "  → To retry failed steps: ghdag dag recover --issue %d --handler %s --dry-run\n"
-                '  → To start a new run:    ghdag trigger --issue %d --handler %s --redispatch --reason "..."',
+                "  → To start a new run:    ghdag trigger --issue %d --handler %s --redispatch --reason \"...\"",
                 issue_number,
                 handler_name,
                 idempotency_key,
@@ -374,7 +352,8 @@ class WorkflowDispatcher:
 
         if workflow.template_dir is None:
             raise ConfigError(
-                f"workflow {workflow.name!r} has no template_dir for live render; load via load_workflows",
+                f"workflow {workflow.name!r} has no template_dir for live render; "
+                "load via load_workflows",
                 code="WORKFLOW_TEMPLATE_DIR_MISSING",
             )
         template_dir = Path(workflow.template_dir)
@@ -453,7 +432,10 @@ class WorkflowDispatcher:
                 except RateLimitError as exc:
                     self._append_dispatch_failed_audit(issue_number, handler_name, exc)
                     if exc.reset_at is not None:
-                        if self._rate_limited_until is None or exc.reset_at > self._rate_limited_until:
+                        if (
+                            self._rate_limited_until is None
+                            or exc.reset_at > self._rate_limited_until
+                        ):
                             self._rate_limited_until = exc.reset_at
                         logger.warning(
                             "rate limited: skip poll until %s",
@@ -498,15 +480,8 @@ class WorkflowDispatcher:
         self._last_mtime = current_mtime
         try:
             new_workflows = load_workflows(self._workflows_dir)
-            selected, missing = select_workflows(new_workflows, self._workflow_names)
-            if missing:
-                logger.warning(
-                    "workflow reload failed (missing workflows: %s) — keeping previous definition",
-                    ", ".join(missing),
-                )
-                return
-            self._workflows = selected
-            self._task_queue.set_order_builders(build_order_builders(selected))
+            self._workflows = new_workflows
+            self._task_queue.set_order_builders(build_order_builders(new_workflows))
             logger.info("workflows reloaded from %s", self._workflows_dir)
         except Exception as exc:
             logger.warning(
@@ -620,13 +595,15 @@ class WorkflowDispatcher:
                 any_low = True
                 logger.warning(
                     "GitHub API rate limit low: %d/%d remaining (resets at %d)",
-                    remaining,
-                    limit,
-                    reset,
+                    remaining, limit, reset,
                 )
 
         if observed_any:
-            self._current_polling_interval = self._base_polling_interval * 2 if any_low else self._base_polling_interval
+            self._current_polling_interval = (
+                self._base_polling_interval * 2
+                if any_low
+                else self._base_polling_interval
+            )
 
     def _observe_correlation_burst(self) -> None:
         """Detect correlation_id bursts from audit.jsonl and emit a warning."""
@@ -736,8 +713,7 @@ class WorkflowDispatcher:
                         continue
 
                     handler_trigger, handler_rank, handler = self._resolve_trigger_by_label(
-                        workflow,
-                        trigger_label,
+                        workflow, trigger_label,
                     )
                     if handler is None or handler_trigger is None or handler_rank is None:
                         logger.warning(
@@ -816,7 +792,9 @@ class WorkflowDispatcher:
             return trigger, rank, handler
         return None, None, None
 
-    def _resolve_trigger(self, workflow: WorkflowConfig, handler: HandlerConfig) -> tuple[TriggerConfig | None, int]:
+    def _resolve_trigger(
+        self, workflow: WorkflowConfig, handler: HandlerConfig
+    ) -> tuple[TriggerConfig | None, int]:
         """Resolve the trigger and rank for a handler from the workflow."""
         for rank, trigger in enumerate(workflow.triggers):
             if trigger.handler in workflow.handlers:
@@ -887,7 +865,9 @@ class WorkflowDispatcher:
                 if label.startswith(prefix):
                     github.remove_label(issue_number, label)
 
-    def _run_context_hook(self, hook_cmd: str, issue_number: int, *, timeout: int = 30) -> dict[str, str]:
+    def _run_context_hook(
+        self, hook_cmd: str, issue_number: int, *, timeout: int = 30
+    ) -> dict[str, str]:
         """Run the context_hook command and return its stdout JSON as a dict.
 
         Args:

@@ -36,7 +36,10 @@ def _print_error(exc: GhdagError, *, output_json: bool) -> None:
 
 
 def _add_json_flag(parser: argparse.ArgumentParser) -> None:
-    if any("--json" in (action.option_strings or []) for action in parser._actions):
+    if any(
+        "--json" in (action.option_strings or [])
+        for action in parser._actions
+    ):
         return
     parser.add_argument(
         "--json",
@@ -51,7 +54,10 @@ def _iter_leaf_parsers(parser: argparse.ArgumentParser):
         if not isinstance(action, argparse._SubParsersAction):
             continue
         for subparser in action.choices.values():
-            if any(isinstance(a, argparse._SubParsersAction) for a in subparser._actions):
+            if any(
+                isinstance(a, argparse._SubParsersAction)
+                for a in subparser._actions
+            ):
                 yield from _iter_leaf_parsers(subparser)
             else:
                 yield subparser
@@ -85,14 +91,12 @@ def _build_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     parser.add_argument(
-        "--verbose",
-        "-v",
+        "--verbose", "-v",
         action="store_true",
         help="Enable DEBUG logging",
     )
     parser.add_argument(
-        "--quiet",
-        "-q",
+        "--quiet", "-q",
         action="store_true",
         help="Suppress INFO logging (WARNING and above only)",
     )
@@ -176,14 +180,6 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         metavar="PATH",
         help="Pause dispatch while this file exists (default: disabled)",
-    )
-    watch_parser.add_argument(
-        "--workflow",
-        action="append",
-        default=None,
-        dest="workflow_names",
-        metavar="NAME",
-        help="Watch only the workflow with this YAML name (repeatable; default: all workflows)",
     )
     watch_parser.add_argument(
         "--state-dir",
@@ -278,14 +274,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Prompt text (reads from stdin if omitted)",
     )
     llm_parser.add_argument(
-        "--engine",
-        "-e",
+        "--engine", "-e",
         default="claude",
         help="LLM engine name (default: claude)",
     )
     llm_parser.add_argument(
-        "--model",
-        "-m",
+        "--model", "-m",
         default=None,
         help="Model ID (default: engine default)",
     )
@@ -350,17 +344,9 @@ def _build_parser() -> argparse.ArgumentParser:
     cleanup_parser = subparsers.add_parser("cleanup", allow_abbrev=False, help="Archive completed/orphaned queue tasks")
     cleanup_parser.add_argument("repo_root", help="Path to repository root")
     cleanup_parser.add_argument("--dry-run", action="store_true", help="Show targets without making changes")
-    cleanup_parser.add_argument(
-        "--cutoff-days", type=int, default=1, help="Days before archiving completed tasks (default: 1)"
-    )
-    cleanup_parser.add_argument(
-        "--orphan-days", type=int, default=7, help="Days before archiving orphaned tasks (default: 7)"
-    )
-    cleanup_parser.add_argument(
-        "--auto-repair",
-        action="store_true",
-        help="Auto-fix orphan (Case D) and dead entry (Case F) issues; default is detect-only",
-    )
+    cleanup_parser.add_argument("--cutoff-days", type=int, default=1, help="Days before archiving completed tasks (default: 1)")
+    cleanup_parser.add_argument("--orphan-days", type=int, default=7, help="Days before archiving orphaned tasks (default: 7)")
+    cleanup_parser.add_argument("--auto-repair", action="store_true", help="Auto-fix orphan (Case D) and dead entry (Case F) issues; default is detect-only")
     cleanup_parser.set_defaults(func=cmd_cleanup)
 
     # ghdag trigger
