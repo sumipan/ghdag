@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.146.0-blue)
+![version](https://img.shields.io/badge/version-v0.146.1-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.146.0** (`pyproject.toml` `version = "0.146.0"`) |
+| Current release | **v0.146.1** (`pyproject.toml` `version = "0.146.1"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.146.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.146.1"
 ```
 
 Install from a checkout with the development tools:
@@ -327,6 +327,7 @@ Import other supported types from their definition packages (for example `ghdag.
 | `QuotaGate` | `(state_path, audit_path=None, pause_ttl_seconds=3600, limits=None)`; methods `report`, `clear`, `drain`, `resume`, `admit`, `begin_run`, `finish_run`, `refresh`, `snapshot`, `observe` |
 | `QueueTaskStore` | `(queue_dir, done_dir)` |
 | `issue_status` | `(issue_number, *, handler=None, workflow=None, exec_jsonl_path, state_dir, done_dir, running_uuids=None, audit_path=None, running_dir=None) -> IssueStatus` |
+| `read_exclusive_gate` | `(queue_dir: Path) -> tuple[str, str] | None` — reads `<queue_dir>/exclusive.json` (`uuid`, `state` of `waiting` or `running`); `None` when the file is absent or invalid |
 | `running_tasks` | `(running_dir) -> list[RunningTask]` |
 | `ghdag.llm.call` | `(prompt, *, route, timeout=None, stdin_text=None, cwd=None, permission=TEXT_ONLY, resume_session_id=None, isolation=None, permission_overrides=None, quota_gate=None, additional_tags=None) -> LLMResult` — `route` is an ordered list of `(engine, model)` pairs; `model=None` selects the engine default |
 | `ghdag.llm.build_llm_cmd` | `(engine, model, prompt, *, permission=TEXT_ONLY, dangerously_skip_permissions=False, resume_session_id=None, isolation=False) -> list[str]` — when `isolation=True`, claude adds `--disable-slash-commands`; codex adds `-c skills.include_instructions=false`; cursor is unchanged |
@@ -635,7 +636,7 @@ Every Python module under `src/ghdag/`. Package `__init__.py` files re-export th
 | `maintenance.py` | Queue validation and repair (`exec.jsonl`, done markers) |
 | `quota.py` | `QuotaGate`: engine quota, pause sources, drain mode, role admission |
 | `schemas/__init__.py` | Bundled JSON Schema asset package |
-| `status.py` | `issue_status` / `running_tasks` and their dataclasses |
+| `status.py` | `issue_status` / `running_tasks` / `read_exclusive_gate` and their dataclasses |
 | `audit/__init__.py` | Audit span API package |
 | `audit/span.py` | `emit_span` / `make_span_id` latency span writer |
 | `cleanup/__init__.py` | `cleanup_queue`, `CleanupResult`, `file_timestamp` |
@@ -1190,7 +1191,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.146.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.146.1"
 ```
 
 and read `CHANGELOG.md` before upgrading.
