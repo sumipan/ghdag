@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `StepConfig.permission` accepts a `Permission` value (Python API) so hosts can pass per-job tool allow-lists at enqueue time; workflow YAML still uses preset names only.
+
 ## 0.145.0 - 2026-11-18
 
 ### Removed

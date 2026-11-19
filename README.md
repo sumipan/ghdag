@@ -421,7 +421,7 @@ Modules without a package-level export, importable directly as implementation de
 
 `web_search=True` requests Web search in an engine-neutral way: claude adds the Web tool allow-list (`WebFetch`, `WebSearch`, plus read/search helpers), codex adds the top-level `--search` flag before `exec`, and cursor relies on harness Web tools without extra argv. gemini and shell reject `web_search=True` in `call()`.
 
-Presets live in `PERMISSIONS`. Workflow steps pick one with `StepConfig.permission`, falling back to `GHDAG_SAFE_DEFAULT_PERMISSION`.
+Presets live in `PERMISSIONS`. Workflow steps pick one with `StepConfig.permission`, falling back to `GHDAG_SAFE_DEFAULT_PERMISSION`. Hosts that build `StepConfig` in Python may pass a `Permission` value instead of a preset name to set per-job tool allow-lists (`allowed_tools` / `disallowed_tools`, and other fields) for that enqueue only; workflow YAML still uses preset names.
 
 | Name | Constant | Settings |
 |---|---|---|
@@ -816,7 +816,7 @@ Load-time step validation error codes (each `ValidationError` uses the code in t
 |---|---|
 | `STEP_ENGINE_UNKNOWN` | `engine` is not in `ENGINE_SPECS` |
 | `STEP_MODEL_REQUIRED` | `model` is missing on a non-`shell` step |
-| `STEP_PERMISSION_UNKNOWN` | `permission` is not a capability preset |
+| `STEP_PERMISSION_UNKNOWN` | `permission` is neither a capability preset name nor a `Permission` value |
 | `STEP_DEPENDENCY_UNKNOWN` | `depends` references an unknown step `id` |
 | `STEP_DEPENDENCY_CYCLE` | `depends` has a cycle among step ids |
 | `STEP_RESUME_FROM_INVALID` | `resume_from` is unknown or uses a different engine |
@@ -848,7 +848,7 @@ Load-time step validation error codes (each `ValidationError` uses the code in t
 | | `engine` | `str` | no | `"claude"` | Engine name |
 | | `depends` | `list[str]` | no | `[]` | Upstream step IDs. `${<id>_result_filename}` requires `<id>` in `depends`. `${<id>_result_content}` is filled at enqueue time, so for a prior step in the same handler dispatch it is always empty—use `${<id>_result_filename}` in `depends` and read `jobs/${<id>_result_filename}` at run time instead. External names (for example from `context_hook`) are not prior step IDs and may still use `_result_content`. |
 | | `resume_from` | `str \| None` | no | `None` | Step ID whose session to resume (same engine required) |
-| | `permission` | `str \| None` | no | `None` | Capability preset name; `None` uses `GHDAG_SAFE_DEFAULT_PERMISSION` or `text_only` |
+| | `permission` | `str \| Permission \| None` | no | `None` | Capability preset name or a `Permission` value (Python API only); `None` uses `GHDAG_SAFE_DEFAULT_PERMISSION` or `text_only` |
 | | `skill_name` | `str \| None` | no | `None` | Skill the step invokes (checked by `workflow.typecheck`) |
 | | `render` | `str` | no | `"frozen"` | `"frozen"` (expand at enqueue) or `"live"` (expand at run time) |
 | | `env_passthrough` | `list[str]` | no | `[]` | Host env var names exempt from `GHDAG_TASK_ENV_DENY`; non-empty values are copied to `annotations.env_passthrough` on enqueue so `TaskLauncher` can apply them |
