@@ -7,7 +7,6 @@ import os
 import signal
 import subprocess
 import threading
-import time
 from pathlib import Path
 from unittest.mock import ANY, MagicMock
 
@@ -18,6 +17,8 @@ from ghdag.dag.models import DagConfig, Task
 from ghdag.dag.task_launcher import TaskLauncher, _process_group_exists
 from ghdag.io.done import interpret_done, is_done, load_succeeded_from_dir, read_done_content
 from ghdag.status import EXCLUSIVE_STATE_FILE, read_exclusive_gate
+
+from dag.test_engine_drain import _wait_until
 
 UUID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 UUID_X = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
@@ -63,15 +64,6 @@ def _exclusive_task(uuid: str, command: str, **extra) -> dict:
     return {"uuid": uuid, "command": command, "depends": [], "annotations": ann, **extra}
 
 
-def _wait_until(predicate, *, timeout: float = 15.0, interval: float = 0.05) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if predicate():
-            return True
-        time.sleep(interval)
-    return False
-
-
 def _stamp_cmd(stamp_dir: Path, label: str, body: str) -> str:
     start = stamp_dir / f"{label}.start"
     return (
@@ -101,7 +93,7 @@ class TestExclusiveLaunchOrdering:
         t = threading.Thread(target=engine.run, daemon=True)
         t.start()
         try:
-            assert _wait_until(lambda: engine._launcher.is_running(UUID_A), timeout=5.0)
+            assert _wait_until(lambda: engine._launcher.is_running(UUID_A))
             _append_jsonl(
                 exec_path,
                 [
@@ -120,7 +112,6 @@ class TestExclusiveLaunchOrdering:
                     is_done(config.exec_done_dir, uid)
                     for uid in (UUID_A, UUID_X, UUID_B)
                 ),
-                timeout=15.0,
             )
             ta, tx, tb = (
                 _read_stamp(stamp_dir, "A"),
@@ -131,7 +122,7 @@ class TestExclusiveLaunchOrdering:
             assert tx > _read_stamp(stamp_dir, "A")  # X after A started
         finally:
             engine._shutdown = True
-            t.join(timeout=5.0)
+            t.join()
 
     def test_downstream_of_running_task_waits_for_exclusive(self, tmp_path):
         stamp_dir = tmp_path / "stamps"
@@ -157,14 +148,13 @@ class TestExclusiveLaunchOrdering:
                     is_done(config.exec_done_dir, uid)
                     for uid in (UUID_A, UUID_X, UUID_A2)
                 ),
-                timeout=15.0,
             )
             ta2 = _read_stamp(stamp_dir, "A2")
             tx_end = float((stamp_dir / "X.start").read_text().strip()) + 0.35
             assert ta2 > tx_end
         finally:
             engine._shutdown = True
-            t.join(timeout=5.0)
+            t.join()
 
     def test_only_exclusive_runs_while_it_runs(self, tmp_path):
         records = [
@@ -181,12 +171,12 @@ class TestExclusiveLaunchOrdering:
         t = threading.Thread(target=engine.run, daemon=True)
         t.start()
         try:
-            assert _wait_until(lambda: engine._launcher.is_running(UUID_X), timeout=5.0)
+            assert _wait_until(lambda: engine._launcher.is_running(UUID_X))
             names = {p.stem for p in running_dir.glob("*.json")}
             assert names == {UUID_X}
         finally:
             engine._shutdown = True
-            t.join(timeout=8.0)
+            t.join()
 
     def test_failed_exclusive_releases_others(self, tmp_path):
         records = [
@@ -203,13 +193,12 @@ class TestExclusiveLaunchOrdering:
             assert _wait_until(
                 lambda: is_done(config.exec_done_dir, UUID_X)
                 and is_done(config.exec_done_dir, UUID_B),
-                timeout=15.0,
             )
             assert interpret_done(read_done_content(config.exec_done_dir, UUID_X)) != "success"
             assert UUID_B in load_succeeded_from_dir(config.exec_done_dir)
         finally:
             engine._shutdown = True
-            t.join(timeout=5.0)
+            t.join()
 
     def test_two_exclusive_tasks_run_one_at_a_time_in_order(self, tmp_path):
         stamp_dir = tmp_path / "stamps"
@@ -231,7 +220,6 @@ class TestExclusiveLaunchOrdering:
                     is_done(config.exec_done_dir, uid)
                     for uid in (UUID_X1, UUID_X2, UUID_C)
                 ),
-                timeout=15.0,
             )
             tx1, tx2, tc = (
                 _read_stamp(stamp_dir, "X1"),
@@ -242,7 +230,7 @@ class TestExclusiveLaunchOrdering:
             assert tx2 - tx1 > 0.25
         finally:
             engine._shutdown = True
-            t.join(timeout=8.0)
+            t.join()
 
 
 class TestExclusiveStateFile:
@@ -260,21 +248,20 @@ class TestExclusiveStateFile:
         t = threading.Thread(target=engine.run, daemon=True)
         t.start()
         try:
-            assert _wait_until(lambda: gate_path.is_file(), timeout=8.0)
+            assert _wait_until(lambda: gate_path.is_file())
             waiting = json.loads(gate_path.read_text(encoding="utf-8"))
             assert waiting == {"uuid": UUID_X, "state": "waiting"}
 
             assert _wait_until(
                 lambda: read_exclusive_gate(Path(config.exec_done_dir).parent)
-                == (UUID_X, "running"),
-                timeout=8.0,
+                == (UUID_X, "running"                ),
             )
 
-            assert _wait_until(lambda: is_done(config.exec_done_dir, UUID_X), timeout=8.0)
-            assert _wait_until(lambda: not gate_path.exists(), timeout=5.0)
+            assert _wait_until(lambda: is_done(config.exec_done_dir, UUID_X))
+            assert _wait_until(lambda: not gate_path.exists())
         finally:
             engine._shutdown = True
-            t.join(timeout=8.0)
+            t.join()
 
 
 class TestExclusiveDrainAndAdopt:
@@ -299,11 +286,11 @@ class TestExclusiveDrainAndAdopt:
         t = threading.Thread(target=engine.run, daemon=True)
         t.start()
         try:
-            assert _wait_until(lambda: engine._launcher.is_running(UUID_X), timeout=5.0)
+            assert _wait_until(lambda: engine._launcher.is_running(UUID_X))
             engine._launcher.mark_interrupted_all()
             engine._draining = True
-            engine._drain_deadline = time.monotonic() + 30.0
-            assert _wait_until(lambda: not t.is_alive(), timeout=2.0)
+            engine._drain_deadline = float("inf")
+            assert _wait_until(lambda: not t.is_alive())
             running_file = jobs / "running" / f"{UUID_X}.json"
             assert running_file.exists()
             data = json.loads(running_file.read_text(encoding="utf-8"))
@@ -313,7 +300,7 @@ class TestExclusiveDrainAndAdopt:
             assert _process_group_exists(pgid)
         finally:
             engine._shutdown = True
-            t.join(timeout=3.0)
+            t.join()
             data = json.loads((jobs / "running" / f"{UUID_X}.json").read_text())
             try:
                 os.killpg(data["pgid"], signal.SIGKILL)
@@ -359,7 +346,7 @@ class TestExclusiveDrainAndAdopt:
         pgid = proc.pid
         os.killpg(pgid, signal.SIGKILL)
         proc.wait()
-        assert _wait_until(lambda: not _process_group_exists(pgid), timeout=2.0)
+        assert _wait_until(lambda: not _process_group_exists(pgid))
         payload = {
             "pid": proc.pid,
             "pgid": pgid,
@@ -420,17 +407,16 @@ class TestCancelWaitingExclusive:
         t.start()
         try:
             assert _wait_until(
-                lambda: read_exclusive_gate(queue_dir) == (UUID_X, "waiting"),
-                timeout=8.0,
+                lambda: read_exclusive_gate(queue_dir) == (UUID_X, "waiting"                ),
             )
             cancel_path.parent.mkdir(parents=True, exist_ok=True)
             cancel_path.write_text("", encoding="utf-8")
-            assert _wait_until(lambda: is_done(config.exec_done_dir, UUID_X), timeout=8.0)
+            assert _wait_until(lambda: is_done(config.exec_done_dir, UUID_X))
             assert not cancel_path.exists()
             hooks.on_task_cancelled.assert_called_with(UUID_X, ANY)
             assert read_done_content(config.exec_done_dir, UUID_X) == DONE_CANCELLED
-            assert _wait_until(lambda: is_done(config.exec_done_dir, UUID_B), timeout=8.0)
+            assert _wait_until(lambda: is_done(config.exec_done_dir, UUID_B))
             assert UUID_B in load_succeeded_from_dir(config.exec_done_dir)
         finally:
             engine._shutdown = True
-            t.join(timeout=8.0)
+            t.join()

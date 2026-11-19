@@ -61,7 +61,9 @@ CURATED_RUNTIME_EXPORTS: dict[str, frozenset[str]] = {
     ),
     "ghdag.mcp": frozenset(),
     "ghdag.schemas": frozenset(),
-    "ghdag.status": frozenset({"StepStatus", "issue_status"}),
+    "ghdag.status": frozenset(
+        {"EXCLUSIVE_STATE_FILE", "StepStatus", "issue_status", "read_exclusive_gate"}
+    ),
     "ghdag.tool": frozenset({"ToolDef"}),
     "ghdag.vcs": frozenset(
         {

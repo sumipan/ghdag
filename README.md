@@ -398,7 +398,7 @@ With a `quota_gate`, `call()` walks `route` from front to back: engines marked p
 | `ghdag.metrics` | `FailureClass`, `MetricsRecorder`, `TaskMetrics`, `TokenUsage` |
 | `ghdag.pipeline` | `AuditContext`, `PipelineConfig`, `TaskQueue`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_command_adapter`, `resolve_models`, `wait_for_result`, `write_task_exit_audit` |
 | `ghdag.quota` | `QuotaGate`, `QuotaSnapshot`, `EngineQuotaState`, `EngineUsage`, `AdmissionDecision`, `Missing` |
-| `ghdag.status` | `StepStatus`, `issue_status` |
+| `ghdag.status` | `EXCLUSIVE_STATE_FILE`, `StepStatus`, `issue_status`, `read_exclusive_gate` |
 | `ghdag.tool` | `ToolDef` |
 | `ghdag.vcs` | `CommitResult`, `ConflictError`, `LocalGitSink`, `NullSink`, `OwnershipError`, `get_sink`, `git_enabled` |
 | `ghdag.workflow` | `ConsumeEntry`, `HandlerConfig`, `SkillIOSpec`, `StepConfig`, `TriggerConfig`, `WorkflowConfig`, `load_workflows`, `WorkflowDispatcher`, `transition`, `typecheck_dag` |
