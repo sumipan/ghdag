@@ -10,6 +10,7 @@ import threading
 from pathlib import Path
 from unittest.mock import ANY, MagicMock
 
+from dag.test_engine_drain import _wait_until
 from ghdag.core.vocabulary import DONE_CANCELLED, DONE_ORPHANED_ON_RESTART
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.engine import DagEngine
@@ -17,8 +18,6 @@ from ghdag.dag.models import DagConfig, Task
 from ghdag.dag.task_launcher import TaskLauncher, _process_group_exists
 from ghdag.io.done import interpret_done, is_done, load_succeeded_from_dir, read_done_content
 from ghdag.status import EXCLUSIVE_STATE_FILE, read_exclusive_gate
-
-from dag.test_engine_drain import _wait_until
 
 UUID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 UUID_X = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
