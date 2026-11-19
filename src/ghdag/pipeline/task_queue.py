@@ -22,6 +22,7 @@ from ghdag.pipeline.order import OrderBuilder
 from ghdag.quota import QuotaGate
 
 if TYPE_CHECKING:
+    from ghdag.core.capabilities import Permission
     from ghdag.core.models.workflow import StepConfig
 
 
@@ -318,25 +319,26 @@ class TaskQueue:
         result_filename: str,
         engine: str,
         model: str,
-        permission: str | None = None,
+        permission: str | Permission | None = None,
     ) -> dict:
-        from ghdag.core.capabilities import PERMISSIONS
+        from ghdag.core.capabilities import PERMISSIONS, Permission
         from ghdag.core.command import render_exec_command
         from ghdag.core.engine_spec import ENGINE_SPECS
 
         preset_keys = sorted(PERMISSIONS.keys())
-        if permission is not None and permission not in PERMISSIONS:
-            raise ConfigError(
-                f"Unknown permission preset: {permission!r}. Available: {preset_keys}",
-                code="STEP_PERMISSION_UNKNOWN",
-                hint=f"available presets: {preset_keys}",
-            )
-
         safe_default_env: str | None = None
         safe_default_applied = False
-        if permission is not None:
+        if isinstance(permission, Permission):
+            perm = permission
+        elif isinstance(permission, str):
+            if permission not in PERMISSIONS:
+                raise ConfigError(
+                    f"Unknown permission preset: {permission!r}. Available: {preset_keys}",
+                    code="STEP_PERMISSION_UNKNOWN",
+                    hint=f"available presets: {preset_keys}",
+                )
             perm = PERMISSIONS[permission]
-        else:
+        elif permission is None:
             safe_default_env = ghdag_safe_default_permission()
             if safe_default_env:
                 if safe_default_env not in PERMISSIONS:
@@ -352,6 +354,13 @@ class TaskQueue:
                 safe_default_env = "text_only"
                 perm = PERMISSIONS["text_only"]
                 safe_default_applied = True
+        else:
+            raise ConfigError(
+                f"Unknown permission preset: {permission!r}. "
+                f"Available: {preset_keys} (or a Permission value)",
+                code="STEP_PERMISSION_UNKNOWN",
+                hint=f"available presets: {preset_keys}",
+            )
 
         if engine not in ENGINE_SPECS:
             from ghdag.llm.engines import EngineModelError

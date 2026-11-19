@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from ghdag.core.capabilities import Permission
+
 WORKFLOW_KEYS = frozenset(
     {
         "name",
@@ -45,7 +47,7 @@ class StepConfig:
     engine: str = "claude"  # LLM engine name ("claude", "gemini", "cursor", etc.)
     depends: list[str] = field(default_factory=list)  # list of dependency step IDs
     resume_from: str | None = None  # ID of the parent step whose session is continued
-    permission: str | None = None  # permission preset name (None = engine default)
+    permission: str | Permission | None = None  # preset name, or a Permission value built by the host (Python API only)
     skill_name: str | None = None  # skill name invoked by this step
     render: str = "frozen"  # "frozen" (expanded at enqueue) | "live" (re-expanded at run time via trampoline)
     env_passthrough: list[str] = field(default_factory=list)  # env var names exempt from deny

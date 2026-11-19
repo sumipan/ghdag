@@ -51,6 +51,64 @@ class TestStepConfigPermission:
         order_path = record["result_path"].replace("-shell-result-", "-shell-order-")
         assert record["command"] == f"bash -o pipefail {order_path}"
 
+    def test_step_permission_value_is_rendered_into_the_command(self):
+        """Issue #7332 AC1: host-supplied Permission is baked into the exec command."""
+        import json as _json
+        import shlex
+
+        from ghdag.core.capabilities import Permission
+
+        api, _, _ = _make_api()
+        perm = Permission(
+            allowed_tools=("Read", "Bash(ls:*)"),
+            disallowed_tools=("WebFetch",),
+        )
+        steps = [
+            StepConfig(template="brushup", model="claude-sonnet-4-6", permission=perm),
+        ]
+        exec_lines = api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        cmd = shlex.split(record["command"])
+        allowed_idx = cmd.index("--allowed-tools")
+        assert cmd[allowed_idx + 1] == "Read,Bash(ls:*)"
+        disallowed_idx = cmd.index("--disallowed-tools")
+        assert cmd[disallowed_idx + 1] == "WebFetch"
+
+    def test_step_permission_value_skips_safe_default_annotation(self, monkeypatch):
+        """Issue #7332 AC2: Permission value does not trigger safe-default annotations."""
+        import json as _json
+
+        from ghdag.core.capabilities import Permission
+
+        monkeypatch.setenv("GHDAG_SAFE_DEFAULT_PERMISSION", "web_research")
+        api, _, _ = _make_api()
+        perm = Permission(
+            allowed_tools=("Read", "Bash(ls:*)"),
+            disallowed_tools=("WebFetch",),
+        )
+        steps = [
+            StepConfig(template="brushup", model="claude-sonnet-4-6", permission=perm),
+        ]
+        exec_lines = api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        annotations = record.get("annotations", {})
+        assert "safe_default_applied" not in annotations
+        assert "safe_default_preset" not in annotations
+
+    def test_step_permission_of_other_type_is_rejected(self):
+        """Issue #7332 AC3: invalid permission type raises STEP_PERMISSION_UNKNOWN."""
+        from ghdag.core.exceptions import ConfigError
+
+        api, _, _ = _make_api()
+        steps = [
+            StepConfig(template="brushup", model="claude-sonnet-4-6", permission=["Read"]),
+        ]
+        with pytest.raises(ConfigError) as exc_info:
+            api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
+        assert exc_info.value.code == "STEP_PERMISSION_UNKNOWN"
+
 
 # ---------------------------------------------------------------------------
 # S0-2 (#1295): default permission audit annotations (AC1–AC3, AC7)
