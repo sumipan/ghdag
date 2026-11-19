@@ -32,6 +32,7 @@ from ghdag.mcp.server import McpServer
 from ghdag.mcp.tools import MAX_READ_BYTES, McpRuntime, McpToolRegistry
 from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.pipeline.task_queue import TaskQueue
+from ghdag.status import EXCLUSIVE_STATE_FILE
 
 
 def _runtime(
@@ -444,6 +445,68 @@ class TestStatusIncludeResult:
         )
         assert result["isError"] is True
         assert result["structuredContent"]["code"] == "MCP_ARGUMENT_INVALID"
+
+
+    def test_uuid_status_blocked_by_exclusive(self, tmp_path):
+        """Refs #7363 — pending uuid status includes blocked_by when gate is waiting."""
+        runtime = _runtime(tmp_path)
+        gate_uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        blocked_uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        queue = Path(runtime.queue_dir)
+        (queue / EXCLUSIVE_STATE_FILE).write_text(
+            json.dumps({"uuid": gate_uuid, "state": "waiting"}),
+            encoding="utf-8",
+        )
+        for uid in (gate_uuid, blocked_uuid):
+            _seed_uuid_record(runtime, uid)
+        result = _call(
+            _server(runtime),
+            "ghdag_status",
+            {"uuids": [blocked_uuid]},
+        )
+        task = result["structuredContent"]["tasks"][0]
+        assert task["status"] == "pending"
+        assert task["blocked_by"] == gate_uuid
+
+        (queue / EXCLUSIVE_STATE_FILE).unlink(missing_ok=True)
+        no_gate = _call(
+            _server(runtime),
+            "ghdag_status",
+            {"uuids": [blocked_uuid]},
+        )
+        task2 = no_gate["structuredContent"]["tasks"][0]
+        assert "blocked_by" not in task2
+
+    def test_enqueue_exclusive_sets_annotation(self, tmp_path):
+        """Refs #7363 — MCP exclusive boolean maps to _exclusive annotation."""
+        runtime = _runtime(tmp_path)
+        server = _server(runtime)
+        ok = _call(
+            server,
+            "ghdag_enqueue",
+            {
+                "steps": [
+                    {"engine": "shell", "command": "echo x", "exclusive": True},
+                    {"engine": "shell", "command": "echo y"},
+                ]
+            },
+        )
+        assert ok["isError"] is False
+        lines = runtime.task_queue.exec_jsonl_path.read_text(encoding="utf-8").splitlines()
+        records = [json.loads(line) for line in lines if line.strip()]
+        exclusive = [r for r in records if r.get("annotations", {}).get("_exclusive") == "true"]
+        assert len(exclusive) == 1
+        plain = [r for r in records if "_exclusive" not in r.get("annotations", {})]
+        assert len(plain) == 1
+
+        bad = _call(
+            server,
+            "ghdag_enqueue",
+            {"steps": [{"engine": "shell", "command": "echo z", "exclusive": "yes"}]},
+        )
+        assert bad["isError"] is True
+        assert bad["structuredContent"]["code"] == "MCP_ARGUMENT_INVALID"
+        assert runtime.task_queue.exec_jsonl_path.read_text(encoding="utf-8").count("\n") == 2
 
 
 class TestGhdagRead:

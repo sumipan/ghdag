@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from ghdag.config.env import state_dir as resolve_state_dir
+from ghdag.status import read_exclusive_gate
 
 
 def cmd_cancel(args) -> None:
@@ -14,8 +15,10 @@ def cmd_cancel(args) -> None:
     queue_dir = (Path(args.queue_dir) if args.queue_dir else resolve_state_dir("jobs")).resolve()
     running_path = queue_dir / "running" / f"{uuid}.json"
     if not running_path.is_file():
-        print(f"error: not running: {uuid}", file=sys.stderr)
-        sys.exit(1)
+        gate = read_exclusive_gate(queue_dir)
+        if gate != (uuid, "waiting"):
+            print(f"error: not running: {uuid}", file=sys.stderr)
+            sys.exit(1)
 
     cancel_dir = queue_dir / "cancel"
     cancel_dir.mkdir(parents=True, exist_ok=True)

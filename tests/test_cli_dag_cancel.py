@@ -23,6 +23,26 @@ class TestCliDagCancel:
         assert "not running" in captured.err.lower() or "not running" in captured.out.lower()
         assert not (jobs / "cancel" / uuid).exists()
 
+    def test_cancel_waiting_exclusive_creates_control_file(self, tmp_path, capsys, monkeypatch):
+        """Refs #7363 — waiting exclusive gate uuid accepts cancel without running file."""
+        import json
+
+        from ghdag.cli import main
+        from ghdag.status import EXCLUSIVE_STATE_FILE
+
+        jobs = tmp_path / "jobs"
+        jobs.mkdir(parents=True)
+        uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        (jobs / EXCLUSIVE_STATE_FILE).write_text(
+            json.dumps({"uuid": uuid, "state": "waiting"}),
+            encoding="utf-8",
+        )
+        monkeypatch.chdir(tmp_path)
+        main(["dag", "cancel", uuid, "--queue-dir", str(jobs)])
+        captured = capsys.readouterr()
+        assert f"cancel requested: {uuid}" in captured.out
+        assert (jobs / "cancel" / uuid).is_file()
+
     def test_api_stop_uses_cancel_file_not_ps(self, tmp_path):
         """The /api/stop path creates a control file instead of killing via ps."""
         from ghdag.ui import server as server_mod

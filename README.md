@@ -12,13 +12,13 @@ Nothing runs on a hosted CI runner. Engines are local CLIs (`claude`, `cursor-ag
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.145.1-blue)
+![version](https://img.shields.io/badge/version-v0.146.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.145.1** (`pyproject.toml` `version = "0.145.1"`) |
+| Current release | **v0.146.0** (`pyproject.toml` `version = "0.146.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -37,7 +37,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.145.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.146.0"
 ```
 
 Install from a checkout with the development tools:
@@ -398,7 +398,7 @@ With a `quota_gate`, `call()` walks `route` from front to back: engines marked p
 | `ghdag.metrics` | `FailureClass`, `MetricsRecorder`, `TaskMetrics`, `TokenUsage` |
 | `ghdag.pipeline` | `AuditContext`, `PipelineConfig`, `TaskQueue`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_command_adapter`, `resolve_models`, `wait_for_result`, `write_task_exit_audit` |
 | `ghdag.quota` | `QuotaGate`, `QuotaSnapshot`, `EngineQuotaState`, `EngineUsage`, `AdmissionDecision`, `Missing` |
-| `ghdag.status` | `StepStatus`, `issue_status` |
+| `ghdag.status` | `EXCLUSIVE_STATE_FILE`, `StepStatus`, `issue_status`, `read_exclusive_gate` |
 | `ghdag.tool` | `ToolDef` |
 | `ghdag.vcs` | `CommitResult`, `ConflictError`, `LocalGitSink`, `NullSink`, `OwnershipError`, `get_sink`, `git_enabled` |
 | `ghdag.workflow` | `ConsumeEntry`, `HandlerConfig`, `SkillIOSpec`, `StepConfig`, `TriggerConfig`, `WorkflowConfig`, `load_workflows`, `WorkflowDispatcher`, `transition`, `typecheck_dag` |
@@ -519,7 +519,7 @@ A third process can enqueue and inspect the same queue over newline-delimited JS
 
 | MCP tool | Input | Output (`structuredContent`) |
 |---|---|---|
-| `ghdag_enqueue` | `steps` (1–20 items; each needs `engine` and `command` or `prompt`; optional `id`, default `step-<n>`) | `{"uuids": {<step id>: <uuid>}}` |
+| `ghdag_enqueue` | `steps` (1–20 items; each needs `engine` and `command` or `prompt`; optional `id`, default `step-<n>`, optional `exclusive` boolean) | `{"uuids": {<step id>: <uuid>}}` |
 | `ghdag_status` | `uuids` (1–100) **or** `issue` + `handler` + `workflow`; with `uuids`, optional `include_result` (boolean) embeds capped result file bodies | `{"tasks": [...]}` with `pending` / `running` / `success` / `failed`, or Issue DAG snapshot |
 | `ghdag_read` | `path` (repo-relative; must be listed by `--read-path`) | `{"path", "content", "truncated", "reason"}` — read-only, 64 KiB cap |
 
@@ -540,6 +540,18 @@ Register in Claude Code (example):
 }
 ```
 
+### Exclusive tasks
+
+Some maintenance work (deploying a new runner build, reinstalling dependencies) must not run while other tasks are using the same code. Mark a task with `annotations._exclusive: "true"` on its `exec.jsonl` line, or pass `"exclusive": true` on a `ghdag_enqueue` step (boolean only; workflow YAML has no `exclusive` key). The runner then:
+
+- Treats the first eligible exclusive task in `exec.jsonl` order as the **gate**. While a gate exists, no other task is **launched** (ready non-exclusive tasks wait; the gate does not wait on a time limit while other tasks finish—only on their natural completion or timeout).
+- When the gate is eligible but other tasks are still running, waits until `running_count` is zero, then starts the gate. While the gate runs, nothing else starts.
+- Writes `<queue_dir>/exclusive.json` as `{"uuid": "<gate>", "state": "waiting" | "running"}` and removes the file when there is no gate. `ghdag status` and MCP `ghdag_status` set `blocked_by` on pending steps/tasks blocked by the gate.
+- Runs multiple exclusive tasks **one after another** in enqueue order (never two at once).
+- Accepts `ghdag dag cancel <gate-uuid>` while the gate is waiting (`state: waiting`), which marks the task `CANCELLED` and resumes other launches.
+- On the first SIGTERM/SIGINT during drain: if only exclusive task(s) are running, records `interrupted_at` and exits **without** signalling them; the process group keeps running for the next runner.
+- On restart: a live interrupted exclusive task is **adopted**, not rerun; a dead one gets `ORPHANED_ON_RESTART` (`exclusive task is not rerun after interruption`). Record completion yourself via `result_path` if you need a durable artifact.
+
 ### DAG runner lifecycle
 
 | Phase | Behavior |
@@ -552,9 +564,9 @@ Register in Claude Code (example):
 | Repair turn | On `REPLY_BLOCK_FAILED` or invalid fan-out (`FANOUT_INVALID`), when the task has a stored session and `DagConfig.max_repair_turns` &gt; 0, the runner admits the repair relaunch through `QuotaGate.begin_run` (same running-task registry as a normal launch). If admission is denied (engine paused, draining, or at concurrency limit), the original failure is finalized with no repair order, result archive, or `llm.repair_turn` audit. When admitted, the runner resumes once with a repair order (`llm.repair_turn` audit). Legacy `---` + `ghdag_fanout:` with command-only children still works when no block children are present. |
 | Engine quarantine | `EngineQuarantine` temporarily blocks launches for an engine whose environment is broken |
 | Circuit breaker | The runner stops after `max_consecutive_failures` consecutive failures; the counter resets when the gap since the previous failure exceeds `failure_window_sec` |
-| First SIGTERM / SIGINT | Writes `interrupted_at` into every `running/<uuid>.json`, stops launching, and drains running tasks until `task_timeout` elapses (no drain when `task_timeout` is `None`); the remaining tasks are then terminated and the runner exits |
+| First SIGTERM / SIGINT | Writes `interrupted_at` into every `running/<uuid>.json`, stops launching, and drains running tasks until `task_timeout` elapses (no drain when `task_timeout` is `None`); the remaining tasks are then terminated and the runner exits. When only exclusive task(s) are still running, the runner exits immediately without signalling them so they can finish across a restart |
 | Second SIGTERM / SIGINT | Exits immediately |
-| Restart | After the first `exec.jsonl` load, `adopt_orphans` inspects `running/*.json`: live tasks are adopted and tracked to completion, dead tasks are closed with `ORPHANED_ON_RESTART`, and interrupted tasks (`interrupted_at` set) are killed if still alive and relaunched once with the same UUID and `GHDAG_PREVIOUS_ATTEMPT=interrupted` |
+| Restart | After the first `exec.jsonl` load, `adopt_orphans` inspects `running/*.json`: live tasks are adopted and tracked to completion, dead tasks are closed with `ORPHANED_ON_RESTART`, and interrupted tasks (`interrupted_at` set) are killed if still alive and relaunched once with the same UUID and `GHDAG_PREVIOUS_ATTEMPT=interrupted`. Interrupted **exclusive** tasks are never rerun: live ones are adopted, dead ones are closed with `ORPHANED_ON_RESTART` |
 | Engine stall guard | When `stall_guard_enabled()` is true (default), `TaskLauncher.check_completions` uses `ghdag.core.stall_guard.StallTracker` (`read_ps` is injected from `ghdag.llm.engines`) to detect cursor DAG tasks whose shell state-transfer `cat` children are stuck at zero CPU; after `stall_guard_stall_sec()` (default 180s) it sends SIGTERM and writes a `stall_guard` audit event. Every cursor subprocess the runner starts attaches the tracker when enabled, including repair-turn relaunches and resume-driven restarts |
 
 ### Engine output and failure classification
@@ -863,7 +875,7 @@ Each line is parsed into `Task` (`ghdag.core.models.dag`). Field names match the
 | `command` | `str` | yes | none | Shell command |
 | `depends` | `list[str]` | no | `[]` | Upstream task UUIDs |
 | `retry` | `int` | no | `0` | Retry depth |
-| `annotations` | `dict[str, str]` | no | `{}` | Metadata (`timeout_sec`, `step_name`, `stream_fallback`, ...) |
+| `annotations` | `dict[str, str]` | no | `{}` | Metadata (`timeout_sec`, `step_name`, `stream_fallback`, `_exclusive` (`"true"` only), ...) |
 | `result_path` | `str \| None` | no | `None` | Result file written from the engine output |
 | `idempotency_key` | `str \| None` | no | `None` | De-duplication key across enqueues |
 | `engine` | `str \| None` | no | `None` | Engine name (output adapter, quota) |
@@ -1178,7 +1190,7 @@ Any other content is the task's non-zero exit code.
 ghdag is pre-1.0 (`0.Y.Z`). A minor release may change or remove public symbols, CLI options and file formats. Pin an exact tag in production, for example:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.145.1"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.146.0"
 ```
 
 and read `CHANGELOG.md` before upgrading.

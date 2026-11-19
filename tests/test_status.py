@@ -148,6 +148,104 @@ class TestIssueStatusFixtures:
         assert tasks[0].started_at == "2026-09-10T14:39:20+00:00"
 
 
+class TestIssueStatusExclusiveGate:
+    def test_issue_status_pending_step_blocked_by_exclusive(
+        self, tmp_path: Path, capsys
+    ) -> None:
+        """Refs #7363 — pending steps blocked by exclusive gate expose blocked_by."""
+        from ghdag.cli import main
+        from ghdag.status import EXCLUSIVE_STATE_FILE
+
+        gate_uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+        step_uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+        exec_jsonl = tmp_path / "exec.jsonl"
+        done_dir = tmp_path / "done"
+        state_dir = tmp_path / "state"
+        done_dir.mkdir()
+        state_dir.mkdir()
+        (state_dir / "generations.json").write_text("{}", encoding="utf-8")
+        _write_exec(
+            exec_jsonl,
+            [
+                {
+                    "uuid": gate_uuid,
+                    "command": "sleep 1",
+                    "depends": [],
+                    "annotations": {"step_name": "x", "_exclusive": "true"},
+                    "idempotency_key": "wf:handler:1",
+                },
+                {
+                    "uuid": step_uuid,
+                    "command": "echo s",
+                    "depends": [],
+                    "annotations": {"step_name": "s"},
+                    "idempotency_key": "wf:handler:1",
+                },
+            ],
+        )
+        (tmp_path / EXCLUSIVE_STATE_FILE).write_text(
+            json.dumps({"uuid": gate_uuid, "state": "waiting"}),
+            encoding="utf-8",
+        )
+
+        result = issue_status(
+            1,
+            handler="handler",
+            workflow="wf",
+            exec_jsonl_path=exec_jsonl,
+            state_dir=state_dir,
+            done_dir=done_dir,
+        )
+        step_s = next(s for s in result.steps if s.step_name == "s")
+        assert step_s.status == "pending"
+        assert step_s.blocked_by == gate_uuid
+
+        import os
+
+        os.chdir(tmp_path)
+        main(
+            [
+                "status",
+                "--issue",
+                "1",
+                "--handler",
+                "handler",
+                "--workflow",
+                "wf",
+                "--exec-jsonl",
+                str(exec_jsonl),
+                "--state-dir",
+                str(state_dir),
+                "--done-dir",
+                str(done_dir),
+            ]
+        )
+        text = capsys.readouterr().out
+        assert "blocked_by=" + gate_uuid in text
+
+        main(
+            [
+                "status",
+                "--issue",
+                "1",
+                "--handler",
+                "handler",
+                "--workflow",
+                "wf",
+                "--exec-jsonl",
+                str(exec_jsonl),
+                "--state-dir",
+                str(state_dir),
+                "--done-dir",
+                str(done_dir),
+                "--json",
+            ]
+        )
+        payload = json.loads(capsys.readouterr().out)
+        json_step = next(s for s in payload["steps"] if s["step_name"] == "s")
+        assert json_step["blocked_by"] == gate_uuid
+
+
 def test_status_running_task_remains_public() -> None:
     from ghdag.status import RunningTask
 

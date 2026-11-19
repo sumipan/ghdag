@@ -51,6 +51,7 @@ class StepConfig:
     skill_name: str | None = None  # skill name invoked by this step
     render: str = "frozen"  # "frozen" (expanded at enqueue) | "live" (re-expanded at run time via trampoline)
     env_passthrough: list[str] = field(default_factory=list)  # env var names exempt from deny
+    exclusive: bool = False  # Python API / MCP only — marks the exec record _exclusive
 
 
 @dataclass

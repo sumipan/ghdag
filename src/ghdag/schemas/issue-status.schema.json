@@ -110,6 +110,10 @@
         "retry_policy": {
           "type": ["string", "null"],
           "description": "Suggested retry policy from FailureClass."
+        },
+        "blocked_by": {
+          "type": ["string", "null"],
+          "description": "UUID of the exclusive gate blocking this pending step."
         }
       }
     },

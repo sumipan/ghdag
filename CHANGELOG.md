@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.146.0 - 2026-11-19
+
+### Added
+
+- Exclusive tasks (`annotations._exclusive` or MCP `ghdag_enqueue` `exclusive`): the runner drains non-exclusive launches before starting one, tracks `exclusive.json`, exposes `blocked_by` in status, allows cancelling a waiting gate via `ghdag dag cancel`, leaves a live exclusive task running on drain, and does not rerun exclusive tasks after restart.
+
 ## 0.145.1 - 2026-11-19
 
 ### Added

@@ -61,6 +61,11 @@
         "safe_default_preset": {
           "type": "string",
           "description": "Name of the automatically selected permission preset."
+        },
+        "_exclusive": {
+          "type": "string",
+          "enum": ["true"],
+          "description": "Marks the task as exclusive (runner holds other launches)."
         }
       },
       "description": "Structured metadata not passed on the CLI argv."

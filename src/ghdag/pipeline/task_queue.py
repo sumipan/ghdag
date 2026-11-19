@@ -301,6 +301,8 @@ class TaskQueue:
                 ]
             if step.env_passthrough:
                 record.setdefault("annotations", {})["env_passthrough"] = step.env_passthrough
+            if step.exclusive:
+                record.setdefault("annotations", {})["_exclusive"] = "true"
             if metadata:
                 record.setdefault("annotations", {}).update(metadata)
             if idempotency_key:
