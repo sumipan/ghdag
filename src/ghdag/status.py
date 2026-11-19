@@ -23,9 +23,13 @@ from ghdag.io.done import (
 
 logger = logging.getLogger(__name__)
 
+EXCLUSIVE_STATE_FILE = "exclusive.json"
+
 __all__ = [
+    "EXCLUSIVE_STATE_FILE",
     "StepStatus",
     "issue_status",
+    "read_exclusive_gate",
 ]
 
 # Canonical English statuses returned by _step_status_core (pipeline maps to JP).
@@ -80,6 +84,27 @@ class StepStatus:
     failure_class: str | None = None
     cause: str | None = None
     retry_policy: str | None = None
+    blocked_by: str | None = None
+
+
+def read_exclusive_gate(queue_dir: Path) -> tuple[str, str] | None:
+    """Return (gate uuid, state) from ``exclusive.json``, or None if absent or invalid."""
+    path = Path(queue_dir) / EXCLUSIVE_STATE_FILE
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    uid = data.get("uuid")
+    state = data.get("state")
+    if not isinstance(uid, str) or not isinstance(state, str):
+        return None
+    if state not in ("waiting", "running"):
+        return None
+    return uid, state
 
 
 @dataclass
@@ -445,6 +470,14 @@ def issue_status(
             status=status,
         )
 
+        blocked_by: str | None = None
+        if status == "pending" and rec.uuid not in running:
+            gate = read_exclusive_gate(Path(done_dir).parent)
+            if gate is not None:
+                gate_uuid, _ = gate
+                if rec.uuid != gate_uuid:
+                    blocked_by = gate_uuid
+
         steps.append(
             StepStatus(
                 uuid=rec.uuid,
@@ -458,6 +491,7 @@ def issue_status(
                 failure_class=failure_class,
                 cause=cause,
                 retry_policy=retry_policy,
+                blocked_by=blocked_by,
             )
         )
 

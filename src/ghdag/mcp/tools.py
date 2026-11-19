@@ -17,7 +17,7 @@ from ghdag.io.audit import AuditContext
 from ghdag.io.done import done_failure_class, interpret_done, read_done_content
 from ghdag.pipeline.order import InlineOrderBuilder
 from ghdag.pipeline.task_queue import TaskQueue
-from ghdag.status import issue_status, running_tasks
+from ghdag.status import issue_status, read_exclusive_gate, running_tasks
 
 MAX_READ_BYTES = 65536
 
@@ -29,7 +29,7 @@ TOOL_NAMES: tuple[str, ...] = (
 
 _ENQUEUE_KEYS = frozenset({"steps", "correlation_id"})
 _DAG_STEP_KEYS = frozenset(
-    {"id", "engine", "prompt", "command", "model", "depends", "permission"}
+    {"id", "engine", "prompt", "command", "model", "depends", "permission", "exclusive"}
 )
 _STATUS_ISSUE_KEYS = frozenset({"issue", "handler", "workflow"})
 
@@ -97,6 +97,10 @@ def _enqueue_schema() -> dict[str, Any]:
                 "type": "string",
                 "enum": perm_enum,
                 "description": "Permission preset",
+            },
+            "exclusive": {
+                "type": "boolean",
+                "description": "When true, enqueue as an exclusive task (_exclusive annotation)",
             },
         },
         required=["engine"],
@@ -413,6 +417,9 @@ class McpToolRegistry:
             model = raw.get("model")
             if model is not None and not isinstance(model, str):
                 raise self._mcp_invalid("model must be a string")
+            exclusive = raw.get("exclusive", False)
+            if not isinstance(exclusive, bool):
+                raise self._mcp_invalid("exclusive must be a boolean")
             if model is None:
                 spec = ENGINE_SPECS[engine]
                 model = spec.default_model
@@ -424,6 +431,7 @@ class McpToolRegistry:
                     model=model,
                     depends=list(depends),
                     permission=permission,
+                    exclusive=exclusive,
                 )
             )
 
@@ -529,6 +537,11 @@ class McpToolRegistry:
                         "failure_class": s.failure_class,
                         "cause": s.cause,
                         "retry_policy": s.retry_policy,
+                        **(
+                            {"blocked_by": s.blocked_by}
+                            if s.blocked_by is not None
+                            else {}
+                        ),
                     }
                     for s in status.steps
                 ],
@@ -575,6 +588,12 @@ class McpToolRegistry:
                 "retry_policy": retry_policy,
                 "result_path": record.get("result_path") if record else None,
             }
+            if status == "pending":
+                gate = read_exclusive_gate(Path(self._runtime.queue_dir))
+                if gate is not None:
+                    gate_uuid, _ = gate
+                    if uid != gate_uuid:
+                        entry["blocked_by"] = gate_uuid
             if include_result:
                 rp = record.get("result_path") if record else None
                 rp_str = rp if isinstance(rp, str) else None

@@ -1912,6 +1912,25 @@ class TaskLauncher:
             interrupted_reruns_val = (
                 data.get("interrupted_reruns", 0) if isinstance(data, dict) else 0
             )
+            if interrupted_at is not None and task.annotations.get("_exclusive") == "true":
+                if _process_group_exists(pgid):
+                    self._adopted[uuid] = AdoptedTask(
+                        uuid=uuid, task=task, pgid=pgid, started_at=started_at
+                    )
+                    adopted_uuids.append(uuid)
+                    logger.info(
+                        "adopt_orphans: adopted live exclusive task %s (pgid=%s)",
+                        uuid,
+                        pgid,
+                    )
+                else:
+                    self._finish_orphan(
+                        uuid,
+                        task,
+                        started_at,
+                        detail="exclusive task is not rerun after interruption",
+                    )
+                continue
             if interrupted_at is not None:
                 if _process_group_exists(pgid):
                     logger.info(

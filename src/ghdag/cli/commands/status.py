@@ -93,9 +93,10 @@ def cmd_status(args) -> None:
     print(f"orphan_uuids: {', '.join(status.orphan_uuids) or '-'}")
     for step in status.steps:
         deps = ", ".join(step.depends) if step.depends else "-"
+        extra = f" blocked_by={step.blocked_by}" if step.blocked_by else ""
         print(
             f"  {step.step_name} uuid={step.uuid} status={step.status} "
-            f"depends=[{deps}]"
+            f"depends=[{deps}]{extra}"
         )
 
     if args.running:

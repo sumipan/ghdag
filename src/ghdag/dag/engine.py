@@ -12,7 +12,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import IO
 
-from ghdag.core.vocabulary import DONE_DEP_FAILED
+from ghdag.core.vocabulary import DONE_CANCELLED, DONE_DEP_FAILED
 from ghdag.io import exec_jsonl
 from ghdag.io.audit import AuditContext
 from ghdag.io.done import (
@@ -23,6 +23,7 @@ from ghdag.io.done import (
     mark_done as state_mark_done,
 )
 from ghdag.quota import QuotaGate
+from ghdag.status import EXCLUSIVE_STATE_FILE, read_exclusive_gate
 
 from .circuit_breaker import CircuitBreakerPolicy
 from .fanout_manager import FanOutManager
@@ -48,6 +49,7 @@ class DagEngine:
         self._lock_fh: IO[str] | None = None
         self._adopt_done = False
         self._test_hook_post_adopt: Callable[[], None] | None = None
+        self._exclusive_state_written: str | None = None
 
         self._circuit_breaker = CircuitBreakerPolicy(
             failure_window_sec=config.failure_window_sec,
@@ -85,6 +87,8 @@ class DagEngine:
             if self._draining:
                 self._apply_pending_cancels()
                 self._launcher.check_completions()
+                if self._drain_only_exclusive_running():
+                    break
                 if self._drain_deadline is not None and time.monotonic() >= self._drain_deadline:
                     self._launcher.terminate_all()
                 if self._launcher.running_count == 0:
@@ -142,6 +146,9 @@ class DagEngine:
 
             self._propagate_dep_failed(known_done, known_succeeded)
 
+            gate = self._exclusive_gate(known_done, known_succeeded)
+            self._write_exclusive_state(gate)
+
             launched = 0
             for uuid, task in self._tasks.items():
                 if (
@@ -169,6 +176,15 @@ class DagEngine:
 
                 if not all_deps_done:
                     continue
+
+                if gate is not None:
+                    if uuid != gate:
+                        continue
+                    if (
+                        self._launcher.running_count > 0
+                        and not self._launcher.is_running(uuid)
+                    ):
+                        continue
 
                 if (
                     self._config.max_concurrency is not None
@@ -231,12 +247,24 @@ class DagEngine:
 
     def _apply_pending_cancels(self) -> None:
         """Detect jobs/cancel/<uuid> for running tasks and ask the launcher to cancel."""
-        cancel_dir = Path(self._config.exec_done_dir).parent / "cancel"
+        queue_dir = Path(self._config.exec_done_dir).parent
+        cancel_dir = queue_dir / "cancel"
         if not cancel_dir.is_dir():
             return
         for uuid in list(self._launcher._running):
             if (cancel_dir / uuid).exists():
                 self._launcher.request_cancel(uuid)
+        gate = read_exclusive_gate(queue_dir)
+        if gate is not None:
+            gate_uuid, gate_state = gate
+            if gate_state == "waiting" and (cancel_dir / gate_uuid).exists():
+                task = self._tasks.get(gate_uuid)
+                if task is not None and not self._launcher.is_running(gate_uuid):
+                    state_mark_done(
+                        self._config.exec_done_dir, gate_uuid, DONE_CANCELLED
+                    )
+                    self._hooks.on_task_cancelled(gate_uuid, task)
+                    (cancel_dir / gate_uuid).unlink(missing_ok=True)
 
     def _acquire_lock(self) -> None:
         """Prevent multiple DagEngine instances."""
@@ -287,6 +315,54 @@ class DagEngine:
             logger.warning(
                 "Promote failed for %s → %s", result_path, promote_target, exc_info=True
             )
+
+    def _queue_dir(self) -> Path:
+        return Path(self._config.exec_done_dir).parent
+
+    def _exclusive_gate(
+        self,
+        known_done: set[str],
+        known_succeeded: set[str],
+    ) -> str | None:
+        for uuid, task in self._tasks.items():
+            if task.annotations.get("_exclusive") != "true":
+                continue
+            if uuid in known_done:
+                continue
+            if self._fanout_manager.is_pending(uuid):
+                continue
+            if self._launcher.is_running(uuid):
+                return uuid
+            if all(dep in known_succeeded for dep in task.depends):
+                return uuid
+        return None
+
+    def _write_exclusive_state(self, gate: str | None) -> None:
+        path = self._queue_dir() / EXCLUSIVE_STATE_FILE
+        if gate is None:
+            if path.exists():
+                path.unlink(missing_ok=True)
+            self._exclusive_state_written = None
+            return
+        state = "running" if self._launcher.is_running(gate) else "waiting"
+        content = json.dumps({"uuid": gate, "state": state}, separators=(",", ":"))
+        if content == self._exclusive_state_written and path.is_file():
+            return
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(content, encoding="utf-8")
+        os.replace(tmp, path)
+        self._exclusive_state_written = content
+
+    def _drain_only_exclusive_running(self) -> bool:
+        if self._launcher.running_count == 0:
+            return False
+        uuids = list(self._launcher._running) + list(self._launcher._adopted)
+        for uuid in uuids:
+            task = self._tasks.get(uuid)
+            if task is None or task.annotations.get("_exclusive") != "true":
+                return False
+        return True
 
     def _propagate_dep_failed(
         self,
