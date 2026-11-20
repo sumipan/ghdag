@@ -245,7 +245,7 @@ Every leaf command accepts `--json`. With `--json`, success is one JSON object o
 
 | Command | Arguments (defaults) |
 |---|---|
-| `run` | `exec_jsonl`; `--interval-sec SEC` (`1.0`); `--task-timeout SEC` (no limit); `--max-concurrency N` (unlimited); `--quota-state-path PATH` (`$GHDAG_STATE_DIR/quota-gate.json` or `<exec.jsonl parent>/quota-gate.json`); `--hooks MODULE` (repeatable; `AuditHooks` when omitted) |
+| `run` | `exec_jsonl`; `--interval-sec SEC` (`1.0`); `--task-timeout SEC` (no limit); `--max-concurrency N` (unlimited); `--quota-state-path PATH` (`$GHDAG_STATE_DIR/quota-gate.json` or `<exec.jsonl parent>/quota-gate.json`); `--hooks MODULE` (repeatable; `AuditHooks` when omitted); `--nodes PATH` (YAML file listing remote SSH execution nodes) |
 | `watch` | `workflows_dir`; `--interval-sec SEC` (`30`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--once`; `--pause-file PATH` (disabled); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `<exec.jsonl parent's parent>/.pipeline-state`) |
 | `trigger` | `issue_number`; `--handler NAME` (required); `--workflows-dir PATH` (`workflows`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto-detected when the directory has one workflow); `--redispatch`; `--reason TEXT`; `--state-dir PATH` (as `watch`) |
 | `status` | `--issue N` and / or `--running` (at least one); `--handler NAME` and `--workflow NAME` (both required with `--issue`); `--exec-jsonl PATH` (`$GHDAG_EXEC_JSONL` or `jobs/exec.jsonl`); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `.pipeline-state`); `--done-dir PATH` / `--running-dir PATH` (`$GHDAG_STATE_DIR/done` / `running` or `<exec.jsonl parent>/done` / `running`); `--audit-path PATH` (optional; adds `started_at` / `elapsed_sec` to completed steps) |
@@ -735,6 +735,7 @@ Every Python module under `src/ghdag/`.
 | `core/ports/output.py` | `EngineOutputAdapter` Protocol, `EngineError`, `EngineErrorKind` |
 | `core/ports/quota.py` | `QuotaAdmissionPort` and `QuotaCallPort` Protocols |
 | `dag/__init__.py` | Runner public API |
+| `dag/_nodes.py` | `NodeSpec`, `load_nodes`, `pick_node`: remote SSH execution node definitions from YAML |
 | `dag/_process_host.py` | `LocalProcessHost`: local subprocess launch and process-group control |
 | `dag/_util.py` | Internal runner helpers |
 | `dag/audit_hooks.py` | `AuditHooks`: `DefaultHooks` plus `audit.jsonl` writes |
