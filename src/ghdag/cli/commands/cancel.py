@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -25,3 +26,21 @@ def cmd_cancel(args) -> None:
     cancel_path = cancel_dir / uuid
     cancel_path.write_text("", encoding="utf-8")
     print(f"cancel requested: {uuid}")
+
+
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    cancel_parser = subparsers.add_parser(
+        "cancel",
+        allow_abbrev=False,
+        help="Request cancellation of a running DAG task via jobs/cancel/<uuid>",
+    )
+    cancel_parser.add_argument("uuid", help="Task UUID to cancel")
+    cancel_parser.add_argument(
+        "--queue-dir",
+        default=None,
+        dest="queue_dir",
+        metavar="PATH",
+        help="Queue directory containing running/ and cancel/ (default: $GHDAG_STATE_DIR or jobs)",
+    )
+    cancel_parser.set_defaults(func=cmd_cancel)
+    return cancel_parser

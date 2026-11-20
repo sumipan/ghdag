@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -135,3 +136,55 @@ def cmd_trigger(args) -> None:
 
     if result.status != "dispatched":
         sys.exit(1)
+
+
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    trigger_parser = subparsers.add_parser(
+        "trigger",
+        allow_abbrev=False,
+        help="Trigger a workflow handler for a specific issue (one-shot dispatch)",
+    )
+    trigger_parser.add_argument("issue_number", type=int, help="GitHub Issue number")
+    trigger_parser.add_argument(
+        "--handler",
+        required=True,
+        help="Handler name to execute (e.g. 'impl', 'brushup')",
+    )
+    trigger_parser.add_argument(
+        "--workflows-dir",
+        default="workflows",
+        dest="workflows_dir",
+        metavar="PATH",
+        help="Path to workflows YAML directory (default: workflows)",
+    )
+    trigger_parser.add_argument(
+        "--exec-jsonl",
+        default="jobs/exec.jsonl",
+        dest="exec_jsonl",
+        metavar="PATH",
+        help="Output path for exec.jsonl (default: jobs/exec.jsonl)",
+    )
+    trigger_parser.add_argument(
+        "--workflow",
+        default=None,
+        metavar="NAME",
+        help="Workflow name (auto-detected if only one workflow exists)",
+    )
+    trigger_parser.add_argument(
+        "--redispatch",
+        action="store_true",
+        help="Increment generation and start a new handler run",
+    )
+    trigger_parser.add_argument(
+        "--reason",
+        default=None,
+        help="Reason for redispatch (recorded in audit.jsonl)",
+    )
+    trigger_parser.add_argument(
+        "--state-dir",
+        default=None,
+        metavar="PATH",
+        help="Pipeline state directory (default: derived from --exec-jsonl parent's parent / .pipeline-state)",
+    )
+    trigger_parser.set_defaults(func=cmd_trigger)
+    return trigger_parser

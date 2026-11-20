@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 
 
@@ -61,3 +62,49 @@ def cmd_audit_query(args) -> None:
     )
     for event in events:
         print(json.dumps(event, ensure_ascii=False))
+
+
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    audit_query_parser = subparsers.add_parser(
+        "audit-query",
+        allow_abbrev=False,
+        help="Query audit.jsonl for correlation events or burst detection",
+    )
+    audit_query_parser.add_argument(
+        "--correlation-id",
+        default=None,
+        dest="correlation_id",
+        help="Filter events by correlation ID",
+    )
+    audit_query_parser.add_argument(
+        "--burst-detect",
+        action="store_true",
+        dest="burst_detect",
+        help="Detect correlation ID bursts (exit code 1 if found)",
+    )
+    audit_query_parser.add_argument(
+        "--since",
+        default=None,
+        help="ISO 8601 datetime filter (correlation-id mode only)",
+    )
+    audit_query_parser.add_argument(
+        "--audit-path",
+        default=None,
+        dest="audit_path",
+        help="Path to audit.jsonl (default: $GHDAG_AUDIT_PATH or jobs/audit.jsonl)",
+    )
+    audit_query_parser.add_argument(
+        "--window-sec",
+        type=float,
+        default=600.0,
+        dest="window_sec",
+        help="Burst detection window in seconds (default: 600)",
+    )
+    audit_query_parser.add_argument(
+        "--threshold",
+        type=int,
+        default=10,
+        help="Burst detection threshold (default: 10)",
+    )
+    audit_query_parser.set_defaults(func=cmd_audit_query)
+    return audit_query_parser

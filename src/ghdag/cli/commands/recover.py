@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -88,3 +89,58 @@ def cmd_recover(args) -> None:
             f"recover: issue #{args.issue_number} handler={handler_name} "
             f"→ {result.recovered} step(s) reset for re-execution"
         )
+
+
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    recover_parser = subparsers.add_parser(
+        "recover",
+        allow_abbrev=False,
+        help="Recover failed or pending steps from an existing handler run",
+    )
+    recover_parser.add_argument("--issue", type=int, required=True, dest="issue_number")
+    recover_parser.add_argument("--handler", required=True, help="Handler name (e.g. impl)")
+    recover_parser.add_argument(
+        "--from",
+        dest="from_step",
+        default=None,
+        metavar="STEP_NAME",
+        help="Only recover this step and its downstream dependents",
+    )
+    recover_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show recover targets without modifying done markers",
+    )
+    recover_parser.add_argument(
+        "--workflows-dir",
+        default="workflows",
+        dest="workflows_dir",
+        metavar="PATH",
+        help="Path to workflows YAML directory (default: workflows)",
+    )
+    recover_parser.add_argument(
+        "--exec-jsonl",
+        default="jobs/exec.jsonl",
+        dest="exec_jsonl",
+        metavar="PATH",
+        help="Path to exec.jsonl (default: jobs/exec.jsonl)",
+    )
+    recover_parser.add_argument(
+        "--workflow",
+        default=None,
+        metavar="NAME",
+        help="Workflow name (auto-detected if only one workflow exists)",
+    )
+    recover_parser.add_argument(
+        "--state-dir",
+        default=None,
+        metavar="PATH",
+        help="Pipeline state directory (default: $GHDAG_STATE_DIR/.pipeline-state or .pipeline-state)",
+    )
+    recover_parser.add_argument(
+        "--keep-results",
+        action="store_true",
+        help="Do not archive existing result files (keep original behaviour)",
+    )
+    recover_parser.set_defaults(func=cmd_recover)
+    return recover_parser
