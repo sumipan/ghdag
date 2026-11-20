@@ -60,6 +60,34 @@ class TestAuditQueryLegacyEventKey:
 
         assert {row["uuid"] for row in result} == {"legacy", "modern"}
 
+    def test_llm_audit_row_matches_event_type_filter(self, tmp_path):
+        """AC2: a row written by write_llm_audit_log is found by event_type."""
+        from ghdag.io.audit import write_llm_audit_log
+        from ghdag.io.audit_query import read_task_exit_events
+
+        audit = tmp_path / "audit.jsonl"
+        write_llm_audit_log(audit, engine="claude", model="m", exit_code=0)
+
+        result = read_task_exit_events(audit, event_type="llm_call")
+
+        assert len(result) == 1
+        assert result[0]["engine"] == "claude"
+
+    def test_legacy_llm_call_row_matches_event_type_filter(self, tmp_path):
+        """AC4: a legacy {"event": "llm_call"} row is found by event_type."""
+        from ghdag.io.audit_query import read_task_exit_events
+
+        audit = tmp_path / "audit.jsonl"
+        _write_events(audit, [
+            {"event": "llm_call", "engine": "claude", "model": "m",
+             "timestamp": "2026-06-07T10:00:00+09:00"},
+        ])
+
+        result = read_task_exit_events(audit, event_type="llm_call")
+
+        assert len(result) == 1
+        assert result[0]["event"] == "llm_call"
+
 
 class TestAuditQueryCorrelationId:
     def test_since_filter(self, tmp_path, capsys):

@@ -111,6 +111,7 @@ def test_check_completions_invokes_tracker_and_writes_audit(
     record = json.loads(line)
     assert record["event_type"] == "stall_guard"
     assert record["uuid"] == "stall-uuid"
+    assert "task_uuid" not in record
     assert record["pid"] == 99
 
 
