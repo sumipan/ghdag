@@ -42,11 +42,11 @@ class TestQuotaCli:
             "2026-09-02T12:00:00+09:00",
             "--resume-at",
             "2026-09-02T17:00:00+09:00",
-            "--state-path",
-            str(state_path),
+            "--state-dir",
+            str(state_path.parent),
         ])
         capsys.readouterr()
-        main(["quota", "drain", "claude", "--state-path", str(state_path)])
+        main(["quota", "drain", "claude", "--state-dir", str(state_path.parent)])
         capsys.readouterr()
         main([
             "quota",
@@ -56,8 +56,8 @@ class TestQuotaCli:
             "paused",
             "--observed-at",
             "2026-09-02T12:01:00+09:00",
-            "--state-path",
-            str(state_path),
+            "--state-dir",
+            str(state_path.parent),
         ])
         capsys.readouterr()
         main([
@@ -68,16 +68,16 @@ class TestQuotaCli:
             "available",
             "--observed-at",
             "2026-09-02T12:00:00+09:00",
-            "--state-path",
-            str(state_path),
+            "--state-dir",
+            str(state_path.parent),
         ])
         capsys.readouterr()
         main([
             "quota",
             "resume",
             "claude",
-            "--state-path",
-            str(state_path),
+            "--state-dir",
+            str(state_path.parent),
         ])
         capsys.readouterr()
         main([
@@ -90,15 +90,15 @@ class TestQuotaCli:
             "2026-09-02T12:02:00+09:00",
             "--resume-at",
             "2099-01-01T00:00:00+00:00",
-            "--state-path",
-            str(state_path),
+            "--state-dir",
+            str(state_path.parent),
         ])
         capsys.readouterr()
         main([
             "quota",
             "status",
-            "--state-path",
-            str(state_path),
+            "--state-dir",
+            str(state_path.parent),
             "--exec-jsonl",
             str(exec_path),
             "--done-dir",
@@ -144,8 +144,8 @@ class TestQuotaCli:
         main([
             "quota",
             "status",
-            "--state-path",
-            str(state_path),
+            "--state-dir",
+            str(state_path.parent),
             "--exec-jsonl",
             str(exec_path),
             "--done-dir",
@@ -169,8 +169,8 @@ class TestQuotaCli:
                 "paused",
                 "--observed-at",
                 "2026-09-02T12:00:00",
-                "--state-path",
-                str(tmp_path / "quota-gate.json"),
+                "--state-dir",
+                str(tmp_path),
             ])
         assert exc.value.code == 1
 
@@ -178,7 +178,7 @@ class TestQuotaCli:
         from ghdag.cli import main
 
         with pytest.raises(SystemExit) as exc:
-            main(["quota", "drain", "", "--state-path", str(tmp_path / "quota-gate.json")])
+            main(["quota", "drain", "", "--state-dir", str(tmp_path)])
         assert exc.value.code == 1
 
     def test_quota_status_includes_engine_usage(self, tmp_path, capsys):
@@ -210,8 +210,8 @@ class TestQuotaCli:
         main([
             "quota",
             "status",
-            "--state-path",
-            str(state_path),
+            "--state-dir",
+            str(state_path.parent),
             "--exec-jsonl",
             str(exec_path),
             "--done-dir",
@@ -262,8 +262,8 @@ class TestQuotaCli:
         main([
             "quota",
             "status",
-            "--state-path",
-            str(state_path),
+            "--state-dir",
+            str(state_path.parent),
             "--exec-jsonl",
             str(exec_path),
         ])
@@ -272,3 +272,52 @@ class TestQuotaCli:
             entry.get("queued", 0) for entry in payload["engines"].values()
         )
         assert queued_total == 0
+
+    def test_quota_state_dir_writes_audit_in_state_dir(self, tmp_path, capsys):
+        """Refs #7550 — drain writes quota-gate.json and audit.jsonl under --state-dir."""
+        from ghdag.cli import main
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        capsys.readouterr()
+        main(["quota", "drain", "claude", "--state-dir", str(state_dir)])
+        capsys.readouterr()
+        assert (state_dir / "quota-gate.json").is_file()
+        assert (state_dir / "audit.jsonl").is_file()
+
+    @pytest.mark.parametrize(
+        "argv",
+        [
+            [
+                "quota",
+                "report",
+                "claude",
+                "--status",
+                "paused",
+                "--observed-at",
+                "2026-09-02T12:00:00+09:00",
+                "--state-path",
+                "x",
+            ],
+            [
+                "quota",
+                "clear",
+                "claude",
+                "--observed-at",
+                "2026-09-02T12:00:00+09:00",
+                "--state-path",
+                "x",
+            ],
+            ["quota", "drain", "claude", "--state-path", "x"],
+            ["quota", "resume", "claude", "--state-path", "x"],
+            ["quota", "status", "--state-path", "x"],
+        ],
+        ids=["report", "clear", "drain", "resume", "status"],
+    )
+    def test_quota_rejects_state_path(self, argv):
+        """Refs #7550 — legacy --state-path is rejected by argparse."""
+        from ghdag.cli import main
+
+        with pytest.raises(SystemExit) as exc:
+            main(argv)
+        assert exc.value.code == 2
