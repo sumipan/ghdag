@@ -312,7 +312,7 @@ class DagEngine:
                 "Promote failed for %s → %s", result_path, promote_target, exc_info=True
             )
 
-    def _queue_dir(self) -> Path:
+    def _state_dir(self) -> Path:
         return Path(self._config.exec_done_dir).parent
 
     def _exclusive_gate(
@@ -334,7 +334,7 @@ class DagEngine:
         return None
 
     def _write_exclusive_state(self, gate: str | None) -> None:
-        path = self._queue_dir() / EXCLUSIVE_STATE_FILE
+        path = self._state_dir() / EXCLUSIVE_STATE_FILE
         if gate is None:
             if path.exists():
                 path.unlink(missing_ok=True)
