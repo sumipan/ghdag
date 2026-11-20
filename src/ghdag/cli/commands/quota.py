@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from datetime import datetime, timezone
@@ -221,3 +222,117 @@ def _collect_queued_counts(
             continue
         queued_by_engine[engine] = queued_by_engine.get(engine, 0) + 1
     return queued_by_engine, unresolved
+
+
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    quota_parser = subparsers.add_parser(
+        "quota", allow_abbrev=False, help="Manage quota gate state",
+    )
+    quota_subparsers = quota_parser.add_subparsers(title="quota subcommands")
+
+    quota_report = quota_subparsers.add_parser(
+        "report", allow_abbrev=False, help="Report engine quota state",
+    )
+    quota_report.add_argument("engine", help="Engine name (e.g. claude)")
+    quota_report.add_argument(
+        "--status",
+        required=True,
+        choices=["available", "paused"],
+        help="Quota status",
+    )
+    quota_report.add_argument(
+        "--observed-at",
+        required=True,
+        dest="observed_at",
+        help="Observed time in ISO8601 with timezone",
+    )
+    quota_report.add_argument(
+        "--resume-at",
+        default=None,
+        dest="resume_at",
+        help="Optional resume time in ISO8601 with timezone",
+    )
+    quota_report.add_argument(
+        "--reason",
+        default=None,
+        help="Optional reason",
+    )
+    quota_report.add_argument(
+        "--state-path",
+        default=None,
+        dest="state_path",
+        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+    )
+    quota_report.set_defaults(func=cmd_quota_report)
+
+    quota_clear = quota_subparsers.add_parser(
+        "clear", allow_abbrev=False, help="Clear engine quota state",
+    )
+    quota_clear.add_argument("engine", help="Engine name")
+    quota_clear.add_argument(
+        "--observed-at",
+        required=True,
+        dest="observed_at",
+        help="Observed time in ISO8601 with timezone",
+    )
+    quota_clear.add_argument(
+        "--state-path",
+        default=None,
+        dest="state_path",
+        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+    )
+    quota_clear.set_defaults(func=cmd_quota_clear)
+
+    quota_drain = quota_subparsers.add_parser(
+        "drain", allow_abbrev=False, help="Start engine drain mode",
+    )
+    quota_drain.add_argument("engine", help="Engine name")
+    quota_drain.add_argument(
+        "--reason",
+        default=None,
+        help="Optional drain reason",
+    )
+    quota_drain.add_argument(
+        "--state-path",
+        default=None,
+        dest="state_path",
+        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+    )
+    quota_drain.set_defaults(func=cmd_quota_drain)
+
+    quota_resume = quota_subparsers.add_parser(
+        "resume", allow_abbrev=False, help="Resume engine from drain mode",
+    )
+    quota_resume.add_argument("engine", help="Engine name")
+    quota_resume.add_argument(
+        "--state-path",
+        default=None,
+        dest="state_path",
+        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+    )
+    quota_resume.set_defaults(func=cmd_quota_resume)
+
+    quota_status = quota_subparsers.add_parser(
+        "status", allow_abbrev=False, help="Show quota state snapshot",
+    )
+    quota_status.add_argument(
+        "--state-path",
+        default=None,
+        dest="state_path",
+        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+    )
+    quota_status.add_argument(
+        "--exec-jsonl",
+        default="jobs/exec.jsonl",
+        dest="exec_path",
+        metavar="PATH",
+        help="Path to exec.jsonl",
+    )
+    quota_status.add_argument(
+        "--done-dir",
+        default=None,
+        dest="done_dir",
+        help="Path to done marker directory (default: $GHDAG_STATE_DIR/done or <exec.jsonl parent>/done)",
+    )
+    quota_status.set_defaults(func=cmd_quota_status)
+    return quota_parser

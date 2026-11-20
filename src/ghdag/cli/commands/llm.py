@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -109,3 +110,82 @@ def cmd_llm(args) -> None:
             )
 
     sys.exit(result.returncode)
+
+
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    from ghdag.core.capabilities import PERMISSIONS
+
+    llm_parser = subparsers.add_parser(
+        "llm",
+        allow_abbrev=False,
+        help="One-shot LLM call without workflow",
+    )
+    llm_parser.add_argument(
+        "prompt",
+        nargs="?",
+        default=None,
+        help="Prompt text (reads from stdin if omitted)",
+    )
+    llm_parser.add_argument(
+        "--engine", "-e",
+        default="claude",
+        help="LLM engine name (default: claude)",
+    )
+    llm_parser.add_argument(
+        "--model", "-m",
+        default=None,
+        help="Model ID (default: engine default)",
+    )
+    llm_parser.add_argument(
+        "--timeout-sec",
+        type=int,
+        default=None,
+        dest="timeout",
+        metavar="SEC",
+        help="Timeout in seconds (default: no limit)",
+    )
+    llm_parser.add_argument(
+        "--permission",
+        default=None,
+        dest="permission",
+        choices=sorted(PERMISSIONS),
+        help="Permission preset (permission profile)",
+    )
+    llm_parser.add_argument(
+        "--stdin",
+        action="store_true",
+        dest="read_stdin",
+        help="Also pipe stdin content to the LLM process",
+    )
+    llm_parser.add_argument(
+        "--list-engines",
+        action="store_true",
+        dest="list_engines",
+        help="List available engines and exit",
+    )
+    llm_parser.add_argument(
+        "--list-models",
+        action="store_true",
+        dest="list_models",
+        help="List available models for the specified engine and exit",
+    )
+    llm_parser.add_argument(
+        "--audit-path",
+        default=None,
+        dest="audit_path",
+        help="Path to audit.jsonl (env: GHDAG_AUDIT_PATH)",
+    )
+    llm_parser.add_argument(
+        "--correlation-id",
+        default=None,
+        dest="correlation_id",
+        help="Correlation ID for audit log",
+    )
+    llm_parser.add_argument(
+        "--request-id",
+        default=None,
+        dest="request_id",
+        help="Request ID for audit log (propagated from orchestrator)",
+    )
+    llm_parser.set_defaults(func=cmd_llm)
+    return llm_parser

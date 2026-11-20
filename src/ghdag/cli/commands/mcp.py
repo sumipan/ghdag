@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path, PurePosixPath
 
@@ -69,3 +70,38 @@ def cmd_mcp(args) -> None:
     )
     server = McpServer(McpToolRegistry(runtime))
     server.serve(sys.stdin, sys.stdout)
+
+
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    mcp_parser = subparsers.add_parser(
+        "mcp",
+        allow_abbrev=False,
+        help="Run MCP JSON-RPC server on stdio",
+    )
+    mcp_parser.add_argument(
+        "--repo-root",
+        default=".",
+        metavar="PATH",
+        help="Repository root (default: .)",
+    )
+    mcp_parser.add_argument(
+        "--exec-jsonl",
+        default="jobs/exec.jsonl",
+        metavar="PATH",
+        help="Path to exec.jsonl (default: <repo-root>/jobs/exec.jsonl)",
+    )
+    mcp_parser.add_argument(
+        "--state-dir",
+        default=None,
+        metavar="PATH",
+        help="Pipeline state directory (default: derived like ghdag watch)",
+    )
+    mcp_parser.add_argument(
+        "--read-path",
+        action="append",
+        default=None,
+        metavar="PATH",
+        help="Repo-relative path allowed for ghdag_read (repeatable)",
+    )
+    mcp_parser.set_defaults(func=cmd_mcp)
+    return mcp_parser

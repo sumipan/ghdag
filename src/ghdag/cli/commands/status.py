@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from dataclasses import asdict
 from pathlib import Path
@@ -107,3 +108,67 @@ def cmd_status(args) -> None:
                 f"  {t.uuid} engine={t.engine or '-'} "
                 f"elapsed_sec={t.elapsed_sec:.1f}"
             )
+
+
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    status_parser = subparsers.add_parser(
+        "status",
+        allow_abbrev=False,
+        help="Show Issue DAG status or running tasks (JSON-friendly)",
+    )
+    status_parser.add_argument(
+        "--issue",
+        type=int,
+        default=None,
+        dest="issue_number",
+        metavar="N",
+        help="Issue number to inspect",
+    )
+    status_parser.add_argument(
+        "--handler",
+        default=None,
+        help="Handler name (required with --issue, e.g. impl)",
+    )
+    status_parser.add_argument(
+        "--workflow",
+        default=None,
+        help="Workflow name (required with --issue, e.g. my-workflow)",
+    )
+    status_parser.add_argument(
+        "--running",
+        action="store_true",
+        help="List tasks from jobs/running (alone or with --issue)",
+    )
+    status_parser.add_argument(
+        "--exec-jsonl",
+        default=None,
+        dest="exec_jsonl",
+        metavar="PATH",
+        help="Path to exec.jsonl (default: $GHDAG_EXEC_JSONL or jobs/exec.jsonl)",
+    )
+    status_parser.add_argument(
+        "--state-dir",
+        default=None,
+        metavar="PATH",
+        help="Pipeline state directory (default: $GHDAG_STATE_DIR/.pipeline-state or .pipeline-state)",
+    )
+    status_parser.add_argument(
+        "--done-dir",
+        default=None,
+        metavar="PATH",
+        help="Done directory (default: <exec.jsonl parent>/done)",
+    )
+    status_parser.add_argument(
+        "--running-dir",
+        default=None,
+        metavar="PATH",
+        help="Running directory (default: <exec.jsonl parent>/running)",
+    )
+    status_parser.add_argument(
+        "--audit-path",
+        default=None,
+        metavar="PATH",
+        help="Optional audit.jsonl for started_at / elapsed_sec on completed steps",
+    )
+    status_parser.set_defaults(func=cmd_status)
+    return status_parser

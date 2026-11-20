@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -161,3 +162,52 @@ def _load_hooks(module_path: str) -> DagHooks:
         file=sys.stderr,
     )
     sys.exit(1)
+
+
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    run_parser = subparsers.add_parser(
+        "run", allow_abbrev=False, help="Run exec.jsonl via DagEngine",
+    )
+    run_parser.add_argument("exec_jsonl", help="Path to exec.jsonl file")
+    run_parser.add_argument(
+        "--interval-sec",
+        type=float,
+        default=1.0,
+        dest="interval",
+        metavar="SEC",
+        help="Poll interval in seconds (default: 1.0)",
+    )
+    run_parser.add_argument(
+        "--task-timeout",
+        type=float,
+        default=None,
+        dest="task_timeout",
+        metavar="SEC",
+        help="Per-task timeout in seconds (default: no limit)",
+    )
+    run_parser.add_argument(
+        "--quota-state-path",
+        default=None,
+        dest="quota_state_path",
+        metavar="PATH",
+        help=(
+            "Path to quota gate state JSON "
+            "(default: $GHDAG_STATE_DIR/quota-gate.json or <exec.jsonl parent>/quota-gate.json)"
+        ),
+    )
+    run_parser.add_argument(
+        "--hooks",
+        action="append",
+        default=None,
+        metavar="MODULE",
+        help="Python module path for DagHooks implementation (repeatable)",
+    )
+    run_parser.add_argument(
+        "--max-concurrency",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Maximum number of concurrent tasks (default: unlimited)",
+    )
+    run_parser.set_defaults(func=cmd_run)
+    return run_parser

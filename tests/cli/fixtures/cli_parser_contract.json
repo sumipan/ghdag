@@ -1,0 +1,1897 @@
+{
+  "commands": [
+    {
+      "path": [],
+      "prog": "ghdag",
+      "description": "Generic DAG execution engine",
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--quiet",
+            "-q"
+          ],
+          "dest": "quiet",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Suppress INFO logging (WARNING and above only)",
+          "const": true
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--verbose",
+            "-v"
+          ],
+          "dest": "verbose",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Enable DEBUG logging",
+          "const": true
+        }
+      ],
+      "handler": null
+    },
+    {
+      "path": [
+        "audit-query"
+      ],
+      "prog": "ghdag audit-query",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--audit-path"
+          ],
+          "dest": "audit_path",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Path to audit.jsonl (default: $GHDAG_AUDIT_PATH or jobs/audit.jsonl)",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--burst-detect"
+          ],
+          "dest": "burst_detect",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Detect correlation ID bursts (exit code 1 if found)",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--correlation-id"
+          ],
+          "dest": "correlation_id",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Filter events by correlation ID",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--since"
+          ],
+          "dest": "since",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "ISO 8601 datetime filter (correlation-id mode only)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--threshold"
+          ],
+          "dest": "threshold",
+          "required": false,
+          "nargs": null,
+          "default": 10,
+          "metavar": null,
+          "help": "Burst detection threshold (default: 10)",
+          "type": "int",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--window-sec"
+          ],
+          "dest": "window_sec",
+          "required": false,
+          "nargs": null,
+          "default": 600.0,
+          "metavar": null,
+          "help": "Burst detection window in seconds (default: 600)",
+          "type": "float",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.audit_query",
+        "qualname": "cmd_audit_query"
+      }
+    },
+    {
+      "path": [
+        "cleanup"
+      ],
+      "prog": "ghdag cleanup",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--auto-repair"
+          ],
+          "dest": "auto_repair",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Auto-fix orphan (Case D) and dead entry (Case F) issues; default is detect-only",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--cutoff-days"
+          ],
+          "dest": "cutoff_days",
+          "required": false,
+          "nargs": null,
+          "default": 1,
+          "metavar": null,
+          "help": "Days before archiving completed tasks (default: 1)",
+          "type": "int",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--dry-run"
+          ],
+          "dest": "dry_run",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Show targets without making changes",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--orphan-days"
+          ],
+          "dest": "orphan_days",
+          "required": false,
+          "nargs": null,
+          "default": 7,
+          "metavar": null,
+          "help": "Days before archiving orphaned tasks (default: 7)",
+          "type": "int",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [],
+          "dest": "repo_root",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Path to repository root",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.cleanup",
+        "qualname": "cmd_cleanup"
+      }
+    },
+    {
+      "path": [
+        "dag"
+      ],
+      "prog": "ghdag dag",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [],
+      "handler": null
+    },
+    {
+      "path": [
+        "dag",
+        "cancel"
+      ],
+      "prog": "ghdag dag cancel",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--queue-dir"
+          ],
+          "dest": "queue_dir",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "Queue directory containing running/ and cancel/ (default: $GHDAG_STATE_DIR or jobs)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [],
+          "dest": "uuid",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Task UUID to cancel",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.cancel",
+        "qualname": "cmd_cancel"
+      }
+    },
+    {
+      "path": [
+        "dag",
+        "recover"
+      ],
+      "prog": "ghdag dag recover",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--dry-run"
+          ],
+          "dest": "dry_run",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Show recover targets without modifying done markers",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--exec-jsonl"
+          ],
+          "dest": "exec_jsonl",
+          "required": false,
+          "nargs": null,
+          "default": "jobs/exec.jsonl",
+          "metavar": "PATH",
+          "help": "Path to exec.jsonl (default: jobs/exec.jsonl)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--from"
+          ],
+          "dest": "from_step",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "STEP_NAME",
+          "help": "Only recover this step and its downstream dependents",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--handler"
+          ],
+          "dest": "handler",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Handler name (e.g. impl)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--issue"
+          ],
+          "dest": "issue_number",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": null,
+          "type": "int",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--keep-results"
+          ],
+          "dest": "keep_results",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Do not archive existing result files (keep original behaviour)",
+          "const": true
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--state-dir"
+          ],
+          "dest": "state_dir",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "Pipeline state directory (default: $GHDAG_STATE_DIR/.pipeline-state or .pipeline-state)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--workflow"
+          ],
+          "dest": "workflow",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "NAME",
+          "help": "Workflow name (auto-detected if only one workflow exists)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--workflows-dir"
+          ],
+          "dest": "workflows_dir",
+          "required": false,
+          "nargs": null,
+          "default": "workflows",
+          "metavar": "PATH",
+          "help": "Path to workflows YAML directory (default: workflows)",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.recover",
+        "qualname": "cmd_recover"
+      }
+    },
+    {
+      "path": [
+        "llm"
+      ],
+      "prog": "ghdag llm",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--audit-path"
+          ],
+          "dest": "audit_path",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Path to audit.jsonl (env: GHDAG_AUDIT_PATH)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--correlation-id"
+          ],
+          "dest": "correlation_id",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Correlation ID for audit log",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--engine",
+            "-e"
+          ],
+          "dest": "engine",
+          "required": false,
+          "nargs": null,
+          "default": "claude",
+          "metavar": null,
+          "help": "LLM engine name (default: claude)",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--list-engines"
+          ],
+          "dest": "list_engines",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "List available engines and exit",
+          "const": true
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--list-models"
+          ],
+          "dest": "list_models",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "List available models for the specified engine and exit",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--model",
+            "-m"
+          ],
+          "dest": "model",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Model ID (default: engine default)",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--permission"
+          ],
+          "dest": "permission",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Permission preset (permission profile)",
+          "choices": [
+            "dangerous_full_access",
+            "json_only",
+            "readonly_observe",
+            "text_only",
+            "web_research"
+          ],
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [],
+          "dest": "prompt",
+          "required": false,
+          "nargs": "?",
+          "default": null,
+          "metavar": null,
+          "help": "Prompt text (reads from stdin if omitted)",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--stdin"
+          ],
+          "dest": "read_stdin",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Also pipe stdin content to the LLM process",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--request-id"
+          ],
+          "dest": "request_id",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Request ID for audit log (propagated from orchestrator)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--timeout-sec"
+          ],
+          "dest": "timeout",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "SEC",
+          "help": "Timeout in seconds (default: no limit)",
+          "type": "int",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.llm",
+        "qualname": "cmd_llm"
+      }
+    },
+    {
+      "path": [
+        "mcp"
+      ],
+      "prog": "ghdag mcp",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--exec-jsonl"
+          ],
+          "dest": "exec_jsonl",
+          "required": false,
+          "nargs": null,
+          "default": "jobs/exec.jsonl",
+          "metavar": "PATH",
+          "help": "Path to exec.jsonl (default: <repo-root>/jobs/exec.jsonl)",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_AppendAction",
+          "option_strings": [
+            "--read-path"
+          ],
+          "dest": "read_path",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "Repo-relative path allowed for ghdag_read (repeatable)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--repo-root"
+          ],
+          "dest": "repo_root",
+          "required": false,
+          "nargs": null,
+          "default": ".",
+          "metavar": "PATH",
+          "help": "Repository root (default: .)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--state-dir"
+          ],
+          "dest": "state_dir",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "Pipeline state directory (default: derived like ghdag watch)",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.mcp",
+        "qualname": "cmd_mcp"
+      }
+    },
+    {
+      "path": [
+        "quota"
+      ],
+      "prog": "ghdag quota",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [],
+      "handler": null
+    },
+    {
+      "path": [
+        "quota",
+        "clear"
+      ],
+      "prog": "ghdag quota clear",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [],
+          "dest": "engine",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Engine name",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--observed-at"
+          ],
+          "dest": "observed_at",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Observed time in ISO8601 with timezone",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--state-path"
+          ],
+          "dest": "state_path",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.quota",
+        "qualname": "cmd_quota_clear"
+      }
+    },
+    {
+      "path": [
+        "quota",
+        "drain"
+      ],
+      "prog": "ghdag quota drain",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [],
+          "dest": "engine",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Engine name",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--reason"
+          ],
+          "dest": "reason",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Optional drain reason",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--state-path"
+          ],
+          "dest": "state_path",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.quota",
+        "qualname": "cmd_quota_drain"
+      }
+    },
+    {
+      "path": [
+        "quota",
+        "report"
+      ],
+      "prog": "ghdag quota report",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [],
+          "dest": "engine",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Engine name (e.g. claude)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--observed-at"
+          ],
+          "dest": "observed_at",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Observed time in ISO8601 with timezone",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--reason"
+          ],
+          "dest": "reason",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Optional reason",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--resume-at"
+          ],
+          "dest": "resume_at",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Optional resume time in ISO8601 with timezone",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--state-path"
+          ],
+          "dest": "state_path",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--status"
+          ],
+          "dest": "status",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Quota status",
+          "choices": [
+            "available",
+            "paused"
+          ],
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.quota",
+        "qualname": "cmd_quota_report"
+      }
+    },
+    {
+      "path": [
+        "quota",
+        "resume"
+      ],
+      "prog": "ghdag quota resume",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [],
+          "dest": "engine",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Engine name",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--state-path"
+          ],
+          "dest": "state_path",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.quota",
+        "qualname": "cmd_quota_resume"
+      }
+    },
+    {
+      "path": [
+        "quota",
+        "status"
+      ],
+      "prog": "ghdag quota status",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--done-dir"
+          ],
+          "dest": "done_dir",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Path to done marker directory (default: $GHDAG_STATE_DIR/done or <exec.jsonl parent>/done)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--exec-jsonl"
+          ],
+          "dest": "exec_path",
+          "required": false,
+          "nargs": null,
+          "default": "jobs/exec.jsonl",
+          "metavar": "PATH",
+          "help": "Path to exec.jsonl",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--state-path"
+          ],
+          "dest": "state_path",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.quota",
+        "qualname": "cmd_quota_status"
+      }
+    },
+    {
+      "path": [
+        "run"
+      ],
+      "prog": "ghdag run",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [],
+          "dest": "exec_jsonl",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Path to exec.jsonl file",
+          "const": null
+        },
+        {
+          "class": "_AppendAction",
+          "option_strings": [
+            "--hooks"
+          ],
+          "dest": "hooks",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "MODULE",
+          "help": "Python module path for DagHooks implementation (repeatable)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--interval-sec"
+          ],
+          "dest": "interval",
+          "required": false,
+          "nargs": null,
+          "default": 1.0,
+          "metavar": "SEC",
+          "help": "Poll interval in seconds (default: 1.0)",
+          "type": "float",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--max-concurrency"
+          ],
+          "dest": "max_concurrency",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "N",
+          "help": "Maximum number of concurrent tasks (default: unlimited)",
+          "type": "int",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--quota-state-path"
+          ],
+          "dest": "quota_state_path",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "Path to quota gate state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or <exec.jsonl parent>/quota-gate.json)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--task-timeout"
+          ],
+          "dest": "task_timeout",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "SEC",
+          "help": "Per-task timeout in seconds (default: no limit)",
+          "type": "float",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.run",
+        "qualname": "cmd_run"
+      }
+    },
+    {
+      "path": [
+        "schema"
+      ],
+      "prog": "ghdag schema",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [],
+      "handler": null
+    },
+    {
+      "path": [
+        "schema",
+        "list"
+      ],
+      "prog": "ghdag schema list",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.schema_show",
+        "qualname": "cmd_schema_list"
+      }
+    },
+    {
+      "path": [
+        "schema",
+        "show"
+      ],
+      "prog": "ghdag schema show",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [],
+          "dest": "name",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Schema logical name (without .schema.json)",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.schema_show",
+        "qualname": "cmd_schema_show"
+      }
+    },
+    {
+      "path": [
+        "status"
+      ],
+      "prog": "ghdag status",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--audit-path"
+          ],
+          "dest": "audit_path",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "Optional audit.jsonl for started_at / elapsed_sec on completed steps",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--done-dir"
+          ],
+          "dest": "done_dir",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "Done directory (default: <exec.jsonl parent>/done)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--exec-jsonl"
+          ],
+          "dest": "exec_jsonl",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "Path to exec.jsonl (default: $GHDAG_EXEC_JSONL or jobs/exec.jsonl)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--handler"
+          ],
+          "dest": "handler",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Handler name (required with --issue, e.g. impl)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--issue"
+          ],
+          "dest": "issue_number",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "N",
+          "help": "Issue number to inspect",
+          "type": "int",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--running"
+          ],
+          "dest": "running",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "List tasks from jobs/running (alone or with --issue)",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--running-dir"
+          ],
+          "dest": "running_dir",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "Running directory (default: <exec.jsonl parent>/running)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--state-dir"
+          ],
+          "dest": "state_dir",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "Pipeline state directory (default: $GHDAG_STATE_DIR/.pipeline-state or .pipeline-state)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--workflow"
+          ],
+          "dest": "workflow",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Workflow name (required with --issue, e.g. my-workflow)",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.status",
+        "qualname": "cmd_status"
+      }
+    },
+    {
+      "path": [
+        "tools"
+      ],
+      "prog": "ghdag tools",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [],
+      "handler": null
+    },
+    {
+      "path": [
+        "tools",
+        "list"
+      ],
+      "prog": "ghdag tools list",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Output as JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--path"
+          ],
+          "dest": "path",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Tool definition directory",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.tool.cli",
+        "qualname": "cmd_tools_list"
+      }
+    },
+    {
+      "path": [
+        "trigger"
+      ],
+      "prog": "ghdag trigger",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--exec-jsonl"
+          ],
+          "dest": "exec_jsonl",
+          "required": false,
+          "nargs": null,
+          "default": "jobs/exec.jsonl",
+          "metavar": "PATH",
+          "help": "Output path for exec.jsonl (default: jobs/exec.jsonl)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--handler"
+          ],
+          "dest": "handler",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Handler name to execute (e.g. 'impl', 'brushup')",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [],
+          "dest": "issue_number",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "GitHub Issue number",
+          "type": "int",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--reason"
+          ],
+          "dest": "reason",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Reason for redispatch (recorded in audit.jsonl)",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--redispatch"
+          ],
+          "dest": "redispatch",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Increment generation and start a new handler run",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--state-dir"
+          ],
+          "dest": "state_dir",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "Pipeline state directory (default: derived from --exec-jsonl parent's parent / .pipeline-state)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--workflow"
+          ],
+          "dest": "workflow",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "NAME",
+          "help": "Workflow name (auto-detected if only one workflow exists)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--workflows-dir"
+          ],
+          "dest": "workflows_dir",
+          "required": false,
+          "nargs": null,
+          "default": "workflows",
+          "metavar": "PATH",
+          "help": "Path to workflows YAML directory (default: workflows)",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.trigger",
+        "qualname": "cmd_trigger"
+      }
+    },
+    {
+      "path": [
+        "ui"
+      ],
+      "prog": "ghdag ui",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--host"
+          ],
+          "dest": "host",
+          "required": false,
+          "nargs": null,
+          "default": "127.0.0.1",
+          "metavar": null,
+          "help": "Bind address (default: 127.0.0.1)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--interval-sec"
+          ],
+          "dest": "interval",
+          "required": false,
+          "nargs": null,
+          "default": 3.0,
+          "metavar": "SEC",
+          "help": "SSE poll interval in seconds (default: 3.0)",
+          "type": "float",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--max-visible"
+          ],
+          "dest": "max_visible",
+          "required": false,
+          "nargs": null,
+          "default": 30,
+          "metavar": "N",
+          "help": "Maximum number of tasks to display (default: 30)",
+          "type": "int",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--port"
+          ],
+          "dest": "port",
+          "required": false,
+          "nargs": null,
+          "default": 8080,
+          "metavar": null,
+          "help": "Bind port (default: 8080)",
+          "type": "int",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--repo-root"
+          ],
+          "dest": "repo_root",
+          "required": false,
+          "nargs": null,
+          "default": ".",
+          "metavar": "PATH",
+          "help": "Repository root containing jobs/exec.jsonl (default: .)",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.ui",
+        "qualname": "cmd_ui"
+      }
+    },
+    {
+      "path": [
+        "validate"
+      ],
+      "prog": "ghdag validate",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [],
+          "dest": "workflows_dir",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Directory containing workflow *.yml / *.yaml files",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.validate",
+        "qualname": "cmd_validate"
+      }
+    },
+    {
+      "path": [
+        "version"
+      ],
+      "prog": "ghdag version",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.main",
+        "qualname": "_cmd_version"
+      }
+    },
+    {
+      "path": [
+        "watch"
+      ],
+      "prog": "ghdag watch",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--exec-jsonl"
+          ],
+          "dest": "exec_jsonl",
+          "required": false,
+          "nargs": null,
+          "default": "jobs/exec.jsonl",
+          "metavar": "PATH",
+          "help": "Output path for exec.jsonl (default: jobs/exec.jsonl)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--interval-sec"
+          ],
+          "dest": "interval",
+          "required": false,
+          "nargs": null,
+          "default": 30.0,
+          "metavar": "SEC",
+          "help": "GitHub polling interval in seconds (default: 30)",
+          "type": "float",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--once"
+          ],
+          "dest": "once",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Poll once and exit (one-shot mode for event-driven triggers)",
+          "const": true
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--pause-file"
+          ],
+          "dest": "pause_file",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "Pause dispatch while this file exists (default: disabled)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--state-dir"
+          ],
+          "dest": "state_dir",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "Pipeline state directory (default: derived from --exec-jsonl parent's parent / .pipeline-state)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [],
+          "dest": "workflows_dir",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Path to workflows YAML directory",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.watch",
+        "qualname": "cmd_watch"
+      }
+    }
+  ]
+}

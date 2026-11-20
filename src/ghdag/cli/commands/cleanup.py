@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 from ghdag.config.env import resolve_runtime_paths
@@ -40,3 +41,34 @@ def cmd_cleanup(args) -> None:
     if args.dry_run:
         msg += " [dry-run]"
     print(msg)
+
+
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    cleanup_parser = subparsers.add_parser(
+        "cleanup",
+        allow_abbrev=False,
+        help="Archive completed/orphaned queue tasks",
+    )
+    cleanup_parser.add_argument("repo_root", help="Path to repository root")
+    cleanup_parser.add_argument(
+        "--dry-run", action="store_true", help="Show targets without making changes",
+    )
+    cleanup_parser.add_argument(
+        "--cutoff-days",
+        type=int,
+        default=1,
+        help="Days before archiving completed tasks (default: 1)",
+    )
+    cleanup_parser.add_argument(
+        "--orphan-days",
+        type=int,
+        default=7,
+        help="Days before archiving orphaned tasks (default: 7)",
+    )
+    cleanup_parser.add_argument(
+        "--auto-repair",
+        action="store_true",
+        help="Auto-fix orphan (Case D) and dead entry (Case F) issues; default is detect-only",
+    )
+    cleanup_parser.set_defaults(func=cmd_cleanup)
+    return cleanup_parser

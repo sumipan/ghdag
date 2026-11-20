@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -63,3 +64,17 @@ def cmd_validate(args) -> None:
 
     if n_errors > 0:
         raise SystemExit(3)
+
+
+def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
+    validate_parser = subparsers.add_parser(
+        "validate",
+        allow_abbrev=False,
+        help="Validate workflow YAML files in a directory",
+    )
+    validate_parser.add_argument(
+        "workflows_dir",
+        help="Directory containing workflow *.yml / *.yaml files",
+    )
+    validate_parser.set_defaults(func=cmd_validate)
+    return validate_parser
