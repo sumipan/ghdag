@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.149.0 - 2026-11-20
+
+### Changed
+
+- ports: merge GitHubIssuePort into ForgePort (#7546)
+
+### Fixed
+
+- repair: remove merged GitHubIssuePort stub paths (#7546)
+- repair: drop removed github port from README inventory (#7546)
+
 ## 0.148.0 - 2026-11-20
 
 ### Changed
