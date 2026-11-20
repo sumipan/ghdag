@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.151.1 - 2026-11-21
+
+### Changed
+
+- readme: align CLI arguments and error codes with v0.150.2
+
 ## 0.151.0 - 2026-11-21
 
 ### Changed

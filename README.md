@@ -11,13 +11,13 @@ Intake and execution are separate processes that share nothing but files on disk
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.151.0-blue)
+![version](https://img.shields.io/badge/version-v0.151.1-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.151.0** (`pyproject.toml` `version = "0.151.0"`) |
+| Current release | **v0.151.1** (`pyproject.toml` `version = "0.151.1"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -36,7 +36,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.151.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.151.1"
 ghdag version
 ```
 
@@ -257,12 +257,12 @@ Every leaf command accepts `--json`. With `--json`, success is one JSON object o
 | `audit-query` | `--correlation-id ID`; `--burst-detect` (exit `1` when a burst is found); `--since ISO8601` (correlation-ID mode only); `--audit-path PATH` (`$GHDAG_AUDIT_PATH` or `jobs/audit.jsonl`); `--window-sec SEC` (`600`); `--threshold N` (`10`) |
 | `version` | none |
 | `dag recover` | `--issue N` (required); `--handler NAME` (required); `--from STEP` (only this step and its downstream steps); `--dry-run`; `--keep-results`; `--workflows-dir PATH` (`workflows`); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--workflow NAME` (auto-detected); `--state-dir PATH` (`$GHDAG_STATE_DIR/.pipeline-state` or `.pipeline-state`) |
-| `dag cancel` | `uuid`; `--queue-dir PATH` (`$GHDAG_STATE_DIR` or `jobs`) |
-| `quota report` | `engine`; `--status {available,paused}` (required); `--observed-at ISO8601` (required, with timezone); `--resume-at ISO8601`; `--reason TEXT`; `--state-path PATH` (`$GHDAG_STATE_DIR/quota-gate.json` or `jobs/quota-gate.json`) |
-| `quota clear` | `engine`; `--observed-at ISO8601` (required); `--state-path PATH` (as above) |
-| `quota drain` | `engine`; `--reason TEXT`; `--state-path PATH` (as above) |
-| `quota resume` | `engine`; `--state-path PATH` (as above) |
-| `quota status` | `--state-path PATH` (as above); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--done-dir PATH` (`$GHDAG_STATE_DIR/done` or `<exec.jsonl parent>/done`) |
+| `dag cancel` | `uuid`; `--state-dir DIR` (`$GHDAG_STATE_DIR` or `jobs`) |
+| `quota report` | `engine`; `--status {available,paused}` (required); `--observed-at ISO8601` (required, with timezone); `--resume-at ISO8601`; `--reason TEXT`; `--state-dir DIR` (`$GHDAG_STATE_DIR` or `jobs`; contains `quota-gate.json`) |
+| `quota clear` | `engine`; `--observed-at ISO8601` (required); `--state-dir DIR` (as above) |
+| `quota drain` | `engine`; `--reason TEXT`; `--state-dir DIR` (as above) |
+| `quota resume` | `engine`; `--state-dir DIR` (as above) |
+| `quota status` | `--state-dir DIR` (as above); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--done-dir PATH` (`$GHDAG_STATE_DIR/done` or `<exec.jsonl parent>/done`) |
 | `schema list` | none |
 | `schema show` | `name` (logical name without `.schema.json`) |
 | `tools list` | `--path PATH` (required) |
@@ -273,11 +273,11 @@ Every leaf command accepts `--json`. With `--json`, success is one JSON object o
 |---|---|
 | Working directory of tasks | `ghdag run` starts tasks with `cwd` set to the parent of the directory that holds `exec.jsonl` (for `jobs/exec.jsonl`, the repository root) |
 | One runner per queue | `DagEngine` holds `<queue dir>/.ghdag.lock`; a second runner on the same queue logs "Another DagEngine is already running" and stops |
-| `run --hooks` | Each module is imported with the current directory on `sys.path` and supplies `HOOKS_CLASS`, or else its first public class with `on_task_success`. Several modules are chained in order: lifecycle methods call every hook, `check_rejected` is true as soon as one hook returns true, and `check_pipeline_status` / `check_promote_target` use the first non-`None` return. A failed import exits before the runner starts |
+| `run --hooks` | Each module is imported with the current directory on `sys.path` and supplies `HOOKS_CLASS`, or else its first public class with `on_task_success`. Several modules are chained in order: lifecycle methods call every hook, `check_rejected` is true as soon as one hook returns true, and `check_pipeline_status` / `check_promote_target` use the first non-`None` return. A failed import raises `HOOKS_IMPORT_FAILED`; a missing hook class raises `HOOKS_CLASS_NOT_FOUND`. A missing `exec.jsonl` raises `EXEC_JSONL_NOT_FOUND` before the runner starts |
 | `watch` and rate limits | `watch` never sleeps on a rate limit. After a `RateLimitError` it skips polls until the reset time (log: `rate limited: skip poll until <ISO8601>`), and it doubles the polling interval while the remaining quota is low. Pause-file checks and workflow hot reload keep running |
 | `trigger --redispatch` | Increments the handler generation and starts a new run, for when `dag recover` is not possible; `--reason` is written to `audit.jsonl` |
 | `dag recover` | Clears the done markers of failed and pending steps so the runner runs them again; running steps are left alone. Existing result files are first moved to `<result>.prev-<timestamp>` unless `--keep-results` is given |
-| `dag cancel` | Creates `cancel/<uuid>` only when `running/<uuid>.json` exists (or the task is a waiting exclusive gate); otherwise prints `error: not running: <uuid>` and exits `1`. The CLI never signals a process: the runner sees the marker, stops the task's process group and writes `CANCELLED` |
+| `dag cancel` | Creates `cancel/<uuid>` only when `running/<uuid>.json` exists (or the task is a waiting exclusive gate); otherwise raises `GhdagError` with `code="TASK_NOT_RUNNING"` (`error[TASK_NOT_RUNNING]: ...` on stderr, or JSON with `--json`). The CLI never signals a process: the runner sees the marker, stops the task's process group and writes `CANCELLED` |
 | `llm` exit codes | Exits with the engine's exit code; `124` on timeout (partial output is printed), `127` when the engine binary is missing, `126` when it is not executable |
 | `validate` | Exits `3` when one or more workflow files fail validation, `2` when the directory does not exist |
 | `ui` start-up | Loads the language pack before binding, so an invalid `GHDAG_LANGUAGE_PACK` fails the command |
@@ -694,7 +694,7 @@ Every Python module under `src/ghdag/`.
 | `cleanup/orphan_detector.py` | `OrphanDetector`: finds orphaned queue tasks |
 | `cleanup/pruner.py` | `ExecJsonlPruner`: removes archived task lines from `exec.jsonl` |
 | `cli/__init__.py` | Exports `main` |
-| `cli/main.py` | argparse parser and dispatch |
+| `cli/main.py` | Top-level argparse tree, `--json` on leaf commands and `GhdagError` reporting |
 | `cli/commands/__init__.py` | Package marker |
 | `cli/commands/audit_query.py` | `ghdag audit-query` |
 | `cli/commands/cancel.py` | `ghdag dag cancel` |
@@ -1114,7 +1114,22 @@ Some errors use a base exception type with a more specific `code`:
 | `FORGE_ROOT_MISSING` | `ConfigError` | 3 | `GHDAG_FORGE=local` without `GHDAG_FORGE_ROOT` |
 | `SCHEMA_UNKNOWN` | `ConfigError` | 3 | `ghdag schema show` with an unknown name |
 | `MCP_ARGUMENT_INVALID` | `ConfigError` | 3 | An MCP `tools/call` with unknown keys, invalid types or conflicting shapes; a `ghdag_read` path that `--read-path` does not allow |
-| `WORKFLOWS_DIR_NOT_FOUND` | `CliUsageError` | 2 | `ghdag validate` on a directory that does not exist |
+| `WORKFLOWS_DIR_NOT_FOUND` | `CliUsageError` | 2 | `ghdag validate`, `ghdag watch` or `ghdag trigger` when the workflows directory does not exist |
+| `WORKFLOW_NONE_FOUND` | `ConfigError` | 3 | `ghdag trigger` when the workflows directory has no workflow YAML files |
+| `WORKFLOW_NOT_FOUND` | `CliUsageError` | 2 | `ghdag trigger --workflow` names a workflow that is not present |
+| `WORKFLOW_AMBIGUOUS` | `CliUsageError` | 2 | `ghdag trigger` when more than one workflow matches and `--workflow` was omitted |
+| `HANDLER_NOT_FOUND` | `CliUsageError` | 2 | `ghdag trigger --handler` names a handler that the workflow does not define |
+| `STATUS_TARGET_REQUIRED` | `CliUsageError` | 2 | `ghdag status` without `--issue` or `--running` |
+| `STATUS_HANDLER_WORKFLOW_REQUIRED` | `CliUsageError` | 2 | `ghdag status --issue` without both `--handler` and `--workflow` |
+| `EXEC_JSONL_NOT_FOUND` | `GhdagError` | 1 | `ghdag run` when `exec.jsonl` does not exist |
+| `HOOKS_IMPORT_FAILED` | `GhdagError` | 1 | `ghdag run --hooks` when a hook module cannot be imported |
+| `HOOKS_CLASS_NOT_FOUND` | `GhdagError` | 1 | `ghdag run --hooks` when no suitable hook class is found in a module |
+| `TASK_NOT_RUNNING` | `GhdagError` | 1 | `ghdag dag cancel` when the UUID is not in `running/` and not a waiting exclusive gate |
+| `QUOTA_INVALID_INPUT` | `GhdagError` | 1 | `ghdag quota *` when a datetime or engine name argument is invalid |
+| `LLM_PROMPT_REQUIRED` | `CliUsageError` | 2 | `ghdag llm` with no prompt argument, and stdin is a terminal or empty |
+| `AUDIT_QUERY_MODE_REQUIRED` | `CliUsageError` | 2 | `ghdag audit-query` without `--correlation-id` or `--burst-detect` |
+| `AUDIT_QUERY_MODE_CONFLICT` | `CliUsageError` | 2 | `ghdag audit-query` with both `--correlation-id` and `--burst-detect` |
+| `AUDIT_QUERY_INVALID_SINCE` | `CliUsageError` | 2 | `ghdag audit-query --correlation-id` with an unparseable `--since` value |
 
 The `STEP_*` codes of workflow validation are listed under [Workflow YAML](#workflow-yaml).
 
