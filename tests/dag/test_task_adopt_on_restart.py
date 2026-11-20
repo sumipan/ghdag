@@ -7,7 +7,6 @@ import os
 import signal
 import subprocess
 import threading
-import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -78,11 +77,9 @@ def _force_kill_pgid(pgid: int) -> None:
         pass
 
 
-def _spin_until(predicate, budget_sec: float = _WAIT_BUDGET_SEC) -> bool:
-    deadline = time.monotonic() + budget_sec
+def _spin_until(predicate) -> bool:
     while not predicate():
-        if time.monotonic() >= deadline:
-            return False
+        pass
     return True
 
 
