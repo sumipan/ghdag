@@ -6,7 +6,6 @@ without the gh CLI. Uses stdlib urllib only (no requests).
 
 from __future__ import annotations
 
-import atexit
 import copy
 import hashlib
 import http.client
@@ -58,12 +57,12 @@ _MAX_ATTEMPTS = 3
 _BACKOFF_BASE_SEC = 1.0
 _BACKOFF_CAP_SEC = 8.0
 _RATE_LIMIT_MAX_WAIT_SEC = 900
-# Disk ETag cache (GHDAG_ETAG_CACHE): entries beyond this are evicted LRU-first
-_ETAG_CACHE_MAX_ENTRIES = 2000
-# Minimum seconds between disk cache writes. Every GET is ETag-cached, so writing the
-# whole file per request would rewrite it hundreds of times per tick; pending entries
-# are flushed on the next write past this interval and at process exit.
-_ETAG_FLUSH_INTERVAL_SEC = 5.0
+# In-memory ETag cache when no disk directory is configured.
+_ETAG_MEMORY_MAX_ENTRIES = 2000
+# Disk ETag cache directory limits (GHDAG_ETAG_CACHE / etag_cache_path).
+_ETAG_DISK_MAX_BYTES = 256 * 1024 * 1024
+_ETAG_ENTRY_MAX_BYTES = 16 * 1024 * 1024
+_ETAG_PRUNE_INTERVAL_SEC = 60.0
 
 
 def _backoff_sleep(attempt: int, retry_after: str | None = None) -> None:
@@ -210,89 +209,140 @@ class GitHubClient:
             env_path = os.environ.get("GHDAG_ETAG_CACHE")
             etag_cache_path = Path(env_path) if env_path else None
         self._etag_cache_path = etag_cache_path
+        self._etag_cache_dir: Path | None = None
+        self._etag_last_prune = 0.0
         self._etag_key_prefix = (
             hashlib.sha256(self._token.encode()).hexdigest()[:8] + ":"
         )
-        # Full on-disk contents (all tokens), keyed by "{token_hash8}:{url}".
-        self._etag_disk: dict[str, dict[str, Any]] = {}
-        # Keys of _etag_disk written or touched by this instance since the last flush.
-        self._etag_dirty: set[str] = set()
-        self._etag_last_flush = 0.0
         if self._etag_cache_path is not None:
-            self._etag_disk = self._read_etag_disk()
-            for key, entry in self._etag_disk.items():
-                if key.startswith(self._etag_key_prefix):
-                    url = key[len(self._etag_key_prefix):]
-                    self._etag_cache[url] = (entry["etag"], entry["body"])
-            atexit.register(self._flush_etag_disk)
+            cache_path = self._etag_cache_path
+            try:
+                if cache_path.exists() and cache_path.is_file():
+                    try:
+                        cache_path.unlink()
+                    except FileNotFoundError:
+                        pass
+                try:
+                    cache_path.mkdir(parents=True, exist_ok=True)
+                except FileExistsError:
+                    if cache_path.is_file():
+                        raise OSError(f"{cache_path} is not a directory")
+                if not cache_path.is_dir():
+                    raise OSError(f"{cache_path} is not a directory")
+                self._etag_cache_dir = cache_path
+            except OSError as exc:
+                print(
+                    f"ghdag: failed to initialize ETag cache directory "
+                    f"{cache_path}: {exc}",
+                    file=sys.stderr,
+                )
 
-    def _read_etag_disk(self) -> dict[str, dict[str, Any]]:
-        assert self._etag_cache_path is not None
+    def _etag_disk_key(self, url: str) -> str:
+        return self._etag_key_prefix + url
+
+    def _etag_entry_path(self, url: str) -> Path:
+        assert self._etag_cache_dir is not None
+        key = self._etag_disk_key(url)
+        name = hashlib.sha256(key.encode()).hexdigest() + ".json"
+        return self._etag_cache_dir / name
+
+    def _load_etag_entry(self, url: str) -> tuple[str, Any] | None:
+        if self._etag_cache_dir is None:
+            return None
+        path = self._etag_entry_path(url)
         try:
-            data = json.loads(self._etag_cache_path.read_text(encoding="utf-8"))
+            data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            return {}
+            return None
         if not isinstance(data, dict):
-            return {}
-        return {
-            key: entry
-            for key, entry in data.items()
-            if isinstance(entry, dict)
-            and isinstance(entry.get("etag"), str)
-            and "body" in entry
-            and isinstance(entry.get("accessed"), (int, float))
-        }
+            return None
+        if data.get("key") != self._etag_disk_key(url):
+            return None
+        etag = data.get("etag")
+        if not isinstance(etag, str):
+            return None
+        if "body" not in data:
+            return None
+        return etag, data["body"]
 
-    def _persist_etag(self, url: str) -> None:
-        """Record *url*'s ETag entry (fresh access time); write the file when due."""
-        if self._etag_cache_path is None or url not in self._etag_cache:
+    def _store_etag_entry(self, url: str, etag: str, body: Any) -> None:
+        if self._etag_cache_dir is None:
             return
-        etag_value, body = self._etag_cache[url]
-        key = self._etag_key_prefix + url
-        now = time.time()
-        self._etag_disk[key] = {"etag": etag_value, "body": body, "accessed": now}
-        self._etag_dirty.add(key)
-        if now - self._etag_last_flush >= _ETAG_FLUSH_INTERVAL_SEC:
-            self._flush_etag_disk()
-
-    def _flush_etag_disk(self) -> None:
-        """Merge this instance's pending entries into the cache file and write it.
-
-        The file is shared by several long-lived processes (watcher, runner, scheduler
-        jobs), so the current on-disk contents are re-read first; writing only the
-        snapshot taken at construction would drop entries other processes added since.
-        """
-        if self._etag_cache_path is None or not self._etag_dirty:
-            return
-        merged = self._read_etag_disk()
-        for key in self._etag_dirty:
-            if key in self._etag_disk:
-                merged[key] = self._etag_disk[key]
-        self._etag_disk = merged
-        self._etag_dirty.clear()
-        self._etag_last_flush = time.time()
-        excess = len(self._etag_disk) - _ETAG_CACHE_MAX_ENTRIES
-        if excess > 0:
-            oldest = sorted(
-                self._etag_disk, key=lambda k: self._etag_disk[k]["accessed"]
-            )[:excess]
-            for key in oldest:
-                del self._etag_disk[key]
-                if key.startswith(self._etag_key_prefix):
-                    self._etag_cache.pop(key[len(self._etag_key_prefix):], None)
-        path = self._etag_cache_path
-        tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+        key = self._etag_disk_key(url)
+        entry = {"key": key, "etag": etag, "body": body}
         try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp.write_text(json.dumps(self._etag_disk), encoding="utf-8")
+            payload = json.dumps(entry).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            print(f"ghdag: failed to serialize ETag cache entry: {exc}", file=sys.stderr)
+            return
+        path = self._etag_entry_path(url)
+        if len(payload) > _ETAG_ENTRY_MAX_BYTES:
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
+            return
+        digest = hashlib.sha256(key.encode()).hexdigest()
+        tmp = path.with_name(f".{digest}.tmp.{os.getpid()}")
+        try:
+            tmp.write_bytes(payload)
             os.replace(tmp, path)
         except (OSError, TypeError, ValueError) as exc:
-            # A cache write failure must not fail the API call itself
             print(f"ghdag: failed to write ETag cache {path}: {exc}", file=sys.stderr)
             try:
                 tmp.unlink()
             except OSError:
                 pass
+            return
+        now = time.time()
+        if (
+            self._etag_last_prune == 0.0
+            or now - self._etag_last_prune >= _ETAG_PRUNE_INTERVAL_SEC
+        ):
+            self._prune_etag_dir()
+            self._etag_last_prune = now
+
+    def _touch_etag_entry(self, url: str) -> None:
+        if self._etag_cache_dir is None:
+            return
+        path = self._etag_entry_path(url)
+        try:
+            os.utime(path)
+        except OSError:
+            pass
+
+    def _prune_etag_dir(self) -> None:
+        if self._etag_cache_dir is None:
+            return
+        entries: list[tuple[float, int, Path]] = []
+        try:
+            with os.scandir(self._etag_cache_dir) as scan:
+                for dirent in scan:
+                    if not dirent.is_file(follow_symlinks=False):
+                        continue
+                    try:
+                        stat = dirent.stat(follow_symlinks=False)
+                    except OSError:
+                        continue
+                    entries.append((stat.st_mtime, stat.st_size, Path(dirent.path)))
+        except OSError:
+            return
+        total = sum(size for _, size, _ in entries)
+        if total <= _ETAG_DISK_MAX_BYTES:
+            return
+        entries.sort(key=lambda item: item[0])
+        for _, size, path in entries:
+            if total <= _ETAG_DISK_MAX_BYTES:
+                break
+            try:
+                path.unlink()
+                total -= size
+            except FileNotFoundError:
+                continue
+            except OSError:
+                continue
 
     @property
     def repo(self) -> str:
@@ -365,8 +415,15 @@ class GitHubClient:
         if body is not None:
             data = json.dumps(body).encode("utf-8")
 
+        use_disk_etag = etag and self._etag_cache_dir is not None
+        disk_entry: tuple[str, Any] | None = None
         req_headers = self._headers(accept)
-        if etag and url in self._etag_cache:
+        if use_disk_etag and method.upper() == "GET":
+            disk_entry = self._load_etag_entry(url)
+            if disk_entry is not None:
+                cached_etag, _ = disk_entry
+                req_headers["If-None-Match"] = cached_etag
+        elif etag and url in self._etag_cache:
             cached_etag, _ = self._etag_cache[url]
             req_headers["If-None-Match"] = cached_etag
 
@@ -393,15 +450,22 @@ class GitHubClient:
                     succeeded = True
                     break
                 except urllib.error.HTTPError as exc:
-                    if exc.code == 304 and etag and url in self._etag_cache:
-                        _, cached_body = self._etag_cache[url]
-                        self._persist_etag(url)
-                        # Callers may mutate the result; never hand out the cached object.
-                        cached_body = copy.deepcopy(cached_body)
-                        if return_link_header:
-                            link = exc.headers.get("Link") if exc.headers else None
-                            return cached_body, link
-                        return cached_body
+                    if exc.code == 304 and etag:
+                        if use_disk_etag and disk_entry is not None:
+                            _, cached_body = disk_entry
+                            self._touch_etag_entry(url)
+                            if return_link_header:
+                                link = exc.headers.get("Link") if exc.headers else None
+                                return cached_body, link
+                            return cached_body
+                        if url in self._etag_cache:
+                            _, cached_body = self._etag_cache[url]
+                            # Callers may mutate the result; never hand out the cached object.
+                            cached_body = copy.deepcopy(cached_body)
+                            if return_link_header:
+                                link = exc.headers.get("Link") if exc.headers else None
+                                return cached_body, link
+                            return cached_body
                     if exc.code in _TRANSIENT_HTTP_STATUS and attempt < _MAX_ATTEMPTS - 1:
                         retry_after = exc.headers.get("Retry-After") if exc.headers else None
                         _backoff_sleep(attempt, retry_after)
@@ -461,12 +525,14 @@ class GitHubClient:
         if etag and response_headers is not None:
             etag_value = response_headers.get("ETag")
             if isinstance(etag_value, str) and etag_value:
-                self._etag_cache.pop(url, None)
-                self._etag_cache[url] = (etag_value, copy.deepcopy(result))
-                if len(self._etag_cache) > _ETAG_CACHE_MAX_ENTRIES:
-                    # Long-lived processes cache every GET; drop the least recently stored.
-                    self._etag_cache.pop(next(iter(self._etag_cache)))
-                self._persist_etag(url)
+                if use_disk_etag:
+                    self._store_etag_entry(url, etag_value, result)
+                else:
+                    self._etag_cache.pop(url, None)
+                    self._etag_cache[url] = (etag_value, copy.deepcopy(result))
+                    if len(self._etag_cache) > _ETAG_MEMORY_MAX_ENTRIES:
+                        # Long-lived processes cache every GET; drop the least recently stored.
+                        self._etag_cache.pop(next(iter(self._etag_cache)))
 
         if return_link_header:
             return result, link_header
