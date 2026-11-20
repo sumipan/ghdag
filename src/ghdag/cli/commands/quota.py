@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from ghdag.config.env import resolve_runtime_paths
 from ghdag.config.env import state_dir as resolve_state_dir
+from ghdag.core.exceptions import GhdagError
 from ghdag.io import exec_jsonl
 from ghdag.io.done import load_done_from_dir
 from ghdag.metrics.parsers import parse_engine_model
@@ -30,8 +30,7 @@ def cmd_quota_report(args) -> None:
             reason=args.reason,
         )
     except ValueError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        raise GhdagError(str(exc), code="QUOTA_INVALID_INPUT") from exc
     print(json.dumps(_report_to_dict(result), ensure_ascii=False))
 
 
@@ -41,8 +40,7 @@ def cmd_quota_clear(args) -> None:
         observed_at = _parse_iso_datetime(args.observed_at, "--observed-at")
         result = gate.clear(engine=args.engine, observed_at=observed_at)
     except ValueError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        raise GhdagError(str(exc), code="QUOTA_INVALID_INPUT") from exc
     print(json.dumps(_report_to_dict(result), ensure_ascii=False))
 
 
@@ -52,8 +50,7 @@ def cmd_quota_drain(args) -> None:
         gate.drain(engine=args.engine, reason=args.reason, now=datetime.now(timezone.utc))
         snapshot = gate.snapshot()
     except ValueError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        raise GhdagError(str(exc), code="QUOTA_INVALID_INPUT") from exc
 
     print(json.dumps(_engine_status_payload(snapshot, args.engine), ensure_ascii=False))
 
@@ -64,8 +61,7 @@ def cmd_quota_resume(args) -> None:
         released = gate.resume(engine=args.engine, now=datetime.now(timezone.utc))
         snapshot = gate.snapshot()
     except ValueError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        raise GhdagError(str(exc), code="QUOTA_INVALID_INPUT") from exc
 
     payload = _engine_status_payload(snapshot, args.engine)
     payload["released"] = released
@@ -77,8 +73,7 @@ def cmd_quota_status(args) -> None:
     try:
         snapshot = gate.snapshot()
     except ValueError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        raise GhdagError(str(exc), code="QUOTA_INVALID_INPUT") from exc
 
     running_by_engine: dict[str, int] = {}
     for running_state in snapshot.running_tasks.values():

@@ -23,6 +23,24 @@ class TestCliDagCancel:
         assert "not running" in captured.err.lower() or "not running" in captured.out.lower()
         assert not (jobs / "cancel" / uuid).exists()
 
+    def test_cancel_not_running_json_error(self, tmp_path, capsys, monkeypatch):
+        """Refs sumipan/ghdag#7551 AC4."""
+        import json
+
+        from ghdag.cli import main
+
+        jobs = tmp_path / "jobs"
+        jobs.mkdir(parents=True)
+        uuid = "11111111-2222-3333-4444-555555555555"
+        monkeypatch.chdir(tmp_path)
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["dag", "cancel", uuid, "--state-dir", str(jobs), "--json"])
+        assert exc_info.value.code == 1
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["error"]["code"] == "TASK_NOT_RUNNING"
+        assert not (jobs / "cancel" / uuid).exists()
+
     def test_cancel_waiting_exclusive_creates_control_file(self, tmp_path, capsys, monkeypatch):
         """Refs #7363 — waiting exclusive gate uuid accepts cancel without running file."""
         import json

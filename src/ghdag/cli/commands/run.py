@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ghdag.core.exceptions import GhdagError
+
 if TYPE_CHECKING:
     from ghdag.dag.hooks import DagHooks
 
@@ -95,8 +97,10 @@ class _HookChain:
 def cmd_run(args) -> None:
     """Thin wrapper that builds a DagConfig and calls DagEngine.run()."""
     if not os.path.exists(args.exec_jsonl):
-        print(f"error: file not found: {args.exec_jsonl}", file=sys.stderr)
-        sys.exit(1)
+        raise GhdagError(
+            f"file not found: {args.exec_jsonl}",
+            code="EXEC_JSONL_NOT_FOUND",
+        )
 
     from ghdag.dag.engine import DagEngine
     from ghdag.dag.models import DagConfig
@@ -131,7 +135,7 @@ def _load_hooks(module_path: str) -> DagHooks:
     2. Otherwise, use the first public class that has `on_task_success`
 
     Raises:
-        SystemExit: If the module or the class cannot be found
+        GhdagError: If the module or the class cannot be found
     """
     import importlib
     import inspect
@@ -146,8 +150,10 @@ def _load_hooks(module_path: str) -> DagHooks:
     try:
         module = importlib.import_module(module_path)
     except ImportError as exc:
-        print(f"error: cannot import hooks module '{module_path}': {exc}", file=sys.stderr)
-        sys.exit(1)
+        raise GhdagError(
+            f"cannot import hooks module '{module_path}': {exc}",
+            code="HOOKS_IMPORT_FAILED",
+        ) from exc
 
     if hasattr(module, "HOOKS_CLASS"):
         cls = module.HOOKS_CLASS
@@ -157,11 +163,10 @@ def _load_hooks(module_path: str) -> DagHooks:
         if obj.__module__ == module.__name__ and hasattr(obj, "on_task_success"):
             return cast(DagHooks, obj())
 
-    print(
-        f"error: no DagHooks-compatible class found in module '{module_path}'",
-        file=sys.stderr,
+    raise GhdagError(
+        f"no DagHooks-compatible class found in module '{module_path}'",
+        code="HOOKS_CLASS_NOT_FOUND",
     )
-    sys.exit(1)
 
 
 def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
