@@ -59,7 +59,7 @@ def test_cancel_uses_state_dir_by_default(state: Path, tmp_path: Path, monkeypat
     monkeypatch.chdir(tmp_path)
     (state / "running").mkdir(parents=True)
     (state / "running" / "u1.json").write_text("{}", encoding="utf-8")
-    cmd_cancel(argparse.Namespace(uuid="u1", queue_dir=None))
+    cmd_cancel(argparse.Namespace(uuid="u1", state_dir=None))
     assert (state / "cancel" / "u1").exists()
     assert not (tmp_path / "jobs").exists()
 
@@ -76,6 +76,8 @@ def test_quota_state_path_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     gate = _build_gate(None)
     assert gate._state_path == tmp_path / "s" / "quota-gate.json"
     assert gate._audit_path == Path("jobs") / "audit.jsonl"
-    assert _build_gate(str(tmp_path / "x.json"))._state_path == tmp_path / "x.json"
+    explicit = tmp_path / "custom-state"
+    assert _build_gate(str(explicit))._state_path == explicit / "quota-gate.json"
+    assert _build_gate(str(explicit))._audit_path == explicit / "audit.jsonl"
 
 
