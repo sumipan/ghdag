@@ -136,7 +136,7 @@ def test_dispatch_rate_limit_sets_skip_and_stops_remaining_matches(tmp_path, cap
     events = [
         json.loads(line) for line in audit_path.read_text().splitlines() if line.strip()
     ]
-    failed = [e for e in events if e.get("event") == "dispatcher_dispatch_failed"]
+    failed = [e for e in events if e.get("event_type") == "dispatcher_dispatch_failed"]
     assert len(failed) == 1
     assert failed[0]["exception_class"] == "RateLimitError"
     skip_lines = [

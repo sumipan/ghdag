@@ -680,7 +680,7 @@ class TaskLauncher:
                                         "schema_version": 1,
                                         "event_type": "stall_guard",
                                         "timestamp": now_ts(self._config.timezone),
-                                        "task_uuid": uuid,
+                                        "uuid": uuid,
                                         "pid": event.pid,
                                         "stalled_sec": event.stalled_sec,
                                         "parent_args_head": event.parent_args_head,

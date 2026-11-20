@@ -164,3 +164,36 @@ class TestRotation:
         write_task_exit_audit(audit_path, event_type="task_complete", uuid="u1", status="success")
 
         assert len(sorted(tmp_path.glob("audit.*.jsonl"))) == 1
+
+
+class TestAuditRecordKeySchema:
+    """Refs sumipan/ghdag#7552 — audit rows use event_type instead of event."""
+
+    def test_write_llm_audit_log_persists_event_type(self, tmp_path):
+        from ghdag.io.audit import write_llm_audit_log
+
+        audit_path = tmp_path / "audit.jsonl"
+        write_llm_audit_log(audit_path, engine="claude", model="m", exit_code=0)
+        record = json.loads(audit_path.read_text(encoding="utf-8").strip())
+        assert record["event_type"] == "llm_call"
+        assert "event" not in record
+
+    def test_write_rate_limit_audit_persists_event_type(self, tmp_path):
+        from ghdag.io.audit import write_rate_limit_audit
+
+        audit_path = tmp_path / "audit.jsonl"
+        write_rate_limit_audit(
+            audit_path, remaining=1, limit=100, reset=0,
+        )
+        record = json.loads(audit_path.read_text(encoding="utf-8").strip())
+        assert record["event_type"] == "github_rate_limit"
+        assert "event" not in record
+
+    def test_md_write_audit_persists_event_type(self, tmp_path):
+        from ghdag.files.writer import write_md_write_audit
+
+        audit_path = tmp_path / "audit.jsonl"
+        write_md_write_audit(audit_path, path="out.md", bytes_written=3)
+        record = json.loads(audit_path.read_text(encoding="utf-8").strip())
+        assert record["event_type"] == "md_write"
+        assert "event" not in record

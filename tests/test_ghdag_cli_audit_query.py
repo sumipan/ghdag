@@ -32,6 +32,63 @@ def _ts(offset_sec: float = 0.0) -> str:
     return dt.isoformat()
 
 
+class TestAuditQueryLegacyEventKey:
+    """Refs sumipan/ghdag#7552 — event_type filter matches legacy event rows."""
+
+    def test_event_type_filter_reads_legacy_event_key(self, tmp_path):
+        from ghdag.io.audit_query import read_task_exit_events
+
+        audit = tmp_path / "audit.jsonl"
+        _write_events(audit, [
+            {
+                "event": "task_complete",
+                "uuid": "legacy",
+                "status": "success",
+                "correlation_id": "cid",
+                "timestamp": "2026-06-07T10:00:00+09:00",
+            },
+            {
+                "event_type": "task_complete",
+                "uuid": "modern",
+                "status": "success",
+                "correlation_id": "cid",
+                "timestamp": "2026-06-07T10:01:00+09:00",
+            },
+        ])
+
+        result = read_task_exit_events(audit, event_type="task_complete")
+
+        assert {row["uuid"] for row in result} == {"legacy", "modern"}
+
+    def test_llm_audit_row_matches_event_type_filter(self, tmp_path):
+        """AC2: a row written by write_llm_audit_log is found by event_type."""
+        from ghdag.io.audit import write_llm_audit_log
+        from ghdag.io.audit_query import read_task_exit_events
+
+        audit = tmp_path / "audit.jsonl"
+        write_llm_audit_log(audit, engine="claude", model="m", exit_code=0)
+
+        result = read_task_exit_events(audit, event_type="llm_call")
+
+        assert len(result) == 1
+        assert result[0]["engine"] == "claude"
+
+    def test_legacy_llm_call_row_matches_event_type_filter(self, tmp_path):
+        """AC4: a legacy {"event": "llm_call"} row is found by event_type."""
+        from ghdag.io.audit_query import read_task_exit_events
+
+        audit = tmp_path / "audit.jsonl"
+        _write_events(audit, [
+            {"event": "llm_call", "engine": "claude", "model": "m",
+             "timestamp": "2026-06-07T10:00:00+09:00"},
+        ])
+
+        result = read_task_exit_events(audit, event_type="llm_call")
+
+        assert len(result) == 1
+        assert result[0]["event"] == "llm_call"
+
+
 class TestAuditQueryCorrelationId:
     def test_since_filter(self, tmp_path, capsys):
         from ghdag.cli import main

@@ -63,8 +63,12 @@ def read_task_exit_events(
                     continue
                 if correlation_id is not None and rec.get("correlation_id") != correlation_id:
                     continue
-                if event_type is not None and rec.get("event_type") != event_type:
-                    continue
+                if event_type is not None:
+                    row_type = rec.get("event_type")
+                    if row_type is None:
+                        row_type = rec.get("event")
+                    if row_type != event_type:
+                        continue
                 if since is not None:
                     ts_str = rec.get("timestamp")
                     if ts_str is None:

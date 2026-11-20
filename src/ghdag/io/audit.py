@@ -181,7 +181,7 @@ def write_llm_audit_log(
     """Append one audit log line for the llm subcommand."""
     record = {
         "schema_version": 3,
-        "event": "llm_call",
+        "event_type": "llm_call",
         "timestamp": now_ts(tz_name),
         "request_id": request_id or str(uuid.uuid4()),
         "source": "llm_cli",
@@ -259,7 +259,7 @@ def write_rate_limit_audit(
 ) -> None:
     """Append one rate limit snapshot line to audit.jsonl."""
     record = {
-        "event": "github_rate_limit",
+        "event_type": "github_rate_limit",
         "timestamp": now_ts(tz_name),
         "remaining": remaining,
         "limit": limit,

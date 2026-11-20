@@ -102,7 +102,7 @@ class NullSink:
             append_audit_record(
                 self.audit_path,
                 {
-                    "event": "vcs_skipped",
+                    "event_type": "vcs_skipped",
                     "timestamp": now_ts(),
                     "sink": self.name,
                     "owner": None,
@@ -339,7 +339,7 @@ class GitSink:
         append_audit_record(
             self.audit_path,
             {
-                "event": event,
+                "event_type": event,
                 "timestamp": now_ts(),
                 "sink": self.name,
                 "owner": self.owner,
