@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.150.1 - 2026-11-20
+
+### Fixed
+
+- cli: rename cancel and quota flags to --state-dir (#7550)
+- repair: align state_dir tests with --state-dir CLI (#7550)
+
 ## 0.150.0 - 2026-11-20
 
 ### Changed
