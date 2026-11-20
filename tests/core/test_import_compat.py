@@ -81,6 +81,23 @@ def test_github_client_import_compat() -> None:
     assert GitHubClient.__name__ == "GitHubClient"
 
 
+@pytest.mark.parametrize(
+    ("kind", "target"),
+    [
+        ("module", "ghdag.core.ports.github"),
+        ("attr", "ghdag.github_client:GitHubIssuePort"),
+    ],
+)
+def test_github_issue_port_removed(kind: str, target: str) -> None:
+    """nexus #7546 AC2: GitHubIssuePort module and re-export are gone."""
+    if kind == "module":
+        with pytest.raises(ModuleNotFoundError):
+            importlib.import_module(target)
+    else:
+        module_name, attr = target.split(":")
+        assert not hasattr(importlib.import_module(module_name), attr)
+
+
 def test_pipeline_order_import_compat() -> None:
     from ghdag.pipeline.order import (
         InlineOrderBuilder,
