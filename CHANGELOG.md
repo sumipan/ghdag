@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.146.2 - 2026-11-20
+
+### Changed
+
+- Rewrite README against the current sources (sumipan/nexus#7374)
+
 ## 0.146.1 - 2026-11-20
 
 ### Fixed
