@@ -8,7 +8,6 @@ import logging
 import os
 import signal
 import time
-from collections.abc import Callable
 from pathlib import Path
 from typing import IO
 
@@ -48,7 +47,6 @@ class DagEngine:
         self._drain_deadline: float | None = None
         self._lock_fh: IO[str] | None = None
         self._adopt_done = False
-        self._test_hook_post_adopt: Callable[[], None] | None = None
         self._exclusive_state_written: str | None = None
 
         self._circuit_breaker = CircuitBreakerPolicy(
@@ -114,8 +112,6 @@ class DagEngine:
                     known_done = load_done_from_dir(self._config.exec_done_dir)
                     self._fanout_manager.restore(self._tasks, known_done)
                     self._launcher.restore_waiting(self._tasks, known_done)
-                    if self._test_hook_post_adopt is not None:
-                        self._test_hook_post_adopt()
 
             self._apply_pending_cancels()
             self._launcher.check_completions()

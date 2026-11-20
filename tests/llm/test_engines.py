@@ -133,7 +133,7 @@ class TestCodexUnsupportedCapabilities:
 
 
 class TestExtraArgsDedupe:
-    """Deduplicate flags between EngineSpec.extra_args and _CAPABILITY_FLAG_BUILDERS.
+    """Deduplicate flags between EngineSpec.extra_args and _PERMISSION_FLAG_BUILDERS.
 
     codex CLI rejects duplicate `--json` with `error: the argument '--json' cannot be used
     multiple times` (exit 2), so duplicates are an immediate failure before the model call.
@@ -253,13 +253,13 @@ class TestSandboxCapability:
             )
 
     def test_cursor_disallowed_tools_in_ignored_capabilities(self):
-        """cursor disallowed_tools is declared noop via _IGNORED_CAPABILITIES."""
-        from ghdag.llm.engines import _IGNORED_CAPABILITIES, _UNSUPPORTED_CAPABILITIES
+        """cursor disallowed_tools is declared noop via _IGNORED_PERMISSION_ATTRS."""
+        from ghdag.llm.engines import _IGNORED_PERMISSION_ATTRS, _UNSUPPORTED_PERMISSION_ATTRS
 
-        assert "disallowed_tools" in _IGNORED_CAPABILITIES["cursor"]
+        assert "disallowed_tools" in _IGNORED_PERMISSION_ATTRS["cursor"]
         # After set difference, excluded from validation (skipped via ignored even if unsupported)
-        unsupported = _UNSUPPORTED_CAPABILITIES.get("cursor", set())
-        ignored = _IGNORED_CAPABILITIES.get("cursor", set())
+        unsupported = _UNSUPPORTED_PERMISSION_ATTRS.get("cursor", set())
+        ignored = _IGNORED_PERMISSION_ATTRS.get("cursor", set())
         assert "disallowed_tools" not in (unsupported - ignored)
 
 

@@ -6,6 +6,8 @@ import importlib
 import re
 from pathlib import Path
 
+import pytest
+
 # Issue sumipan/nexus#6587 — orchestration packages.
 CURATED_ORCHESTRATION_EXPORTS: dict[str, frozenset[str]] = {
     "ghdag.pipeline": frozenset(
@@ -73,6 +75,7 @@ def test_orchestration_public_exports_match_curated_contract() -> None:
         assert frozenset(mod.__all__) == expected, module_name
 
 
+@pytest.mark.readme_contract
 def test_readme_package_exports_match_package_all() -> None:
     """Issue sumipan/nexus#6587 — README table matches runtime ``__all__`` (non-empty packages)."""
     readme_path = Path(__file__).resolve().parents[2] / "README.md"

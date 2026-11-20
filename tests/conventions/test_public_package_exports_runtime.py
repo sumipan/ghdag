@@ -83,7 +83,6 @@ CURATED_RUNTIME_EXPORTS: dict[str, frozenset[str]] = {
             "EngineQuotaState",
             "EngineUsage",
             "AdmissionDecision",
-            "Missing",
         }
     ),
 }

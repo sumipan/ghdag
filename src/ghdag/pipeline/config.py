@@ -1,8 +1,4 @@
-"""
-pipeline/config.py — pipeline config and model resolution (assumes Claude)
-
-Ported from: tools/stash-developer/stash_developer/model_resolver.py
-"""
+"""pipeline/config.py — pipeline config and model resolution (assumes Claude)."""
 
 from __future__ import annotations
 
