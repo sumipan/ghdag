@@ -32,6 +32,35 @@ def _ts(offset_sec: float = 0.0) -> str:
     return dt.isoformat()
 
 
+class TestAuditQueryLegacyEventKey:
+    """Refs sumipan/ghdag#7552 — event_type filter matches legacy event rows."""
+
+    def test_event_type_filter_reads_legacy_event_key(self, tmp_path):
+        from ghdag.io.audit_query import read_task_exit_events
+
+        audit = tmp_path / "audit.jsonl"
+        _write_events(audit, [
+            {
+                "event": "task_complete",
+                "uuid": "legacy",
+                "status": "success",
+                "correlation_id": "cid",
+                "timestamp": "2026-06-07T10:00:00+09:00",
+            },
+            {
+                "event_type": "task_complete",
+                "uuid": "modern",
+                "status": "success",
+                "correlation_id": "cid",
+                "timestamp": "2026-06-07T10:01:00+09:00",
+            },
+        ])
+
+        result = read_task_exit_events(audit, event_type="task_complete")
+
+        assert {row["uuid"] for row in result} == {"legacy", "modern"}
+
+
 class TestAuditQueryCorrelationId:
     def test_since_filter(self, tmp_path, capsys):
         from ghdag.cli import main

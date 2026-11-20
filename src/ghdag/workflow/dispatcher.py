@@ -506,7 +506,7 @@ class WorkflowDispatcher:
         record = {
             "timestamp": now_ts(),
             "schema_version": 1,
-            "event": "dispatcher_dispatch_failed",
+            "event_type": "dispatcher_dispatch_failed",
             "issue_number": issue_number,
             "handler": handler_name,
             "exception_class": type(exc).__name__,
@@ -548,7 +548,7 @@ class WorkflowDispatcher:
         record = {
             "timestamp": now_ts(),
             "schema_version": 1,
-            "event": event,
+            "event_type": event,
             "reason": reason,
         }
         try:

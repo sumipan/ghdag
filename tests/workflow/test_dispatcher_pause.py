@@ -81,8 +81,8 @@ def test_pause_and_resume_events_are_recorded_once(tmp_path):
         dispatcher.run(max_iterations=3)
 
     events = _read_audit_events(tmp_path)
-    pause_events = [ev for ev in events if ev.get("event") == "dispatcher_pause"]
-    resume_events = [ev for ev in events if ev.get("event") == "dispatcher_resume"]
+    pause_events = [ev for ev in events if ev.get("event_type") == "dispatcher_pause"]
+    resume_events = [ev for ev in events if ev.get("event_type") == "dispatcher_resume"]
     assert len(pause_events) == 1
     assert len(resume_events) == 1
     assert pause_events[0]["reason"] == "quota exhausted"

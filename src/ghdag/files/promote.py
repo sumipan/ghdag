@@ -20,7 +20,7 @@ def _write_promote_audit(
     tz_name: str = "UTC",
 ) -> None:
     record = {
-        "event": "md_promote",
+        "event_type": "md_promote",
         "timestamp": now_ts(tz_name),
         "source_path": source_path,
         "target_path": target_path,

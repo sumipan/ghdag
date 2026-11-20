@@ -20,7 +20,7 @@ def write_md_write_audit(
     tz_name: str = "UTC",
 ) -> None:
     record = {
-        "event": "md_write",
+        "event_type": "md_write",
         "timestamp": now_ts(tz_name),
         "path": path,
         "bytes_written": bytes_written,
