@@ -175,6 +175,7 @@ def test_adopt_unknown_node_stops_local_group_with_warning(
         encoding="utf-8",
     )
     tasks = {"orph-1": Task(uuid="orph-1", command="sleep 600")}
+    launcher._config.kill_grace = 0
     with (
         patch.object(launcher._process_host, "group_exists", return_value=True),
         patch.object(launcher._process_host, "terminate_group") as mock_term,
