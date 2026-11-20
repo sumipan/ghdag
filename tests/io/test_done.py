@@ -67,5 +67,5 @@ class TestShimCompat:
         import ghdag.io.done as io_done
         import ghdag.pipeline.status as pipeline_status
 
-        assert pipeline_status.read_done_content is io_done.read_done_content
         assert pipeline_status.dep_succeeded is io_done.dep_succeeded
+        assert getattr(pipeline_status, "read_done_content", None) is None

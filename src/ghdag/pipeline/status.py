@@ -12,7 +12,6 @@ from typing import Optional
 
 from ghdag.config.language import LanguagePack, get_language_pack
 from ghdag.io.done import dep_succeeded, interpret_done
-from ghdag.io.done import read_done_content as read_done_content  # re-export for shim compat
 from ghdag.status import _step_status_core
 
 # State identifiers (keys of LanguagePack.state_labels)

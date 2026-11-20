@@ -45,11 +45,6 @@ class QuotaReportResult:
 
 
 @dataclass(frozen=True)
-class Missing:
-    """Placeholder symbol for upstream API compatibility checks."""
-
-
-@dataclass(frozen=True)
 class AdmissionDecision:
     allowed: bool
     status: str
@@ -988,47 +983,7 @@ def _sources_from_engine_payload(payload: dict | None) -> list[PauseSource]:
             if isinstance(item, dict):
                 parsed.append(_parse_pause_source(item))
         return parsed
-    return _legacy_sources_from_payload(payload)
-
-
-def _legacy_sources_from_payload(payload: dict) -> list[PauseSource]:
-    status = payload.get("status")
-    if status not in {"available", "paused"}:
-        raise ValueError("invalid engine status in quota state")
-    observed = _parse_dt(str(payload.get("observed_at")), "observed_at")
-    resume_raw = payload.get("resume_at")
-    resume_at = (
-        _parse_dt(resume_raw, "resume_at")
-        if isinstance(resume_raw, str) and resume_raw
-        else None
-    )
-    reason = payload.get("reason")
-    reason_str = str(reason) if reason is not None else ""
-    override_until = _parse_optional_dt(payload.get("override_until"), "override_until")
-    sources: list[PauseSource] = []
-    if status == "paused":
-        sources.append(
-            PauseSource(
-                kind="failure",
-                reason=reason_str,
-                until=resume_at,
-                set_by="legacy",
-                observed_at=observed,
-                available=False,
-            )
-        )
-    if override_until is not None:
-        sources.append(
-            PauseSource(
-                kind="manual",
-                reason="",
-                until=override_until,
-                set_by="legacy",
-                observed_at=observed,
-                available=True,
-            )
-        )
-    return sources
+    return []
 
 
 def _parse_pause_source(raw: dict) -> PauseSource:
@@ -1226,6 +1181,5 @@ __all__ = [
     "EngineQuotaState",
     "EngineUsage",
     "AdmissionDecision",
-    "Missing",
 ]
 

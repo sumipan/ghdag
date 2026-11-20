@@ -15,7 +15,7 @@ from ghdag.core.exceptions import GhdagError
 __all__ = [
     "AdapterNotFoundError",
     "EngineAdapter",
-    "_CAPABILITY_FLAG_BUILDERS",
+    "_PERMISSION_FLAG_BUILDERS",
     "_GenericAdapter",
     "_build_claude_flags",
     "_build_codex_flags",
@@ -38,7 +38,7 @@ def _dedupe_extra_args(
 ) -> list[str]:
     """Remove flags already emitted by perm_flags from extra_args.
 
-    Flags from _CAPABILITY_FLAG_BUILDERS (perm_flags) and EngineSpec.extra_args are
+    Flags from _PERMISSION_FLAG_BUILDERS (perm_flags) and EngineSpec.extra_args are
     assembled independently, so the same flag can come from both and be duplicated in argv.
     CLIs that reject duplicates, such as codex's `--json`, die immediately with
     `error: the argument '--json' cannot be used multiple times`,
@@ -205,7 +205,7 @@ def _build_codex_flags(
     return flags
 
 
-_CAPABILITY_FLAG_BUILDERS: dict[str, Callable[[Permission, bool], list[str]]] = {
+_PERMISSION_FLAG_BUILDERS: dict[str, Callable[[Permission, bool], list[str]]] = {
     "claude": _build_claude_flags,
     "cursor": _build_cursor_flags,
     "codex": _build_codex_flags,
@@ -226,7 +226,7 @@ def render_exec_command(
 
     prompt is ignored for FLAG_ONLY / NONE (not put in argv; input is stdin / ARGV only).
     When permission is None, EngineSpec.danger_flag is used as before.
-    When permission is given, flags are generated via _CAPABILITY_FLAG_BUILDERS and
+    When permission is given, flags are generated via _PERMISSION_FLAG_BUILDERS and
     flags emitted by the builder are removed from extra_args (_dedupe_extra_args).
     When isolation=True and the engine is claude, --disable-slash-commands is added.
     When isolation=True and the engine is codex, -c skills.include_instructions=false is added (#5541).
@@ -237,7 +237,7 @@ def render_exec_command(
 
     perm_flags: list[str] = []
     if permission is not None:
-        builder = _CAPABILITY_FLAG_BUILDERS.get(spec.name)
+        builder = _PERMISSION_FLAG_BUILDERS.get(spec.name)
         if builder:
             perm_flags = builder(permission, False)
 
@@ -430,7 +430,7 @@ def build_llm_cmd(
         if resume_session_id and spec.name in {"claude", "cursor"}:
             cmd += ["--resume", resume_session_id]
 
-    builder = _CAPABILITY_FLAG_BUILDERS.get(engine)
+    builder = _PERMISSION_FLAG_BUILDERS.get(engine)
     if builder:
         cmd += builder(permission, dangerously_skip_permissions)
     elif dangerously_skip_permissions and spec and spec.danger_flag:

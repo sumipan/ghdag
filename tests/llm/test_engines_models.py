@@ -118,7 +118,7 @@ class TestSupportsCapability:
         assert supports_capability("claude", "unknown_capability") is True
 
     def test_cursor_unsupported_includes_isolation_with_reason(self) -> None:
-        """_UNSUPPORTED_CAPABILITIES['cursor'] includes isolation (nexus #3044)."""
-        from ghdag.llm.engines import _UNSUPPORTED_CAPABILITIES
+        """_UNSUPPORTED_PERMISSION_ATTRS['cursor'] includes isolation (nexus #3044)."""
+        from ghdag.llm.engines import _UNSUPPORTED_PERMISSION_ATTRS
 
-        assert "isolation" in _UNSUPPORTED_CAPABILITIES["cursor"]
+        assert "isolation" in _UNSUPPORTED_PERMISSION_ATTRS["cursor"]

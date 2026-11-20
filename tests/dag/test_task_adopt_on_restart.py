@@ -218,11 +218,13 @@ class TestEngineAdoptOnce:
         dead_done = threading.Event()     # set when UUID_DEAD task finishes
         live_done = threading.Event()     # set when UUID_LIVE task finishes (orphaned)
 
-        def _post_adopt_hook():
+        _restore_waiting = engine._launcher.restore_waiting
+
+        def _restore_waiting_sync(tasks, known_done):
+            restored = _restore_waiting(tasks, known_done)
             adopt_event.set()
             check_proceed.wait()
-
-        engine._test_hook_post_adopt = _post_adopt_hook
+            return restored
 
         def _on_task_success_side_effect(uuid, *args, **kwargs):
             if uuid == UUID_DEAD:
@@ -244,9 +246,13 @@ class TestEngineAdoptOnce:
                 engine._launcher, "adopt_orphans", wraps=engine._launcher.adopt_orphans
             ) as spy, patch.object(
                 engine._launcher, "launch", wraps=engine._launcher.launch
-            ) as launch_spy:
+            ) as launch_spy, patch.object(
+                engine._launcher,
+                "restore_waiting",
+                side_effect=_restore_waiting_sync,
+            ):
                 t.start()
-                # Wait for adopt_orphans to complete (engine paused at hook)
+                # Wait for first-load restore_waiting sync (engine paused before next poll)
                 adopt_event.wait()
                 assert adopt_event.is_set(), "adopt_orphans did not fire"
                 # Engine is paused here: is_running check is race-free

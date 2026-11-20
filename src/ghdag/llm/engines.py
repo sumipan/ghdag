@@ -26,7 +26,7 @@ from ghdag.config.env import (
 )
 from ghdag.core.capabilities import TEXT_ONLY, Permission
 from ghdag.core.command import (
-    _CAPABILITY_FLAG_BUILDERS,
+    _PERMISSION_FLAG_BUILDERS,
     _build_claude_flags,
     _build_codex_flags,
     _build_cursor_flags,
@@ -69,13 +69,12 @@ __all__ = [
     "validate_engine_model",
     "ENGINE_DEFAULTS",
     "TIMEOUT_RETURNCODE",
-    "_CAPABILITY_FLAG_BUILDERS",
+    "_PERMISSION_FLAG_BUILDERS",
     "_build_claude_flags",
     "_build_codex_flags",
     "_build_cursor_flags",
-    "_IGNORED_CAPABILITIES",
-    "_UNSUPPORTED_CAPABILITIES",
-    "_extract_stream_result",
+    "_IGNORED_PERMISSION_ATTRS",
+    "_UNSUPPORTED_PERMISSION_ATTRS",
     "supports_capability",
 ]
 
@@ -180,7 +179,7 @@ def validate_engine_model(engine: str, model: str | None) -> str:
 # "isolation" is not a Permission attribute but a meta capability for supports_capability
 # (whether global config isolation is possible). Unsupported on cursor because its CLI has no
 # skills/rules isolation flag (physical isolation is the alternative).
-_UNSUPPORTED_CAPABILITIES: dict[str, set[str]] = {
+_UNSUPPORTED_PERMISSION_ATTRS: dict[str, set[str]] = {
     "gemini": {
         "disallowed_tools",
         "allowed_tools",
@@ -221,7 +220,7 @@ def _resolve_isolation(isolation: bool | None) -> bool:
 # flag (codex: --dangerously-bypass-approvals-and-sandbox, cursor: --force).
 _BYPASS_FLAG_ENGINES: frozenset[str] = frozenset({"codex", "cursor"})
 
-_IGNORED_CAPABILITIES: dict[str, set[str]] = {
+_IGNORED_PERMISSION_ATTRS: dict[str, set[str]] = {
     "codex": {"allowed_tools", "disallowed_tools"},
     "cursor": {"disallowed_tools", "web_search"},
 }
@@ -230,12 +229,12 @@ _IGNORED_CAPABILITIES: dict[str, set[str]] = {
 def supports_capability(engine: str, capability: str) -> bool:
     """Whether the engine supports the capability (public API).
 
-    effective_unsupported = _UNSUPPORTED_CAPABILITIES - _IGNORED_CAPABILITIES.
+    effective_unsupported = _UNSUPPORTED_PERMISSION_ATTRS - _IGNORED_PERMISSION_ATTRS.
     Returns False if capability is in it, True otherwise.
     Unknown engines and unknown capabilities return True (conservative: do not reject).
     """
-    unsupported = _UNSUPPORTED_CAPABILITIES.get(engine, set())
-    ignored = _IGNORED_CAPABILITIES.get(engine, set())
+    unsupported = _UNSUPPORTED_PERMISSION_ATTRS.get(engine, set())
+    ignored = _IGNORED_PERMISSION_ATTRS.get(engine, set())
     effective_unsupported = unsupported - ignored
     return capability not in effective_unsupported
 
@@ -243,13 +242,13 @@ def supports_capability(engine: str, capability: str) -> bool:
 def _validate_permission_for_engine(engine: str, permission: Permission) -> None:
     """Verify that the engine supports the features in permission.
 
-    Attributes listed in _IGNORED_CAPABILITIES skip validation and are accepted (noop).
+    Attributes listed in _IGNORED_PERMISSION_ATTRS skip validation and are accepted (noop).
 
     Raises:
         NotImplementedError: if a feature the engine does not support is specified
     """
-    unsupported = _UNSUPPORTED_CAPABILITIES.get(engine, set())
-    ignored = _IGNORED_CAPABILITIES.get(engine, set())
+    unsupported = _UNSUPPORTED_PERMISSION_ATTRS.get(engine, set())
+    ignored = _IGNORED_PERMISSION_ATTRS.get(engine, set())
     if ignored:
         unsupported = unsupported - ignored
     for attr in unsupported:
@@ -348,9 +347,9 @@ def _normalize_subprocess_output(
             if reconstructed:
                 run.stdout = reconstructed
             else:
-                run.stdout = _extract_stream_result(run.stdout)
+                run.stdout = extract_stream_result(run.stdout)
         else:
-            run.stdout = _extract_stream_result(run.stdout)
+            run.stdout = extract_stream_result(run.stdout)
     if permission.output_format == "json":
         stream_preprocessed = permission.stream and engine != "codex"
         if stream_preprocessed:
@@ -443,10 +442,6 @@ def extract_stream_result(stdout: str) -> str:
     from ghdag.llm.adapters.claude_json import extract_stream_result as _impl
 
     return _impl(stdout)
-
-
-# Backward-compatible alias (existing tests and callers)
-_extract_stream_result = extract_stream_result
 
 
 def _compose_stdin(prompt: str, stdin_text: str | None) -> str:
@@ -634,8 +629,8 @@ def _call_once(
     """Run the engine subprocess once (no retry, no adapter completion)."""
     _validate_permission_for_engine(engine, permission)
     if resume_session_id:
-        unsupported = _UNSUPPORTED_CAPABILITIES.get(engine, set())
-        ignored = _IGNORED_CAPABILITIES.get(engine, set())
+        unsupported = _UNSUPPORTED_PERMISSION_ATTRS.get(engine, set())
+        ignored = _IGNORED_PERMISSION_ATTRS.get(engine, set())
         if "resume" in (unsupported - ignored):
             raise NotImplementedError(
                 f"{engine} engine does not support resume (got {resume_session_id!r})"

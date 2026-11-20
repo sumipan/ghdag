@@ -50,7 +50,7 @@ DANGEROUS_FULL_ACCESS = Permission(
 
 # Allow observational Bash while sealing edits with the sandbox (an alternative to
 # TEXT_ONLY's tool stripping). disallowed_tools is a second line of defense for claude.
-# On codex / cursor it is a noop via each engine's _IGNORED_CAPABILITIES, but the
+# On codex / cursor it is a noop via each engine's _IGNORED_PERMISSION_ATTRS, but the
 # preset definition stays engine-agnostic.
 # Write is not disallowed: in claude's plan mode (sandbox=readonly) the harness has
 # Write the plan file (~/.claude/plans/*.md), and plan mode itself rejects Write to

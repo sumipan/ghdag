@@ -1,7 +1,4 @@
-"""DAG monitoring logic — parse exec files and build display rows.
-
-Ported from tools/dag_system/core.py for use in the ghdag Web UI.
-"""
+"""DAG monitoring logic — parse exec files and build display rows."""
 
 from __future__ import annotations
 

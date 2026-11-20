@@ -18,7 +18,6 @@ from ghdag.dag.engine import DagEngine
 from ghdag.dag.hooks import DefaultHooks
 from ghdag.dag.models import DagConfig
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter, extract_stream_result
-from ghdag.llm.engines import _extract_stream_result
 from ghdag.ui.server import _build_snapshot, _latest_progress
 
 # --- Real-shape fixtures (captured 2026-09-09, slimmed) ---------------------
@@ -205,11 +204,10 @@ def _make_config(tmp_path: Path, records: list[dict], **overrides) -> DagConfig:
 
 
 class TestExtractStreamResultShared:
-    def test_extract_stream_result_matches_engines_alias(self):
+    def test_stream_result_text_from_success_fixture(self):
         assert extract_stream_result(_STREAM_SUCCESS) == "pong"
-        assert _extract_stream_result(_STREAM_SUCCESS) == "pong"
 
-    def test_extract_stream_result_empty_string(self):
+    def test_stream_result_text_empty(self):
         assert extract_stream_result(_STREAM_EMPTY) == ""
 
     def test_legacy_single_json_still_extracts_result_text(self):

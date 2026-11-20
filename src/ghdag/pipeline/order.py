@@ -1,8 +1,4 @@
-"""
-pipeline/order.py — template rendering
-
-Ported from: tools/stash-developer/stash_developer/order_builder.py (interface only)
-"""
+"""pipeline/order.py — template rendering."""
 
 from __future__ import annotations
 
