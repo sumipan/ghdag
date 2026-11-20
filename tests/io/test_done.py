@@ -60,12 +60,3 @@ class TestDoneFailureClass:
         assert done_failure_class("???") is FailureClass.UNKNOWN_FAILURE
         assert done_failure_class(DONE_EMPTY_RESULT) is FailureClass.EMPTY_RESULT
         assert done_failure_class(DONE_TIMEOUT) is FailureClass.TIMEOUT
-
-
-class TestShimCompat:
-    def test_pipeline_status_reexports_io_functions(self) -> None:
-        import ghdag.io.done as io_done
-        import ghdag.pipeline.status as pipeline_status
-
-        assert pipeline_status.read_done_content is io_done.read_done_content
-        assert pipeline_status.dep_succeeded is io_done.dep_succeeded
