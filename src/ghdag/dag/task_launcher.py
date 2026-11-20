@@ -406,6 +406,7 @@ class AdoptedTask:
     task: Task
     pgid: int
     started_at: float
+    interrupted_reruns: int = 0
 
 
 class TaskLauncher:
@@ -1315,7 +1316,16 @@ class TaskLauncher:
             at = self._adopted[uuid]
             if not _process_group_exists(at.pgid):
                 del self._adopted[uuid]
-                self._finish_orphan(uuid, at.task, at.started_at)
+                if at.task.annotations.get("_exclusive") == "true":
+                    self._finish_orphan(uuid, at.task, at.started_at)
+                else:
+                    self._rerun_or_orphan(
+                        uuid,
+                        at.task,
+                        at.started_at,
+                        at.interrupted_reruns,
+                        self._running_path(uuid),
+                    )
 
         cwd = str(self._config.cwd) if self._config.cwd else None
         for uuid in list(self._running):
@@ -1950,40 +1960,65 @@ class TaskLauncher:
                         except (ProcessLookupError, PermissionError):
                             pass
 
-                if interrupted_reruns_val < _MAX_INTERRUPTED_RERUNS:
-                    self._pending_reruns[uuid] = interrupted_reruns_val + 1
-                    path.unlink(missing_ok=True)
-                    try:
-                        self._quota_gate.finish_run(task_uuid=uuid)
-                    except ValueError:
-                        pass
-                    logger.info(
-                        "adopt_orphans: interrupted task %s queued for rerun "
-                        "(interrupted_reruns=%d)",
-                        uuid, interrupted_reruns_val,
-                    )
-                else:
-                    logger.warning(
-                        "adopt_orphans: interrupted task %s reached rerun limit — orphaning",
-                        uuid,
-                    )
-                    self._finish_orphan(
-                        uuid, task, started_at,
-                        detail="interrupted rerun limit reached",
-                    )
+                self._rerun_or_orphan(
+                    uuid, task, started_at, interrupted_reruns_val, path,
+                )
             elif _process_group_exists(pgid):
                 self._adopted[uuid] = AdoptedTask(
-                    uuid=uuid, task=task, pgid=pgid, started_at=started_at
+                    uuid=uuid,
+                    task=task,
+                    pgid=pgid,
+                    started_at=started_at,
+                    interrupted_reruns=interrupted_reruns_val,
                 )
                 adopted_uuids.append(uuid)
                 logger.info("adopt_orphans: adopted live task %s (pgid=%s)", uuid, pgid)
-            else:
+            elif task.annotations.get("_exclusive") == "true":
                 logger.info(
                     "adopt_orphans: task %s already dead (pgid=%s) — closing as orphan",
                     uuid, pgid,
                 )
                 self._finish_orphan(uuid, task, started_at)
+            else:
+                self._rerun_or_orphan(
+                    uuid, task, started_at, interrupted_reruns_val, path,
+                )
         return adopted_uuids
+
+    def _rerun_or_orphan(
+        self,
+        uuid: str,
+        task: Task,
+        started_at: float,
+        reruns: int,
+        running_path: Path,
+    ) -> bool:
+        """Queue one interrupted rerun, or close as orphan when the limit is reached."""
+        if reruns < _MAX_INTERRUPTED_RERUNS:
+            self._pending_reruns[uuid] = reruns + 1
+            running_path.unlink(missing_ok=True)
+            try:
+                self._quota_gate.finish_run(task_uuid=uuid)
+            except ValueError:
+                pass
+            logger.info(
+                "adopt_orphans: interrupted task %s queued for rerun "
+                "(interrupted_reruns=%d)",
+                uuid,
+                reruns,
+            )
+            return True
+        logger.warning(
+            "adopt_orphans: interrupted task %s reached rerun limit — orphaning",
+            uuid,
+        )
+        self._finish_orphan(
+            uuid,
+            task,
+            started_at,
+            detail="interrupted rerun limit reached",
+        )
+        return False
 
     def _finish_orphan(
         self, uuid: str, task: Task, started_at: float, detail: str | None = None,

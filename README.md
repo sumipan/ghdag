@@ -11,13 +11,13 @@ Intake and execution are separate processes that share nothing but files on disk
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.147.0-blue)
+![version](https://img.shields.io/badge/version-v0.147.1-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.147.0** (`pyproject.toml` `version = "0.147.0"`) |
+| Current release | **v0.147.1** (`pyproject.toml` `version = "0.147.1"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -36,7 +36,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.147.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.147.1"
 ghdag version
 ```
 

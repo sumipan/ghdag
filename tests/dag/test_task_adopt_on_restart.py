@@ -6,14 +6,23 @@ import json
 import os
 import signal
 import subprocess
+import threading
+import time
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from ghdag.core.vocabulary import DONE_ORPHANED_ON_RESTART
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
+from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig, Task
-from ghdag.dag.task_launcher import TaskLauncher, _process_group_exists
+from ghdag.dag.task_launcher import (
+    _MAX_INTERRUPTED_RERUNS,
+    TaskLauncher,
+    _process_group_exists,
+)
 from ghdag.io.done import is_done
+
+_WAIT_BUDGET_SEC = 10.0
 
 
 def _make_launcher(tmp_path: Path) -> TaskLauncher:
@@ -29,6 +38,8 @@ def _make_launcher(tmp_path: Path) -> TaskLauncher:
         poll_interval=0.05,
     )
     hooks = MagicMock()
+    hooks.check_rejected.return_value = None
+    hooks.check_pipeline_status.return_value = None
     return TaskLauncher(
         config,
         hooks=hooks,
@@ -38,14 +49,26 @@ def _make_launcher(tmp_path: Path) -> TaskLauncher:
     )
 
 
-def _write_running_file(jobs: Path, uuid: str, pid: int, pgid: int) -> None:
+def _write_running_file(
+    jobs: Path,
+    uuid: str,
+    pid: int,
+    pgid: int,
+    *,
+    interrupted_reruns: int | None = None,
+) -> None:
     running_dir = jobs / "running"
     running_dir.mkdir(parents=True, exist_ok=True)
+    payload: dict = {
+        "pid": pid,
+        "pgid": pgid,
+        "engine": "",
+        "started_at": "2026-09-14T20:10:00+00:00",
+    }
+    if interrupted_reruns is not None:
+        payload["interrupted_reruns"] = interrupted_reruns
     path = running_dir / f"{uuid}.json"
-    path.write_text(
-        json.dumps({"pid": pid, "pgid": pgid, "engine": "", "started_at": "2026-09-14T20:10:00+00:00"}),
-        encoding="utf-8",
-    )
+    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def _force_kill_pgid(pgid: int) -> None:
@@ -55,9 +78,11 @@ def _force_kill_pgid(pgid: int) -> None:
         pass
 
 
-def _spin_until(predicate) -> bool:
+def _spin_until(predicate, budget_sec: float = _WAIT_BUDGET_SEC) -> bool:
+    deadline = time.monotonic() + budget_sec
     while not predicate():
-        pass
+        if time.monotonic() >= deadline:
+            return False
     return True
 
 
@@ -69,51 +94,14 @@ UUID_LIVE = "11111111-1111-1111-1111-111111111111"
 UUID_DEAD = "22222222-2222-2222-2222-222222222222"
 UUID_UNK = "33333333-3333-3333-3333-333333333333"
 UUID_CORRUPT = "44444444-4444-4444-4444-444444444444"
+UUID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 
 
-class TestAdoptLiveProcess:
-
-    def test_adopt_live_then_kill_closes_as_orphan(self, tmp_path):
+class TestUnmarkedDeadRerun:
+    def test_unmarked_dead_task_is_queued_for_rerun(self, tmp_path):
         launcher = _make_launcher(tmp_path)
         jobs = tmp_path / "jobs"
         done = jobs / "done"
-        result_path = str(jobs / f"result-{UUID_LIVE}.md")
-        task = Task(uuid=UUID_LIVE, command="sleep 30", result_path=result_path)
-
-        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
-        pgid = proc.pid
-        try:
-            _write_running_file(jobs, UUID_LIVE, proc.pid, pgid)
-            launcher.adopt_orphans({UUID_LIVE: task})
-            assert launcher.is_running(UUID_LIVE)
-
-            launcher.check_completions()
-            assert is_done(done, UUID_LIVE) is False
-
-            _force_kill_pgid(pgid)
-            proc.wait()
-            assert _spin_until(lambda: not _process_group_exists(pgid))
-
-            launcher.check_completions()
-
-            assert not launcher.is_running(UUID_LIVE)
-            assert is_done(done, UUID_LIVE)
-            assert _read_done(done, UUID_LIVE) == DONE_ORPHANED_ON_RESTART
-            result_text = Path(result_path).read_text(encoding="utf-8")
-            assert result_text.startswith("ORPHANED_ON_RESTART:")
-            launcher._hooks.on_task_failure.assert_called_once()
-            assert launcher._hooks.on_task_failure.call_args[0][3] == "orphaned_on_restart"
-        finally:
-            _force_kill_pgid(pgid)
-
-
-
-class TestAdoptDeadProcess:
-    def test_already_dead_process_immediately_orphaned(self, tmp_path):
-        launcher = _make_launcher(tmp_path)
-        jobs = tmp_path / "jobs"
-        done = jobs / "done"
-        task = Task(uuid=UUID_DEAD, command="sleep 30")
 
         proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
         pgid = proc.pid
@@ -121,16 +109,182 @@ class TestAdoptDeadProcess:
         proc.wait()
         assert _spin_until(lambda: not _process_group_exists(pgid))
 
-        _write_running_file(jobs, UUID_DEAD, proc.pid, pgid)
+        _write_running_file(jobs, UUID_A, proc.pid, pgid)
 
-        adopted = launcher.adopt_orphans({UUID_DEAD: task})
+        env_file = tmp_path / "env_out.txt"
+        result_path = str(jobs / f"result-{UUID_A}.md")
+        task = Task(
+            uuid=UUID_A,
+            command=f"printenv GHDAG_PREVIOUS_ATTEMPT > {env_file} && echo ok > {result_path}",
+            result_path=result_path,
+        )
+
+        adopted = launcher.adopt_orphans({UUID_A: task})
 
         assert adopted == []
-        assert not launcher.is_running(UUID_DEAD)
-        assert is_done(done, UUID_DEAD)
-        assert _read_done(done, UUID_DEAD) == DONE_ORPHANED_ON_RESTART
-        launcher._hooks.on_task_failure.assert_called_once()
+        assert not is_done(done, UUID_A)
+        assert not (jobs / "running" / f"{UUID_A}.json").exists()
+        launcher._hooks.on_task_failure.assert_not_called()
+        assert UUID_A in launcher._pending_reruns
+        assert launcher._pending_reruns[UUID_A] == 1
 
+        launched = launcher.launch(UUID_A, task)
+        assert launched
+        assert UUID_A not in launcher._pending_reruns
+
+        running_path = jobs / "running" / f"{UUID_A}.json"
+        assert running_path.exists()
+        running_data = json.loads(running_path.read_text(encoding="utf-8"))
+        assert running_data.get("interrupted_reruns") == 1
+
+        def _poll():
+            launcher.check_completions()
+            return UUID_A not in launcher._running
+
+        assert _spin_until(_poll)
+
+        assert env_file.read_text(encoding="utf-8").strip() == "interrupted"
+
+        launcher.terminate_all()
+        launcher.check_completions()
+
+    def test_unmarked_dead_task_at_rerun_limit_is_orphaned(self, tmp_path):
+        launcher = _make_launcher(tmp_path)
+        jobs = tmp_path / "jobs"
+        done = jobs / "done"
+
+        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        pgid = proc.pid
+        _force_kill_pgid(pgid)
+        proc.wait()
+        assert _spin_until(lambda: not _process_group_exists(pgid))
+
+        _write_running_file(
+            jobs, UUID_A, proc.pid, pgid, interrupted_reruns=_MAX_INTERRUPTED_RERUNS,
+        )
+        task = Task(uuid=UUID_A, command="sleep 30")
+
+        launcher.adopt_orphans({UUID_A: task})
+
+        assert UUID_A not in launcher._pending_reruns
+        assert is_done(done, UUID_A)
+        assert _read_done(done, UUID_A) == DONE_ORPHANED_ON_RESTART
+
+
+class TestAdoptedTaskExitRerun:
+    def test_adopted_task_exit_below_limit_is_queued_for_rerun(self, tmp_path):
+        launcher = _make_launcher(tmp_path)
+        jobs = tmp_path / "jobs"
+        done = jobs / "done"
+        task = Task(uuid=UUID_A, command="sleep 30")
+
+        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        pgid = proc.pid
+        try:
+            _write_running_file(jobs, UUID_A, proc.pid, pgid)
+            adopted = launcher.adopt_orphans({UUID_A: task})
+            assert UUID_A in adopted
+            assert launcher.is_running(UUID_A)
+
+            _force_kill_pgid(pgid)
+            proc.wait()
+            assert _spin_until(lambda: not _process_group_exists(pgid))
+
+            launcher.check_completions()
+
+            assert not launcher.is_running(UUID_A)
+            assert not is_done(done, UUID_A)
+            assert launcher._pending_reruns[UUID_A] == 1
+            assert not (jobs / "running" / f"{UUID_A}.json").exists()
+            launcher._hooks.on_task_failure.assert_not_called()
+        finally:
+            _force_kill_pgid(pgid)
+
+    def test_adopted_task_exit_at_limit_is_orphaned(self, tmp_path):
+        launcher = _make_launcher(tmp_path)
+        jobs = tmp_path / "jobs"
+        done = jobs / "done"
+        result_path = str(jobs / "result.md")
+        task = Task(uuid=UUID_A, command="sleep 30", result_path=result_path)
+
+        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        pgid = proc.pid
+        try:
+            _write_running_file(
+                jobs, UUID_A, proc.pid, pgid, interrupted_reruns=_MAX_INTERRUPTED_RERUNS,
+            )
+            launcher.adopt_orphans({UUID_A: task})
+
+            _force_kill_pgid(pgid)
+            proc.wait()
+            assert _spin_until(lambda: not _process_group_exists(pgid))
+
+            launcher.check_completions()
+
+            assert not launcher.is_running(UUID_A)
+            assert is_done(done, UUID_A)
+            assert _read_done(done, UUID_A) == DONE_ORPHANED_ON_RESTART
+            launcher._hooks.on_task_failure.assert_called_once()
+            assert launcher._hooks.on_task_failure.call_args[0][3] == "orphaned_on_restart"
+        finally:
+            _force_kill_pgid(pgid)
+
+
+class TestExclusiveUnmarkedOrphan:
+    def test_unmarked_dead_exclusive_task_is_orphaned(self, tmp_path):
+        launcher = _make_launcher(tmp_path)
+        jobs = tmp_path / "jobs"
+        done = jobs / "done"
+
+        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        pgid = proc.pid
+        _force_kill_pgid(pgid)
+        proc.wait()
+        assert _spin_until(lambda: not _process_group_exists(pgid))
+
+        _write_running_file(jobs, UUID_A, proc.pid, pgid)
+        task = Task(
+            uuid=UUID_A,
+            command="sleep 30",
+            annotations={"_exclusive": "true"},
+        )
+
+        launcher.adopt_orphans({UUID_A: task})
+
+        assert UUID_A not in launcher._pending_reruns
+        assert is_done(done, UUID_A)
+        assert _read_done(done, UUID_A) == DONE_ORPHANED_ON_RESTART
+
+    def test_adopted_exclusive_task_exit_is_orphaned(self, tmp_path):
+        launcher = _make_launcher(tmp_path)
+        jobs = tmp_path / "jobs"
+        done = jobs / "done"
+        task = Task(
+            uuid=UUID_A,
+            command="sleep 30",
+            annotations={"_exclusive": "true"},
+        )
+
+        proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
+        pgid = proc.pid
+        try:
+            _write_running_file(jobs, UUID_A, proc.pid, pgid)
+            launcher.adopt_orphans({UUID_A: task})
+
+            _force_kill_pgid(pgid)
+            proc.wait()
+            assert _spin_until(lambda: not _process_group_exists(pgid))
+
+            launcher.check_completions()
+
+            assert UUID_A not in launcher._pending_reruns
+            assert is_done(done, UUID_A)
+            assert _read_done(done, UUID_A) == DONE_ORPHANED_ON_RESTART
+        finally:
+            _force_kill_pgid(pgid)
+
+
+class TestAdoptDeadProcess:
     def test_corrupt_json_treated_as_dead(self, tmp_path):
         launcher = _make_launcher(tmp_path)
         jobs = tmp_path / "jobs"
@@ -185,15 +339,8 @@ class TestAdoptUnknownUUID:
         assert unk_path.exists()
 
 
-
-
 class TestEngineAdoptOnce:
-    def test_engine_adopts_once_and_does_not_relaunch(self, tmp_path):
-        import threading
-        from unittest.mock import patch
-
-        from ghdag.dag.engine import DagEngine
-
+    def test_engine_adopts_once_and_reruns_once_after_exit(self, tmp_path):
         jobs = tmp_path / "jobs"
         done = jobs / "done"
         done.mkdir(parents=True)
@@ -210,38 +357,34 @@ class TestEngineAdoptOnce:
             lock_file=str(tmp_path / "lock"),
         )
         hooks = MagicMock()
+        hooks.check_rejected.return_value = None
+        hooks.check_pipeline_status.return_value = None
         engine = DagEngine(config, hooks=hooks)
 
-        # Synchronization events replacing polling / time.sleep
-        adopt_event = threading.Event()   # set when adopt_orphans completes
-        check_proceed = threading.Event() # set by test to let engine continue past hook
-        dead_done = threading.Event()     # set when UUID_DEAD task finishes
-        live_done = threading.Event()     # set when UUID_LIVE task finishes (orphaned)
+        adopt_event = threading.Event()
+        check_proceed = threading.Event()
+        dead_done = threading.Event()
 
         _restore_waiting = engine._launcher.restore_waiting
 
         def _restore_waiting_sync(tasks, known_done):
             restored = _restore_waiting(tasks, known_done)
             adopt_event.set()
-            check_proceed.wait()
+            check_proceed.wait(timeout=_WAIT_BUDGET_SEC)
             return restored
 
         def _on_task_success_side_effect(uuid, *args, **kwargs):
             if uuid == UUID_DEAD:
                 dead_done.set()
 
-        def _on_task_failure_side_effect(uuid, *args, **kwargs):
-            if uuid == UUID_LIVE:
-                live_done.set()
-
         hooks.on_task_success.side_effect = _on_task_success_side_effect
-        hooks.on_task_failure.side_effect = _on_task_failure_side_effect
 
         proc = subprocess.Popen(["sleep", "30"], start_new_session=True)
         pgid = proc.pid
         t = threading.Thread(target=engine.run, daemon=True)
         try:
             _write_running_file(jobs, UUID_LIVE, proc.pid, pgid)
+
             with patch.object(
                 engine._launcher, "adopt_orphans", wraps=engine._launcher.adopt_orphans
             ) as spy, patch.object(
@@ -252,14 +395,11 @@ class TestEngineAdoptOnce:
                 side_effect=_restore_waiting_sync,
             ):
                 t.start()
-                # Wait for first-load restore_waiting sync (engine paused before next poll)
-                adopt_event.wait()
-                assert adopt_event.is_set(), "adopt_orphans did not fire"
-                # Engine is paused here: is_running check is race-free
+                adopt_event.wait(timeout=_WAIT_BUDGET_SEC)
+                assert adopt_event.is_set()
                 assert engine._launcher.is_running(UUID_LIVE)
                 assert spy.call_count == 1
 
-                # Append UUID_DEAD task while engine is paused, then let engine continue
                 exec_jsonl.write_text(
                     exec_jsonl.read_text(encoding="utf-8")
                     + json.dumps({"uuid": UUID_DEAD, "command": "true", "depends": []})
@@ -268,25 +408,28 @@ class TestEngineAdoptOnce:
                 )
                 st = os.stat(exec_jsonl)
                 os.utime(exec_jsonl, (st.st_atime + 5, st.st_mtime + 5))
-                check_proceed.set()  # unblock engine
+                check_proceed.set()
 
-                # Wait for UUID_DEAD to complete (launched normally, not adopted)
-                dead_done.wait()
-                assert dead_done.is_set(), "UUID_DEAD task did not complete"
+                dead_done.wait(timeout=_WAIT_BUDGET_SEC)
+                assert dead_done.is_set()
                 assert spy.call_count == 1
                 assert all(c.args[0] != UUID_LIVE for c in launch_spy.call_args_list)
                 assert not is_done(str(done), UUID_LIVE)
 
-                # Kill UUID_LIVE process and wait for orphan close
                 _force_kill_pgid(pgid)
                 proc.wait()
-                live_done.wait()
-                assert live_done.is_set(), "UUID_LIVE orphan close did not fire"
-                assert _read_done(done, UUID_LIVE) == DONE_ORPHANED_ON_RESTART
-                assert all(c.args[0] != UUID_LIVE for c in launch_spy.call_args_list)
+
+                assert _spin_until(
+                    lambda: sum(
+                        1 for c in launch_spy.call_args_list if c.args[0] == UUID_LIVE
+                    )
+                    == 1
+                )
+                assert not is_done(str(done), UUID_LIVE)
         finally:
             engine._shutdown = True
-            t.join()
+            t.join(timeout=_WAIT_BUDGET_SEC)
+            engine._launcher.terminate_all()
             _force_kill_pgid(pgid)
             if proc.poll() is None:
                 proc.wait()

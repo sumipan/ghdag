@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.147.1 - 2026-11-20
+
+### Fixed
+
+- dag: rerun unmarked interrupted tasks on runner restart
+- repair: drop monotonic polling in adopt-on-restart tests (#7465)
+
 ## 0.147.0 - 2026-11-20
 
 ### Changed
