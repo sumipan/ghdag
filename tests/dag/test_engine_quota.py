@@ -70,7 +70,7 @@ def test_draining_one_engine_still_launches_other_engine(tmp_path: Path) -> None
     def stop_after_first_sleep(*_args, **_kwargs):
         engine._shutdown = True
 
-    with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=proc), patch(
+    with patch("ghdag.dag._process_host.subprocess.Popen", return_value=proc), patch(
         "ghdag.dag.engine.time.sleep", side_effect=stop_after_first_sleep
     ):
         engine.run()
@@ -92,7 +92,7 @@ def test_launch_popen_failure_rolls_back_running_reservation(tmp_path: Path) -> 
     engine = DagEngine(config, hooks)
     task = Task(uuid="task-1", command="claude -p hello", depends=[])
 
-    with patch("ghdag.dag.task_launcher.subprocess.Popen", side_effect=OSError("boom")):
+    with patch("ghdag.dag._process_host.subprocess.Popen", side_effect=OSError("boom")):
         with pytest.raises(OSError):
             engine._launcher.launch(task.uuid, task)
 
@@ -138,7 +138,7 @@ def test_resume_fallback_relaunches_async_without_blocking(tmp_path: Path) -> No
     fallback_proc.stderr = io.BytesIO(b"")
 
     with patch(
-        "ghdag.dag.task_launcher.subprocess.Popen", return_value=fallback_proc
+        "ghdag.dag._process_host.subprocess.Popen", return_value=fallback_proc
     ) as mock_popen, patch("ghdag.dag.task_launcher.state_mark_done"):
         started = time.monotonic()
         engine._launcher.check_completions()
@@ -200,7 +200,7 @@ def test_resume_fallback_attaches_stall_tracker_for_cursor(
     fallback_proc.stderr = io.BytesIO(b"")
 
     with patch(
-        "ghdag.dag.task_launcher.subprocess.Popen", return_value=fallback_proc
+        "ghdag.dag._process_host.subprocess.Popen", return_value=fallback_proc
     ), patch("ghdag.dag.task_launcher.state_mark_done"):
         engine._launcher.check_completions()
 
@@ -260,7 +260,7 @@ def test_resume_fallback_command_forms_unchanged_across_engines(
     fallback_proc.stderr = io.BytesIO(b"")
 
     with patch(
-        "ghdag.dag.task_launcher.subprocess.Popen", return_value=fallback_proc
+        "ghdag.dag._process_host.subprocess.Popen", return_value=fallback_proc
     ) as mock_popen, patch("ghdag.dag.task_launcher.state_mark_done"):
         engine._launcher.check_completions()
 

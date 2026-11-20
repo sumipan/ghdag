@@ -12,13 +12,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ghdag.core.vocabulary import DONE_ORPHANED_ON_RESTART
+from ghdag.dag._process_host import LocalProcessHost
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig, Task
 from ghdag.dag.task_launcher import (
     _MAX_INTERRUPTED_RERUNS,
     TaskLauncher,
-    _process_group_exists,
 )
 from ghdag.io.done import is_done
 
@@ -107,7 +107,7 @@ class TestUnmarkedDeadRerun:
         pgid = proc.pid
         _force_kill_pgid(pgid)
         proc.wait()
-        assert _spin_until(lambda: not _process_group_exists(pgid))
+        assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
 
         _write_running_file(jobs, UUID_A, proc.pid, pgid)
 
@@ -157,7 +157,7 @@ class TestUnmarkedDeadRerun:
         pgid = proc.pid
         _force_kill_pgid(pgid)
         proc.wait()
-        assert _spin_until(lambda: not _process_group_exists(pgid))
+        assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
 
         _write_running_file(
             jobs, UUID_A, proc.pid, pgid, interrupted_reruns=_MAX_INTERRUPTED_RERUNS,
@@ -188,7 +188,7 @@ class TestAdoptedTaskExitRerun:
 
             _force_kill_pgid(pgid)
             proc.wait()
-            assert _spin_until(lambda: not _process_group_exists(pgid))
+            assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
 
             launcher.check_completions()
 
@@ -217,7 +217,7 @@ class TestAdoptedTaskExitRerun:
 
             _force_kill_pgid(pgid)
             proc.wait()
-            assert _spin_until(lambda: not _process_group_exists(pgid))
+            assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
 
             launcher.check_completions()
 
@@ -240,7 +240,7 @@ class TestExclusiveUnmarkedOrphan:
         pgid = proc.pid
         _force_kill_pgid(pgid)
         proc.wait()
-        assert _spin_until(lambda: not _process_group_exists(pgid))
+        assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
 
         _write_running_file(jobs, UUID_A, proc.pid, pgid)
         task = Task(
@@ -273,7 +273,7 @@ class TestExclusiveUnmarkedOrphan:
 
             _force_kill_pgid(pgid)
             proc.wait()
-            assert _spin_until(lambda: not _process_group_exists(pgid))
+            assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
 
             launcher.check_completions()
 

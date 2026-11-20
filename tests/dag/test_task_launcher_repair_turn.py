@@ -99,7 +99,7 @@ class TestRepairTurn:
             popen_calls.append((args, kwargs))
             return real_popen(["true"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-        with patch("ghdag.dag.task_launcher.subprocess.Popen", new=fake_popen):
+        with patch("ghdag.dag._process_host.subprocess.Popen", new=fake_popen):
             launcher.check_completions()
 
         assert len(popen_calls) == 1
@@ -138,7 +138,7 @@ class TestRepairTurn:
         )
         _seed_running(launcher, uuid, task)
         launcher._session_store.record(uuid, "claude", "sess-1")
-        with patch("ghdag.dag.task_launcher.subprocess.Popen") as popen:
+        with patch("ghdag.dag._process_host.subprocess.Popen") as popen:
             launcher.check_completions()
             popen.assert_not_called()
         done = tmp_path / "jobs" / "done" / uuid
@@ -166,7 +166,7 @@ class TestRepairTurn:
             retry_depth=0,
             stdout_buf=io.BytesIO(b""),
         )
-        with patch("ghdag.dag.task_launcher.subprocess.Popen") as popen:
+        with patch("ghdag.dag._process_host.subprocess.Popen") as popen:
             launcher.check_completions()
             popen.assert_not_called()
 
@@ -184,7 +184,7 @@ class TestRepairTurn:
         )
         _seed_running(launcher, uuid, task)
         launcher._session_store.record(uuid, "claude", "sess")
-        with patch("ghdag.dag.task_launcher.subprocess.Popen") as popen:
+        with patch("ghdag.dag._process_host.subprocess.Popen") as popen:
             launcher.check_completions()
             popen.assert_not_called()
 
@@ -212,7 +212,7 @@ class TestRepairTurn:
         _seed_running(launcher, uuid, task)
         launcher._session_store.record(uuid, "claude", "sess-1")
 
-        with patch("ghdag.dag.task_launcher.subprocess.Popen") as popen:
+        with patch("ghdag.dag._process_host.subprocess.Popen") as popen:
             launcher.check_completions()
             popen.assert_not_called()
 
@@ -256,7 +256,7 @@ class TestRepairTurn:
         def fake_popen(*args, **kwargs):
             return repair_proc
 
-        with patch("ghdag.dag.task_launcher.subprocess.Popen", new=fake_popen):
+        with patch("ghdag.dag._process_host.subprocess.Popen", new=fake_popen):
             launcher.check_completions()
             assert uuid in launcher.quota_gate.snapshot().running_tasks
             launcher.check_completions()
@@ -306,7 +306,7 @@ class TestRepairTurn:
 
             with (
                 patch("ghdag.dag.task_launcher.file_ts", side_effect=_file_ts),
-                patch("ghdag.dag.task_launcher.subprocess.Popen", new=fake_popen),
+                patch("ghdag.dag._process_host.subprocess.Popen", new=fake_popen),
             ):
                 launcher.check_completions()
 
@@ -346,7 +346,7 @@ class TestRepairTurn:
         repair_proc.stdout = io.BytesIO()
         repair_proc.stderr = io.BytesIO()
 
-        with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=repair_proc):
+        with patch("ghdag.dag._process_host.subprocess.Popen", return_value=repair_proc):
             launcher.check_completions()
 
         rt = launcher._running[uuid]

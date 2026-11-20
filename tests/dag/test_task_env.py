@@ -33,7 +33,7 @@ def _make_launcher(tmp_path) -> TaskLauncher:
     )
 
 
-@patch("ghdag.dag.task_launcher.subprocess.Popen")
+@patch("ghdag.dag._process_host.subprocess.Popen")
 def test_launch_passes_task_env_to_child(mock_popen, tmp_path, monkeypatch) -> None:
     """TaskLauncher.launch passes _task_env(...) as env= to subprocess.Popen."""
     monkeypatch.setenv("PARENT_MARKER", "kept")

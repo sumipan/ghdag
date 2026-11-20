@@ -9,7 +9,6 @@ import logging
 import os
 import re
 import shlex
-import signal
 import subprocess
 import tempfile
 import threading
@@ -65,6 +64,7 @@ from ghdag.llm.session import SessionStore
 from ghdag.metrics.parsers import parse_engine_model
 from ghdag.quota import QuotaGate
 
+from ._process_host import LocalProcessHost
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .circuit_breaker import CircuitBreakerPolicy
 from .completion import (
@@ -196,48 +196,6 @@ def _resolve_task_timeout(task: Task, default: float | None) -> float | None:
         except (TypeError, ValueError):
             pass
     return default
-
-
-def _process_group_exists(pgid: int) -> bool:
-    """Return True if any process in the group is still alive."""
-    try:
-        os.killpg(pgid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
-def _signal_process_tree(proc: subprocess.Popen[bytes], sig: signal.Signals) -> None:
-    """Send *sig* to the task process group, falling back to the leader only."""
-    pgid = proc.pid
-    runner_pgid = os.getpgrp()
-    if isinstance(pgid, int) and pgid == runner_pgid:
-        logger.warning(
-            "Refusing to signal runner process group %s; falling back to leader",
-            pgid,
-        )
-    elif isinstance(pgid, int):
-        try:
-            os.killpg(pgid, sig)
-            return
-        except ProcessLookupError:
-            return
-        except OSError:
-            logger.warning(
-                "Failed to signal process group %s with %s; falling back to leader",
-                pgid,
-                sig,
-                exc_info=True,
-            )
-    if proc.poll() is not None:
-        return
-    if sig == signal.SIGKILL:
-        proc.kill()
-    else:
-        proc.terminate()
-
 
 
 def _parse_env_pattern_list(raw: str | None) -> list[str]:
@@ -439,6 +397,7 @@ class TaskLauncher:
         self._engine_quarantine = EngineQuarantine()
         self._last_quota_deferred: dict[str, tuple[str | None, str | None]] = {}
         self._waiting_engines: dict[str, tuple[str, ...]] = {}
+        self._process_host = LocalProcessHost()
 
     @property
     def quota_gate(self) -> QuotaGate:
@@ -455,17 +414,11 @@ class TaskLauncher:
         previous_attempt: str | None = None,
     ) -> _RunningProcess:
         warn_if_unverified(ENGINE_SPECS.get(engine) if engine else None)
-        popen_kwargs: dict[str, object] = {
-            "stderr": subprocess.PIPE,
-            "cwd": cwd,
-            "env": _task_env(uuid, task, previous_attempt),
-            "start_new_session": True,
-        }
-        if task.result_path is not None:
-            popen_kwargs["stdout"] = subprocess.PIPE
-        proc = subprocess.Popen(
-            ["bash", "-o", "pipefail", "-c", command],
-            **popen_kwargs,  # type: ignore[arg-type]
+        proc = self._process_host.start(
+            command,
+            cwd=cwd,
+            env=_task_env(uuid, task, previous_attempt),
+            capture_stdout=task.result_path is not None,
         )
         stdout_buf: io.BytesIO | None
         t_stdout: threading.Thread | None
@@ -643,7 +596,7 @@ class TaskLauncher:
         if rt.term_sent_at is not None:
             return
         logger.warning("Task [%s] cancel requested, sending SIGTERM", uuid)
-        _signal_process_tree(rt.proc, signal.SIGTERM)
+        self._process_host.terminate_tree(rt.proc)
         rt.term_sent_at = time.monotonic()
 
     def _poll_running(self, uuid: str, rt: _RunningProcess, now: float) -> bool:
@@ -661,7 +614,7 @@ class TaskLauncher:
                         uuid,
                         task_timeout,
                     )
-                    _signal_process_tree(rt.proc, signal.SIGTERM)
+                    self._process_host.terminate_tree(rt.proc)
                     rt.term_sent_at = now
                 else:
                     if rt.stall_tracker is not None:
@@ -696,7 +649,7 @@ class TaskLauncher:
         if rt.term_sent_at is not None:
             leader_exited = rt.proc.poll() is not None
             group_alive = (
-                _process_group_exists(rt.proc.pid)
+                self._process_host.group_exists(rt.proc.pid)
                 if isinstance(rt.proc.pid, int)
                 else (not leader_exited)
             )
@@ -706,7 +659,7 @@ class TaskLauncher:
                         "Task [%s] still alive after grace period, sending SIGKILL",
                         uuid,
                     )
-                    _signal_process_tree(rt.proc, signal.SIGKILL)
+                    self._process_host.kill_tree(rt.proc)
                     if rt.proc.poll() is None:
                         return False
                 else:
@@ -1386,7 +1339,7 @@ class TaskLauncher:
         """Inspect running processes and process any that have finished."""
         for uuid in list(self._adopted):
             at = self._adopted[uuid]
-            if not _process_group_exists(at.pgid):
+            if not self._process_host.group_exists(at.pgid):
                 del self._adopted[uuid]
                 if at.task.annotations.get("_exclusive") == "true":
                     self._finish_orphan(uuid, at.task, at.started_at)
@@ -1659,7 +1612,7 @@ class TaskLauncher:
         for uuid, rt in list(self._running.items()):
             self._interrupting.add(uuid)
             if rt.term_sent_at is None:
-                _signal_process_tree(rt.proc, signal.SIGTERM)
+                self._process_host.terminate_tree(rt.proc)
                 rt.term_sent_at = time.monotonic()
 
     def _write_running_file(
@@ -1676,17 +1629,14 @@ class TaskLauncher:
         path = self._running_path(uuid)
         path.parent.mkdir(parents=True, exist_ok=True)
         pgid = raw_pid
-        try:
-            actual_pgid = os.getpgid(raw_pid)
-            if actual_pgid != raw_pid:
-                logger.warning(
-                    "Task [%s] process group mismatch: pid=%s getpgid=%s",
-                    uuid,
-                    raw_pid,
-                    actual_pgid,
-                )
-        except OSError:
-            pass
+        actual_pgid = self._process_host.group_id(raw_pid)
+        if actual_pgid is not None and actual_pgid != raw_pid:
+            logger.warning(
+                "Task [%s] process group mismatch: pid=%s getpgid=%s",
+                uuid,
+                raw_pid,
+                actual_pgid,
+            )
         payload: dict = {
             "pid": raw_pid,
             "pgid": pgid,
@@ -1995,7 +1945,7 @@ class TaskLauncher:
                 data.get("interrupted_reruns", 0) if isinstance(data, dict) else 0
             )
             if interrupted_at is not None and task.annotations.get("_exclusive") == "true":
-                if _process_group_exists(pgid):
+                if self._process_host.group_exists(pgid):
                     self._adopted[uuid] = AdoptedTask(
                         uuid=uuid, task=task, pgid=pgid, started_at=started_at
                     )
@@ -2014,28 +1964,22 @@ class TaskLauncher:
                     )
                 continue
             if interrupted_at is not None:
-                if _process_group_exists(pgid):
+                if self._process_host.group_exists(pgid):
                     logger.info(
                         "adopt_orphans: interrupted task %s still alive (pgid=%s) — killing",
                         uuid, pgid,
                     )
-                    try:
-                        os.killpg(pgid, signal.SIGTERM)
-                    except (ProcessLookupError, PermissionError):
-                        pass
+                    self._process_host.terminate_group(pgid)
                     deadline = time.monotonic() + self._config.kill_grace
-                    while time.monotonic() < deadline and _process_group_exists(pgid):
+                    while time.monotonic() < deadline and self._process_host.group_exists(pgid):
                         time.sleep(0.05)
-                    if _process_group_exists(pgid):
-                        try:
-                            os.killpg(pgid, signal.SIGKILL)
-                        except (ProcessLookupError, PermissionError):
-                            pass
+                    if self._process_host.group_exists(pgid):
+                        self._process_host.kill_group(pgid)
 
                 self._rerun_or_orphan(
                     uuid, task, started_at, interrupted_reruns_val, path,
                 )
-            elif _process_group_exists(pgid):
+            elif self._process_host.group_exists(pgid):
                 self._adopted[uuid] = AdoptedTask(
                     uuid=uuid,
                     task=task,

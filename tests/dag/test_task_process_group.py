@@ -9,13 +9,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from ghdag.core.vocabulary import DONE_CANCELLED
+from ghdag.dag._process_host import LocalProcessHost
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.models import DagConfig, Task
-from ghdag.dag.task_launcher import (
-    TaskLauncher,
-    _process_group_exists,
-    _signal_process_tree,
-)
+from ghdag.dag.task_launcher import TaskLauncher
 from ghdag.io.done import is_done
 
 # 3-level tree: bash → python (dies on SIGTERM) → grandchild (ignores SIGTERM).
@@ -89,7 +86,7 @@ class _FakeClock:
 
 
 def _group_gone(pgid: int) -> bool:
-    return not _process_group_exists(pgid)
+    return not LocalProcessHost().group_exists(pgid)
 
 
 def _force_kill_pgid(pgid: int) -> None:
@@ -146,12 +143,12 @@ class TestSignalProcessTree:
         pgid = child.pid
         os.killpg(pgid, signal.SIGKILL)
         child.wait()
-        assert _spin_until(lambda: not _process_group_exists(pgid))
+        assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
 
         proc = MagicMock()
         proc.pid = pgid
         proc.poll.return_value = None
-        _signal_process_tree(proc, signal.SIGTERM)
+        LocalProcessHost().terminate_tree(proc)
         proc.terminate.assert_not_called()
         proc.kill.assert_not_called()
 
@@ -160,8 +157,8 @@ class TestSignalProcessTree:
         proc = MagicMock()
         proc.pid = runner
         proc.poll.return_value = None
-        with patch("ghdag.dag.task_launcher.os.killpg") as mock_killpg:
-            _signal_process_tree(proc, signal.SIGTERM)
+        with patch("ghdag.dag._process_host.os.killpg") as mock_killpg:
+            LocalProcessHost().terminate_tree(proc)
         mock_killpg.assert_not_called()
         proc.terminate.assert_called_once()
 
@@ -205,8 +202,8 @@ class TestLaunchStartNewSession:
         fake.poll.return_value = None
         fake.stdout = None
         fake.stderr = MagicMock()
-        with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=fake) as mock_popen:
-            with patch("ghdag.dag.task_launcher.os.getpgid", return_value=424242):
+        with patch("ghdag.dag._process_host.subprocess.Popen", return_value=fake) as mock_popen:
+            with patch("ghdag.dag._process_host.os.getpgid", return_value=424242):
                 ok = launcher.launch("sns", Task(uuid="sns", command="true"))
         assert ok is True
         assert mock_popen.call_args.kwargs.get("start_new_session") is True

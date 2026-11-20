@@ -48,7 +48,7 @@ def _make_launcher(tmp_path) -> TaskLauncher:
     )
 
 
-@patch("ghdag.dag.task_launcher.subprocess.Popen")
+@patch("ghdag.dag._process_host.subprocess.Popen")
 def test_cursor_launch_creates_stall_tracker(mock_popen, tmp_path, monkeypatch) -> None:
     monkeypatch.delenv("GHDAG_ENGINE_STALL_GUARD", raising=False)
     proc = MagicMock()
@@ -63,7 +63,7 @@ def test_cursor_launch_creates_stall_tracker(mock_popen, tmp_path, monkeypatch) 
     assert rt.stall_tracker._root_pid == 4242
 
 
-@patch("ghdag.dag.task_launcher.subprocess.Popen")
+@patch("ghdag.dag._process_host.subprocess.Popen")
 def test_stall_guard_disabled(mock_popen, tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("GHDAG_ENGINE_STALL_GUARD", "0")
     proc = MagicMock()
@@ -115,7 +115,7 @@ def test_check_completions_invokes_tracker_and_writes_audit(
     assert record["pid"] == 99
 
 
-@patch("ghdag.dag.task_launcher.subprocess.Popen")
+@patch("ghdag.dag._process_host.subprocess.Popen")
 def test_stall_guard_disabled_relaunch_has_no_tracker(
     mock_popen, tmp_path, monkeypatch
 ) -> None:

@@ -12,10 +12,11 @@ from unittest.mock import ANY, MagicMock
 
 from dag.test_engine_drain import _wait_until
 from ghdag.core.vocabulary import DONE_CANCELLED, DONE_ORPHANED_ON_RESTART
+from ghdag.dag._process_host import LocalProcessHost
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig, Task
-from ghdag.dag.task_launcher import TaskLauncher, _process_group_exists
+from ghdag.dag.task_launcher import TaskLauncher
 from ghdag.io.done import interpret_done, is_done, load_succeeded_from_dir, read_done_content
 from ghdag.status import EXCLUSIVE_STATE_FILE, read_exclusive_gate
 
@@ -296,7 +297,7 @@ class TestExclusiveDrainAndAdopt:
             assert "interrupted_at" in data
             assert not is_done(str(jobs / "done"), UUID_X)
             pgid = data["pgid"]
-            assert _process_group_exists(pgid)
+            assert LocalProcessHost().group_exists(pgid)
         finally:
             engine._shutdown = True
             t.join()
@@ -330,7 +331,7 @@ class TestExclusiveDrainAndAdopt:
             adopted = launcher.adopt_orphans({UUID_X: task})
             assert UUID_X in adopted
             assert UUID_X not in launcher._pending_reruns
-            assert _process_group_exists(pgid)
+            assert LocalProcessHost().group_exists(pgid)
         finally:
             try:
                 os.killpg(pgid, signal.SIGKILL)
@@ -345,7 +346,7 @@ class TestExclusiveDrainAndAdopt:
         pgid = proc.pid
         os.killpg(pgid, signal.SIGKILL)
         proc.wait()
-        assert _wait_until(lambda: not _process_group_exists(pgid))
+        assert _wait_until(lambda: not LocalProcessHost().group_exists(pgid))
         payload = {
             "pid": proc.pid,
             "pgid": pgid,
