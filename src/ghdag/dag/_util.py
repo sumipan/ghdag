@@ -50,7 +50,9 @@ def _parse_reply(content: str) -> ReplyBlock | ReplyBlockError | None:
 
 
 def _pipeline_status_from_block(block: ReplyBlock) -> str | None:
-    if block.status in ("ok", "rejected"):
+    if block.status == "ok":
+        return block.code
+    if block.status == "rejected":
         return None
     if block.status == "wait_quota":
         return PIPELINE_WAIT_QUOTA

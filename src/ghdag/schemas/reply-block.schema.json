@@ -18,7 +18,8 @@
     },
     "code": {
       "type": "string",
-      "description": "Machine code when status is failed."
+      "pattern": "^[A-Z][A-Z0-9_]*$",
+      "description": "Success marker when status is ok (must not end with _FAILED); failure code when status is failed."
     },
     "engines": {
       "type": "array",
@@ -81,6 +82,10 @@
   "examples": [
     {
       "status": "ok"
+    },
+    {
+      "status": "ok",
+      "code": "IMPL_DONE"
     },
     {
       "status": "ok",
