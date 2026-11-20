@@ -731,7 +731,6 @@ Every Python module under `src/ghdag/`.
 | `core/ports/__init__.py` | Exports `ForgePort` |
 | `core/ports/dag_hooks.py` | `DagHooks` Protocol |
 | `core/ports/forge.py` | `ForgePort` Protocol |
-| `core/ports/github.py` | `GitHubIssuePort` Protocol |
 | `core/ports/order.py` | `OrderBuilder` Protocol |
 | `core/ports/output.py` | `EngineOutputAdapter` Protocol, `EngineError`, `EngineErrorKind` |
 | `core/ports/quota.py` | `QuotaAdmissionPort` and `QuotaCallPort` Protocols |
