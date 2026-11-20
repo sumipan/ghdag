@@ -113,6 +113,7 @@ def cmd_run(args) -> None:
         max_concurrency=args.max_concurrency,
         task_timeout=args.task_timeout,
         quota_state_path=args.quota_state_path,
+        nodes_path=getattr(args, "nodes", None),
     )
     hook_modules = args.hooks
     if hook_modules:
@@ -213,6 +214,13 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         default=None,
         metavar="N",
         help="Maximum number of concurrent tasks (default: unlimited)",
+    )
+    run_parser.add_argument(
+        "--nodes",
+        default=None,
+        dest="nodes",
+        metavar="PATH",
+        help="YAML file listing remote SSH execution nodes",
     )
     run_parser.set_defaults(func=cmd_run)
     return run_parser

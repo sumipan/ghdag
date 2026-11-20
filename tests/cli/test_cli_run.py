@@ -117,6 +117,23 @@ class TestRunError:
         assert payload["error"]["code"] == "EXEC_JSONL_NOT_FOUND"
         assert payload["error"]["message"] == "file not found: nonexistent_exec.jsonl"
 
+    def test_run_exits_1_on_invalid_nodes_file(self, tmp_path: Path) -> None:
+        """Refs sumipan/ghdag#7651 — duplicate node names in --nodes exit 1."""
+        exec_md = tmp_path / "exec.jsonl"
+        exec_md.write_text("")
+        nodes = tmp_path / "nodes.yml"
+        nodes.write_text(
+            "nodes:\n"
+            "  - {name: dup, labels: [a], ssh: h1, workdir: /w}\n"
+            "  - {name: dup, labels: [b], ssh: h2, workdir: /w2}\n",
+            encoding="utf-8",
+        )
+        from ghdag.cli import main
+
+        with pytest.raises(SystemExit) as exc:
+            main(["run", str(exec_md), "--nodes", str(nodes)])
+        assert exc.value.code == 1
+
 
 # ---------------------------------------------------------------------------
 # Issue sumipan/nexus#7095: run CLI task timeout, quota path, multi-hooks

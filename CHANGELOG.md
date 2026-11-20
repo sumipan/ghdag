@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.152.0 - 2026-11-21
+
+### Added
+
+- dag: route labeled tasks to SSH remote nodes
+
+### Fixed
+
+- repair: sync README with run --nodes and dag/_nodes.py (#7651)
+
 ## 0.151.1 - 2026-11-21
 
 ### Changed

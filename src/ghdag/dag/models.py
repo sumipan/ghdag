@@ -12,6 +12,7 @@ from ghdag.core.models.dag import DagConfig, Task
 
 if TYPE_CHECKING:
     from ghdag.core.stall_guard import StallTracker
+    from ghdag.dag._process_host import LocalProcessHost, SshProcessHost
 
 __all__ = ["Task", "DagConfig"]
 
@@ -30,3 +31,5 @@ class _RunningProcess:
     stderr_thread: threading.Thread | None = None
     stdout_thread: threading.Thread | None = None
     stall_tracker: StallTracker | None = None
+    host: LocalProcessHost | SshProcessHost | None = None
+    node: str | None = None

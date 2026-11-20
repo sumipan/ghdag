@@ -46,6 +46,7 @@ class DagConfig:
     quota_pause_ttl_seconds: int | None = 3600
     engine_limits: dict[str, int] = field(default_factory=dict)
     max_repair_turns: int = 1
+    nodes_path: str | Path | None = None
 
     def __post_init__(self) -> None:
         paths = resolve_runtime_paths(self.exec_jsonl_path)
