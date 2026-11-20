@@ -10,7 +10,7 @@ from ghdag.core.models.workflow import (
     TriggerConfig,
     WorkflowConfig,
 )
-from ghdag.github_client import GitHubIssuePort
+from ghdag.core.ports.forge import ForgePort
 from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 
@@ -24,7 +24,7 @@ def _make_workflow(trigger_labels: list[str]) -> WorkflowConfig:
 
 
 def _make_dispatcher(workflow: WorkflowConfig):
-    github_client = MagicMock(spec=GitHubIssuePort)
+    github_client = MagicMock(spec=ForgePort)
     github_client.get_issue_comments.return_value = []
     order_builder = MagicMock()
     order_builder.build_order.return_value = "order content"

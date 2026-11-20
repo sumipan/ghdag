@@ -16,7 +16,7 @@ from ghdag.core.models.workflow import (
     TriggerConfig,
     WorkflowConfig,
 )
-from ghdag.github_client import GitHubIssuePort
+from ghdag.core.ports.forge import ForgePort
 from ghdag.pipeline.order import TemplateOrderBuilder
 from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import WorkflowDispatcher
@@ -114,7 +114,7 @@ def test_live_submit_does_not_mutate_pipeline_order_builders(tmp_path: Path) -> 
 
     task_queue._order_builders = _TrackingBuilders(task_queue._order_builders)
 
-    github = MagicMock(spec=GitHubIssuePort)
+    github = MagicMock(spec=ForgePort)
     dispatcher = WorkflowDispatcher(
         workflows=[workflow],
         github_client=github,
@@ -185,7 +185,7 @@ def test_live_render_raises_when_template_dir_none_on_config(tmp_path: Path) -> 
     task_queue = MagicMock(spec=TaskQueue)
     task_queue.check_idempotency.return_value = True
     task_queue.order_builder_for.return_value = MagicMock()
-    github = MagicMock(spec=GitHubIssuePort)
+    github = MagicMock(spec=ForgePort)
     dispatcher = WorkflowDispatcher(
         workflows=[workflow],
         github_client=github,

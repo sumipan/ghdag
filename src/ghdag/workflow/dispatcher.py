@@ -19,7 +19,7 @@ from ghdag.core.models.workflow import (
     TriggerConfig,
     WorkflowConfig,
 )
-from ghdag.github_client import GitHubIssuePort
+from ghdag.core.ports.forge import ForgePort
 from ghdag.io.audit import (
     AuditContext,
     append_audit_record,
@@ -88,7 +88,7 @@ class WorkflowDispatcher:
     def __init__(
         self,
         workflows: list[WorkflowConfig],
-        github_client: GitHubIssuePort | list[GitHubIssuePort],
+        github_client: ForgePort | list[ForgePort],
         task_queue: TaskQueue,
         queue_dir: str = "queue",
         pause_file: str | Path | None = None,
@@ -98,7 +98,7 @@ class WorkflowDispatcher:
         # Accept both a single client and a list of clients.
         # When watching multiple repos, pass one client per repository.
         if isinstance(github_client, (list, tuple)):
-            self._githubs: list[GitHubIssuePort] = list(github_client)
+            self._githubs: list[ForgePort] = list(github_client)
         else:
             self._githubs = [github_client]
         self._task_queue = task_queue
@@ -218,7 +218,7 @@ class WorkflowDispatcher:
         handler: HandlerConfig,
         trigger: TriggerConfig | None = None,
         trigger_rank: int | None = None,
-        github: GitHubIssuePort | None = None,
+        github: ForgePort | None = None,
         *,
         redispatch: bool = False,
         redispatch_reason: str | None = None,
@@ -634,7 +634,7 @@ class WorkflowDispatcher:
 
     def _poll_nonterminal_closed(
         self,
-        github: GitHubIssuePort,
+        github: ForgePort,
         workflow: WorkflowConfig,
         results: list[dict],
         all_closed: list[dict],
@@ -818,7 +818,7 @@ class WorkflowDispatcher:
 
         return max_rank
 
-    def _write_design_md(self, issue: dict, github: GitHubIssuePort) -> None:
+    def _write_design_md(self, issue: dict, github: ForgePort) -> None:
         """Write the Issue body + comments to queue/issue-{N}-design.md."""
         issue_number = issue["number"]
         comments = github.get_issue_comments(issue_number)
@@ -842,7 +842,7 @@ class WorkflowDispatcher:
         issue: dict,
         workflow: WorkflowConfig,
         trigger: TriggerConfig,
-        github: GitHubIssuePort,
+        github: ForgePort,
     ) -> None:
         """Delete the idempotency key and clear all labels sharing the trigger label's prefix."""
         issue_number = issue["number"]

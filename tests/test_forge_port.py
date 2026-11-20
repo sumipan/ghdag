@@ -21,6 +21,30 @@ def test_github_client_satisfies_forge_port() -> None:
     assert isinstance(client, ForgePort)
 
 
+def test_github_client_and_local_forge_satisfy_merged_forge_port(tmp_path: Path) -> None:
+    """nexus #7546 AC1: both forge implementations satisfy the merged ForgePort."""
+    from ghdag.forge.local import LocalForge
+
+    assert isinstance(GitHubClient(token="token", repo="owner/repo"), ForgePort)
+    assert isinstance(LocalForge(tmp_path), ForgePort)
+
+
+def test_factories_and_dispatcher_use_forge_port_type_hints() -> None:
+    """nexus #7546 AC3: factory return types and dispatcher client hints are ForgePort."""
+    from ghdag.github_client import create_github_client, create_github_clients
+    from ghdag.workflow.dispatcher import WorkflowDispatcher
+
+    assert get_type_hints(create_github_client)["return"] is ForgePort
+    assert get_type_hints(create_github_clients)["return"] == list[ForgePort]
+    hints = [
+        get_type_hints(WorkflowDispatcher.__init__)["github_client"],
+        get_type_hints(create_github_client)["return"],
+        get_type_hints(create_github_clients)["return"],
+    ]
+    assert get_type_hints(WorkflowDispatcher.__init__)["github_client"] == (ForgePort | list[ForgePort])
+    assert all("GitHubIssuePort" not in repr(h) for h in hints)
+
+
 def test_core_ports_reexports_forge_port() -> None:
     from ghdag.core.ports import ForgePort as Exported
 

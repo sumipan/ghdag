@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from ghdag.core.models.workflow import WorkflowConfig
-from ghdag.github_client import GitHubIssuePort
+from ghdag.core.ports.forge import ForgePort
 from ghdag.pipeline.llm_pipeline import build_order_builders
 from ghdag.pipeline.order import TemplateOrderBuilder
 from ghdag.pipeline.task_queue import TaskQueue
@@ -22,7 +22,7 @@ def _bump_mtime_ahead(path: Path) -> None:
 
 
 def _make_github_mock():
-    github_client = MagicMock(spec=GitHubIssuePort)
+    github_client = MagicMock(spec=ForgePort)
     github_client.list_all_issues.return_value = []
     github_client.get_last_rate_limit.return_value = None
     return github_client

@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from ghdag.core.models.workflow import HandlerConfig, StepConfig, TriggerConfig, WorkflowConfig
-from ghdag.github_client import GitHubIssuePort
+from ghdag.core.ports.forge import ForgePort
 from ghdag.pipeline.order import TemplateOrderBuilder
 from ghdag.pipeline.state import build_idempotency_key
 from ghdag.pipeline.task_queue import TaskQueue
@@ -39,7 +39,7 @@ def _make_dispatcher(tmp_path: Path) -> tuple[WorkflowDispatcher, TaskQueue, Mag
         order_builder=TemplateOrderBuilder(str(templates)),
         queue_dir=str(exec_jsonl.parent),
     )
-    github = MagicMock(spec=GitHubIssuePort)
+    github = MagicMock(spec=ForgePort)
     github.get_issue_comments.return_value = []
     dispatcher = WorkflowDispatcher(
         workflows=[_make_workflow()],
