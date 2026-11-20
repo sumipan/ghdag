@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.152.1 - 2026-11-21
+
+### Changed
+
+- dag: rename DagEngine._queue_dir to _state_dir
+
 ## 0.152.0 - 2026-11-21
 
 ### Added
