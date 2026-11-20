@@ -91,7 +91,10 @@ class TestTriggerStateDirDerivation:
         mock_github.get_issue.return_value = {"number": 1, "labels": [], "title": "t", "body": ""}
 
         with patch("ghdag.pipeline.task_queue.TaskQueue", side_effect=_make_pipeline_state_mock(captured)):
-            with patch("ghdag.github_client.create_github_client", return_value=mock_github):
+            with patch(
+                "ghdag.github_client.create_github_clients",
+                return_value=[mock_github],
+            ):
                 try:
                     args = _trigger_args(str(exec_jsonl), str(workflows_dir), state_dir=None)
                     cmd_trigger(args)
@@ -121,7 +124,10 @@ class TestTriggerStateDirDerivation:
         mock_github.get_issue.return_value = {"number": 1, "labels": [], "title": "t", "body": ""}
 
         with patch("ghdag.pipeline.task_queue.TaskQueue", side_effect=_make_pipeline_state_mock(captured)):
-            with patch("ghdag.github_client.create_github_client", return_value=mock_github):
+            with patch(
+                "ghdag.github_client.create_github_clients",
+                return_value=[mock_github],
+            ):
                 try:
                     args = _trigger_args(str(exec_jsonl), str(workflows_dir), state_dir=custom_state_dir)
                     cmd_trigger(args)
@@ -148,7 +154,10 @@ class TestTriggerStateDirDerivation:
         mock_github.get_issue.return_value = {"number": 1, "labels": [], "title": "t", "body": ""}
 
         with patch("ghdag.pipeline.task_queue.TaskQueue", side_effect=_make_pipeline_state_mock(captured)):
-            with patch("ghdag.github_client.create_github_client", return_value=mock_github):
+            with patch(
+                "ghdag.github_client.create_github_clients",
+                return_value=[mock_github],
+            ):
                 try:
                     args = _trigger_args("jobs/exec.jsonl", str(workflows_dir), state_dir=None)
                     cmd_trigger(args)
@@ -164,6 +173,63 @@ class TestTriggerStateDirDerivation:
 
 class TestWatchStateDirDerivation:
     """AC-4: ghdag watch has the same --state-dir behavior as trigger."""
+
+    def test_watch_absolute_exec_jsonl_derives_state_dir_from_repo_root(self, tmp_path, monkeypatch):
+        """watch: state dir follows exec_jsonl repo root, not cwd."""
+        from ghdag.cli.commands.watch import cmd_watch
+
+        worktree = tmp_path / "worktree"
+        worktree.mkdir()
+        monkeypatch.chdir(worktree)
+
+        repo_root = tmp_path / "repo"
+        exec_jsonl = repo_root / "jobs" / "exec.jsonl"
+        exec_jsonl.parent.mkdir(parents=True)
+        exec_jsonl.write_text("", encoding="utf-8")
+        workflows_dir = _setup_workflow_dir(repo_root)
+
+        captured = {}
+        mock_clients = MagicMock()
+
+        with patch("ghdag.pipeline.task_queue.TaskQueue", side_effect=_make_pipeline_state_mock(captured)):
+            with patch("ghdag.github_client.create_github_clients", return_value=mock_clients):
+                try:
+                    args = _watch_args(str(exec_jsonl), str(workflows_dir), state_dir=None)
+                    cmd_watch(args)
+                except (_CaptureStateDir, SystemExit, Exception):
+                    pass
+
+        expected = str(repo_root / ".pipeline-state")
+        assert captured.get("state_dir") == expected, (
+            f"watch: Expected state_dir={expected!r}, got {captured.get('state_dir')!r}."
+        )
+
+    def test_watch_relative_exec_jsonl_uses_cwd_pipeline_state(self, tmp_path, monkeypatch):
+        """watch: cwd=repo-root, relative exec_jsonl → cwd/.pipeline-state."""
+        from ghdag.cli.commands.watch import cmd_watch
+
+        monkeypatch.chdir(tmp_path)
+
+        exec_jsonl = tmp_path / "jobs" / "exec.jsonl"
+        exec_jsonl.parent.mkdir(parents=True)
+        exec_jsonl.write_text("", encoding="utf-8")
+        workflows_dir = _setup_workflow_dir(tmp_path)
+
+        captured = {}
+        mock_clients = MagicMock()
+
+        with patch("ghdag.pipeline.task_queue.TaskQueue", side_effect=_make_pipeline_state_mock(captured)):
+            with patch("ghdag.github_client.create_github_clients", return_value=mock_clients):
+                try:
+                    args = _watch_args("jobs/exec.jsonl", str(workflows_dir), state_dir=None)
+                    cmd_watch(args)
+                except (_CaptureStateDir, SystemExit, Exception):
+                    pass
+
+        expected = str(tmp_path / ".pipeline-state")
+        assert captured.get("state_dir") == expected, (
+            f"watch: Expected state_dir={expected!r}, got {captured.get('state_dir')!r}."
+        )
 
     def test_watch_explicit_state_dir_overrides_derived_path(self, tmp_path, monkeypatch):
         """watch: explicit --state-dir overrides derivation."""
