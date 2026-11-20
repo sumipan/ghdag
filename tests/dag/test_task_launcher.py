@@ -46,7 +46,7 @@ def _make_launcher(tmp_path: Path):
 
 
 
-@patch("ghdag.dag.task_launcher.subprocess.Popen")
+@patch("ghdag.dag._process_host.subprocess.Popen")
 def test_gemini_spawn_logs_unverified_warning_once(
     mock_popen: MagicMock,
     tmp_path: Path,
@@ -98,7 +98,7 @@ def test_popen_failure_restores_command_without_resume(tmp_path: Path) -> None:
     ), patch(
         "ghdag.dag.task_launcher.write_compaction_audit",
     ), patch(
-        "ghdag.dag.task_launcher.subprocess.Popen",
+        "ghdag.dag._process_host.subprocess.Popen",
         side_effect=OSError("boom"),
     ):
         with pytest.raises(OSError):

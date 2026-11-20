@@ -235,7 +235,7 @@ def test_runtime_auth_failure_keeps_auth_class_without_retry_gate_actions(tmp_pa
     assert "cursor" not in snapshot.engines
 
 
-@patch("ghdag.dag.task_launcher.subprocess.Popen")
+@patch("ghdag.dag._process_host.subprocess.Popen")
 def test_environment_error_enters_quarantine_and_blocks_same_engine(mock_popen, tmp_path) -> None:
     engine, hooks = _make_engine(tmp_path)
     task = Task(uuid="env-fail", command="claude -p hi", engine="claude")

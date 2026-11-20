@@ -166,7 +166,7 @@ def test_wait_quota_task_is_not_relaunched_while_its_engines_are_paused(
     proc.poll.return_value = None
     proc.stdout = io.BytesIO(b"")
     proc.stderr = io.BytesIO(b"")
-    with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=proc) as mock_popen:
+    with patch("ghdag.dag._process_host.subprocess.Popen", return_value=proc) as mock_popen:
         for _ in range(3):
             assert engine._launcher.launch("task-1", task) is False
     mock_popen.assert_not_called()
@@ -183,7 +183,7 @@ def test_wait_quota_task_relaunches_when_one_engine_becomes_available(
     proc.poll.return_value = None
     proc.stdout = io.BytesIO(b"")
     proc.stderr = io.BytesIO(b"")
-    with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=proc) as mock_popen:
+    with patch("ghdag.dag._process_host.subprocess.Popen", return_value=proc) as mock_popen:
         assert engine._launcher.launch("task-1", task) is False
         mock_popen.assert_not_called()
 
@@ -242,7 +242,7 @@ class TestPersistedQuotaWaiting:
         proc.poll.return_value = None
         proc.stdout = io.BytesIO(b"")
         proc.stderr = io.BytesIO(b"")
-        with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=proc) as mock_popen:
+        with patch("ghdag.dag._process_host.subprocess.Popen", return_value=proc) as mock_popen:
             assert engine2._launcher.launch(task.uuid, task) is False
         mock_popen.assert_not_called()
 
@@ -267,7 +267,7 @@ class TestPersistedQuotaWaiting:
             engine="codex",
             observed_at=datetime(2099, 6, 1, tzinfo=timezone.utc),
         )
-        with patch("ghdag.dag.task_launcher.subprocess.Popen", return_value=proc):
+        with patch("ghdag.dag._process_host.subprocess.Popen", return_value=proc):
             assert engine2._launcher.launch(task.uuid, task) is True
         assert not quota_path.exists()
 

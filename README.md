@@ -11,13 +11,13 @@ Intake and execution are separate processes that share nothing but files on disk
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.150.2-blue)
+![version](https://img.shields.io/badge/version-v0.151.0-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.150.2** (`pyproject.toml` `version = "0.150.2"`) |
+| Current release | **v0.151.0** (`pyproject.toml` `version = "0.151.0"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
@@ -36,7 +36,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.150.2"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.151.0"
 ghdag version
 ```
 
@@ -735,6 +735,7 @@ Every Python module under `src/ghdag/`.
 | `core/ports/output.py` | `EngineOutputAdapter` Protocol, `EngineError`, `EngineErrorKind` |
 | `core/ports/quota.py` | `QuotaAdmissionPort` and `QuotaCallPort` Protocols |
 | `dag/__init__.py` | Runner public API |
+| `dag/_process_host.py` | `LocalProcessHost`: local subprocess launch and process-group control |
 | `dag/_util.py` | Internal runner helpers |
 | `dag/audit_hooks.py` | `AuditHooks`: `DefaultHooks` plus `audit.jsonl` writes |
 | `dag/circuit_breaker.py` | `CircuitBreakerPolicy`: consecutive-failure breaker |

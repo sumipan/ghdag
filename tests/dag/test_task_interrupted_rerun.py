@@ -10,12 +10,12 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 from ghdag.core.vocabulary import DONE_ORPHANED_ON_RESTART
+from ghdag.dag._process_host import LocalProcessHost
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.models import DagConfig, Task
 from ghdag.dag.task_launcher import (
     _MAX_INTERRUPTED_RERUNS,
     TaskLauncher,
-    _process_group_exists,
 )
 from ghdag.io.done import is_done
 
@@ -121,7 +121,7 @@ class TestAdoptOrphansInterrupted:
             assert launcher._pending_reruns[UUID_A] == 1
 
             proc.wait()
-            assert not _process_group_exists(pgid)
+            assert not LocalProcessHost().group_exists(pgid)
         finally:
             _force_kill_pgid(pgid)
             if proc.poll() is None:
@@ -138,7 +138,7 @@ class TestAdoptOrphansInterrupted:
         pgid = proc.pid
         _force_kill_pgid(pgid)
         proc.wait()
-        assert _spin_until(lambda: not _process_group_exists(pgid))
+        assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
 
         _write_running_file(
             jobs, UUID_A, proc.pid, pgid,
