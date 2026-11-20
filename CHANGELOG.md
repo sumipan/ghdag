@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.151.0 - 2026-11-21
+
+### Changed
+
+- dag: route task process control through LocalProcessHost
+
+### Fixed
+
+- repair: document dag/_process_host in README module inventory (#7645)
+
 ## 0.150.2 - 2026-11-20
 
 ### Fixed
