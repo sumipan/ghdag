@@ -7,6 +7,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.147.0 - 2026-11-20
+
+### Changed
+
+- remove legacy ghdag shims and rename permission attrs
+
+### Fixed
+
+- repair: drop pipeline/status shim compat test (#7416)
+- repair: restore io done shim test with updated expectations (#7416)
+
 ## 0.146.2 - 2026-11-20
 
 ### Changed
