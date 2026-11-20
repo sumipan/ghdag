@@ -23,7 +23,12 @@ import zipfile
 from pathlib import Path
 from typing import Any, cast
 
-from ghdag.config.env import github_repositories_raw, github_token
+from ghdag.config.env import (
+    ghdag_etag_cache,
+    ghdag_rate_limit_max_wait_sec,
+    github_repositories_raw,
+    github_token,
+)
 from ghdag.core.exceptions import (
     AuthError,
     GhdagError,
@@ -101,17 +106,6 @@ def _rate_limit_wait_seconds(headers: Any, now: float) -> tuple[float, int | Non
             except (TypeError, ValueError):
                 pass
     return 0.0, reset_at
-
-
-def _rate_limit_max_wait_from_env() -> int:
-    """Read GHDAG_RATE_LIMIT_MAX_WAIT_SEC; fall back to _RATE_LIMIT_MAX_WAIT_SEC."""
-    raw = os.environ.get("GHDAG_RATE_LIMIT_MAX_WAIT_SEC")
-    if raw is None or not raw.strip():
-        return _RATE_LIMIT_MAX_WAIT_SEC
-    try:
-        return int(raw)
-    except ValueError:
-        return _RATE_LIMIT_MAX_WAIT_SEC
 
 
 def _resolve_token(token: str | None = None) -> str:
@@ -199,14 +193,14 @@ class GitHubClient:
     ) -> None:
         self._token = _resolve_token(token)
         if rate_limit_max_wait_sec is None:
-            rate_limit_max_wait_sec = _rate_limit_max_wait_from_env()
+            rate_limit_max_wait_sec = ghdag_rate_limit_max_wait_sec()
         self._rate_limit_max_wait_sec = rate_limit_max_wait_sec
         self._owner, self._repo = _resolve_repo(repo)
         self._repo_full = f"{self._owner}/{self._repo}"
         self._etag_cache: dict[str, tuple[str, Any]] = {}
         self._last_rate_limit: dict[str, int] | None = None
         if etag_cache_path is None:
-            env_path = os.environ.get("GHDAG_ETAG_CACHE")
+            env_path = ghdag_etag_cache()
             etag_cache_path = Path(env_path) if env_path else None
         self._etag_cache_path = etag_cache_path
         self._etag_cache_dir: Path | None = None

@@ -6,12 +6,12 @@ import json
 import re
 from datetime import datetime, timedelta, timezone
 
+from ghdag.config import env
 from ghdag.core.exceptions import LLMParseError
 from ghdag.core.models.metrics import FailureClass, QuotaWindow, TokenUsage
 from ghdag.core.parsers import parse_token_usage_json
 from ghdag.core.ports.output import EngineError, EngineErrorKind
 from ghdag.llm.adapters.failure_classification import (
-    QUOTA_DEFAULT_PAUSE_SECONDS,
     classify_common_failure,
     looks_like_question,
 )
@@ -244,7 +244,7 @@ def _classify_error(message: str, observed_at: datetime) -> tuple[EngineErrorKin
     lower = message.lower()
     if "quota" in lower and "exhaust" in lower:
         resume_at = _parse_reset_at(message) or (
-            observed_at + timedelta(seconds=QUOTA_DEFAULT_PAUSE_SECONDS)
+            observed_at + timedelta(seconds=env.quota_default_pause_seconds())
         )
         return EngineErrorKind.QUOTA_EXHAUSTED, False, resume_at
     if "rate limit" in lower or "ratelimit" in lower:
