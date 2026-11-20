@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.150.0 - 2026-11-20
+
+### Changed
+
+- cli: colocate argparse definitions with command modules
+
 ## 0.149.0 - 2026-11-20
 
 ### Changed
