@@ -41,9 +41,7 @@ def test_factories_and_dispatcher_use_forge_port_type_hints() -> None:
         get_type_hints(create_github_client)["return"],
         get_type_hints(create_github_clients)["return"],
     ]
-    assert get_type_hints(WorkflowDispatcher.__init__)["github_client"] == (
-        ForgePort | list[ForgePort]
-    )
+    assert get_type_hints(WorkflowDispatcher.__init__)["github_client"] == (ForgePort | list[ForgePort])
     assert all("GitHubIssuePort" not in repr(h) for h in hints)
 
 
