@@ -735,6 +735,7 @@ Every Python module under `src/ghdag/`.
 | `core/ports/output.py` | `EngineOutputAdapter` Protocol, `EngineError`, `EngineErrorKind` |
 | `core/ports/quota.py` | `QuotaAdmissionPort` and `QuotaCallPort` Protocols |
 | `dag/__init__.py` | Runner public API |
+| `dag/_process_host.py` | `LocalProcessHost`: local subprocess launch and process-group control |
 | `dag/_util.py` | Internal runner helpers |
 | `dag/audit_hooks.py` | `AuditHooks`: `DefaultHooks` plus `audit.jsonl` writes |
 | `dag/circuit_breaker.py` | `CircuitBreakerPolicy`: consecutive-failure breaker |
