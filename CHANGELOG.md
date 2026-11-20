@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.147.4 - 2026-11-20
+
+### Fixed
+
+- audit: unify audit row keys as event_type and uuid
+
 ## 0.147.3 - 2026-11-20
 
 ### Changed
