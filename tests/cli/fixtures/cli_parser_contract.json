@@ -1159,6 +1159,19 @@
           "const": null
         },
         {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--nodes"
+          ],
+          "dest": "nodes",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "PATH",
+          "help": "YAML file listing remote SSH execution nodes",
+          "const": null
+        },
+        {
           "class": "_StoreTrueAction",
           "option_strings": [
             "--json"

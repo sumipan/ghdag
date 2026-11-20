@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import shlex
+import signal
 import subprocess
 import tempfile
 import threading
@@ -64,7 +65,8 @@ from ghdag.llm.session import SessionStore
 from ghdag.metrics.parsers import parse_engine_model
 from ghdag.quota import QuotaGate
 
-from ._process_host import LocalProcessHost
+from ._nodes import NodeSpec, load_nodes, pick_node
+from ._process_host import _STDIN_REDIR_RE, LocalProcessHost, SshProcessHost
 from ._util import _extract_tee_target, _stderr_reader, _stdout_reader
 from .circuit_breaker import CircuitBreakerPolicy
 from .completion import (
@@ -96,7 +98,6 @@ _STDERR_ARTIFACT_MAX_BYTES = 1_048_576
 
 _BASE_TASK_ENV_KEYS = frozenset({"PATH", "HOME", "LANG", "TMPDIR"})
 
-_STDIN_REDIR_RE = re.compile(r"(?<!<)<\s+(\S+)")
 _RESUME_ERROR_RE = re.compile(
     r"(resume|session|chat_id|not found|expired|invalid)",
     re.IGNORECASE,
@@ -365,6 +366,7 @@ class AdoptedTask:
     pgid: int
     started_at: float
     interrupted_reruns: int = 0
+    node: str | None = None
 
 
 class TaskLauncher:
@@ -398,6 +400,12 @@ class TaskLauncher:
         self._last_quota_deferred: dict[str, tuple[str | None, str | None]] = {}
         self._waiting_engines: dict[str, tuple[str, ...]] = {}
         self._process_host = LocalProcessHost()
+        self._nodes: list[NodeSpec] = []
+        self._node_hosts: dict[str, SshProcessHost] = {}
+        if config.nodes_path is not None:
+            self._nodes = load_nodes(config.nodes_path)
+            self._node_hosts = {n.name: SshProcessHost(n) for n in self._nodes}
+        self._last_node_deferred: dict[str, str] = {}
 
     @property
     def quota_gate(self) -> QuotaGate:
@@ -412,9 +420,12 @@ class TaskLauncher:
         cwd: str | None,
         *,
         previous_attempt: str | None = None,
+        host: LocalProcessHost | SshProcessHost | None = None,
+        node_name: str | None = None,
     ) -> _RunningProcess:
         warn_if_unverified(ENGINE_SPECS.get(engine) if engine else None)
-        proc = self._process_host.start(
+        process_host = host or self._process_host
+        proc = process_host.start(
             command,
             cwd=cwd,
             env=_task_env(uuid, task, previous_attempt),
@@ -451,7 +462,8 @@ class TaskLauncher:
         t_stderr.start()
         stall_tracker: StallTracker | None = None
         if (
-            engine == "cursor"
+            host is None
+            and engine == "cursor"
             and stall_guard_enabled()
             and isinstance(proc.pid, int)
         ):
@@ -473,9 +485,57 @@ class TaskLauncher:
             stderr_thread=t_stderr,
             stdout_thread=t_stdout,
             stall_tracker=stall_tracker,
+            host=host,
+            node=node_name,
         )
         self._running[uuid] = rt
         return rt
+
+    def _process_host_for(
+        self, rt: _RunningProcess,
+    ) -> LocalProcessHost | SshProcessHost:
+        return rt.host or self._process_host
+
+    def _node_busy_counts(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for rt in self._running.values():
+            if rt.node:
+                counts[rt.node] = counts.get(rt.node, 0) + 1
+        for at in self._adopted.values():
+            if at.node:
+                counts[at.node] = counts.get(at.node, 0) + 1
+        return counts
+
+    def _fail_missing_node_label(self, uuid: str, task: Task, label: str) -> None:
+        message = f"no node has label '{label}'"
+        if task.result_path is not None:
+            try:
+                Path(task.result_path).write_text(
+                    f"ghdag: {message}\n",
+                    encoding="utf-8",
+                )
+            except OSError:
+                logger.warning(
+                    "Failed to write missing-node result for [%s]", uuid, exc_info=True,
+                )
+        state_mark_done(self._config.exec_done_dir, uuid, DONE_UNKNOWN_FAILURE)
+        metrics = TaskMetrics(
+            uuid=uuid,
+            engine=task.engine,
+            model=task.model,
+            wall_time_sec=0,
+            token_count=None,
+            status="failure",
+            started_at=time.time(),
+            finished_at=time.time(),
+            correlation_id=task.idempotency_key,
+            failure_class=FailureClass.UNKNOWN_FAILURE,
+            request_id=_task_request_id(task),
+            cost_usd=None,
+            cache_read_tokens=None,
+            cache_creation_tokens=None,
+        )
+        self._call_on_task_failure(uuid, task, -1, message, metrics)
 
     def launch(self, uuid: str, task: Task) -> bool:
         """Start a subprocess for the given task and register it in _running."""
@@ -541,6 +601,28 @@ class TaskLauncher:
             self._waiting_engines.pop(uuid, None)
             self._remove_quota_waiting_file(uuid)
 
+        spawn_host: LocalProcessHost | SshProcessHost | None = None
+        spawn_node_name: str | None = None
+        node_label = task.annotations.get("node_label")
+        if node_label:
+            pick = pick_node(self._nodes, node_label, self._node_busy_counts())
+            if pick == "wait":
+                if self._last_node_deferred.get(uuid) != node_label:
+                    logger.info(
+                        "Task [%s] launch deferred: no free node for label %s",
+                        uuid,
+                        node_label,
+                    )
+                    self._last_node_deferred[uuid] = node_label
+                return False
+            if pick == "missing":
+                self._last_node_deferred.pop(uuid, None)
+                self._fail_missing_node_label(uuid, task, node_label)
+                return False
+            self._last_node_deferred.pop(uuid, None)
+            spawn_host = self._node_hosts[pick.name]
+            spawn_node_name = pick.name
+
         decision = self._quota_gate.begin_run(
             task_uuid=uuid,
             engine=launch_engine,
@@ -574,6 +656,8 @@ class TaskLauncher:
                 launch_engine,
                 cwd,
                 previous_attempt=previous_attempt,
+                host=spawn_host,
+                node_name=spawn_node_name,
             )
         except Exception:
             self._quota_gate.finish_run(task_uuid=uuid)
@@ -583,7 +667,14 @@ class TaskLauncher:
                 task.annotations.pop("resumed_session_id", None)
             raise
 
-        self._write_running_file(uuid, rt.proc, task, launch_engine, interrupted_reruns)
+        self._write_running_file(
+            uuid,
+            rt.proc,
+            task,
+            launch_engine,
+            interrupted_reruns,
+            node=spawn_node_name,
+        )
         self._hooks.on_task_start(uuid, task)
         return True
 
@@ -596,7 +687,7 @@ class TaskLauncher:
         if rt.term_sent_at is not None:
             return
         logger.warning("Task [%s] cancel requested, sending SIGTERM", uuid)
-        self._process_host.terminate_tree(rt.proc)
+        self._process_host_for(rt).terminate_tree(rt.proc)
         rt.term_sent_at = time.monotonic()
 
     def _poll_running(self, uuid: str, rt: _RunningProcess, now: float) -> bool:
@@ -614,7 +705,7 @@ class TaskLauncher:
                         uuid,
                         task_timeout,
                     )
-                    self._process_host.terminate_tree(rt.proc)
+                    self._process_host_for(rt).terminate_tree(rt.proc)
                     rt.term_sent_at = now
                 else:
                     if rt.stall_tracker is not None:
@@ -646,10 +737,11 @@ class TaskLauncher:
                                 )
                     return False
 
+        proc_host = self._process_host_for(rt)
         if rt.term_sent_at is not None:
             leader_exited = rt.proc.poll() is not None
             group_alive = (
-                self._process_host.group_exists(rt.proc.pid)
+                proc_host.group_exists(rt.proc.pid)
                 if isinstance(rt.proc.pid, int)
                 else (not leader_exited)
             )
@@ -659,7 +751,7 @@ class TaskLauncher:
                         "Task [%s] still alive after grace period, sending SIGKILL",
                         uuid,
                     )
-                    self._process_host.kill_tree(rt.proc)
+                    proc_host.kill_tree(rt.proc)
                     if rt.proc.poll() is None:
                         return False
                 else:
@@ -1612,7 +1704,7 @@ class TaskLauncher:
         for uuid, rt in list(self._running.items()):
             self._interrupting.add(uuid)
             if rt.term_sent_at is None:
-                self._process_host.terminate_tree(rt.proc)
+                self._process_host_for(rt).terminate_tree(rt.proc)
                 rt.term_sent_at = time.monotonic()
 
     def _write_running_file(
@@ -1622,6 +1714,8 @@ class TaskLauncher:
         task: Task,
         engine: str | None,
         interrupted_reruns: int | None = None,
+        *,
+        node: str | None = None,
     ) -> None:
         raw_pid = getattr(proc, "pid", None)
         if not isinstance(raw_pid, int):
@@ -1646,6 +1740,8 @@ class TaskLauncher:
         }
         if interrupted_reruns is not None:
             payload["interrupted_reruns"] = interrupted_reruns
+        if node is not None:
+            payload["node"] = node
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -1944,10 +2040,16 @@ class TaskLauncher:
             interrupted_reruns_val = (
                 data.get("interrupted_reruns", 0) if isinstance(data, dict) else 0
             )
+            raw_node = data.get("node") if isinstance(data, dict) else None
+            node_name = raw_node if isinstance(raw_node, str) else None
             if interrupted_at is not None and task.annotations.get("_exclusive") == "true":
                 if self._process_host.group_exists(pgid):
                     self._adopted[uuid] = AdoptedTask(
-                        uuid=uuid, task=task, pgid=pgid, started_at=started_at
+                        uuid=uuid,
+                        task=task,
+                        pgid=pgid,
+                        started_at=started_at,
+                        node=node_name,
                     )
                     adopted_uuids.append(uuid)
                     logger.info(
@@ -1969,6 +2071,17 @@ class TaskLauncher:
                         "adopt_orphans: interrupted task %s still alive (pgid=%s) — killing",
                         uuid, pgid,
                     )
+                    if node_name is not None:
+                        remote_host = self._node_hosts.get(node_name)
+                        if remote_host is not None:
+                            remote_host.signal_remote(uuid, signal.SIGTERM)
+                        else:
+                            logger.warning(
+                                "adopt_orphans: task %s ran on unknown node %s — "
+                                "stopping local ssh only",
+                                uuid,
+                                node_name,
+                            )
                     self._process_host.terminate_group(pgid)
                     deadline = time.monotonic() + self._config.kill_grace
                     while time.monotonic() < deadline and self._process_host.group_exists(pgid):
@@ -1986,6 +2099,7 @@ class TaskLauncher:
                     pgid=pgid,
                     started_at=started_at,
                     interrupted_reruns=interrupted_reruns_val,
+                    node=node_name,
                 )
                 adopted_uuids.append(uuid)
                 logger.info("adopt_orphans: adopted live task %s (pgid=%s)", uuid, pgid)
