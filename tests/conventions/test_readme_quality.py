@@ -5,6 +5,7 @@ Refs sumipan/nexus#6454.
 
 from __future__ import annotations
 
+import argparse
 import importlib
 import os
 import pkgutil
@@ -53,6 +54,10 @@ _ENV_LITERALS = frozenset(
 
 _TABLE_CELL = re.compile(r"^\|\s*`([^`]+)`\s*\|")
 _CLI_CMD = re.compile(r"`ghdag\s+([^`]+)`")
+_ARGS_ROW = re.compile(r"^\|\s*`([^`]+)`\s*\|\s*(.+?)\s*\|\s*$")
+_LONG_OPT = re.compile(r"--[a-z][-a-z0-9]*")
+_CLI_CODE = re.compile(r"""code=["']([A-Z][A-Z0-9_]+)["']""")
+_CODE_BACKTICK = re.compile(r"`([A-Z][A-Z0-9_]+)`")
 
 _EXCEPTION_SKIP = frozenset(
     {
@@ -89,6 +94,59 @@ def _project_version() -> str:
     version = data.get("project", {}).get("version")
     assert isinstance(version, str) and version
     return version
+
+
+def _parse_arguments_defaults_table(section: str) -> dict[tuple[str, ...], str]:
+    rows: dict[tuple[str, ...], str] = {}
+    in_table = False
+    for line in section.splitlines():
+        if line.strip() == "| Command | Arguments (defaults) |":
+            in_table = True
+            continue
+        if in_table and line.startswith("### "):
+            break
+        if not in_table or not line.startswith("|") or "---" in line:
+            continue
+        match = _ARGS_ROW.match(line)
+        if not match:
+            continue
+        rows[tuple(match.group(1).split())] = match.group(2)
+    return rows
+
+
+def _parser_for_command_path(
+    parser: argparse.ArgumentParser, path: tuple[str, ...]
+) -> argparse.ArgumentParser:
+    current = parser
+    for segment in path:
+        subparsers = next(
+            action
+            for action in current._actions
+            if isinstance(action, argparse._SubParsersAction)
+        )
+        current = subparsers.choices[segment]
+    return current
+
+
+def _documented_long_options(args_cell: str) -> set[str]:
+    return set(_LONG_OPT.findall(args_cell))
+
+
+def _parser_long_options(parser: argparse.ArgumentParser) -> set[str]:
+    options: set[str] = set()
+    for action in parser._actions:
+        for option in action.option_strings:
+            if option.startswith("--") and option not in {"--json", "--help"}:
+                options.add(option)
+    return options
+
+
+def _cli_error_codes() -> set[str]:
+    codes: set[str] = set()
+    cli_root = _REPO_ROOT / "src" / "ghdag" / "cli"
+    for py in cli_root.rglob("*.py"):
+        codes.update(_CLI_CODE.findall(py.read_text(encoding="utf-8")))
+    return codes
 
 
 def _parse_commands_table(section: str) -> set[tuple[str, ...]]:
@@ -281,6 +339,30 @@ def test_readme_quick_start_executes(tmp_path: Path) -> None:
             assert "True" in completed.stdout, completed.stdout
 
 
+def test_readme_cli_arguments_match_parser() -> None:
+    """Refs sumipan/ghdag#7498 — Arguments table matches each leaf sub-parser."""
+    from ghdag.cli.main import _build_parser
+
+    cli_section = _section(_readme_text(), "## CLI Reference", stop_at="## Public API")
+    args_section = _section(cli_section, "### Arguments and defaults", stop_at="### Behavior")
+    documented_rows = _parse_arguments_defaults_table(args_section)
+    parser = _build_parser()
+    mismatches: list[str] = []
+    for path, args_cell in sorted(documented_rows.items()):
+        leaf = _parser_for_command_path(parser, path)
+        documented_opts = _documented_long_options(args_cell)
+        parser_opts = _parser_long_options(leaf)
+        missing_in_readme = sorted(parser_opts - documented_opts)
+        extra_in_readme = sorted(documented_opts - parser_opts)
+        if missing_in_readme or extra_in_readme:
+            label = " ".join(path)
+            mismatches.append(
+                f"{label}: missing from README {missing_in_readme}; "
+                f"extra in README {extra_in_readme}"
+            )
+    assert not mismatches, ";\n".join(mismatches)
+
+
 def test_readme_cli_reference_matches_parser() -> None:
     """Refs sumipan/nexus#6454 — CLI Commands table matches argparse registration."""
     from ghdag.cli.main import _build_parser
@@ -317,6 +399,15 @@ def test_readme_configuration_matches_source() -> None:
         f"missing from README: {sorted(source - documented)}; "
         f"extra in README: {sorted(documented - source)}"
     )
+
+
+def test_readme_error_codes_cover_cli_codes() -> None:
+    """Refs sumipan/ghdag#7498 — Error Reference documents every CLI GhdagError code."""
+    err = _section(_readme_text(), "## Error Reference", stop_at="## Not in Scope")
+    documented = set(_CODE_BACKTICK.findall(err))
+    source = _cli_error_codes()
+    missing = source - documented
+    assert not missing, f"missing from README Error Reference: {sorted(missing)}"
 
 
 def test_readme_error_reference_matches_exception_types() -> None:
