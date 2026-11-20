@@ -281,14 +281,14 @@
         {
           "class": "_StoreAction",
           "option_strings": [
-            "--queue-dir"
+            "--state-dir"
           ],
-          "dest": "queue_dir",
+          "dest": "state_dir",
           "required": false,
           "nargs": null,
           "default": null,
-          "metavar": "PATH",
-          "help": "Queue directory containing running/ and cancel/ (default: $GHDAG_STATE_DIR or jobs)",
+          "metavar": "DIR",
+          "help": "State directory containing running/ and cancel/ (default: $GHDAG_STATE_DIR or jobs)",
           "const": null
         },
         {
@@ -780,14 +780,14 @@
         {
           "class": "_StoreAction",
           "option_strings": [
-            "--state-path"
+            "--state-dir"
           ],
-          "dest": "state_path",
+          "dest": "state_dir",
           "required": false,
           "nargs": null,
           "default": null,
-          "metavar": null,
-          "help": "Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+          "metavar": "DIR",
+          "help": "State directory containing quota-gate.json (default: $GHDAG_STATE_DIR or jobs)",
           "const": null
         }
       ],
@@ -847,14 +847,14 @@
         {
           "class": "_StoreAction",
           "option_strings": [
-            "--state-path"
+            "--state-dir"
           ],
-          "dest": "state_path",
+          "dest": "state_dir",
           "required": false,
           "nargs": null,
           "default": null,
-          "metavar": null,
-          "help": "Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+          "metavar": "DIR",
+          "help": "State directory containing quota-gate.json (default: $GHDAG_STATE_DIR or jobs)",
           "const": null
         }
       ],
@@ -940,14 +940,14 @@
         {
           "class": "_StoreAction",
           "option_strings": [
-            "--state-path"
+            "--state-dir"
           ],
-          "dest": "state_path",
+          "dest": "state_dir",
           "required": false,
           "nargs": null,
           "default": null,
-          "metavar": null,
-          "help": "Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+          "metavar": "DIR",
+          "help": "State directory containing quota-gate.json (default: $GHDAG_STATE_DIR or jobs)",
           "const": null
         },
         {
@@ -1011,14 +1011,14 @@
         {
           "class": "_StoreAction",
           "option_strings": [
-            "--state-path"
+            "--state-dir"
           ],
-          "dest": "state_path",
+          "dest": "state_dir",
           "required": false,
           "nargs": null,
           "default": null,
-          "metavar": null,
-          "help": "Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+          "metavar": "DIR",
+          "help": "State directory containing quota-gate.json (default: $GHDAG_STATE_DIR or jobs)",
           "const": null
         }
       ],
@@ -1080,14 +1080,14 @@
         {
           "class": "_StoreAction",
           "option_strings": [
-            "--state-path"
+            "--state-dir"
           ],
-          "dest": "state_path",
+          "dest": "state_dir",
           "required": false,
           "nargs": null,
           "default": null,
-          "metavar": null,
-          "help": "Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+          "metavar": "DIR",
+          "help": "State directory containing quota-gate.json (default: $GHDAG_STATE_DIR or jobs)",
           "const": null
         }
       ],

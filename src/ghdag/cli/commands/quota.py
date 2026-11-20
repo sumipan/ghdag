@@ -18,7 +18,7 @@ from ghdag.quota import EngineUsage, QuotaGate
 
 
 def cmd_quota_report(args) -> None:
-    gate = _build_gate(args.state_path)
+    gate = _build_gate(args.state_dir)
     try:
         observed_at = _parse_iso_datetime(args.observed_at, "--observed-at")
         resume_at = _parse_iso_datetime(args.resume_at, "--resume-at") if args.resume_at else None
@@ -36,7 +36,7 @@ def cmd_quota_report(args) -> None:
 
 
 def cmd_quota_clear(args) -> None:
-    gate = _build_gate(args.state_path)
+    gate = _build_gate(args.state_dir)
     try:
         observed_at = _parse_iso_datetime(args.observed_at, "--observed-at")
         result = gate.clear(engine=args.engine, observed_at=observed_at)
@@ -47,7 +47,7 @@ def cmd_quota_clear(args) -> None:
 
 
 def cmd_quota_drain(args) -> None:
-    gate = _build_gate(args.state_path)
+    gate = _build_gate(args.state_dir)
     try:
         gate.drain(engine=args.engine, reason=args.reason, now=datetime.now(timezone.utc))
         snapshot = gate.snapshot()
@@ -59,7 +59,7 @@ def cmd_quota_drain(args) -> None:
 
 
 def cmd_quota_resume(args) -> None:
-    gate = _build_gate(args.state_path)
+    gate = _build_gate(args.state_dir)
     try:
         released = gate.resume(engine=args.engine, now=datetime.now(timezone.utc))
         snapshot = gate.snapshot()
@@ -73,7 +73,7 @@ def cmd_quota_resume(args) -> None:
 
 
 def cmd_quota_status(args) -> None:
-    gate = _build_gate(args.state_path)
+    gate = _build_gate(args.state_dir)
     try:
         snapshot = gate.snapshot()
     except ValueError as exc:
@@ -136,10 +136,10 @@ def cmd_quota_status(args) -> None:
     print(json.dumps(payload, ensure_ascii=False))
 
 
-def _build_gate(state_path: str | None) -> QuotaGate:
-    if state_path:
-        path = Path(state_path)
-        return QuotaGate(path, audit_path=path.parent / "audit.jsonl")
+def _build_gate(state_dir: str | None) -> QuotaGate:
+    if state_dir:
+        d = Path(state_dir)
+        return QuotaGate(d / "quota-gate.json", audit_path=d / "audit.jsonl")
     # Default: quota state follows GHDAG_STATE_DIR, audit stays in jobs/.
     return QuotaGate(resolve_state_dir("jobs") / "quota-gate.json", audit_path=Path("jobs") / "audit.jsonl")
 
@@ -258,10 +258,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Optional reason",
     )
     quota_report.add_argument(
-        "--state-path",
+        "--state-dir",
         default=None,
-        dest="state_path",
-        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+        dest="state_dir",
+        metavar="DIR",
+        help="State directory containing quota-gate.json (default: $GHDAG_STATE_DIR or jobs)",
     )
     quota_report.set_defaults(func=cmd_quota_report)
 
@@ -276,10 +277,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Observed time in ISO8601 with timezone",
     )
     quota_clear.add_argument(
-        "--state-path",
+        "--state-dir",
         default=None,
-        dest="state_path",
-        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+        dest="state_dir",
+        metavar="DIR",
+        help="State directory containing quota-gate.json (default: $GHDAG_STATE_DIR or jobs)",
     )
     quota_clear.set_defaults(func=cmd_quota_clear)
 
@@ -293,10 +295,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Optional drain reason",
     )
     quota_drain.add_argument(
-        "--state-path",
+        "--state-dir",
         default=None,
-        dest="state_path",
-        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+        dest="state_dir",
+        metavar="DIR",
+        help="State directory containing quota-gate.json (default: $GHDAG_STATE_DIR or jobs)",
     )
     quota_drain.set_defaults(func=cmd_quota_drain)
 
@@ -305,10 +308,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     )
     quota_resume.add_argument("engine", help="Engine name")
     quota_resume.add_argument(
-        "--state-path",
+        "--state-dir",
         default=None,
-        dest="state_path",
-        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+        dest="state_dir",
+        metavar="DIR",
+        help="State directory containing quota-gate.json (default: $GHDAG_STATE_DIR or jobs)",
     )
     quota_resume.set_defaults(func=cmd_quota_resume)
 
@@ -316,10 +320,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         "status", allow_abbrev=False, help="Show quota state snapshot",
     )
     quota_status.add_argument(
-        "--state-path",
+        "--state-dir",
         default=None,
-        dest="state_path",
-        help="Path to quota state JSON (default: $GHDAG_STATE_DIR/quota-gate.json or jobs/quota-gate.json)",
+        dest="state_dir",
+        metavar="DIR",
+        help="State directory containing quota-gate.json (default: $GHDAG_STATE_DIR or jobs)",
     )
     quota_status.add_argument(
         "--exec-jsonl",

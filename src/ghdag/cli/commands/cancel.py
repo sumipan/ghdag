@@ -13,7 +13,7 @@ from ghdag.status import read_exclusive_gate
 def cmd_cancel(args) -> None:
     """ghdag dag cancel: create the jobs/cancel/<uuid> control file (does not touch processes)."""
     uuid = args.uuid.strip()
-    queue_dir = (Path(args.queue_dir) if args.queue_dir else resolve_state_dir("jobs")).resolve()
+    queue_dir = (Path(args.state_dir) if args.state_dir else resolve_state_dir("jobs")).resolve()
     running_path = queue_dir / "running" / f"{uuid}.json"
     if not running_path.is_file():
         gate = read_exclusive_gate(queue_dir)
@@ -36,11 +36,11 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
     )
     cancel_parser.add_argument("uuid", help="Task UUID to cancel")
     cancel_parser.add_argument(
-        "--queue-dir",
+        "--state-dir",
         default=None,
-        dest="queue_dir",
-        metavar="PATH",
-        help="Queue directory containing running/ and cancel/ (default: $GHDAG_STATE_DIR or jobs)",
+        dest="state_dir",
+        metavar="DIR",
+        help="State directory containing running/ and cancel/ (default: $GHDAG_STATE_DIR or jobs)",
     )
     cancel_parser.set_defaults(func=cmd_cancel)
     return cancel_parser

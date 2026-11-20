@@ -38,10 +38,23 @@ class TestCliDagCancel:
             encoding="utf-8",
         )
         monkeypatch.chdir(tmp_path)
-        main(["dag", "cancel", uuid, "--queue-dir", str(jobs)])
+        main(["dag", "cancel", uuid, "--state-dir", str(jobs)])
         captured = capsys.readouterr()
         assert f"cancel requested: {uuid}" in captured.out
         assert (jobs / "cancel" / uuid).is_file()
+
+    def test_cancel_rejects_queue_dir(self, tmp_path, monkeypatch):
+        """Refs #7550 — legacy --queue-dir is rejected by argparse."""
+        from ghdag.cli import main
+
+        jobs = tmp_path / "jobs"
+        jobs.mkdir(parents=True)
+        uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        monkeypatch.chdir(tmp_path)
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["dag", "cancel", uuid, "--queue-dir", str(jobs)])
+        assert exc_info.value.code == 2
 
     def test_api_stop_uses_cancel_file_not_ps(self, tmp_path):
         """The /api/stop path creates a control file instead of killing via ps."""
