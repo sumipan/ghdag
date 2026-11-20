@@ -16,7 +16,8 @@ from ghdag.core.models.workflow import (
     TriggerConfig,
     WorkflowConfig,
 )
-from ghdag.github_client import GitHubClient, GitHubIssuePort
+from ghdag.core.ports.forge import ForgePort
+from ghdag.github_client import GitHubClient
 from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 from ghdag.workflow.loader import _parse
@@ -62,7 +63,7 @@ def _make_workflow(
 
 
 def _make_dispatcher(workflow: WorkflowConfig):
-    github_client = MagicMock(spec=GitHubIssuePort)
+    github_client = MagicMock(spec=ForgePort)
     github_client.list_all_issues.return_value = []
     github_client.get_last_rate_limit.return_value = None
     github_client.get_issue_comments.return_value = []
@@ -216,4 +217,4 @@ class TestReopenIssue:
     def test_github_client_satisfies_reopen_issue_port(self) -> None:
         client = GitHubClient(token="token", repo="owner/repo")
         assert hasattr(client, "reopen_issue")
-        assert isinstance(client, GitHubIssuePort)
+        assert isinstance(client, ForgePort)

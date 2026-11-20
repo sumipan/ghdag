@@ -1,4 +1,4 @@
-"""Convention test: Port/Protocol baseline compatibility for DagHooks, ForgePort, GitHubIssuePort."""
+"""Convention test: Port/Protocol baseline compatibility for DagHooks and ForgePort."""
 
 from __future__ import annotations
 
@@ -53,19 +53,9 @@ _FORGEPORT_BASELINE: frozenset[str] = frozenset({
     "dispatch_event",
     "get_rate_limit",
     "graphql",
-})
-
-_GITHUB_ISSUE_PORT_BASELINE: frozenset[str] = frozenset({
     "get_issue",
-    "reopen_issue",
-    "list_issues",
     "list_all_issues",
-    "get_issue_comments",
-    "update_label",
     "add_comment",
-    "remove_label",
-    "dispatch_event",
-    "get_rate_limit",
     "get_last_rate_limit",
     "add_sub_issue",
     "list_sub_issues",
@@ -206,14 +196,6 @@ def test_forgeport_compat() -> None:
     assert violations == [], violations
 
 
-def test_github_issue_port_compat() -> None:
-    source = (_SRC / "core" / "ports" / "github.py").read_text(encoding="utf-8")
-    methods = protocol_methods(source, "GitHubIssuePort")
-    changelog = _read_changelog_unreleased()
-    violations = compat_violations(methods, _GITHUB_ISSUE_PORT_BASELINE, changelog, "GitHubIssuePort")
-    assert violations == [], violations
-
-
 def test_daghooks_impl_coverage() -> None:
     from ghdag.core.ports.dag_hooks import DagHooks
     from ghdag.dag.hooks import DefaultHooks
@@ -232,13 +214,6 @@ def test_forgeport_impl_coverage_local() -> None:
     from ghdag.core.ports.forge import ForgePort
     from ghdag.forge.local import LocalForge
     violations = _check_impl_coverage(ForgePort, LocalForge, "ForgePort", "LocalForge")
-    assert violations == [], violations
-
-
-def test_github_issue_port_impl_coverage() -> None:
-    from ghdag.core.ports.github import GitHubIssuePort
-    from ghdag.github_client import GitHubClient
-    violations = _check_impl_coverage(GitHubIssuePort, GitHubClient, "GitHubIssuePort", "GitHubClient")
     assert violations == [], violations
 
 

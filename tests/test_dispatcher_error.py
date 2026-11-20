@@ -12,7 +12,7 @@ from ghdag.core.models.workflow import (
     TriggerConfig,
     WorkflowConfig,
 )
-from ghdag.github_client import GitHubIssuePort
+from ghdag.core.ports.forge import ForgePort
 from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 
@@ -31,7 +31,7 @@ def _make_workflow() -> WorkflowConfig:
 
 
 def _make_dispatcher(workflow: WorkflowConfig) -> tuple[WorkflowDispatcher, MagicMock]:
-    github_client = MagicMock(spec=GitHubIssuePort)
+    github_client = MagicMock(spec=ForgePort)
     github_client.list_all_issues.return_value = []
     github_client.get_last_rate_limit.return_value = None  # skip rate-limit observation
     github_client.get_rate_limit.return_value = None
@@ -72,7 +72,7 @@ class TestTC9NonIntIssueNumberSkipsComment:
 
 
 def test_github_issue_port_spec_restricts_unknown_methods():
-    github_client = MagicMock(spec=GitHubIssuePort)
+    github_client = MagicMock(spec=ForgePort)
 
     with pytest.raises(AttributeError):
         _ = github_client.non_port_method

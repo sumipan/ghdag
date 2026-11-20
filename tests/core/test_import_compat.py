@@ -76,9 +76,8 @@ def test_dag_hooks_import_compat() -> None:
 
 
 def test_github_client_import_compat() -> None:
-    from ghdag.github_client import GitHubClient, GitHubIssuePort
+    from ghdag.github_client import GitHubClient
 
-    assert GitHubIssuePort.__name__ == "GitHubIssuePort"
     assert GitHubClient.__name__ == "GitHubClient"
 
 

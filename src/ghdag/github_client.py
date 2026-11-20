@@ -37,8 +37,7 @@ from ghdag.core.exceptions import (
     PermissionDeniedError,
     RateLimitError,
 )
-from ghdag.core.ports.forge import ForgePort as ForgePort
-from ghdag.core.ports.github import GitHubIssuePort
+from ghdag.core.ports.forge import ForgePort
 
 # rel="next" in the GitHub Link header (observed 2026-09-10):
 #   <https://api.github.com/repositories/.../issues?per_page=1&...&page=2>; rel="next"
@@ -180,8 +179,7 @@ def _api_path(path: str, owner: str, repo: str) -> str:
 class GitHubClient:
     """GitHub REST API client backed by urllib.
 
-    Structurally satisfies :class:`~ghdag.core.ports.forge.ForgePort` and
-    :class:`~ghdag.core.ports.github.GitHubIssuePort`.
+    Structurally satisfies :class:`~ghdag.core.ports.forge.ForgePort`.
     """
 
     def __init__(
@@ -1115,7 +1113,7 @@ class GitHubClient:
             }
         return {"total": 0, "completed": 0, "percent_completed": 0}
 
-    # --- GitHubIssuePort compatible methods ---
+    # --- ForgePort dispatcher-oriented aliases ---
 
     def get_issue(self, number: int) -> dict:
         return cast(dict[str, Any], self.issue_get(number))
@@ -1167,7 +1165,7 @@ def create_github_client(
     token: str | None = None,
     owner: str | None = None,
     repo: str | None = None,
-) -> GitHubIssuePort:
+) -> ForgePort:
     """Create a client for a single repository.
 
     If owner/repo is not given, the first entry of GITHUB_REPOSITORIES is used.
@@ -1183,7 +1181,7 @@ def create_github_clients(
     *,
     token: str | None = None,
     rate_limit_max_wait_sec: int | None = None,
-) -> list[GitHubIssuePort]:
+) -> list[ForgePort]:
     """Create a list of clients, one per repository in GITHUB_REPOSITORIES."""
     token_value = _resolve_token(token)
     return [

@@ -1,4 +1,4 @@
-"""Tests for GitHubClient Protocol-compatible methods (GitHubIssuePort interface)."""
+"""Tests for GitHubClient ForgePort dispatcher-oriented methods."""
 
 from __future__ import annotations
 

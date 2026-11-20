@@ -15,7 +15,7 @@ from ghdag.core.models.workflow import (
     TriggerConfig,
     WorkflowConfig,
 )
-from ghdag.github_client import GitHubIssuePort
+from ghdag.core.ports.forge import ForgePort
 from ghdag.pipeline.task_queue import TaskQueue
 from ghdag.workflow.dispatcher import WorkflowDispatcher
 
@@ -34,7 +34,7 @@ def _make_workflow(polling_interval: int = 30) -> WorkflowConfig:
 
 
 def _make_dispatcher(tmp_path: Path, polling_interval: int = 30) -> tuple[WorkflowDispatcher, MagicMock]:
-    github = MagicMock(spec=GitHubIssuePort)
+    github = MagicMock(spec=ForgePort)
     github.list_all_issues.return_value = []
     github.get_last_rate_limit.return_value = None
     github.get_rate_limit.return_value = None
