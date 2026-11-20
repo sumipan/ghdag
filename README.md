@@ -1115,7 +1115,7 @@ Some errors use a base exception type with a more specific `code`:
 | `SCHEMA_UNKNOWN` | `ConfigError` | 3 | `ghdag schema show` with an unknown name |
 | `MCP_ARGUMENT_INVALID` | `ConfigError` | 3 | An MCP `tools/call` with unknown keys, invalid types or conflicting shapes; a `ghdag_read` path that `--read-path` does not allow |
 | `WORKFLOWS_DIR_NOT_FOUND` | `CliUsageError` | 2 | `ghdag validate`, `ghdag watch` or `ghdag trigger` when the workflows directory does not exist |
-| `WORKFLOW_NONE_FOUND` | `CliUsageError` | 2 | `ghdag trigger` when the workflows directory has no workflow YAML files |
+| `WORKFLOW_NONE_FOUND` | `ConfigError` | 3 | `ghdag trigger` when the workflows directory has no workflow YAML files |
 | `WORKFLOW_NOT_FOUND` | `CliUsageError` | 2 | `ghdag trigger --workflow` names a workflow that is not present |
 | `WORKFLOW_AMBIGUOUS` | `CliUsageError` | 2 | `ghdag trigger` when more than one workflow matches and `--workflow` was omitted |
 | `HANDLER_NOT_FOUND` | `CliUsageError` | 2 | `ghdag trigger --handler` names a handler that the workflow does not define |
@@ -1126,7 +1126,7 @@ Some errors use a base exception type with a more specific `code`:
 | `HOOKS_CLASS_NOT_FOUND` | `GhdagError` | 1 | `ghdag run --hooks` when no suitable hook class is found in a module |
 | `TASK_NOT_RUNNING` | `GhdagError` | 1 | `ghdag dag cancel` when the UUID is not in `running/` and not a waiting exclusive gate |
 | `QUOTA_INVALID_INPUT` | `GhdagError` | 1 | `ghdag quota *` when a datetime or engine name argument is invalid |
-| `LLM_PROMPT_REQUIRED` | `GhdagError` | 1 | `ghdag llm` with no prompt argument and empty stdin |
+| `LLM_PROMPT_REQUIRED` | `CliUsageError` | 2 | `ghdag llm` with no prompt argument, and stdin is a terminal or empty |
 | `AUDIT_QUERY_MODE_REQUIRED` | `CliUsageError` | 2 | `ghdag audit-query` without `--correlation-id` or `--burst-detect` |
 | `AUDIT_QUERY_MODE_CONFLICT` | `CliUsageError` | 2 | `ghdag audit-query` with both `--correlation-id` and `--burst-detect` |
 | `AUDIT_QUERY_INVALID_SINCE` | `CliUsageError` | 2 | `ghdag audit-query --correlation-id` with an unparseable `--since` value |

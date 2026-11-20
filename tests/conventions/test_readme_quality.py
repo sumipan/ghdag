@@ -340,7 +340,7 @@ def test_readme_quick_start_executes(tmp_path: Path) -> None:
 
 
 def test_readme_cli_arguments_match_parser() -> None:
-    """Refs sumipan/ghdag#7498 — Arguments table matches each leaf sub-parser."""
+    """Refs sumipan/nexus#7498 — Arguments table matches each leaf sub-parser."""
     from ghdag.cli.main import _build_parser
 
     cli_section = _section(_readme_text(), "## CLI Reference", stop_at="## Public API")
@@ -402,7 +402,7 @@ def test_readme_configuration_matches_source() -> None:
 
 
 def test_readme_error_codes_cover_cli_codes() -> None:
-    """Refs sumipan/ghdag#7498 — Error Reference documents every CLI GhdagError code."""
+    """Refs sumipan/nexus#7498 — Error Reference documents every CLI GhdagError code."""
     err = _section(_readme_text(), "## Error Reference", stop_at="## Not in Scope")
     documented = set(_CODE_BACKTICK.findall(err))
     source = _cli_error_codes()
