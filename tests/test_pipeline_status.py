@@ -1,4 +1,4 @@
-"""Tests for PIPELINE_STATUS parser and engine integration — Issue #477."""
+"""Tests for PIPELINE_STATUS parser and engine integration — Issues #477, #7549."""
 
 from __future__ import annotations
 
@@ -62,3 +62,8 @@ class TestCheckPipelineStatus:
             encoding="utf-8",
         )
         assert check_pipeline_status(str(f)) is None
+
+    def test_reply_block_ok_with_success_code(self, tmp_path) -> None:
+        f = tmp_path / "result.md"
+        f.write_text("```ghdag\nstatus: ok\ncode: IMPL_DONE\n```\n", encoding="utf-8")
+        assert check_pipeline_status(str(f)) == "IMPL_DONE"

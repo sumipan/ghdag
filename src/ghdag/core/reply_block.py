@@ -126,11 +126,25 @@ def _parse_reply_body(body: str) -> ReplyBlock:
         if reason is not None:
             raise ReplyBlockError("status ok must not include reason", hint="remove reason")
         if code is not None:
-            raise ReplyBlockError("status ok must not include code", hint="remove code")
+            if not code or not _CODE_RE.match(code):
+                raise ReplyBlockError(
+                    "status ok code must match SCREAMING_SNAKE",
+                    hint="use code: IMPL_DONE (uppercase letters, digits, underscores)",
+                )
+            if code.endswith("_FAILED"):
+                raise ReplyBlockError(
+                    "status ok code must not end with _FAILED",
+                    hint="use a success marker such as IMPL_DONE",
+                )
         if engines:
             raise ReplyBlockError("status ok must not include engines", hint="remove engines")
         if after is not None:
             raise ReplyBlockError("status ok must not include after", hint="remove after")
+        if code is not None and children:
+            raise ReplyBlockError(
+                "status ok must not include both code and children",
+                hint="use children alone for fan-out, or code alone for a success marker",
+            )
     elif status == "rejected":
         if not reason:
             raise ReplyBlockError(

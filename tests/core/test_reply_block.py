@@ -1,4 +1,4 @@
-"""Reply block fence detection and YAML validation — Issue #6248."""
+"""Reply block fence detection and YAML validation — Issues #6248, #7549."""
 
 from __future__ import annotations
 
@@ -80,3 +80,27 @@ class TestParseReplyBlock:
     def test_failed_requires_code(self) -> None:
         with pytest.raises(ReplyBlockError):
             parse_reply_block("```ghdag\nstatus: failed\n```\n")
+
+    def test_ok_with_success_code_parses(self) -> None:
+        block = parse_reply_block("```ghdag\nstatus: ok\ncode: IMPL_DONE\n```\n")
+        assert block == ReplyBlock(status="ok", code="IMPL_DONE")
+
+    def test_ok_with_invalid_code_raises(self) -> None:
+        with pytest.raises(ReplyBlockError):
+            parse_reply_block("```ghdag\nstatus: ok\ncode: impl_done\n```\n")
+
+    def test_ok_code_must_not_end_with_failed_suffix(self) -> None:
+        with pytest.raises(ReplyBlockError):
+            parse_reply_block("```ghdag\nstatus: ok\ncode: IMPL_FAILED\n```\n")
+
+    def test_ok_must_not_combine_code_and_children(self) -> None:
+        with pytest.raises(ReplyBlockError):
+            parse_reply_block(
+                "```ghdag\n"
+                "status: ok\n"
+                "code: FANOUT_DONE\n"
+                "children:\n"
+                "  - id: a\n"
+                "    prompt: x\n"
+                "```\n"
+            )
