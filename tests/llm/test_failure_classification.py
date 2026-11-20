@@ -8,15 +8,13 @@ from pathlib import Path
 
 import pytest
 
+from ghdag.config import env
 from ghdag.core.models.metrics import FailureClass
 from ghdag.core.ports.output import EngineErrorKind
 from ghdag.llm.adapters.claude_json import ClaudeJsonAdapter
 from ghdag.llm.adapters.codex import CodexAdapter
 from ghdag.llm.adapters.cursor_stream import CursorStreamAdapter
-from ghdag.llm.adapters.failure_classification import (
-    QUOTA_DEFAULT_PAUSE_SECONDS,
-    classify_common_failure,
-)
+from ghdag.llm.adapters.failure_classification import classify_common_failure
 
 FIXED_NOW = datetime(2026, 9, 20, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -34,7 +32,7 @@ class TestCodexClassifyErrorDefaultPause:
         assert kind == EngineErrorKind.QUOTA_EXHAUSTED
         assert retryable is False
         assert resume_at is not None
-        expected = FIXED_NOW + timedelta(seconds=QUOTA_DEFAULT_PAUSE_SECONDS)
+        expected = FIXED_NOW + timedelta(seconds=env.quota_default_pause_seconds())
         assert resume_at == expected
 
     def test_quota_exhausted_with_reset_at_uses_parsed_time(self):
@@ -62,8 +60,32 @@ class TestClaudeJsonClassifyErrorDefaultPause:
         assert kind == EngineErrorKind.QUOTA_EXHAUSTED
         assert retryable is False
         assert resume_at is not None
-        expected = FIXED_NOW + timedelta(seconds=QUOTA_DEFAULT_PAUSE_SECONDS)
+        expected = FIXED_NOW + timedelta(seconds=env.quota_default_pause_seconds())
         assert resume_at == expected
+
+
+@pytest.mark.parametrize(
+    "module_path,message",
+    [
+        ("ghdag.llm.adapters.codex", "quota exhausted, please wait"),
+        ("ghdag.llm.adapters.claude_json", "quota exhausted"),
+    ],
+)
+def test_quota_pause_reflects_env_after_adapter_import(
+    monkeypatch: pytest.MonkeyPatch,
+    module_path: str,
+    message: str,
+) -> None:
+    """Refs sumipan/ghdag#7545 — quota fallback reads GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS lazily."""
+    import importlib
+
+    importlib.import_module(module_path)
+    monkeypatch.setenv("GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS", "42")
+    mod = importlib.import_module(module_path)
+    kind, retryable, resume_at = mod._classify_error(message, FIXED_NOW)
+    assert kind == EngineErrorKind.QUOTA_EXHAUSTED
+    assert retryable is False
+    assert resume_at == FIXED_NOW + timedelta(seconds=42)
 
 
 # ---------------------------------------------------------------------------

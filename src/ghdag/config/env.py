@@ -39,6 +39,12 @@ __all__ = [
     "ghdag_task_env_deny",
     "ghdag_task_env_allow",
     "ghdag_redact_patterns_path",
+    "quota_default_pause_seconds",
+    "ghdag_rate_limit_max_wait_sec",
+    "ghdag_etag_cache",
+    "ghdag_forge",
+    "ghdag_forge_root",
+    "ghdag_exec_jsonl",
     "set_pending_env_denied_count",
     "pending_env_denied_count",
 ]
@@ -224,3 +230,40 @@ def ghdag_redact_patterns_path() -> str | None:
         return None
     stripped = raw.strip()
     return stripped if stripped else None
+
+
+def quota_default_pause_seconds() -> int:
+    """Return ``GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS`` (default ``18000``)."""
+    raw = os.environ.get("GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS", 18000)
+    return int(raw)
+
+
+def ghdag_rate_limit_max_wait_sec() -> int:
+    """Return ``GHDAG_RATE_LIMIT_MAX_WAIT_SEC`` (default ``900`` when unset/invalid)."""
+    raw = os.environ.get("GHDAG_RATE_LIMIT_MAX_WAIT_SEC")
+    if raw is None or not raw.strip():
+        return 900
+    try:
+        return int(raw)
+    except ValueError:
+        return 900
+
+
+def ghdag_etag_cache() -> str | None:
+    """Return raw ``GHDAG_ETAG_CACHE`` if set."""
+    return os.environ.get("GHDAG_ETAG_CACHE")
+
+
+def ghdag_forge() -> str | None:
+    """Return raw ``GHDAG_FORGE`` if set."""
+    return os.environ.get("GHDAG_FORGE")
+
+
+def ghdag_forge_root() -> str | None:
+    """Return raw ``GHDAG_FORGE_ROOT`` if set."""
+    return os.environ.get("GHDAG_FORGE_ROOT")
+
+
+def ghdag_exec_jsonl() -> str | None:
+    """Return raw ``GHDAG_EXEC_JSONL`` if set."""
+    return os.environ.get("GHDAG_EXEC_JSONL")

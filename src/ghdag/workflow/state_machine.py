@@ -9,7 +9,6 @@ import argparse
 import sys
 from pathlib import Path
 
-from ghdag.core.models.workflow import WorkflowConfig
 from ghdag.core.ports.forge import ForgePort
 from ghdag.forge import get_forge
 from ghdag.workflow.loader import load_workflow_file
@@ -99,11 +98,6 @@ def transition(
         )
 
 
-def _load_workflow_config(path: Path) -> WorkflowConfig:
-    """Deprecated: use ghdag.workflow.loader.load_workflow_file."""
-    return load_workflow_file(path)
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Config-driven label transition state machine"
@@ -127,7 +121,7 @@ def main() -> int:
         print(f"Workflow file not found: {workflow_path}", file=sys.stderr)
         return 1
 
-    config = _load_workflow_config(workflow_path)
+    config = load_workflow_file(workflow_path)
     if config.transitions is None:
         print(
             f"Workflow {config.name} does not define transitions",

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 
 from ghdag.config.language import get_language_pack
@@ -15,10 +14,6 @@ logger = logging.getLogger(__name__)
 
 # Always treated as a question ending; language packs can only add to it.
 _BUILTIN_QUESTION_SUFFIXES: tuple[str, ...] = ("?",)
-
-QUOTA_DEFAULT_PAUSE_SECONDS: int = int(
-    os.environ.get("GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS", 18000)
-)
 
 
 def last_nonempty_line(text: str) -> str:

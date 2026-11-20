@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import asdict
 from pathlib import Path
 
+from ghdag.config import env
 from ghdag.config.env import state_dir as resolve_state_dir
 from ghdag.core.exceptions import CliUsageError
 
@@ -23,7 +23,7 @@ def cmd_status(args) -> None:
 
     exec_jsonl = Path(
         args.exec_jsonl
-        or os.environ.get("GHDAG_EXEC_JSONL")
+        or env.ghdag_exec_jsonl()
         or "jobs/exec.jsonl"
     ).resolve()
     queue_dir = exec_jsonl.parent

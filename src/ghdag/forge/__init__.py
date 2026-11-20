@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
+from ghdag.config import env
 from ghdag.core.exceptions import ConfigError, GitHubApiError
 from ghdag.core.ports.forge import ForgePort
 from ghdag.forge.local import LocalForge
@@ -20,7 +20,7 @@ __all__ = [
 
 
 def _forge_kind() -> str:
-    kind = (os.environ.get("GHDAG_FORGE") or "github").strip().lower()
+    kind = (env.ghdag_forge() or "github").strip().lower()
     if kind == "local":
         return "local"
     if kind == "github":
@@ -32,7 +32,7 @@ def _forge_kind() -> str:
 
 
 def _local_forge() -> LocalForge:
-    root = os.environ.get("GHDAG_FORGE_ROOT")
+    root = env.ghdag_forge_root()
     if not root:
         raise ConfigError(
             "GHDAG_FORGE=local requires GHDAG_FORGE_ROOT",

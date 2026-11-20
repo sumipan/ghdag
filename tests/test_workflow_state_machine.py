@@ -1,16 +1,12 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
-
-import pytest
+from unittest.mock import patch
 
 from ghdag.core.models.workflow import WorkflowConfig
-from ghdag.workflow.loader import ValidationError
-from ghdag.workflow.state_machine import (
-    _load_workflow_config,
-    get_current_phase,
-    validate_transition,
-)
+from ghdag.workflow import state_machine
+from ghdag.workflow.state_machine import get_current_phase, validate_transition
 
 # --- WorkflowConfig parsing ---
 
@@ -35,24 +31,50 @@ def test_workflow_config_transitions_default_none():
     assert cfg.reset_label is None
 
 
-def test_load_workflow_config_rejects_unknown_key(tmp_path: Path) -> None:
-    path = tmp_path / "workflow.yml"
-    path.write_text(
+def test_transition_main_calls_load_workflow_file_directly(tmp_path: Path) -> None:
+    """Refs sumipan/ghdag#7545 — state_machine.main uses canonical loader, no deprecated wrapper."""
+    assert not hasattr(state_machine, "_load_workflow_config")
+
+    workflow = tmp_path / "workflow.yml"
+    workflow.write_text(
         """\
-name: example
-triggers:
-  - label: ready
-    handler: reset
-handlers:
-  reset:
-    type: reset
-    on_complete: archive
+name: sm
+triggers: []
+handlers: {}
+transitions:
+  phase:a:
+    - phase:b
 """,
         encoding="utf-8",
     )
-
-    with pytest.raises(ValidationError, match=r"handlers\.reset\.on_complete"):
-        _load_workflow_config(path)
+    cfg = WorkflowConfig(
+        name="sm",
+        triggers=[],
+        handlers={},
+        transitions={"phase:a": ["phase:b"]},
+    )
+    with (
+        patch.object(
+            sys,
+            "argv",
+            [
+                "state_machine",
+                "transition",
+                "--workflow",
+                str(workflow),
+                "1",
+                "phase:b",
+            ],
+        ),
+        patch(
+            "ghdag.workflow.state_machine.load_workflow_file",
+            return_value=cfg,
+        ) as load_mock,
+        patch("ghdag.workflow.state_machine.transition") as transition_mock,
+    ):
+        assert state_machine.main() == 0
+        load_mock.assert_called_once_with(workflow)
+        transition_mock.assert_called_once_with(1, "phase:b", cfg.transitions, None)
 
 
 # --- validate_transition happy path ---

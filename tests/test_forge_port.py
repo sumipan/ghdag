@@ -32,22 +32,6 @@ def test_label_names_accepts_forge_port_type_hint() -> None:
     assert hints["client"] is ForgePort
 
 
-def test_only_forge_package_reads_ghdag_forge_env() -> None:
-    """Refs sumipan/nexus#6804 — GHDAG_FORGE env reads live only under ghdag.forge."""
-    src = Path(__file__).resolve().parents[1] / "src" / "ghdag"
-    offenders: list[str] = []
-    for py in sorted(src.rglob("*.py")):
-        rel = py.relative_to(src)
-        if rel.parts and rel.parts[0] == "forge":
-            continue
-        for lineno, line in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
-            if "GHDAG_FORGE" not in line:
-                continue
-            if "os.environ" in line or "os.getenv" in line:
-                offenders.append(f"{rel}:{lineno}: {line.strip()}")
-    assert offenders == []
-
-
 _UNKNOWN_FORGE_MSG = (
     "Unknown GHDAG_FORGE='bogus'; expected 'github' or 'local'"
 )

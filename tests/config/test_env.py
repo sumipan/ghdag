@@ -56,3 +56,78 @@ def test_state_dir_set(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     assert env.state_dir("jobs") == tmp_path / "state"
 
 
+_ENV_ACCESSOR_CASES: list[tuple[str, str, object, object]] = [
+  # name, env var, env value (None=unset), expected or exception type
+    ("quota_default_pause_seconds", "GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS", None, 18000),
+    ("quota_default_pause_seconds", "GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS", "3600", 3600),
+    ("quota_default_pause_seconds", "GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS", "x", ValueError),
+    ("ghdag_rate_limit_max_wait_sec", "GHDAG_RATE_LIMIT_MAX_WAIT_SEC", None, 900),
+    ("ghdag_rate_limit_max_wait_sec", "GHDAG_RATE_LIMIT_MAX_WAIT_SEC", "", 900),
+    ("ghdag_rate_limit_max_wait_sec", "GHDAG_RATE_LIMIT_MAX_WAIT_SEC", "  ", 900),
+    ("ghdag_rate_limit_max_wait_sec", "GHDAG_RATE_LIMIT_MAX_WAIT_SEC", "120", 120),
+    ("ghdag_rate_limit_max_wait_sec", "GHDAG_RATE_LIMIT_MAX_WAIT_SEC", "nope", 900),
+    ("ghdag_etag_cache", "GHDAG_ETAG_CACHE", None, None),
+    ("ghdag_etag_cache", "GHDAG_ETAG_CACHE", "/tmp/etag", "/tmp/etag"),
+    ("ghdag_forge", "GHDAG_FORGE", None, None),
+    ("ghdag_forge", "GHDAG_FORGE", " GitHub ", " GitHub "),
+    ("ghdag_forge_root", "GHDAG_FORGE_ROOT", None, None),
+    ("ghdag_forge_root", "GHDAG_FORGE_ROOT", "/data", "/data"),
+    ("ghdag_exec_jsonl", "GHDAG_EXEC_JSONL", None, None),
+    ("ghdag_exec_jsonl", "GHDAG_EXEC_JSONL", "jobs/exec.jsonl", "jobs/exec.jsonl"),
+]
+
+
+@pytest.mark.parametrize(
+    ("accessor", "var_name", "var_value", "expected"),
+    _ENV_ACCESSOR_CASES,
+    ids=[c[0] + "_" + str(c[2]) for c in _ENV_ACCESSOR_CASES],
+)
+def test_central_env_accessors(
+    monkeypatch: pytest.MonkeyPatch,
+    accessor: str,
+    var_name: str,
+    var_value: object,
+    expected: object,
+) -> None:
+    """Refs sumipan/ghdag#7545 — six ghdag-owned env vars via config.env."""
+    monkeypatch.delenv(var_name, raising=False)
+    if var_value is not None:
+        monkeypatch.setenv(var_name, str(var_value))
+    fn = getattr(env, accessor)
+    if isinstance(expected, type) and issubclass(expected, BaseException):
+        with pytest.raises(expected):
+            fn()
+        return
+    assert fn() == expected
+
+
+_TARGET_ENV_VARS = frozenset(
+    {
+        "GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS",
+        "GHDAG_RATE_LIMIT_MAX_WAIT_SEC",
+        "GHDAG_ETAG_CACHE",
+        "GHDAG_FORGE",
+        "GHDAG_FORGE_ROOT",
+        "GHDAG_EXEC_JSONL",
+    }
+)
+
+
+def test_ghdag_owned_env_reads_only_in_config_env() -> None:
+    """Refs sumipan/ghdag#7545 — os.environ reads for six vars live only in env.py."""
+    src = Path(__file__).resolve().parents[2] / "src" / "ghdag"
+    env_py = src / "config" / "env.py"
+    offenders: list[str] = []
+    for py in sorted(src.rglob("*.py")):
+        if py == env_py:
+            continue
+        rel = py.relative_to(src)
+        for lineno, line in enumerate(py.read_text(encoding="utf-8").splitlines(), 1):
+            if not any(name in line for name in _TARGET_ENV_VARS):
+                continue
+            if "os.environ" not in line and "os.getenv" not in line:
+                continue
+            offenders.append(f"{rel}:{lineno}: {line.strip()}")
+    assert offenders == []
+
+
