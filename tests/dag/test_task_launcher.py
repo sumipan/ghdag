@@ -245,5 +245,37 @@ def test_persisted_stderr_keeps_one_mib_tail() -> None:
     assert payload.endswith(marker.encode("utf-8"))
 
 
+def test_state_paths_use_done_parent(tmp_path: Path) -> None:
+    """Issue #7548 AC1 — control paths share exec_done_dir's parent as state root."""
+    from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
+
+    state_root = tmp_path / "state"
+    done = state_root / "done"
+    done.mkdir(parents=True)
+    config = DagConfig(
+        exec_jsonl_path=state_root / "exec.jsonl",
+        exec_done_dir=done,
+    )
+    hooks = MagicMock()
+    launcher = TaskLauncher(
+        config,
+        hooks,
+        CircuitBreakerPolicy(float("inf"), 2**31),
+        MagicMock(),
+        lambda _: None,
+    )
+    resolved = state_root.resolve()
+    uuid = "state-path-check"
+
+    assert launcher._state_dir().resolve() == resolved
+    assert launcher._session_store._store_dir.resolve().parent == resolved
+    assert launcher._quota_gate._state_path.resolve().parent == resolved
+    assert launcher._queue_audit_path().resolve().parent == resolved
+    assert launcher._running_path(uuid).parent.parent == resolved
+    assert launcher._quota_waiting_path(uuid).parent.parent == resolved
+    assert launcher._cancel_path(uuid).parent.parent == resolved
+    assert launcher._events_path(uuid).parent.parent == resolved
+
+
 
 
