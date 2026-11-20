@@ -174,6 +174,31 @@ class TestQuotaCli:
             ])
         assert exc.value.code == 1
 
+    def test_quota_report_naive_timestamp_json_error(self, tmp_path, capsys):
+        """Refs sumipan/ghdag#7551 AC1."""
+        import json
+
+        from ghdag.cli import main
+
+        with pytest.raises(SystemExit) as exc:
+            main([
+                "quota",
+                "report",
+                "claude",
+                "--status",
+                "paused",
+                "--observed-at",
+                "2026-09-02T12:00:00",
+                "--state-dir",
+                str(tmp_path),
+                "--json",
+            ])
+        assert exc.value.code == 1
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["error"]["code"] == "QUOTA_INVALID_INPUT"
+        assert payload["error"]["message"] == "--observed-at must be timezone-aware"
+        assert payload["error"]["exit_code"] == 1
+
     def test_quota_invalid_engine_exits_1(self, tmp_path):
         from ghdag.cli import main
 

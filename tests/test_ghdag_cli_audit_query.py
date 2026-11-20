@@ -167,6 +167,29 @@ class TestAuditQueryErrors:
         captured = capsys.readouterr()
         assert captured.err
 
+    def test_both_modes_json_error(self, tmp_path, capsys):
+        """Refs sumipan/ghdag#7551 AC2."""
+        import json
+
+        from ghdag.cli import main
+
+        audit = tmp_path / "audit.jsonl"
+        audit.write_text("")
+
+        with pytest.raises(SystemExit) as exc:
+            main([
+                "audit-query",
+                "--correlation-id", "cid",
+                "--burst-detect",
+                "--audit-path", str(audit),
+                "--json",
+            ])
+
+        assert exc.value.code == 2
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["error"]["code"] == "AUDIT_QUERY_MODE_CONFLICT"
+        assert payload["error"]["exit_code"] == 2
+
     def test_invalid_since_exit_2(self, tmp_path, capsys):
         from ghdag.cli import main
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import sys
 
+from ghdag.core.exceptions import CliUsageError
+
 
 def cmd_audit_query(args) -> None:
     """ghdag audit-query: query correlated events in audit.jsonl or detect bursts."""
@@ -22,17 +24,15 @@ def cmd_audit_query(args) -> None:
     has_burst = args.burst_detect
 
     if has_cid and has_burst:
-        print(
-            "error: --correlation-id and --burst-detect are mutually exclusive",
-            file=sys.stderr,
+        raise CliUsageError(
+            "--correlation-id and --burst-detect are mutually exclusive",
+            code="AUDIT_QUERY_MODE_CONFLICT",
         )
-        sys.exit(2)
     if not has_cid and not has_burst:
-        print(
-            "error: either --correlation-id or --burst-detect is required",
-            file=sys.stderr,
+        raise CliUsageError(
+            "either --correlation-id or --burst-detect is required",
+            code="AUDIT_QUERY_MODE_REQUIRED",
         )
-        sys.exit(2)
 
     audit_path = Path(args.audit_path or ghdag_audit_path() or "jobs/audit.jsonl")
 
@@ -52,8 +52,10 @@ def cmd_audit_query(args) -> None:
         try:
             since_epoch = datetime.fromisoformat(args.since).timestamp()
         except ValueError as exc:
-            print(f"error: invalid --since datetime: {exc}", file=sys.stderr)
-            sys.exit(2)
+            raise CliUsageError(
+                f"invalid --since datetime: {exc}",
+                code="AUDIT_QUERY_INVALID_SINCE",
+            ) from exc
 
     events = read_task_exit_events(
         audit_path,

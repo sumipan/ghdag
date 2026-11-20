@@ -104,6 +104,19 @@ class TestRunError:
         assert exc.value.code == 1
         assert "not found" in capsys.readouterr().err
 
+    def test_run_nonexistent_file_json_error(self, capsys):
+        """Refs sumipan/ghdag#7551 AC3."""
+        import json
+
+        from ghdag.cli import main
+
+        with pytest.raises(SystemExit) as exc:
+            main(["run", "nonexistent_exec.jsonl", "--json"])
+        assert exc.value.code == 1
+        payload = json.loads(capsys.readouterr().out.strip())
+        assert payload["error"]["code"] == "EXEC_JSONL_NOT_FOUND"
+        assert payload["error"]["message"] == "file not found: nonexistent_exec.jsonl"
+
 
 # ---------------------------------------------------------------------------
 # Issue sumipan/nexus#7095: run CLI task timeout, quota path, multi-hooks

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 from ghdag.config.env import state_dir as resolve_state_dir
+from ghdag.core.exceptions import GhdagError
 from ghdag.status import read_exclusive_gate
 
 
@@ -18,8 +18,7 @@ def cmd_cancel(args) -> None:
     if not running_path.is_file():
         gate = read_exclusive_gate(queue_dir)
         if gate != (uuid, "waiting"):
-            print(f"error: not running: {uuid}", file=sys.stderr)
-            sys.exit(1)
+            raise GhdagError(f"not running: {uuid}", code="TASK_NOT_RUNNING")
 
     cancel_dir = queue_dir / "cancel"
     cancel_dir.mkdir(parents=True, exist_ok=True)
