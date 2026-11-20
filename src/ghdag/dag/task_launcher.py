@@ -431,10 +431,10 @@ class TaskLauncher:
         self._cancelled: set[str] = set()
         self._interrupting: set[str] = set()
         self._pending_reruns: dict[str, int] = {}
-        self._session_store = SessionStore(self._queue_dir() / ".sessions")
+        self._session_store = SessionStore(self._state_dir() / ".sessions")
         self._quota_gate = quota_gate or QuotaGate(
-            Path(config.quota_state_path or self._queue_dir() / "quota-gate.json"),
-            audit_path=Path(config.quota_audit_path or self._queue_dir() / "audit.jsonl"),
+            Path(config.quota_state_path or self._state_dir() / "quota-gate.json"),
+            audit_path=Path(config.quota_audit_path or self._state_dir() / "audit.jsonl"),
         )
         self._engine_quarantine = EngineQuarantine()
         self._last_quota_deferred: dict[str, tuple[str | None, str | None]] = {}
@@ -1027,39 +1027,42 @@ class TaskLauncher:
                     decision.engine_error_summary, encoding="utf-8"
                 )
 
-    def _apply_completion_decision(
+    def _resolve_completion_repair(
         self,
         uuid: str,
         exit_ctx: _ExitContext,
-        facts: CompletionFacts,
         decision: CompletionDecision,
         *,
         effective_result_path: str | None,
         cwd: str | None,
-        token_count,
-        cost_usd,
-        cache_read_tokens,
-        cache_creation_tokens,
-    ) -> bool:
-        """Apply one decision. Return True when a repair turn relaunched the task."""
-        if decision.repair is not None:
-            rep = decision.repair
-            if self._try_contract_repair_turn(
-                uuid,
-                exit_ctx.task,
-                exit_ctx.engine if isinstance(exit_ctx.engine, str) else None,
-                code=rep.code,
-                message=rep.message,
-                hint=rep.hint,
-                result_path=effective_result_path,
-                cwd=cwd,
-            ):
-                return True
-            assert decision.fallback is not None
-            decision = decision.fallback
-            if decision.failure_class == FailureClass.FANOUT_PARSE_FAILED:
-                logger.warning("FanOut error for [%s]: %s", uuid, rep.message)
+    ) -> tuple[CompletionDecision, bool]:
+        if decision.repair is None:
+            return decision, False
+        rep = decision.repair
+        if self._try_contract_repair_turn(
+            uuid,
+            exit_ctx.task,
+            exit_ctx.engine if isinstance(exit_ctx.engine, str) else None,
+            code=rep.code,
+            message=rep.message,
+            hint=rep.hint,
+            result_path=effective_result_path,
+            cwd=cwd,
+        ):
+            return decision, True
+        assert decision.fallback is not None
+        resolved = decision.fallback
+        if resolved.failure_class == FailureClass.FANOUT_PARSE_FAILED:
+            logger.warning("FanOut error for [%s]: %s", uuid, rep.message)
+        return resolved, False
 
+    def _apply_completion_state(
+        self,
+        uuid: str,
+        exit_ctx: _ExitContext,
+        decision: CompletionDecision,
+        effective_result_path: str | None,
+    ) -> None:
         self._apply_result_action(exit_ctx.task, effective_result_path, decision)
 
         if decision.quota_pause is not None:
@@ -1142,50 +1145,54 @@ class TaskLauncher:
                 ),
             )
 
-        metrics = self._build_completion_metrics(
-            uuid,
-            exit_ctx,
-            decision,
-            token_count=token_count,
-            cost_usd=cost_usd,
-            cache_read_tokens=cache_read_tokens,
-            cache_creation_tokens=cache_creation_tokens,
-        )
-
+    def _dispatch_completion_hook(
+        self,
+        uuid: str,
+        exit_ctx: _ExitContext,
+        decision: CompletionDecision,
+        metrics: TaskMetrics | None,
+    ) -> None:
         hook = decision.hook
-        if hook is not None:
-            if hook.kind == HookKind.CANCELLED:
-                on_cancel = getattr(self._hooks, "on_task_cancelled", None)
-                if on_cancel is not None:
-                    on_cancel(uuid, exit_ctx.task)
-            elif hook.kind == HookKind.FAILURE and metrics is not None:
-                self._call_on_task_failure(
-                    uuid,
-                    exit_ctx.task,
-                    hook.returncode if hook.returncode is not None else exit_ctx.returncode,
-                    hook.message or "",
-                    metrics,
-                )
-            elif hook.kind == HookKind.REJECTED and metrics is not None:
-                self._hooks.on_task_rejected(
-                    uuid,
-                    exit_ctx.task,
-                    exit_ctx.task.retry,
-                    bool(hook.is_final),
-                    metrics,
-                )
-            elif hook.kind == HookKind.EMPTY_RESULT and metrics is not None:
-                self._call_on_task_empty_result(
-                    uuid, exit_ctx.task, exit_ctx.stderr_text, metrics
-                )
-            elif hook.kind == HookKind.SUCCESS and metrics is not None:
-                self._run_success_postprocess(
-                    uuid,
-                    exit_ctx.task,
-                    "on_task_success",
-                    lambda: self._hooks.on_task_success(uuid, exit_ctx.task, metrics),
-                )
+        if hook is None:
+            return
+        if hook.kind == HookKind.CANCELLED:
+            on_cancel = getattr(self._hooks, "on_task_cancelled", None)
+            if on_cancel is not None:
+                on_cancel(uuid, exit_ctx.task)
+        elif hook.kind == HookKind.FAILURE and metrics is not None:
+            self._call_on_task_failure(
+                uuid,
+                exit_ctx.task,
+                hook.returncode if hook.returncode is not None else exit_ctx.returncode,
+                hook.message or "",
+                metrics,
+            )
+        elif hook.kind == HookKind.REJECTED and metrics is not None:
+            self._hooks.on_task_rejected(
+                uuid,
+                exit_ctx.task,
+                exit_ctx.task.retry,
+                bool(hook.is_final),
+                metrics,
+            )
+        elif hook.kind == HookKind.EMPTY_RESULT and metrics is not None:
+            self._call_on_task_empty_result(
+                uuid, exit_ctx.task, exit_ctx.stderr_text, metrics
+            )
+        elif hook.kind == HookKind.SUCCESS and metrics is not None:
+            self._run_success_postprocess(
+                uuid,
+                exit_ctx.task,
+                "on_task_success",
+                lambda: self._hooks.on_task_success(uuid, exit_ctx.task, metrics),
+            )
 
+    def _apply_completion_circuit(
+        self,
+        uuid: str,
+        exit_ctx: _ExitContext,
+        decision: CompletionDecision,
+    ) -> None:
         if decision.circuit == CircuitAction.RECORD_FAILURE:
             if self._circuit_breaker.record_failure():
                 append_audit_record(
@@ -1206,40 +1213,105 @@ class TaskLauncher:
                 self._circuit_breaker.reset,
             )
 
-        if decision.fanout_spawn and metrics is not None:
-            try:
-                self._fanout_manager.spawn(
-                    uuid,
-                    exit_ctx.task,
-                    parse_fanout_spec(effective_result_path),
-                    metrics,
-                    queue_dir=self._queue_dir(),
-                )
-            except FanoutError as exc:
-                spawn_facts = replace(
-                    facts,
-                    fanout=FanoutFact(
-                        state=FanoutState.SPAWN_FAILED,
-                        error=ContractErrorFact(exc.code, exc.message, exc.hint),
-                    ),
-                )
-                spawn_decision = decide_completion(
-                    spawn_facts,
-                    max_retry=self._config.max_retry,
-                    task_timeout=self._config.task_timeout,
-                )
-                return self._apply_completion_decision(
-                    uuid,
-                    exit_ctx,
-                    spawn_facts,
-                    spawn_decision,
-                    effective_result_path=effective_result_path,
-                    cwd=cwd,
-                    token_count=token_count,
-                    cost_usd=cost_usd,
-                    cache_read_tokens=cache_read_tokens,
-                    cache_creation_tokens=cache_creation_tokens,
-                )
+    def _spawn_completion_fanout(
+        self,
+        uuid: str,
+        exit_ctx: _ExitContext,
+        facts: CompletionFacts,
+        decision: CompletionDecision,
+        metrics: TaskMetrics | None,
+        *,
+        effective_result_path: str | None,
+        cwd: str | None,
+        token_count,
+        cost_usd,
+        cache_read_tokens,
+        cache_creation_tokens,
+    ) -> bool:
+        if not decision.fanout_spawn or metrics is None:
+            return False
+        try:
+            self._fanout_manager.spawn(
+                uuid,
+                exit_ctx.task,
+                parse_fanout_spec(effective_result_path),
+                metrics,
+                queue_dir=self._state_dir(),
+            )
+        except FanoutError as exc:
+            spawn_facts = replace(
+                facts,
+                fanout=FanoutFact(
+                    state=FanoutState.SPAWN_FAILED,
+                    error=ContractErrorFact(exc.code, exc.message, exc.hint),
+                ),
+            )
+            spawn_decision = decide_completion(
+                spawn_facts,
+                max_retry=self._config.max_retry,
+                task_timeout=self._config.task_timeout,
+            )
+            return self._apply_completion_decision(
+                uuid,
+                exit_ctx,
+                spawn_facts,
+                spawn_decision,
+                effective_result_path=effective_result_path,
+                cwd=cwd,
+                token_count=token_count,
+                cost_usd=cost_usd,
+                cache_read_tokens=cache_read_tokens,
+                cache_creation_tokens=cache_creation_tokens,
+            )
+        return False
+
+    def _apply_completion_decision(
+        self,
+        uuid: str,
+        exit_ctx: _ExitContext,
+        facts: CompletionFacts,
+        decision: CompletionDecision,
+        *,
+        effective_result_path: str | None,
+        cwd: str | None,
+        token_count,
+        cost_usd,
+        cache_read_tokens,
+        cache_creation_tokens,
+    ) -> bool:
+        """Apply one decision. Return True when a repair turn relaunched the task."""
+        decision, repair_relaunched = self._resolve_completion_repair(
+            uuid, exit_ctx, decision,
+            effective_result_path=effective_result_path, cwd=cwd,
+        )
+        if repair_relaunched:
+            return True
+        self._apply_completion_state(uuid, exit_ctx, decision, effective_result_path)
+        metrics = self._build_completion_metrics(
+            uuid,
+            exit_ctx,
+            decision,
+            token_count=token_count,
+            cost_usd=cost_usd,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+        )
+        self._dispatch_completion_hook(uuid, exit_ctx, decision, metrics)
+        self._apply_completion_circuit(uuid, exit_ctx, decision)
+        if self._spawn_completion_fanout(
+            uuid,
+            exit_ctx,
+            facts,
+            decision,
+            metrics,
+            effective_result_path=effective_result_path,
+            cwd=cwd,
+            token_count=token_count,
+            cost_usd=cost_usd,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+        ):
+            return True
 
         if decision.promote:
             self._run_success_postprocess(
@@ -1408,7 +1480,7 @@ class TaskLauncher:
                     component,
                 )
 
-    def _queue_dir(self) -> Path:
+    def _state_dir(self) -> Path:
         return Path(self._config.exec_done_dir).parent
 
     def _persist_failure_stderr(
@@ -1423,7 +1495,7 @@ class TaskLauncher:
             payload = _stderr_payload_bytes(diagnostic)
             if not payload:
                 return None
-            queue_dir = self._queue_dir()
+            queue_dir = self._state_dir()
             dest_dir = queue_dir / "stderr" / uuid
             dest_dir.mkdir(parents=True, exist_ok=True)
             ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
@@ -1480,10 +1552,10 @@ class TaskLauncher:
         self._hooks.on_task_empty_result(uuid, task, stderr_text, metrics)
 
     def _running_path(self, uuid: str) -> Path:
-        return self._queue_dir() / "running" / f"{uuid}.json"
+        return self._state_dir() / "running" / f"{uuid}.json"
 
     def _quota_waiting_path(self, uuid: str) -> Path:
-        return self._queue_dir() / "quota-waiting" / f"{uuid}.json"
+        return self._state_dir() / "quota-waiting" / f"{uuid}.json"
 
     def _write_quota_waiting_file(self, uuid: str, engines: tuple[str, ...]) -> None:
         path = self._quota_waiting_path(uuid)
@@ -1513,7 +1585,7 @@ class TaskLauncher:
         self, tasks: dict[str, Task], known_done: set[str]
     ) -> list[str]:
         """Reload WAIT_QUOTA engine lists from disk after restart."""
-        waiting_dir = self._queue_dir() / "quota-waiting"
+        waiting_dir = self._state_dir() / "quota-waiting"
         if not waiting_dir.is_dir():
             return []
         restored: list[str] = []
@@ -1548,10 +1620,10 @@ class TaskLauncher:
         return restored
 
     def _cancel_path(self, uuid: str) -> Path:
-        return self._queue_dir() / "cancel" / uuid
+        return self._state_dir() / "cancel" / uuid
 
     def _events_path(self, uuid: str) -> Path:
-        return self._queue_dir() / "events" / f"{uuid}.jsonl"
+        return self._state_dir() / "events" / f"{uuid}.jsonl"
 
     def mark_interrupted_all(self) -> list[str]:
         """Add interrupted_at to running files for all currently running tasks.
@@ -1641,7 +1713,7 @@ class TaskLauncher:
                 logger.warning("Failed to remove control file %s", path, exc_info=True)
 
     def _queue_audit_path(self) -> Path:
-        return Path(self._config.audit_path or self._queue_dir() / "audit.jsonl")
+        return Path(self._config.audit_path or self._state_dir() / "audit.jsonl")
 
     def _compaction_policy(self) -> CompactionPolicy:
         """Opt-in: enable via GHDAG_SESSION_COMPACTION=1 (default off)."""
@@ -1699,7 +1771,7 @@ class TaskLauncher:
         turn = _repair_turn_count(task.annotations) + 1
         base_command = task.annotations.get("_command_without_resume") or task.command
         ts = file_ts(self._config.timezone)
-        queue_dir = self._queue_dir()
+        queue_dir = self._state_dir()
         order_name = f"{ts}-{engine_name}-order-{uuid}-repair{turn}.md"
         order_path = queue_dir / order_name
         order_path.write_text(
@@ -1799,7 +1871,7 @@ class TaskLauncher:
             return
 
         token_usage = lookup_parent_token_usage(
-            self._queue_dir() / "metrics.jsonl",
+            self._state_dir() / "metrics.jsonl",
             resume_from_uuid,
         )
         raw_anno = task.annotations.get("_parent_token_usage")
@@ -1888,7 +1960,7 @@ class TaskLauncher:
 
         Returns the list of uuids that were registered as adopted (still alive).
         """
-        running_dir = self._queue_dir() / "running"
+        running_dir = self._state_dir() / "running"
         if not running_dir.is_dir():
             return []
         adopted_uuids: list[str] = []
