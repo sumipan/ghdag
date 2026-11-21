@@ -380,7 +380,7 @@ Helpers that have no package-level export and are imported from their module:
 | `ghdag.github_client` | `create_github_client`, `create_github_clients(*, token=None, rate_limit_max_wait_sec=None)` |
 | `ghdag.cleanup.orchestrator` | `cleanup_queue(queue_dir, archive_dir, done_dir, exec_jsonl, cutoff_days=1, orphan_days=7, dry_run=False, auto_repair=False) -> CleanupResult` |
 | `ghdag.core.command` | `render_exec_command`, `build_llm_cmd`, `inject_resume`, `register_command_adapter` |
-| `ghdag.core.vocabulary` | Done-marker constants (`DONE_*`), `QUEUE_FILE_RE`, `PIPELINE_STATUS_RE`, fan-out markers |
+| `ghdag.core.vocabulary` | Done-marker constants (`DONE_*`), `QUEUE_FILE_RE`, reply-block vocabulary, fan-out separator |
 | `ghdag.pipeline.status` | `task_status`, `state_label(state_id, pack=None)` and the `STATE_*` identifiers |
 | `ghdag.pipeline.llm_pipeline` | `build_order_builders(workflows) -> dict[str, OrderBuilder]` |
 | `ghdag.files.append` / `ghdag.files.promote` | `md_append(path, section, body, *, idempotency_key=None, repo_root=None, allow_recover=False)`, `md_promote(source_path, target_path, *, section="Promoted", idempotency_key=None, repo_root=None)` |
@@ -521,9 +521,9 @@ The intake side and the execution side never import each other; `import-linter` 
 | Launch | A task starts when every task in `depends` has succeeded and `QuotaGate.admit` admits its engine. Each task runs in its own process group, with the environment described under [Task environment](#task-environment) |
 | Dependency failure | Tasks downstream of a failed task get `DEP_FAILED` |
 | Timeout / cancel | SIGTERM to the process group, SIGKILL after `DagConfig.kill_grace`; done marker `TIMEOUT` / `CANCELLED` |
-| Reply block | A result may end with a fenced YAML block whose info string is `ghdag` (schema `reply-block`). It carries the task status, and `status: ok` with `children` declares fan-out: the runner enqueues the children and the parent completes when they do. Results without a block fall back to `PIPELINE_STATUS:` lines |
+| Reply block | A result may end with a fenced YAML block whose info string is `ghdag` (schema `reply-block`). It carries the task status, and `status: ok` with `children` declares fan-out: the runner enqueues the children and the parent completes when they do. |
 | Repair turn | When the reply block or fan-out is invalid and the task has a stored session, the runner resumes that session once with a repair order (`DagConfig.max_repair_turns`, audit event `llm.repair_turn`). The relaunch goes through quota admission like any launch; if it is refused, the original failure stands |
-| Quota wait | A task that reports `PIPELINE_STATUS: WAIT_QUOTA` stays pending without a done marker. The named engines are paused in the quota gate and the task is relaunched when one of them is available again |
+| Quota wait | A task whose reply block reports `status: wait_quota` stays pending without a done marker. The named engines are paused in the quota gate and the task is relaunched when one of them is available again |
 | Retry | Retryable engine errors are relaunched up to `DagConfig.max_retry` times |
 | Engine quarantine | An engine whose environment is broken (missing binary, for example) is temporarily blocked from launching |
 | Circuit breaker | The runner stops after `max_consecutive_failures` failures in a row (audit event `circuit_breaker_tripped`); the count resets when failures are more than `failure_window_sec` apart |
@@ -722,7 +722,7 @@ Every Python module under `src/ghdag/`.
 | `core/parsers.py` | Token usage parsing helpers |
 | `core/reply_block.py` | Reply-block parsing (`ReplyBlockError`) |
 | `core/stall_guard.py` | Stall detection for cursor tasks (`StallTracker`) |
-| `core/vocabulary.py` | Done markers, queue file naming, `PIPELINE_STATUS` and fan-out conventions |
+| `core/vocabulary.py` | Done markers, queue file naming, reply-block and fan-out conventions |
 | `core/models/__init__.py` | Package marker |
 | `core/models/dag.py` | `Task`, `DagConfig` |
 | `core/models/files.py` | Markdown file models and `PathTraversalError` |
@@ -1143,7 +1143,7 @@ The `STEP_*` codes of workflow validation are listed under [Workflow YAML](#work
 | `EngineErrorKind` | `ghdag.core.ports.output` | Enum: `CAPACITY`, `RATE_LIMIT`, `AUTH`, `QUOTA_EXHAUSTED`, `UNKNOWN` |
 | `QuotaWindow` | `ghdag.core.models.metrics` | One utilization window an engine reported (`window_minutes`, `used_percent`, `resets_at`) |
 | `TypeCheckError` | `ghdag.workflow.typecheck` | Dataclass describing a skill I/O mismatch between steps |
-| `WaitQuotaParseError` | `ghdag.dag._util` | Dataclass describing a `WAIT_QUOTA` line that could not be parsed; the task is then treated as failed |
+| `WaitQuotaParseError` | `ghdag.dag._util` | Dataclass describing a `status: wait_quota` reply block that could not be parsed (or a missing one); the task is then treated as failed |
 | `CommitResult` | `ghdag.vcs.sink` (also `ghdag.vcs`) | Outcome of a sink call (`committed`, `pushed`, `skipped`, `reason`, `sha`, `paths`) |
 
 ## Not in Scope

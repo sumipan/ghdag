@@ -7,6 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** dag: results are read only from the `ghdag` reply block. `PIPELINE_STATUS:` lines, `WAIT_QUOTA:` companion lines and `ghdag_fanout:` YAML are no longer parsed; `PIPELINE_STATUS_RE`, `WAIT_QUOTA_COMPANION_RE`, `FANOUT_ANCHOR` and `FANOUT_KEY` are removed from `ghdag.core.vocabulary`. `REJECTED:` lines are still read by `default_check_rejected`
+
 ## 0.152.2 - 2026-11-21
 
 ### Changed
