@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.152.2 - 2026-11-21
+
+### Changed
+
+- dag: drop legacy result status, quota, and fan-out parsing
+
 ## 0.152.1 - 2026-11-21
 
 ### Changed
