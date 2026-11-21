@@ -94,7 +94,6 @@ REMOVED_REEXPORTS: tuple[tuple[str, str, str], ...] = (
     ("ghdag.cleanup", "cleanup_queue", "ghdag.cleanup.orchestrator"),
     ("ghdag.cleanup", "QUEUE_FILE_RE", "ghdag.core.vocabulary"),
     ("ghdag.dag", "DefaultHooks", "ghdag.dag.hooks"),
-    ("ghdag.dag", "WAIT_QUOTA_COMPANION_RE", "ghdag.core.vocabulary"),
     ("ghdag.dag", "parse_jsonl", "ghdag.dag.parser"),
     ("ghdag.files", "AppendResult", "ghdag.core.models.files"),
     ("ghdag.files", "AppendStatus", "ghdag.core.models.files"),

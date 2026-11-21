@@ -9,12 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from ghdag.core.vocabulary import (
-    DONE_PIPELINE_FAILED_PREFIX,
-    PIPELINE_WAIT_QUOTA_INVALID,
-)
+from ghdag.core.vocabulary import DONE_SUCCESS
 from ghdag.dag._util import WaitQuotaParseError, parse_wait_quota_signal
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig, Task, _RunningProcess
@@ -82,23 +77,18 @@ def test_wait_quota_reply_block_without_after_pauses_engine(
     assert engine._quota_gate.snapshot().engines["claude"].status == "paused"
 
 
-@pytest.mark.parametrize(
-    "result_body",
-    [
-        "PIPELINE_STATUS: WAIT_QUOTA\n",
-        "PIPELINE_STATUS: WAIT_QUOTA\nWAIT_QUOTA: after= engines=\n",
-        "PIPELINE_STATUS: WAIT_QUOTA\nWAIT_QUOTA: after=not-a-date engines=claude\n",
-        "PIPELINE_STATUS: WAIT_QUOTA\nWAIT_QUOTA: after= engines=unknown\n",
-    ],
-    ids=["missing-companion", "empty-engines", "invalid-after", "unknown-engine"],
-)
 @patch("ghdag.dag.task_launcher.state_mark_done")
-def test_invalid_wait_quota_marks_pipeline_failed(
-    mock_mark_done, tmp_path: Path, result_body: str
+def test_legacy_wait_quota_lines_complete_without_pauses(
+    mock_mark_done, tmp_path: Path
 ) -> None:
+    """Refs sumipan/ghdag#7698 AC2."""
     engine, _, _ = _make_engine(tmp_path)
-    result_file = tmp_path / "bad.md"
-    result_file.write_text(result_body, encoding="utf-8")
+    result_file = tmp_path / "legacy_wq.md"
+    result_file.write_text(
+        "PIPELINE_STATUS: WAIT_QUOTA\n"
+        "WAIT_QUOTA: after=2099-01-01T00:00:00+00:00 engines=claude\n",
+        encoding="utf-8",
+    )
     task = Task(uuid="task-1", command="claude -p hi", engine="claude", result_path=str(result_file))
     proc = MagicMock()
     proc.poll.return_value = 0
@@ -112,20 +102,25 @@ def test_invalid_wait_quota_marks_pipeline_failed(
         stderr_buf=io.BytesIO(b""),
         stdout_buf=io.BytesIO(b""),
     )
+    engine._quota_gate.begin_run(task_uuid=task.uuid, engine="claude")
 
     engine._launcher.check_completions()
 
-    expected = f"{DONE_PIPELINE_FAILED_PREFIX}{PIPELINE_WAIT_QUOTA_INVALID}"
-    mock_mark_done.assert_called_once_with(engine._config.exec_done_dir, task.uuid, expected)
-    engine._hooks.on_task_failure.assert_called_once()
+    mock_mark_done.assert_called_once()
+    _, uuid, status = mock_mark_done.call_args[0]
+    assert uuid == task.uuid
+    assert str(status) == DONE_SUCCESS
+    claude_state = engine._quota_gate.snapshot().engines.get("claude")
+    assert claude_state is None or claude_state.status != "paused"
 
 
 def _shell_task_wait_quota_recorded(engine: DagEngine, tmp_path: Path) -> Task:
     """Refs sumipan/nexus#6632."""
     result_file = tmp_path / "wait_quota_result.md"
     result_file.write_text(
-        "PIPELINE_STATUS: WAIT_QUOTA\n"
-        "WAIT_QUOTA: after=2099-01-01T00:00:00+00:00 engines=claude,codex\n",
+        '```ghdag\nstatus: wait_quota\n'
+        'after: "2099-01-01T00:00:00+00:00"\n'
+        "engines: [claude, codex]\n```\n",
         encoding="utf-8",
     )
     task = Task(

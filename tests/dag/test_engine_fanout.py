@@ -94,18 +94,19 @@ def _make_completed_running_task(uuid: str, task: Task, returncode: int = 0,
     )
 
 
-FANOUT_YAML = b"""\
+FANOUT_REPLY_BLOCK = b"""\
 Some output.
 
----
-ghdag_fanout:
-  children:
-    - id: item-001
-      command: "echo 1"
-    - id: item-002
-      command: "echo 2"
-    - id: item-003
-      command: "echo 3"
+```ghdag
+status: ok
+children:
+  - id: item-001
+    command: "echo 1"
+  - id: item-002
+    command: "echo 2"
+  - id: item-003
+    command: "echo 3"
+```
 """
 
 
@@ -215,18 +216,20 @@ class TestAC4ChildFailurePropagates:
 
 class TestAC2FanoutParseFailed:
 
-    def test_invalid_yaml_marks_parent_fanout_parse_failed(self, tmp_path):
+    def test_invalid_fanout_child_marks_parent_fanout_parse_failed(self, tmp_path):
         engine, hooks, exec_file = _make_engine(tmp_path)
-        uuid = "parent-yaml-fail"
-        result_file = tmp_path / "result_yaml.md"
+        uuid = "parent-fanout-fail"
+        result_file = tmp_path / "result_fanout.md"
         task = Task(uuid=uuid, command="true", result_path=str(result_file))
 
         invalid_fanout = b"""\
 Some output.
 
----
-ghdag_fanout:
-  children: [
+```ghdag
+status: ok
+children:
+  - id: bad
+```
 """
         rt = _make_completed_running_task(uuid, task, stdout_content=invalid_fanout)
         engine._launcher._running[uuid] = rt
