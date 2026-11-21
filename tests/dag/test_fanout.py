@@ -12,20 +12,6 @@ from ghdag.dag.fanout import (
     parse_fanout_spec,
 )
 
-VALID_FANOUT_YAML = """\
-Some prior content.
-
----
-ghdag_fanout:
-  children:
-    - id: item-001
-      command: "bash -c 'process foo'"
-    - id: item-002
-      command: "bash -c 'process bar'"
-    - id: item-003
-      command: "bash -c 'process baz'"
-"""
-
 
 class TestParseFanoutSpec:
     def test_none_path_returns_none(self):
@@ -34,39 +20,25 @@ class TestParseFanoutSpec:
     def test_nonexistent_file_returns_none(self):
         assert parse_fanout_spec("/tmp/__nonexistent_ghdag_test__.md") is None
 
-    def test_parse_fanout_spec_returns_three_children(self, tmp_path):
-        f = tmp_path / "result.md"
-        f.write_text(VALID_FANOUT_YAML)
-        spec = parse_fanout_spec(str(f))
-        assert spec is not None
-        assert len(spec.children) == 3
-        assert spec.children[0].id == "item-001"
-        assert spec.children[0].command == "bash -c 'process foo'"
-        assert spec.children[1].id == "item-002"
-        assert spec.children[2].id == "item-003"
-
-    def test_no_separator_returns_none(self, tmp_path):
+    def test_plain_output_returns_none(self, tmp_path):
         f = tmp_path / "result.md"
         f.write_text("Just normal output\nNo YAML here\n")
         assert parse_fanout_spec(str(f)) is None
 
-    def test_separator_without_fanout_key_returns_none(self, tmp_path):
+    def test_legacy_yaml_anchor_returns_none(self, tmp_path) -> None:
+        """Refs sumipan/ghdag#7698 AC3."""
         f = tmp_path / "result.md"
-        f.write_text("content\n---\nsome_other_key: value\n")
-        assert parse_fanout_spec(str(f)) is None
-
-
-    def test_empty_children_list_returns_none(self, tmp_path):
-        f = tmp_path / "result.md"
-        f.write_text("content\n---\nghdag_fanout:\n  children: []\n")
+        f.write_text(
+            "---\nghdag_fanout:\n  children:\n    - id: a\n      command: echo 1\n"
+        )
         assert parse_fanout_spec(str(f)) is None
 
     def test_duplicate_child_ids_raises_fanout_error(self, tmp_path):
         f = tmp_path / "result.md"
         f.write_text(
-            "---\nghdag_fanout:\n  children:\n"
-            "    - id: dup\n      command: echo 1\n"
-            "    - id: dup\n      command: echo 2\n"
+            "```ghdag\nstatus: ok\nchildren:\n"
+            "  - id: dup\n    command: echo 1\n"
+            "  - id: dup\n    command: echo 2\n```\n",
         )
         with pytest.raises(FanoutError, match="[Dd]uplicate") as exc_info:
             parse_fanout_spec(str(f))
@@ -77,66 +49,21 @@ class TestParseFanoutSpec:
         assert err.code == "FANOUT_INVALID"
         assert err.hint is not None
 
-
-    def test_child_missing_command_raises(self, tmp_path):
-        f = tmp_path / "result.md"
-        f.write_text("---\nghdag_fanout:\n  children:\n    - id: x\n")
-        with pytest.raises(FanoutError, match="command"):
-            parse_fanout_spec(str(f))
-
-
     def test_t5_child_id_is_separator_itself_raises(self, tmp_path):
         """T5: child.id = '--fo--' → ValueError (separator itself)."""
         f = tmp_path / "result.md"
         f.write_text(
-            "---\nghdag_fanout:\n  children:\n"
-            "    - id: \"--fo--\"\n      command: echo 1\n"
+            "```ghdag\nstatus: ok\nchildren:\n"
+            '  - id: "--fo--"\n    command: echo 1\n```\n',
         )
         with pytest.raises(FanoutError, match="--fo--"):
-            parse_fanout_spec(str(f))
-
-
-    def test_anchor_without_separator_raises(self, tmp_path):
-        f = tmp_path / "result.md"
-        f.write_text(
-            "ghdag_fanout:\n"
-            "  children:\n"
-            "    - id: x\n      command: echo 1\n"
-        )
-        with pytest.raises(FanoutError, match="---"):
-            parse_fanout_spec(str(f))
-
-
-    def test_fanout_value_not_mapping_raises(self, tmp_path):
-        f = tmp_path / "result.md"
-        f.write_text("---\nghdag_fanout: plain-string-value\n")
-        with pytest.raises(FanoutError, match="mapping"):
-            parse_fanout_spec(str(f))
-
-    def test_children_key_missing_raises(self, tmp_path):
-        f = tmp_path / "result.md"
-        f.write_text("---\nghdag_fanout:\n  other: 1\n")
-        with pytest.raises(FanoutError, match="children"):
-            parse_fanout_spec(str(f))
-
-    def test_children_not_list_raises(self, tmp_path):
-        f = tmp_path / "result.md"
-        f.write_text(
-            "---\nghdag_fanout:\n"
-            "  children:\n"
-            "    id: x\n"
-            "    command: echo 1\n"
-        )
-        with pytest.raises(FanoutError, match="list"):
             parse_fanout_spec(str(f))
 
     def test_child_id_not_string_raises(self, tmp_path):
         f = tmp_path / "result.md"
         f.write_text(
-            "---\nghdag_fanout:\n"
-            "  children:\n"
-            "    - id: 1\n"
-            "      command: echo 1\n"
+            "```ghdag\nstatus: ok\nchildren:\n"
+            "  - id: 1\n    command: echo 1\n```\n",
         )
         with pytest.raises(FanoutError, match="id"):
             parse_fanout_spec(str(f))

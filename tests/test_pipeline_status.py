@@ -1,4 +1,4 @@
-"""Tests for PIPELINE_STATUS parser and engine integration — Issues #477, #7549."""
+"""Tests for PIPELINE_STATUS parser and engine integration — Issues #477, #7549, #7698."""
 
 from __future__ import annotations
 
@@ -7,43 +7,19 @@ from ghdag.dag import check_pipeline_status
 
 class TestCheckPipelineStatus:
 
-    def test_done_status_returns_string(self, tmp_path):
+    def test_legacy_pipeline_status_line_ignored(self, tmp_path) -> None:
+        """Refs sumipan/ghdag#7698 AC1."""
         f = tmp_path / "result.md"
-        f.write_text("PIPELINE_STATUS: IMPL_DONE\n", encoding="utf-8")
-        assert check_pipeline_status(str(f)) == "IMPL_DONE"
+        f.write_text("PIPELINE_STATUS: X_FAILED\n", encoding="utf-8")
+        assert check_pipeline_status(str(f)) is None
 
     def test_no_pipeline_status_returns_none(self, tmp_path):
         f = tmp_path / "result.md"
         f.write_text("some output\nwithout status line\n", encoding="utf-8")
         assert check_pipeline_status(str(f)) is None
 
-    def test_impl_failed_returns_string(self, tmp_path):
-        f = tmp_path / "result.md"
-        f.write_text("PIPELINE_STATUS: IMPL_FAILED\n", encoding="utf-8")
-        assert check_pipeline_status(str(f)) == "IMPL_FAILED"
-
-    def test_brushup_failed_returns_string(self, tmp_path):
-        f = tmp_path / "result.md"
-        f.write_text("PIPELINE_STATUS: BRUSHUP_FAILED\n", encoding="utf-8")
-        assert check_pipeline_status(str(f)) == "BRUSHUP_FAILED"
-
-    def test_no_space_after_colon(self, tmp_path):
-        f = tmp_path / "result.md"
-        f.write_text("PIPELINE_STATUS:IMPL_FAILED\n", encoding="utf-8")
-        assert check_pipeline_status(str(f)) == "IMPL_FAILED"
-
-    def test_leading_space_not_detected(self, tmp_path):
-        f = tmp_path / "result.md"
-        f.write_text("  PIPELINE_STATUS: IMPL_FAILED\n", encoding="utf-8")
-        assert check_pipeline_status(str(f)) is None
-
     def test_missing_file_returns_none(self, tmp_path):
         assert check_pipeline_status(str(tmp_path / "nonexistent.md")) is None
-
-    def test_empty_value_not_matched(self, tmp_path):
-        f = tmp_path / "result.md"
-        f.write_text("PIPELINE_STATUS:   \n", encoding="utf-8")
-        assert check_pipeline_status(str(f)) is None
 
     def test_reply_block_failed_code(self, tmp_path) -> None:
         f = tmp_path / "result.md"

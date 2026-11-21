@@ -17,11 +17,8 @@ from ghdag.core.vocabulary import (
     DONE_SUCCESS,
     DONE_TIMEOUT,
     DONE_UNKNOWN_FAILURE,
-    FANOUT_ANCHOR,
-    FANOUT_KEY,
     FANOUT_SEPARATOR,
     PIPELINE_REPLY_BLOCK_FAILED,
-    PIPELINE_STATUS_RE,
     QUEUE_FILE_RE,
     REPLY_BLOCK_INFO,
     REPLY_STATUS_VALUES,
@@ -93,19 +90,6 @@ class TestQueueFileRe:
         assert QUEUE_FILE_RE.match("short-claude-order-12345678-1234-1234-1234-123456789abc.md") is None
 
 
-class TestPipelineStatusRe:
-    def test_matches_accepted(self) -> None:
-        text = "hello\nPIPELINE_STATUS: ACCEPTED\n"
-        assert PIPELINE_STATUS_RE.findall(text) == ["ACCEPTED"]
-
-    def test_matches_impl_failed(self) -> None:
-        text = "PIPELINE_STATUS: IMPL_FAILED"
-        assert PIPELINE_STATUS_RE.findall(text) == ["IMPL_FAILED"]
-
-    def test_no_match_without_prefix(self) -> None:
-        assert PIPELINE_STATUS_RE.findall("STATUS: ACCEPTED") == []
-
-
 class TestReplyBlockVocabulary:
     def test_reply_block_info(self) -> None:
         assert REPLY_BLOCK_INFO == "ghdag"
@@ -120,9 +104,3 @@ class TestReplyBlockVocabulary:
 class TestFanoutVocabulary:
     def test_fanout_separator(self) -> None:
         assert FANOUT_SEPARATOR == "--fo--"
-
-    def test_fanout_anchor(self) -> None:
-        assert FANOUT_ANCHOR == "ghdag_fanout:"
-
-    def test_fanout_key(self) -> None:
-        assert FANOUT_KEY == "ghdag_fanout"

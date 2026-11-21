@@ -42,14 +42,5 @@ QUEUE_FILE_RE = re.compile(
     r"^(\d{14})-([\w-]+)-(order|result|stderr)-([a-fA-F0-9\-]{36})\.md$"
 )
 
-# --- pipeline status line in result files ---
-PIPELINE_STATUS_RE = re.compile(r"^PIPELINE_STATUS:\s*(\S+)\s*$", re.MULTILINE)
-WAIT_QUOTA_COMPANION_RE = re.compile(
-    r"^WAIT_QUOTA:\s*after=(.*?)\s+engines=(.+?)\s*$",
-    re.MULTILINE,
-)
-
 # --- fan-out conventions ---
 FANOUT_SEPARATOR = "--fo--"
-FANOUT_ANCHOR = "ghdag_fanout:"
-FANOUT_KEY = "ghdag_fanout"

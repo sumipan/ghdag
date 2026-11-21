@@ -19,9 +19,7 @@ from ghdag.core.reply_block import (
 )
 from ghdag.core.vocabulary import (
     PIPELINE_REPLY_BLOCK_FAILED,
-    PIPELINE_STATUS_RE,
     PIPELINE_WAIT_QUOTA,
-    WAIT_QUOTA_COMPANION_RE,
 )
 
 # Matches: tee [-a] "quoted path" or tee [-a] unquoted-path (any extension)
@@ -63,7 +61,7 @@ def _pipeline_status_from_block(block: ReplyBlock) -> str | None:
 
 
 def check_pipeline_status(result_path: str) -> str | None:
-    """Read result file; prefer reply block, else legacy PIPELINE_STATUS line."""
+    """Read result file; return status derived from a reply block when present."""
     try:
         content = Path(result_path).read_text(encoding="utf-8", errors="replace")
     except (OSError, FileNotFoundError):
@@ -73,8 +71,7 @@ def check_pipeline_status(result_path: str) -> str | None:
         return PIPELINE_REPLY_BLOCK_FAILED
     if isinstance(parsed, ReplyBlock):
         return _pipeline_status_from_block(parsed)
-    matches = PIPELINE_STATUS_RE.findall(content)
-    return matches[-1] if matches else None
+    return None
 
 
 def _wait_quota_from_block(
@@ -110,46 +107,7 @@ def parse_wait_quota_signal(
     if isinstance(parsed, ReplyBlockError):
         return WaitQuotaParseError(parsed.message)
 
-    if not PIPELINE_STATUS_RE.findall(content) or PIPELINE_STATUS_RE.findall(content)[-1] != "WAIT_QUOTA":
-        return WaitQuotaParseError("missing PIPELINE_STATUS: WAIT_QUOTA")
-
-    companion_matches = WAIT_QUOTA_COMPANION_RE.findall(content)
-    if not companion_matches:
-        return WaitQuotaParseError("missing WAIT_QUOTA companion line")
-
-    after_raw, engines_raw = companion_matches[-1]
-    after_raw = after_raw.strip()
-    after: datetime | None
-    if after_raw == "":
-        after = None
-    else:
-        try:
-            parsed = datetime.fromisoformat(after_raw.replace("Z", "+00:00"))
-        except ValueError:
-            return WaitQuotaParseError(f"invalid after datetime: {after_raw}")
-        if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
-            return WaitQuotaParseError("after must be timezone-aware")
-        after = parsed
-
-    parts = [part.strip() for part in engines_raw.split(",")]
-    engines: list[str] = []
-    seen: set[str] = set()
-    for part in parts:
-        if not part:
-            continue
-        if part in seen:
-            continue
-        seen.add(part)
-        engines.append(part)
-
-    if not engines:
-        return WaitQuotaParseError("empty engines list")
-
-    unknown = [name for name in engines if name not in known_engines]
-    if unknown:
-        return WaitQuotaParseError(f"unknown engine(s): {', '.join(unknown)}")
-
-    return WaitQuotaSignal(after=after, engines=tuple(engines))
+    return WaitQuotaParseError("missing reply block status: wait_quota")
 
 
 def parse_wait_quota_result_path(

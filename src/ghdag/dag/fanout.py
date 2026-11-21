@@ -6,13 +6,11 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-import yaml
-
 from ghdag.core.capabilities import PERMISSIONS
 from ghdag.core.engine_spec import ENGINE_SPECS
 from ghdag.core.exceptions import ConfigError
 from ghdag.core.reply_block import find_reply_block, parse_reply_block
-from ghdag.core.vocabulary import FANOUT_ANCHOR, FANOUT_KEY, FANOUT_SEPARATOR
+from ghdag.core.vocabulary import FANOUT_SEPARATOR
 
 _FANOUT_CHILDREN_HINT = "children must be a list of {id, command} mappings"
 
@@ -226,66 +224,8 @@ def _fanout_from_reply_block(content: str) -> FanOutSpec | None:
     return FanOutSpec(children=children)
 
 
-def _fanout_from_legacy_yaml(content: str) -> FanOutSpec | None:
-    lines = content.splitlines()
-
-    fanout_line_idx: int | None = None
-    for i in range(len(lines) - 1, -1, -1):
-        if lines[i].startswith(FANOUT_ANCHOR):
-            fanout_line_idx = i
-            break
-
-    if fanout_line_idx is None:
-        return None
-
-    if not any(lines[i].strip() == "---" for i in range(fanout_line_idx)):
-        raise FanoutError("ghdag_fanout: anchor without preceding '---' line")
-
-    yaml_text = "\n".join(lines[fanout_line_idx:])
-    try:
-        data = yaml.safe_load(yaml_text)
-    except yaml.YAMLError as exc:
-        raise FanoutError(f"invalid YAML after ghdag_fanout: anchor: {exc}") from exc
-
-    if not isinstance(data, dict) or FANOUT_KEY not in data:
-        raise FanoutError("ghdag_fanout must be a mapping")
-
-    fanout_data = data[FANOUT_KEY]
-    if not isinstance(fanout_data, dict):
-        raise FanoutError("ghdag_fanout must be a mapping")
-
-    if "children" not in fanout_data or fanout_data["children"] is None:
-        raise FanoutError("ghdag_fanout.children is missing")
-
-    children_data = fanout_data["children"]
-    if not isinstance(children_data, list):
-        raise FanoutError("ghdag_fanout.children must be a list")
-
-    if not children_data:
-        return None
-
-    children: list[FanOutItem] = []
-    ids: list[str] = []
-    for i, c in enumerate(children_data):
-        if not isinstance(c, dict):
-            raise FanoutError(f"child #{i}: entry must be a mapping")
-        if "id" not in c or not isinstance(c["id"], str):
-            raise FanoutError(f"child #{i}: 'id' must be a string")
-        if "command" not in c or not isinstance(c["command"], str):
-            raise FanoutError(f"child #{i}: 'command' must be a string")
-        child_id = c["id"]
-        _validate_child_id(child_id, i)
-        ids.append(child_id)
-        children.append(FanOutItem(id=child_id, command=c["command"]))
-
-    if len(ids) != len(set(ids)):
-        raise FanoutError(f"Duplicate child ids in fanout spec: {ids}")
-
-    return FanOutSpec(children=children)
-
-
 def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
-    """Detect fan-out children from a reply block or legacy ``ghdag_fanout:`` YAML."""
+    """Detect fan-out children from a reply block in the result body."""
     if result_path is None:
         return None
 
@@ -295,14 +235,14 @@ def parse_fanout_spec(result_path: str | None) -> FanOutSpec | None:
     except OSError:
         return None
 
-    if find_reply_block(content) is not None:
-        return _fanout_from_reply_block(content)
+    if find_reply_block(content) is None:
+        return None
 
-    return _fanout_from_legacy_yaml(content)
+    return _fanout_from_reply_block(content)
 
 
 def build_child_jsonl_record(child_uuid: str, command: str) -> str:
-    """Build a minimal exec.jsonl line for a legacy command-only fan-out child."""
+    """Build a minimal exec.jsonl line for a reply-block command fan-out child."""
     return json.dumps({"uuid": child_uuid, "command": command, "depends": []})
 
 
