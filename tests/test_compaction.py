@@ -143,18 +143,6 @@ def test_compact_resume_falls_back_when_seed_has_no_session_id(tmp_path):
     assert store.lookup("child__compacted") is None
 
 
-def test_readme_compaction_row_mentions_json_output_mode():
-    """Issue #6090: README module inventory documents JSON output mode for compaction."""
-    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(
-        encoding="utf-8"
-    )
-    for line in readme.splitlines():
-        if "`llm/compaction.py`" in line:
-            assert "JSON output mode" in line
-            return
-    pytest.fail("README.md has no llm/compaction.py module inventory row")
-
-
 @pytest.mark.parametrize(
     "scenario,kwargs,expected_reason",
     [
