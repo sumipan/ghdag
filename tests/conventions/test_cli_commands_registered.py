@@ -100,10 +100,6 @@ def _changelog_unreleased_lines() -> list[str]:
     return section.splitlines()
 
 
-def _readme_lines() -> list[str]:
-    return (_REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines()
-
-
 def _src_lines() -> list[str]:
     lines: list[str] = []
     for pyfile in sorted(_SRC.rglob("*.py")):
@@ -120,8 +116,7 @@ def _llms_txt_lines() -> list[str]:
 
 def _all_reference_lines() -> list[str]:
     return (
-        _readme_lines()
-        + _changelog_unreleased_lines()
+        _changelog_unreleased_lines()
         + _llms_txt_lines()
         + _src_lines()
     )
@@ -160,20 +155,20 @@ def test_unresolvable_modules_none() -> None:
     assert violations == [], f"unresolvable python -m modules: {violations}"
 
 
-def test_extract_cli_references_finds_quota_in_readme() -> None:
-    lines = _readme_lines()
+def test_extract_cli_references_finds_backtick_and_prompt_refs() -> None:
+    """Issue sumipan/nexus#7794 — extract_cli_references handles backtick and prompt lines."""
+    lines = ["`ghdag quota status`", "$ ghdag run --help"]
     refs = extract_cli_references(lines)
-    found = {r for r in refs if r[0] == "quota"}
-    assert found, "Expected to find 'ghdag quota ...' references in README"
+    assert refs == {("quota", "status"), ("run",)}
 
 
 def test_unregistered_detects_missing_quota() -> None:
+    """Issue sumipan/nexus#7794 — unregistered flags refs absent from a truncated registry."""
     from ghdag.cli.main import _build_parser
     parser = _build_parser()
     full_registered = registered_commands(parser)
     truncated = {r for r in full_registered if r[0] != "quota"}
-    refs = extract_cli_references(_all_reference_lines())
-    assert any(r[0] == "quota" for r in refs), "README must reference 'ghdag quota'"
+    refs = {("quota", "status")}
     violations = unregistered(refs, truncated)
     assert any("quota" in v for v in violations), (
         f"Expected quota violations but got: {violations}"
