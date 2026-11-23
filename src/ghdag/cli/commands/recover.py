@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import cast
 
 from ghdag.cli.commands.trigger import _load_workflow_for_cli
 from ghdag.config.env import state_dir as resolve_state_dir
@@ -143,4 +144,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Do not archive existing result files (keep original behaviour)",
     )
     recover_parser.set_defaults(func=cmd_recover)
-    return recover_parser
+    return cast(argparse.ArgumentParser, recover_parser)

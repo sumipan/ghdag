@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import cast
 
 from ghdag.config.env import state_dir as resolve_state_dir
 from ghdag.core.exceptions import CliUsageError
@@ -103,4 +104,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Pipeline state directory (default: derived from --exec-jsonl parent's parent / .pipeline-state)",
     )
     watch_parser.set_defaults(func=cmd_watch)
-    return watch_parser
+    return cast(argparse.ArgumentParser, watch_parser)

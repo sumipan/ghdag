@@ -6,6 +6,7 @@ import argparse
 import json
 from dataclasses import asdict
 from pathlib import Path
+from typing import cast
 
 from ghdag.config import env
 from ghdag.config.env import state_dir as resolve_state_dir
@@ -171,4 +172,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Optional audit.jsonl for started_at / elapsed_sec on completed steps",
     )
     status_parser.set_defaults(func=cmd_status)
-    return status_parser
+    return cast(argparse.ArgumentParser, status_parser)

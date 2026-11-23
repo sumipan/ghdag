@@ -241,6 +241,9 @@ class FanOutManager:
             ):
                 logger.warning("Corrupt fanout-pending file %s — ignoring", path)
                 continue
+            if not isinstance(metrics_data, dict):
+                logger.warning("Corrupt fanout-pending file %s — ignoring", path)
+                continue
             metrics = self._metrics_from_dict(metrics_data)
             if metrics is None:
                 logger.warning("Corrupt fanout-pending file %s — ignoring", path)

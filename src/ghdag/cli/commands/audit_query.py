@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import cast
 
 from ghdag.core.exceptions import CliUsageError
 
@@ -109,4 +110,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Burst detection threshold (default: 10)",
     )
     audit_query_parser.set_defaults(func=cmd_audit_query)
-    return audit_query_parser
+    return cast(argparse.ArgumentParser, audit_query_parser)

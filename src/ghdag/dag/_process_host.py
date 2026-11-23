@@ -9,6 +9,7 @@ import shlex
 import signal
 import subprocess
 from pathlib import Path
+from typing import IO, Any
 
 from ghdag.dag._nodes import NodeSpec
 
@@ -106,17 +107,13 @@ class LocalProcessHost:
         env: dict[str, str],
         capture_stdout: bool,
     ) -> subprocess.Popen[bytes]:
-        popen_kwargs: dict[str, object] = {
-            "stderr": subprocess.PIPE,
-            "cwd": cwd,
-            "env": env,
-            "start_new_session": True,
-        }
-        if capture_stdout:
-            popen_kwargs["stdout"] = subprocess.PIPE
         return subprocess.Popen(
             ["bash", "-o", "pipefail", "-c", command],
-            **popen_kwargs,  # type: ignore[arg-type]
+            stderr=subprocess.PIPE,
+            cwd=cwd,
+            env=env,
+            start_new_session=True,
+            stdout=subprocess.PIPE if capture_stdout else None,
         )
 
     def terminate_tree(self, proc: subprocess.Popen[bytes]) -> None:
@@ -212,19 +209,18 @@ class SshProcessHost:
             base = Path(cwd) if cwd else Path()
             file_path = Path(stdin_path) if Path(stdin_path).is_absolute() else base / stdin_path
             stdin_opened = open(file_path, "rb")
-            stdin_arg: int | object = stdin_opened
+            stdin_arg: int | IO[Any] = stdin_opened
         else:
             stdin_arg = subprocess.DEVNULL
-        popen_kwargs: dict[str, object] = {
-            "stdin": stdin_arg,
-            "stderr": subprocess.PIPE,
-            "cwd": cwd,
-            "env": dict(os.environ),
-            "start_new_session": True,
-        }
-        if capture_stdout:
-            popen_kwargs["stdout"] = subprocess.PIPE
-        proc = subprocess.Popen(argv, **popen_kwargs)  # type: ignore[arg-type]
+        proc = subprocess.Popen(
+            argv,
+            stdin=stdin_arg,
+            stderr=subprocess.PIPE,
+            cwd=cwd,
+            env=dict(os.environ),
+            start_new_session=True,
+            stdout=subprocess.PIPE if capture_stdout else None,
+        )
         if stdin_opened is not None:
             stdin_opened.close()
         if isinstance(proc.pid, int):

@@ -67,6 +67,7 @@ def _patterns() -> list[tuple[str, re.Pattern[str]]]:
     global _compiled
     if _compiled is None:
         init_redact_patterns(None)
+    assert _compiled is not None
     return _compiled
 
 

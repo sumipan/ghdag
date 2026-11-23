@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import cast
 
 from ghdag.config.env import state_dir as resolve_state_dir
 from ghdag.core.exceptions import CliUsageError, ConfigError
@@ -187,4 +188,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Pipeline state directory (default: derived from --exec-jsonl parent's parent / .pipeline-state)",
     )
     trigger_parser.set_defaults(func=cmd_trigger)
-    return trigger_parser
+    return cast(argparse.ArgumentParser, trigger_parser)

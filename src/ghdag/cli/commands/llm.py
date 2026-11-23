@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import cast
 
 from ghdag.config.env import ghdag_audit_path
 from ghdag.core.exceptions import CliUsageError
@@ -188,4 +189,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Request ID for audit log (propagated from orchestrator)",
     )
     llm_parser.set_defaults(func=cmd_llm)
-    return llm_parser
+    return cast(argparse.ArgumentParser, llm_parser)

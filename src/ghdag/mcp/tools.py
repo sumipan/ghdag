@@ -569,7 +569,7 @@ class McpToolRegistry:
         tasks = []
         for uid in uuids:
             record = records.get(uid)
-            status = _mcp_task_status(
+            task_status = _mcp_task_status(
                 uid,
                 self._runtime.done_dir,
                 running=running,
@@ -577,18 +577,18 @@ class McpToolRegistry:
             done_raw = read_done_content(self._runtime.done_dir, uid)
             done_value, failure_class, cause, retry_policy = _mcp_done_fields(
                 done_raw,
-                status=status,
+                status=task_status,
             )
             entry: dict[str, Any] = {
                 "uuid": uid,
-                "status": status,
+                "status": task_status,
                 "done_value": done_value,
                 "failure_class": failure_class,
                 "cause": cause,
                 "retry_policy": retry_policy,
                 "result_path": record.get("result_path") if record else None,
             }
-            if status == "pending":
+            if task_status == "pending":
                 gate = read_exclusive_gate(Path(self._runtime.queue_dir))
                 if gate is not None:
                     gate_uuid, _ = gate
@@ -598,7 +598,7 @@ class McpToolRegistry:
                 rp = record.get("result_path") if record else None
                 rp_str = rp if isinstance(rp, str) else None
                 entry.update(
-                    self._include_result_fields(status=status, result_path=rp_str)
+                    self._include_result_fields(status=task_status, result_path=rp_str)
                 )
             tasks.append(entry)
         return {"tasks": tasks}

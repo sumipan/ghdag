@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+from typing import cast
 
 from ghdag.core.exceptions import CliUsageError
 from ghdag.workflow.loader import ValidationError, load_workflow_file
@@ -77,4 +78,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Directory containing workflow *.yml / *.yaml files",
     )
     validate_parser.set_defaults(func=cmd_validate)
-    return validate_parser
+    return cast(argparse.ArgumentParser, validate_parser)

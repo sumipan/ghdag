@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path, PurePosixPath
+from typing import cast
 
 from ghdag.config.env import resolve_runtime_paths
 from ghdag.config.env import state_dir as resolve_state_dir
@@ -104,4 +105,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Repo-relative path allowed for ghdag_read (repeatable)",
     )
     mcp_parser.set_defaults(func=cmd_mcp)
-    return mcp_parser
+    return cast(argparse.ArgumentParser, mcp_parser)

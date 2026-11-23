@@ -96,8 +96,8 @@ class McpServer:
             try:
                 message = json.loads(line)
             except json.JSONDecodeError:
-                response = self._error(None, -32700, "Parse error")
-                stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
+                parse_error = self._error(None, -32700, "Parse error")
+                stdout.write(json.dumps(parse_error, ensure_ascii=False) + "\n")
                 stdout.flush()
                 continue
 
@@ -105,8 +105,10 @@ class McpServer:
                 msg_id = message.get("id")
 
             try:
-                response = self.handle(message) if isinstance(message, dict) else self._error(
-                    msg_id, -32600, "Invalid Request",
+                response: dict[str, Any] | None = (
+                    self.handle(message)
+                    if isinstance(message, dict)
+                    else self._error(msg_id, -32600, "Invalid Request")
                 )
             except Exception as exc:
                 logger.exception("MCP serve loop error")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import cast
 
 from ghdag.config.env import state_dir as resolve_state_dir
 from ghdag.core.exceptions import GhdagError
@@ -42,4 +43,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="State directory containing running/ and cancel/ (default: $GHDAG_STATE_DIR or jobs)",
     )
     cancel_parser.set_defaults(func=cmd_cancel)
-    return cancel_parser
+    return cast(argparse.ArgumentParser, cancel_parser)

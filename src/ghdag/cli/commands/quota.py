@@ -6,7 +6,7 @@ import argparse
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ghdag.config.env import resolve_runtime_paths
 from ghdag.config.env import state_dir as resolve_state_dir
@@ -335,4 +335,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Path to done marker directory (default: $GHDAG_STATE_DIR/done or <exec.jsonl parent>/done)",
     )
     quota_status.set_defaults(func=cmd_quota_status)
-    return quota_parser
+    return cast(argparse.ArgumentParser, quota_parser)
