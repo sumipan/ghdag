@@ -253,9 +253,6 @@ class LocalForge:
                 out[field] = raw.get(field, full.get(field))
         return out
 
-    def get_issue(self, number: int) -> dict:
-        return self.issue_get(number)
-
     def list_all_issues(self, state: str = "open") -> list[dict]:
         results: list[dict[str, Any]] = []
         want = state.lower()
@@ -271,9 +268,6 @@ class LocalForge:
 
     def get_last_rate_limit(self) -> dict[str, int] | None:
         return None
-
-    def add_comment(self, number: int, body: str) -> None:
-        self.issue_comment(number, body)
 
     def add_sub_issue(self, parent_number: int, child_id: int) -> dict | None:
         parent = self._load_issue(parent_number)

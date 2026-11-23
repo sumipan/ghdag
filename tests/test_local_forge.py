@@ -251,10 +251,12 @@ def test_list_all_issues_filters_by_state(forge: LocalForge) -> None:
 
 
 
-def test_add_comment_appends_comment(forge: LocalForge) -> None:
-    """Issue #6093 AC5: add_comment delegates to issue_comment."""
+def test_issue_comment_appends_comment(forge: LocalForge) -> None:
+    """Issue #7832: issue_comment returns payload and persists comment body."""
     number = forge.issue_create("c", "b")
-    assert forge.add_comment(number, "hello") is None
+    result = forge.issue_comment(number, "hello")
+    assert isinstance(result, dict)
+    assert result.get("body") == "hello"
     comments = forge.get_issue_comments(number)
     assert comments[-1]["body"] == "hello"
 
@@ -267,7 +269,6 @@ def test_issue_get_returns_id_equal_to_number(forge: LocalForge) -> None:
         "id": number,
         "number": number,
     }
-    assert forge.get_issue(number)["id"] == number
 
 
 def test_sub_issue_add_list_summary(forge: LocalForge) -> None:

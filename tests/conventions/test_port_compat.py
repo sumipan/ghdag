@@ -53,9 +53,7 @@ _FORGEPORT_BASELINE: frozenset[str] = frozenset({
     "dispatch_event",
     "get_rate_limit",
     "graphql",
-    "get_issue",
     "list_all_issues",
-    "add_comment",
     "get_last_rate_limit",
     "add_sub_issue",
     "list_sub_issues",
@@ -259,6 +257,18 @@ class DagHooks(Protocol):
     violations = compat_violations(methods, _DAGHOOKS_BASELINE, changelog, "DagHooks")
     names = [v.split(":")[0] for v in violations]
     assert "DagHooks.on_new_event" not in names
+
+
+def test_forge_exposes_only_canonical_issue_methods() -> None:
+    """Issue #7832: forge implementations must not retain get_issue / add_comment aliases."""
+    from ghdag.core.ports.forge import ForgePort
+    from ghdag.forge.local import LocalForge
+    from ghdag.github_client import GitHubClient
+
+    alias_names = ("get_issue", "add_comment")
+    for cls in (ForgePort, GitHubClient, LocalForge):
+        for name in alias_names:
+            assert not hasattr(cls, name), f"{cls.__name__} still defines {name}"
 
 
 def test_compat_violation_when_changelog_mentions_method_outside_changed() -> None:

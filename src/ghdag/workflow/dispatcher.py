@@ -688,7 +688,7 @@ class WorkflowDispatcher:
                 if action == "reopen":
                     try:
                         github.reopen_issue(issue_number)
-                        github.add_comment(
+                        github.issue_comment(
                             issue_number,
                             self._nonterminal_closed_comment(action, issue_number, "reopened"),
                         )
@@ -726,7 +726,7 @@ class WorkflowDispatcher:
                         continue
 
                     try:
-                        github.add_comment(
+                        github.issue_comment(
                             issue_number,
                             self._nonterminal_closed_comment(
                                 action,
@@ -736,7 +736,7 @@ class WorkflowDispatcher:
                         )
                     except Exception as exc:
                         logger.warning(
-                            "poll_once: add_comment failed for issue #%d (%s: %s) — skipping",
+                            "poll_once: issue_comment failed for issue #%d (%s: %s) — skipping",
                             issue_number,
                             type(exc).__name__,
                             exc,

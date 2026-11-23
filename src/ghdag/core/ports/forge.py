@@ -9,17 +9,14 @@ from typing import Protocol, runtime_checkable
 class ForgePort(Protocol):
     """Abstract interface for forge operations (Issue / PR / label / milestone / Actions).
 
-    Method names follow the primary names of GitHubClient.
-    Dispatcher-oriented aliases (``get_issue``, ``add_comment``, etc.) live on this
-    Protocol alongside the typed forge API (``issue_get``, ``issue_comment``, ...).
+    Method names follow the primary names of GitHubClient
+    (``issue_get``, ``issue_comment``, ...).
     """
 
     @property
     def repo(self) -> str: ...
 
     def issue_get(self, number: int, fields: list[str] | None = None) -> dict: ...
-
-    def get_issue(self, number: int) -> dict: ...
 
     def issue_create(
         self,
@@ -46,8 +43,6 @@ class ForgePort(Protocol):
     def reopen_issue(self, number: int) -> None: ...
 
     def issue_comment(self, number: int, body: str) -> dict: ...
-
-    def add_comment(self, number: int, body: str) -> None: ...
 
     def issue_timeline(self, number: int) -> list[dict]: ...
 
