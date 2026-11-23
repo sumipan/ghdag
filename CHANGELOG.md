@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.153.4 - 2026-11-24
+
+### Changed
+
+- forge: drop get_issue and add_comment aliases
+
 ## 0.153.3 - 2026-11-24
 
 ### Changed
