@@ -90,43 +90,46 @@ class MemoryHooks(DefaultHooks):
         self._on_task_start_extra = None
         self._cond = threading.Condition()
 
-    def _notify(self) -> None:
-        with self._cond:
-            self._cond.notify_all()
-
     def wait_for(self, predicate: Callable[[], bool]) -> bool:
         with self._cond:
             return self._cond.wait_for(predicate)
 
     def on_task_start(self, uuid, task):
-        self.starts.append((uuid, task))
-        if self._on_task_start_extra:
-            self._on_task_start_extra(uuid, task)
-        self._notify()
+        with self._cond:
+            self.starts.append((uuid, task))
+            if self._on_task_start_extra:
+                self._on_task_start_extra(uuid, task)
+            self._cond.notify_all()
 
     def on_task_success(self, uuid, task, metrics: TaskMetrics):
-        self.successes.append((uuid, task, metrics))
-        self._notify()
+        with self._cond:
+            self.successes.append((uuid, task, metrics))
+            self._cond.notify_all()
 
     def on_task_failure(self, uuid, task, returncode, stderr_text, metrics):
-        self.failures.append((uuid, task, returncode, stderr_text, metrics))
-        self._notify()
+        with self._cond:
+            self.failures.append((uuid, task, returncode, stderr_text, metrics))
+            self._cond.notify_all()
 
     def on_task_rejected(self, uuid, task, retry_depth, is_final, metrics):
-        self.rejected_events.append((uuid, task, retry_depth, is_final, metrics))
-        self._notify()
+        with self._cond:
+            self.rejected_events.append((uuid, task, retry_depth, is_final, metrics))
+            self._cond.notify_all()
 
     def on_task_empty_result(self, uuid, task, stderr_text, metrics):
-        self.empty_results.append((uuid, task, stderr_text, metrics))
-        self._notify()
+        with self._cond:
+            self.empty_results.append((uuid, task, stderr_text, metrics))
+            self._cond.notify_all()
 
     def on_task_dep_failed(self, uuid, task, failed_dep):
-        self.dep_failed.append((uuid, task, failed_dep))
-        self._notify()
+        with self._cond:
+            self.dep_failed.append((uuid, task, failed_dep))
+            self._cond.notify_all()
 
     def on_shutdown(self, signum):
-        self.shutdown_signum = signum
-        self._notify()
+        with self._cond:
+            self.shutdown_signum = signum
+            self._cond.notify_all()
 
     def check_rejected(self, result_path: str) -> bool:
         return self.rejected
