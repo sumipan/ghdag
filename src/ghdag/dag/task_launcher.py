@@ -1284,8 +1284,7 @@ class TaskLauncher:
         if not decision.fanout_spawn or metrics is None:
             return False
         fanout_spec = parse_fanout_spec(effective_result_path)
-        if fanout_spec is None:
-            return False
+        assert fanout_spec is not None
         try:
             self._fanout_manager.spawn(
                 uuid,

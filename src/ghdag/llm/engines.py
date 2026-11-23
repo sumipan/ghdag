@@ -17,6 +17,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 
 from ghdag.config.env import (
     engine_isolation_enabled,
@@ -549,7 +550,7 @@ def _run_with_stall_guard(
     SIGTERMed once it has stalled for ``stall_sec``.
     """
     input_text = run_kwargs.get("input")
-    timeout = run_kwargs.get("timeout")
+    timeout = cast(int | float | None, run_kwargs.get("timeout"))
     popen_kwargs: dict = {
         "stdin": subprocess.PIPE if input_text is not None else None,
         "stdout": subprocess.PIPE,
@@ -589,9 +590,10 @@ def _run_with_stall_guard(
                 if remaining <= 0:
                     proc.kill()
                     out, err = proc.communicate()
+                    assert timeout is not None
                     raise subprocess.TimeoutExpired(
                         cmd,
-                        timeout if isinstance(timeout, (int, float)) else 0.0,
+                        timeout,
                         output=out,
                         stderr=_append_stall_lines(err, tracker.events),
                     )
