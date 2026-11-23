@@ -112,8 +112,8 @@ class TestReopenAction:
         results = dispatcher.poll_once()
 
         github_client.reopen_issue.assert_called_once_with(42)
-        github_client.add_comment.assert_called_once()
-        assert "<!-- ghdag:nonterminal_closed:reopen:42 -->" in github_client.add_comment.call_args[0][1]
+        github_client.issue_comment.assert_called_once()
+        assert "<!-- ghdag:nonterminal_closed:reopen:42 -->" in github_client.issue_comment.call_args[0][1]
         assert results == []
 
 
@@ -163,8 +163,8 @@ class TestTriggerAction:
         assert matches[0]["handler"] == "merge"
         assert matches[0]["_trigger"].label == "issuesmith:merge-ready"
         github_client.reopen_issue.assert_not_called()
-        github_client.add_comment.assert_called_once()
-        assert "<!-- ghdag:nonterminal_closed:trigger:88 -->" in github_client.add_comment.call_args[0][1]
+        github_client.issue_comment.assert_called_once()
+        assert "<!-- ghdag:nonterminal_closed:trigger:88 -->" in github_client.issue_comment.call_args[0][1]
 
         result = dispatcher.dispatch(
             matches[0]["_issue_data"],

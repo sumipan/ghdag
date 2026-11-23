@@ -68,7 +68,7 @@ class TestTC9NonIntIssueNumberSkipsComment:
 
         dispatcher.run(max_iterations=1)
 
-        github_client.add_comment.assert_not_called()
+        github_client.issue_comment.assert_not_called()
 
 
 def test_github_issue_port_spec_restricts_unknown_methods():

@@ -1113,11 +1113,6 @@ class GitHubClient:
             }
         return {"total": 0, "completed": 0, "percent_completed": 0}
 
-    # --- ForgePort dispatcher-oriented aliases ---
-
-    def get_issue(self, number: int) -> dict:
-        return cast(dict[str, Any], self.issue_get(number))
-
     def list_issues(self, label: str, state: str = "open") -> list[dict]:
         qs = urllib.parse.urlencode({"labels": label, "state": state, "per_page": "100"})
         return cast(
@@ -1142,9 +1137,6 @@ class GitHubClient:
 
     def update_label(self, number: int, remove: str, add: str) -> None:
         self.issue_update(number, labels_remove=[remove], labels_add=[add])
-
-    def add_comment(self, number: int, body: str) -> None:
-        self.issue_comment(number, body)
 
     def remove_label(self, number: int, label: str) -> None:
         self.issue_update(number, labels_remove=[label])

@@ -39,7 +39,7 @@ handlers:
 
         issue = {"number": 2876, "labels": [], "title": "test", "body": ""}
         mock_github = MagicMock()
-        mock_github.get_issue.return_value = issue
+        mock_github.issue_get.return_value = issue
 
         args = MagicMock()
         args.workflows_dir = str(workflows_dir)
@@ -56,6 +56,7 @@ handlers:
         ):
             cmd_trigger(args)
 
+        mock_github.issue_get.assert_called_once_with(2876)
         audit_path = exec_jsonl.parent / "audit.jsonl"
         assert audit_path.exists()
         records = [json.loads(line) for line in audit_path.read_text(encoding="utf-8").splitlines() if line.strip()]
