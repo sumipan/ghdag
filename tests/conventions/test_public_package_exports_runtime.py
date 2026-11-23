@@ -9,7 +9,6 @@ import pytest
 
 # Issue sumipan/nexus#6587 — runtime modules and their public ``__all__`` contracts.
 CURATED_RUNTIME_EXPORTS: dict[str, frozenset[str]] = {
-    "ghdag.audit": frozenset(),
     "ghdag.cleanup": frozenset(),
     "ghdag.config": frozenset(),
     "ghdag.core": frozenset(),
@@ -89,8 +88,6 @@ CURATED_RUNTIME_EXPORTS: dict[str, frozenset[str]] = {
 
 # package import path, symbol, definition module for ``from ... import symbol``.
 REMOVED_REEXPORTS: tuple[tuple[str, str, str], ...] = (
-    ("ghdag.audit", "emit_span", "ghdag.audit.span"),
-    ("ghdag.audit", "make_span_id", "ghdag.audit.span"),
     ("ghdag.cleanup", "cleanup_queue", "ghdag.cleanup.orchestrator"),
     ("ghdag.cleanup", "QUEUE_FILE_RE", "ghdag.core.vocabulary"),
     ("ghdag.dag", "DefaultHooks", "ghdag.dag.hooks"),

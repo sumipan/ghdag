@@ -23,7 +23,6 @@ __all__ = [
     "ghdag_token_warn_threshold",
     "ghdag_safe_default_permission",
     "ghdag_llm_models",
-    "latency_span_path",
     "session_compaction_enabled",
     "engine_isolation_enabled",
     "enable_git",
@@ -63,11 +62,6 @@ def github_repositories_raw() -> str:
 def ghdag_audit_path() -> str | None:
     """Return ``GHDAG_AUDIT_PATH`` if set."""
     return os.environ.get("GHDAG_AUDIT_PATH")
-
-
-def latency_span_path() -> str | None:
-    """Return ``LATENCY_SPAN_PATH`` if set (optional span JSONL output override)."""
-    return os.environ.get("LATENCY_SPAN_PATH")
 
 
 def ghdag_token_warn_threshold() -> str | None:
