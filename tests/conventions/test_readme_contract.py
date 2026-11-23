@@ -20,13 +20,12 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _README = _REPO_ROOT / "README.md"
 _PYPROJECT = _REPO_ROOT / "pyproject.toml"
 _LOCALFORGE_MARKER = "<!-- ghdag-localforge-quick-start -->"
-_DOCUMENTED_TWO_LEVEL_PACKAGES = frozenset({"core.ports", "files.links", "llm.adapters"})
 _FENCE_START = re.compile(r"^```bash\s*$")
 _FENCE_END = re.compile(r"^```\s*$")
 _TABLE_CELL = re.compile(r"^\|\s*`([^`]+)`\s*\|")
 _CLI_CMD = re.compile(r"`ghdag\s+([^`]+)`")
 _PACKAGE_ROW = re.compile(
-    r"^\|\s*`ghdag\.(?P<package>[a-z_.]+)`\s*\|\s*(?P<symbols>.+?)\s*\|\s*$"
+    r"^\|\s*`(?P<module>ghdag(?:\.[a-z_.]+)?)`\s*\|\s*(?P<symbols>.+?)\s*\|\s*$"
 )
 _SYMBOL = re.compile(r"`([^`]+)`")
 _EXCEPTION_ROW = re.compile(
@@ -81,36 +80,6 @@ def _dependency_tokens(cell: str) -> set[str]:
     return {spec.strip().lower() for spec in _DEP_SPEC.findall(cell)}
 
 
-def _runtime_package_exports() -> dict[str, frozenset[str]]:
-    root = Path(ghdag.__file__).resolve().parent
-    prefix = ghdag.__name__ + "."
-    rows: dict[str, frozenset[str]] = {}
-    for path in sorted(root.glob("*.py")):
-        if path.name.startswith("_"):
-            continue
-        mod = importlib.import_module(f"ghdag.{path.stem}")
-        names = getattr(mod, "__all__", None)
-        if names:
-            rows[path.stem] = frozenset(names)
-    for _, modname, ispkg in pkgutil.walk_packages([str(root)], prefix=prefix):
-        if not ispkg or modname.endswith(".__main__"):
-            continue
-        rel = modname.removeprefix("ghdag.")
-        if not rel:
-            continue
-        if rel.count(".") == 0:
-            pass
-        elif rel not in _DOCUMENTED_TWO_LEVEL_PACKAGES:
-            continue
-        mod = importlib.import_module(modname)
-        names = getattr(mod, "__all__", None)
-        if not names:
-            continue
-        pkg = modname.removeprefix("ghdag.")
-        rows[pkg] = frozenset(names)
-    return rows
-
-
 def _parse_public_api_table(readme: str) -> dict[str, frozenset[str]]:
     section = _section(readme, "### Package `__all__`")
     rows: dict[str, frozenset[str]] = {}
@@ -118,10 +87,24 @@ def _parse_public_api_table(readme: str) -> dict[str, frozenset[str]]:
         match = _PACKAGE_ROW.match(line)
         if not match:
             continue
-        package = match.group("package")
+        module_name = match.group("module")
+        package = (
+            "ghdag"
+            if module_name == "ghdag"
+            else module_name.removeprefix("ghdag.")
+        )
         symbols = frozenset(_SYMBOL.findall(match.group("symbols")))
         rows[package] = symbols
     return rows
+
+
+def _runtime_public_api_exports(package: str) -> frozenset[str]:
+    if package == "ghdag":
+        return frozenset(ghdag.__all__)
+    mod = importlib.import_module(f"ghdag.{package}")
+    names = getattr(mod, "__all__", None)
+    assert names is not None, f"ghdag.{package} missing __all__"
+    return frozenset(names)
 
 
 def _owned_env_variable_names() -> set[str]:
@@ -197,6 +180,25 @@ def _parse_exception_table(section: str) -> dict[str, tuple[str, int]]:
     return rows
 
 
+def _parse_non_ghdag_exception_table(section: str) -> frozenset[str]:
+    names: set[str] = set()
+    in_secondary = False
+    for line in section.splitlines():
+        if line.startswith("Two exceptions"):
+            in_secondary = True
+            continue
+        if in_secondary and line.startswith("### "):
+            break
+        if not in_secondary or not line.startswith("|"):
+            continue
+        if "---" in line or "Exception | Parent" in line:
+            continue
+        match = _EXCEPTION_ROW.match(line)
+        if match:
+            names.add(match.group(1))
+    return frozenset(names)
+
+
 def _localforge_bash_block(readme: str) -> str:
     quick = _section(readme, "## Quick Start", stop_at="## CLI Reference")
     marker_at = quick.find(_LOCALFORGE_MARKER)
@@ -242,16 +244,15 @@ def test_readme_release_metadata_matches_pyproject() -> None:
 
 @pytest.mark.readme_contract
 def test_readme_public_api_inventory_matches_package_exports() -> None:
-    """Issue sumipan/nexus#7854 — Public API table matches one-segment ``__all__``."""
+    """Issue sumipan/nexus#7854 — Public API table matches runtime ``__all__`` exports."""
     documented = _parse_public_api_table(_readme_text())
-    runtime = _runtime_package_exports()
-    assert documented == runtime, (
-        f"package key mismatch: readme-only={set(documented) - set(runtime)} "
-        f"runtime-only={set(runtime) - set(documented)}"
-    )
-    for pkg, symbols in runtime.items():
-        assert documented[pkg] == symbols, pkg
-        mod = importlib.import_module(f"ghdag.{pkg}")
+    assert documented, "README missing Package __all__ rows"
+    for pkg, symbols in documented.items():
+        runtime = _runtime_public_api_exports(pkg)
+        assert symbols == runtime, (
+            f"{pkg}: readme-only={symbols - runtime} runtime-only={runtime - symbols}"
+        )
+        mod = ghdag if pkg == "ghdag" else importlib.import_module(f"ghdag.{pkg}")
         for symbol in symbols:
             assert hasattr(mod, symbol), f"ghdag.{pkg}.{symbol} missing"
 
@@ -287,6 +288,17 @@ def test_readme_error_inventory_matches_runtime_exception_types() -> None:
         cls = ghdag_errors[name]
         assert getattr(cls, "code", None) == code, name
         assert getattr(cls, "exit_code", None) == exit_code, name
+    non_ghdag_documented = _parse_non_ghdag_exception_table(err)
+    assert non_ghdag_documented == frozenset(
+        name for name in ("OwnershipError", "ConflictError") if name in runtime
+    ), (
+        f"non-GhdagError inventory mismatch: documented={sorted(non_ghdag_documented)} "
+        f"runtime={sorted(name for name, cls in runtime.items() if not issubclass(cls, GhdagError))}"
+    )
+    for name in non_ghdag_documented:
+        cls = runtime[name]
+        assert not issubclass(cls, GhdagError), name
+        assert cls.__module__.startswith("ghdag"), name
 
 
 @pytest.mark.readme_contract

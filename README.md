@@ -25,6 +25,8 @@ Intake and execution are separate processes that share nothing but files on disk
 
 [llms.txt](./llms.txt) is a short overview for LLM readers. [TESTING.md](./TESTING.md) describes what the tests pin. [CHANGELOG.md](./CHANGELOG.md) lists every release.
 
+Inventory rows in this README (Status, Installation, Public API, Configuration, Error Reference, and the LocalForge quick-start marker) are checked against the installed package by `tests/conventions/test_readme_contract.py` (`@pytest.mark.readme_contract`).
+
 ## Installation
 
 Prerequisites:
@@ -302,6 +304,7 @@ The top-level package exports one name, `GhdagError` (the base class of every gh
 
 | Package | Public symbols |
 |---|---|
+| `ghdag` | `GhdagError` |
 | `ghdag.cli` | `main` |
 | `ghdag.core.ports` | `ForgePort` |
 | `ghdag.dag` | `AuditHooks`, `DagConfig`, `DagEngine`, `DagHooks`, `DONE_SUCCESS`, `FanOutSpec`, `PIPELINE_WAIT_QUOTA`, `Task`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
