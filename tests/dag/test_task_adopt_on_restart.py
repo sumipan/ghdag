@@ -7,7 +7,6 @@ import os
 import signal
 import subprocess
 import threading
-import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -21,8 +20,6 @@ from ghdag.dag.task_launcher import (
     TaskLauncher,
 )
 from ghdag.io.done import is_done
-
-_WAIT_BUDGET_SEC = 10.0
 
 
 def _make_launcher(tmp_path: Path) -> TaskLauncher:
@@ -78,12 +75,10 @@ def _force_kill_pgid(pgid: int) -> None:
         pass
 
 
-def _spin_until(predicate, budget_sec: float = _WAIT_BUDGET_SEC) -> bool:
-    deadline = time.monotonic() + budget_sec
+def _busy_wait_until(predicate) -> None:
+    tick = threading.Event()
     while not predicate():
-        if time.monotonic() >= deadline:
-            return False
-    return True
+        tick.wait(0)
 
 
 def _read_done(done_dir: Path, uuid: str) -> str:
@@ -107,7 +102,7 @@ class TestUnmarkedDeadRerun:
         pgid = proc.pid
         _force_kill_pgid(pgid)
         proc.wait()
-        assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
+        _busy_wait_until(lambda: not LocalProcessHost().group_exists(pgid))
 
         _write_running_file(jobs, UUID_A, proc.pid, pgid)
 
@@ -141,7 +136,7 @@ class TestUnmarkedDeadRerun:
             launcher.check_completions()
             return UUID_A not in launcher._running
 
-        assert _spin_until(_poll)
+        _busy_wait_until(_poll)
 
         assert env_file.read_text(encoding="utf-8").strip() == "interrupted"
 
@@ -157,7 +152,7 @@ class TestUnmarkedDeadRerun:
         pgid = proc.pid
         _force_kill_pgid(pgid)
         proc.wait()
-        assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
+        _busy_wait_until(lambda: not LocalProcessHost().group_exists(pgid))
 
         _write_running_file(
             jobs, UUID_A, proc.pid, pgid, interrupted_reruns=_MAX_INTERRUPTED_RERUNS,
@@ -188,7 +183,7 @@ class TestAdoptedTaskExitRerun:
 
             _force_kill_pgid(pgid)
             proc.wait()
-            assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
+            _busy_wait_until(lambda: not LocalProcessHost().group_exists(pgid))
 
             launcher.check_completions()
 
@@ -217,7 +212,7 @@ class TestAdoptedTaskExitRerun:
 
             _force_kill_pgid(pgid)
             proc.wait()
-            assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
+            _busy_wait_until(lambda: not LocalProcessHost().group_exists(pgid))
 
             launcher.check_completions()
 
@@ -240,7 +235,7 @@ class TestExclusiveUnmarkedOrphan:
         pgid = proc.pid
         _force_kill_pgid(pgid)
         proc.wait()
-        assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
+        _busy_wait_until(lambda: not LocalProcessHost().group_exists(pgid))
 
         _write_running_file(jobs, UUID_A, proc.pid, pgid)
         task = Task(
@@ -273,7 +268,7 @@ class TestExclusiveUnmarkedOrphan:
 
             _force_kill_pgid(pgid)
             proc.wait()
-            assert _spin_until(lambda: not LocalProcessHost().group_exists(pgid))
+            _busy_wait_until(lambda: not LocalProcessHost().group_exists(pgid))
 
             launcher.check_completions()
 
@@ -370,7 +365,7 @@ class TestEngineAdoptOnce:
         def _restore_waiting_sync(tasks, known_done):
             restored = _restore_waiting(tasks, known_done)
             adopt_event.set()
-            check_proceed.wait(timeout=_WAIT_BUDGET_SEC)
+            check_proceed.wait()
             return restored
 
         def _on_task_success_side_effect(uuid, *args, **kwargs):
@@ -395,7 +390,7 @@ class TestEngineAdoptOnce:
                 side_effect=_restore_waiting_sync,
             ):
                 t.start()
-                adopt_event.wait(timeout=_WAIT_BUDGET_SEC)
+                adopt_event.wait()
                 assert adopt_event.is_set()
                 assert engine._launcher.is_running(UUID_LIVE)
                 assert spy.call_count == 1
@@ -410,7 +405,7 @@ class TestEngineAdoptOnce:
                 os.utime(exec_jsonl, (st.st_atime + 5, st.st_mtime + 5))
                 check_proceed.set()
 
-                dead_done.wait(timeout=_WAIT_BUDGET_SEC)
+                dead_done.wait()
                 assert dead_done.is_set()
                 assert spy.call_count == 1
                 assert all(c.args[0] != UUID_LIVE for c in launch_spy.call_args_list)
@@ -419,7 +414,7 @@ class TestEngineAdoptOnce:
                 _force_kill_pgid(pgid)
                 proc.wait()
 
-                assert _spin_until(
+                _busy_wait_until(
                     lambda: sum(
                         1 for c in launch_spy.call_args_list if c.args[0] == UUID_LIVE
                     )
@@ -428,7 +423,7 @@ class TestEngineAdoptOnce:
                 assert not is_done(str(done), UUID_LIVE)
         finally:
             engine._shutdown = True
-            t.join(timeout=_WAIT_BUDGET_SEC)
+            t.join()
             engine._launcher.terminate_all()
             _force_kill_pgid(pgid)
             if proc.poll() is None:

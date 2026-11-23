@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import io
-import time
 from unittest.mock import MagicMock
+
+from ghdag_dag_conftest_helpers import RUNNING_MONO_START, RUNNING_WALL_START
 
 from ghdag.core.models.metrics import FailureClass
 from ghdag.core.vocabulary import (
@@ -59,8 +60,8 @@ def _make_running_task(uuid="fail-uuid", returncode=1, stderr=b"some error"):
         uuid=uuid,
         task=task,
         proc=proc,
-        started_at=time.time() - 0.1,
-        started_at_mono=time.monotonic() - 0.1,
+        started_at=RUNNING_WALL_START,
+        started_at_mono=RUNNING_MONO_START,
         stderr_buf=io.BytesIO(stderr),
         retry_depth=0,
     )
@@ -84,8 +85,8 @@ def test_retryable_engine_error_marks_done_for_retry(tmp_path):
         uuid=task.uuid,
         task=task,
         proc=proc,
-        started_at=time.time() - 0.1,
-        started_at_mono=time.monotonic() - 0.1,
+        started_at=RUNNING_WALL_START,
+        started_at_mono=RUNNING_MONO_START,
         stderr_buf=io.BytesIO(b""),
         stdout_buf=io.BytesIO(stdout),
         retry_depth=0,
@@ -112,8 +113,8 @@ def _make_shell_running_task(uuid, returncode, stdout, result_path, stderr=b""):
         uuid=uuid,
         task=task,
         proc=proc,
-        started_at=time.time() - 0.1,
-        started_at_mono=time.monotonic() - 0.1,
+        started_at=RUNNING_WALL_START,
+        started_at_mono=RUNNING_MONO_START,
         stderr_buf=io.BytesIO(stderr),
         stdout_buf=io.BytesIO(stdout),
         retry_depth=0,

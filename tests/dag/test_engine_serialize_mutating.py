@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from pathlib import Path
-from unittest.mock import MagicMock
+
+from ghdag_dag_conftest_helpers import MemoryHooks, _run_engine_with_timeout
 
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig
@@ -37,14 +37,6 @@ def _make_config(
     return DagConfig(**defaults)
 
 
-def _run_engine_with_timeout(engine: DagEngine, timeout: float = 10.0) -> None:
-    t = threading.Thread(target=engine.run, daemon=True)
-    t.start()
-    t.join(timeout=timeout)
-    engine._shutdown = True
-    t.join(timeout=2.0)
-
-
 def _mutating_task(uuid: str, command: str, **extra) -> dict:
     return {
         "uuid": uuid,
@@ -63,24 +55,23 @@ class TestSerializeMutatingBasic:
     """AC: mutating tasks run one at a time when serialize_mutating=True."""
 
 
-    def test_non_mutating_tasks_run_in_parallel(self, tmp_path):
+    def test_non_mutating_tasks_run_in_parallel(self, tmp_path, fake_clock):
         records = [
             _plain_task("n1", "sleep 0.8"),
             _plain_task("n2", "sleep 0.8"),
             _plain_task("n3", "sleep 0.8"),
         ]
         config = _make_config(tmp_path, records, serialize_mutating=True)
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         t = threading.Thread(target=engine.run, daemon=True)
         t.start()
-        time.sleep(0.3)
+        hooks.wait_for(lambda: len(hooks.starts) >= 3)
 
         running_count = len(engine._running)
         engine._shutdown = True
-        t.join(timeout=5.0)
+        t.join()
 
         assert running_count == 3, f"Expected 3 non-mutating tasks in parallel, got {running_count}"
 
@@ -94,8 +85,7 @@ class TestSerializeMutatingSequentialLaunch:
             _mutating_task("m2", "sleep 0.2"),
         ]
         config = _make_config(tmp_path, records, serialize_mutating=True)
-        hooks = MagicMock()
-        hooks.check_rejected.return_value = False
+        hooks = MemoryHooks()
         engine = DagEngine(config, hooks)
 
         _run_engine_with_timeout(engine, timeout=10.0)
@@ -103,5 +93,3 @@ class TestSerializeMutatingSequentialLaunch:
         succeeded = load_succeeded_from_dir(config.exec_done_dir)
         assert "m1" in succeeded
         assert "m2" in succeeded
-
-

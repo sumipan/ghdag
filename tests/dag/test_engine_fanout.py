@@ -5,8 +5,9 @@ from __future__ import annotations
 import io
 import json
 import subprocess
-import time
 from pathlib import Path
+
+from ghdag_dag_conftest_helpers import RUNNING_MONO_START, RUNNING_WALL_START
 
 from ghdag.core.models.metrics import FailureClass, TaskMetrics
 from ghdag.dag.engine import DagEngine
@@ -67,11 +68,11 @@ def _make_engine(tmp_path: Path) -> tuple[DagEngine, _CapturingHooks, Path]:
 
 
 def _base_metrics(uuid: str) -> TaskMetrics:
-    t = time.time()
+    started = RUNNING_WALL_START
     return TaskMetrics(
         uuid=uuid, engine=None, model=None,
         wall_time_sec=1.0, token_count=None, status="success",
-        started_at=t, finished_at=t,
+        started_at=started, finished_at=started,
     )
 
 
@@ -86,8 +87,8 @@ def _make_completed_running_task(uuid: str, task: Task, returncode: int = 0,
         uuid=uuid,
         task=task,
         proc=proc,
-        started_at=time.time(),
-        started_at_mono=time.monotonic(),
+        started_at=RUNNING_WALL_START,
+        started_at_mono=RUNNING_MONO_START,
         stderr_buf=io.BytesIO(b""),
         retry_depth=task.retry,
         stdout_buf=stdout_buf,

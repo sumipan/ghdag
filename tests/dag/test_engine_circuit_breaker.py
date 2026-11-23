@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import io
 import json
-import time
 from unittest.mock import MagicMock, patch
+
+from ghdag_dag_conftest_helpers import RUNNING_MONO_START, RUNNING_WALL_START
 
 from ghdag.dag.circuit_breaker import CircuitBreakerPolicy
 from ghdag.dag.engine import DagEngine
@@ -29,8 +30,8 @@ def _make_running_task(uuid="cb-uuid", returncode=1, stderr=b""):
         uuid=uuid,
         task=task,
         proc=proc,
-        started_at=time.time() - 0.1,
-        started_at_mono=time.monotonic() - 0.1,
+        started_at=RUNNING_WALL_START,
+        started_at_mono=RUNNING_MONO_START,
         stderr_buf=io.BytesIO(stderr),
         retry_depth=0,
     )
@@ -49,11 +50,10 @@ def _make_engine(tmp_path):
 class TestCircuitBreakerPolicy:
 
 
-    def test_failure_outside_window_resets_counter(self):
+    def test_failure_outside_window_resets_counter(self, fake_clock):
         cb = CircuitBreakerPolicy(failure_window_sec=0.0, max_consecutive_failures=2)
         cb.record_failure()
-        # Artificially age the last failure time past the window
-        cb._last_failure_time = time.monotonic() - 1.0
+        fake_clock.advance(1.0)
         cb.record_failure()
         assert not cb.tripped
 
@@ -80,10 +80,11 @@ class TestTaskLauncherCircuitBreakerIntegration:
 
     @patch("ghdag.dag.task_launcher.state_mark_done")
     @patch("ghdag.dag.task_launcher._extract_tee_target", return_value=None)
-    def test_timeout_increments_circuit_breaker(self, mock_tee, mock_mark_done, tmp_path):
+    def test_timeout_increments_circuit_breaker(self, mock_tee, mock_mark_done, tmp_path, fake_clock):
         engine, hooks = _make_engine(tmp_path)
         rt = _make_running_task(returncode=-15)
-        rt.term_sent_at = time.monotonic() - 1.0
+        fake_clock.advance(1.0)
+        rt.term_sent_at = fake_clock.monotonic() - 1.0
         engine._launcher._running[rt.uuid] = rt
 
         engine._launcher.check_completions()
@@ -136,5 +137,3 @@ class TestTaskLauncherCircuitBreakerIntegration:
         tripped = [e for e in events if e.get("event_type") == "circuit_breaker_tripped"]
         assert len(tripped) == 1
         assert tripped[0]["consecutive_failures"] == 1
-
-

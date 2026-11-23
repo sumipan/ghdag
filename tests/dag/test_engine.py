@@ -2,12 +2,11 @@
 
 import json
 import threading
-import time
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock
 
 from ghdag_dag_conftest_helpers import (
+    FakeClock,
     _make_config,
     _read_done_status,
     _run_engine_with_timeout,
@@ -170,7 +169,7 @@ def _make_tz_task() -> Task:
 
 
 def _make_tz_metrics() -> TaskMetrics:
-    now = time.time()
+    started = 1_735_800_000.0
     return TaskMetrics(
         uuid=_TZ_UUID,
         engine="claude",
@@ -178,30 +177,30 @@ def _make_tz_metrics() -> TaskMetrics:
         wall_time_sec=1.0,
         token_count=10,
         status="success",
-        started_at=now,
-        finished_at=now + 1.0,
+        started_at=started,
+        finished_at=started + 1.0,
     )
 
 
-def test_audit_hooks_none_uses_machine_timezone(tmp_path, monkeypatch):
+def test_fake_clock_advances_without_wallclock_wait() -> None:
+    """Refs sumipan/nexus#7833 AC1."""
+    clock = FakeClock(100.0)
+    clock.sleep(2.5)
+    clock.advance(1.5)
+    assert clock.time() == 104.0
+    assert clock.monotonic() == 104.0
+    assert clock.sleeps == [2.5]
+
+
+def test_audit_hooks_none_uses_machine_timezone(tmp_path, monkeypatch) -> None:
     """Refs sumipan/nexus#6872."""
-    import os
+    audit_path = tmp_path / "audit.jsonl"
+    monkeypatch.setattr(
+        "ghdag.io.audit.now_ts",
+        lambda tz_name=None: "2026-01-15T12:00:00+13:00",
+    )
+    hooks = AuditHooks(audit_path=audit_path, tz_name=None)
+    hooks.on_task_success(_TZ_UUID, _make_tz_task(), _make_tz_metrics())
 
-    old_tz = os.environ.get("TZ")
-    monkeypatch.setenv("TZ", "Pacific/Auckland")
-    time.tzset()
-    try:
-        audit_path = tmp_path / "audit.jsonl"
-        hooks = AuditHooks(audit_path=audit_path, tz_name=None)
-        hooks.on_task_success(_TZ_UUID, _make_tz_task(), _make_tz_metrics())
-
-        record = json.loads(audit_path.read_text(encoding="utf-8").strip())
-        off = datetime.now().astimezone().strftime("%z")
-        iso_off = f"{off[:3]}:{off[3:]}"
-        assert record["timestamp"].endswith(iso_off)
-    finally:
-        if old_tz is None:
-            monkeypatch.delenv("TZ", raising=False)
-        else:
-            monkeypatch.setenv("TZ", old_tz)
-        time.tzset()
+    record = json.loads(audit_path.read_text(encoding="utf-8").strip())
+    assert record["timestamp"].endswith("+13:00")

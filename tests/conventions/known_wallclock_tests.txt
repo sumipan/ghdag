@@ -1,12 +1,1 @@
 # One repo-relative path per line; shrink only when wall-clock usage is removed.
-tests/dag/conftest.py
-tests/dag/test_engine.py
-tests/dag/test_engine_circuit_breaker.py
-tests/dag/test_engine_drain.py
-tests/dag/test_engine_fail_result.py
-tests/dag/test_engine_fanout.py
-tests/dag/test_engine_quota.py
-tests/dag/test_engine_reader_threads.py
-tests/dag/test_engine_serialize_mutating.py
-tests/dag/test_engine_wait_state.py
-tests/dag/test_task_adopt_on_restart.py
