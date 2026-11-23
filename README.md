@@ -11,19 +11,21 @@ Intake and execution are separate processes that share nothing but files on disk
 ## Status
 
 ![stability](https://img.shields.io/badge/stability-pre--1.0-orange)
-![version](https://img.shields.io/badge/version-v0.153.0-blue)
+![version](https://img.shields.io/badge/version-v0.153.3-blue)
 ![python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 | Item | Value |
 |---|---|
-| Current release | **v0.153.0** (`pyproject.toml` `version = "0.153.0"`) |
+| Current release | **v0.153.3** (`pyproject.toml` `version = "0.153.3"`) |
 | Stability | pre-1.0 (`0.Y.Z`): public symbols, CLI options and file formats may change in any minor release |
 | Python | `>=3.10` (classifiers: 3.10, 3.11, 3.12, 3.13) |
 | Platform | POSIX (`fcntl` locks, process groups) |
 | License | MIT (SPDX: `MIT`) |
 
 [llms.txt](./llms.txt) is a short overview for LLM readers. [TESTING.md](./TESTING.md) describes what the tests pin. [CHANGELOG.md](./CHANGELOG.md) lists every release.
+
+Inventory rows in this README (Status, Installation, Public API, Configuration, Error Reference, and the LocalForge quick-start marker) are checked against the installed package by `tests/conventions/test_readme_contract.py`.
 
 ## Installation
 
@@ -36,7 +38,7 @@ Prerequisites:
 Install a release tag from GitHub:
 
 ```bash
-pip install "git+https://github.com/sumipan/ghdag.git@v0.153.0"
+pip install "git+https://github.com/sumipan/ghdag.git@v0.153.3"
 ghdag version
 ```
 
@@ -51,8 +53,8 @@ pip install -e ".[dev]"
 | Item | Value |
 |---|---|
 | Console script | `ghdag` -> `ghdag.cli:main` (also `python -m ghdag`) |
-| Runtime dependencies | `watchdog>=4.0.0`, `pyyaml>=6.0` |
-| `dev` extra | `pytest>=7.0.0`, `pytest-cov>=4.0.0`, `mypy>=1.10.0`, `ruff>=0.4.0`, `import-linter>=2.0`, `types-PyYAML>=6.0` |
+| Runtime dependencies | `pyyaml>=6.0` |
+| `dev` extra | `pytest>=7.0.0`, `pytest-timeout>=2.3.1`, `pytest-cov>=4.0.0`, `mypy>=1.10.0`, `ruff>=0.4.0`, `import-linter>=2.0`, `types-PyYAML>=6.0`, `jsonschema>=4.0` |
 | Package data | `ghdag/py.typed`, `ghdag/ui/static/*` |
 
 GitHub access uses the standard library (`urllib`). ghdag needs neither `requests` nor the `gh` CLI.
@@ -302,15 +304,13 @@ The top-level package exports one name, `GhdagError` (the base class of every gh
 
 | Package | Public symbols |
 |---|---|
+| `ghdag` | `GhdagError` |
 | `ghdag.cli` | `main` |
-| `ghdag.core.ports` | `ForgePort` |
 | `ghdag.dag` | `AuditHooks`, `DagConfig`, `DagEngine`, `DagHooks`, `DONE_SUCCESS`, `FanOutSpec`, `PIPELINE_WAIT_QUOTA`, `Task`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
 | `ghdag.files` | `md_read`, `md_write` |
-| `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
 | `ghdag.forge` | `ForgePort`, `GitHubApiError`, `GitHubClient`, `LocalForge`, `get_forge` |
 | `ghdag.io` | `done`, `exec_jsonl`, `queue`, `redact`, `sessions` |
 | `ghdag.llm` | `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PERMISSIONS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `Permission`, `LLMResult`, `SessionRecord`, `TEXT_ONLY`, `DANGEROUS_FULL_ACCESS`, `call`, `get_engine_models`, `list_engines`, `validate_engine_model` |
-| `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
 | `ghdag.metrics` | `FailureClass`, `MetricsRecorder`, `TaskMetrics`, `TokenUsage` |
 | `ghdag.pipeline` | `AuditContext`, `PipelineConfig`, `TaskQueue`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_command_adapter`, `resolve_models`, `wait_for_result`, `write_task_exit_audit` |
 | `ghdag.quota` | `QuotaGate`, `QuotaSnapshot`, `EngineQuotaState`, `EngineUsage`, `AdmissionDecision` |
@@ -850,7 +850,6 @@ Every variable ghdag reads. Explicit CLI options and API arguments win over thes
 | `GHDAG_TOKEN_WARN_THRESHOLD` | `500000` | `config.env.ghdag_token_warn_threshold` | Token usage warning threshold on the Web UI dashboard |
 | `ENABLE_GIT` | off | `config.env.enable_git` | `1` / `true` / `yes` lets `get_sink` return a real `GitSink` |
 | `GHDAG_VCS_CONFIG` | none | `config.env.ghdag_vcs_config` | Path to the [VCS sink config](#vcs-sink-config-ghdag_vcs_config) |
-| `LATENCY_SPAN_PATH` | unset (`jobs/latency_span.jsonl`) | `config.env.latency_span_path` | Output file of `emit_span` when `log_path` is omitted |
 
 ### Task environment
 

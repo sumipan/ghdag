@@ -14,6 +14,7 @@ _SRC = _REPO_ROOT / "src" / "ghdag"
 
 _BACKTICK_RE = re.compile(r"`ghdag\s+([a-z][a-z-]*)(?:\s+([a-z][a-z-]*))?")
 _PROMPT_RE = re.compile(r"(?:^|\s)\$\s+ghdag\s+([a-z][a-z-]*)(?:\s+([a-z][a-z-]*))?")
+_COMMANDS_TABLE = re.compile(r"^\|\s*`ghdag\s+([^`]+)`\s*\|")
 
 
 
@@ -28,6 +29,29 @@ def registered_commands(parser: argparse.ArgumentParser) -> set[tuple[str, ...]]
             for sub in registered_commands(subparser):
                 result.add((name,) + sub)
     return result
+
+
+def parse_readme_cli_command_paths(readme_text: str) -> set[tuple[str, ...]]:
+    """Extract command path tuples from the README CLI Commands table."""
+    start = readme_text.find("## CLI Reference")
+    assert start != -1, "README missing ## CLI Reference"
+    tail = readme_text[start:]
+    end = tail.find("## Public API")
+    if end != -1:
+        tail = tail[:end]
+    commands_start = tail.find("### Commands")
+    assert commands_start != -1, "README CLI Reference missing ### Commands"
+    section = tail[commands_start:]
+    args_at = section.find("### Arguments")
+    if args_at != -1:
+        section = section[:args_at]
+    paths: set[tuple[str, ...]] = set()
+    for line in section.splitlines():
+        match = _COMMANDS_TABLE.match(line)
+        if not match:
+            continue
+        paths.add(tuple(match.group(1).split()))
+    return paths
 
 
 def extract_cli_references(lines: list[str]) -> set[tuple[str, ...]]:
@@ -196,6 +220,24 @@ def _iter_leaf_parsers(parser: argparse.ArgumentParser):
                 yield from _iter_leaf_parsers(subparser)
             else:
                 yield subparser
+
+
+def test_readme_cli_inventory_matches_registered_commands() -> None:
+    """Issue sumipan/nexus#7854 — README CLI Commands table matches argparse registration."""
+    from ghdag.cli.main import _build_parser, main
+
+    readme = (_REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    documented = parse_readme_cli_command_paths(readme)
+    parser = _build_parser()
+    registered = registered_commands(parser)
+    assert registered == documented, (
+        f"missing from README: {sorted(registered - documented)}; "
+        f"extra in README: {sorted(documented - registered)}"
+    )
+    for path in registered:
+        with pytest.raises(SystemExit) as exc_info:
+            main([*path, "--help"])
+        assert exc_info.value.code == 0, f"ghdag {' '.join(path)} --help exited {exc_info.value.code}"
 
 
 def test_leaf_subcommands_register_json_flag() -> None:
