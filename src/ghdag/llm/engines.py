@@ -591,7 +591,7 @@ def _run_with_stall_guard(
                     out, err = proc.communicate()
                     raise subprocess.TimeoutExpired(
                         cmd,
-                        timeout,
+                        timeout if isinstance(timeout, (int, float)) else 0.0,
                         output=out,
                         stderr=_append_stall_lines(err, tracker.events),
                     )

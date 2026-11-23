@@ -211,12 +211,14 @@ class DagEngine:
         """Append a JSONL record to exec.jsonl with LOCK_EX + audit enqueue."""
         path = Path(self._config.exec_jsonl_path)
         record = json.loads(line if not line.endswith("\n") else line[:-1])
+        audit_path = self._config.audit_path
+        assert audit_path is not None
         exec_jsonl.append(
             path,
             [record],
             audit_context or AuditContext(source="dag"),
-            audit_path=self._config.audit_path,
-            done_dir=self._config.exec_done_dir,
+            audit_path=audit_path,
+            done_dir=Path(self._config.exec_done_dir),
             quota_gate=self._quota_gate,
         )
 

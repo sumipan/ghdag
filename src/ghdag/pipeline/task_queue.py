@@ -63,13 +63,24 @@ class TaskQueue:
         return self._state_dir / "generations.json"
 
     @classmethod
-    def from_repo_root(cls, repo_root: str | Path, **kwargs: object) -> TaskQueue:
+    def from_repo_root(
+        cls,
+        repo_root: str | Path,
+        *,
+        queue_dir: str = "queue",
+        order_builder: OrderBuilder | None = None,
+        order_builders: dict[str, OrderBuilder] | None = None,
+        timezone: str | None = None,
+    ) -> TaskQueue:
         """Create TaskQueue with standard paths under the repository root."""
         root = Path(repo_root)
         return cls(
             state_dir=resolve_state_dir(root) / ".pipeline-state",
             exec_jsonl_path=root / "jobs" / "exec.jsonl",
-            **kwargs,
+            queue_dir=queue_dir,
+            order_builder=order_builder,
+            order_builders=order_builders,
+            timezone=timezone,
         )
 
     def set_order_builders(self, mapping: Mapping[str, OrderBuilder]) -> None:
@@ -137,7 +148,10 @@ class TaskQueue:
 
     def remove_idempotency_matching(self, workflow_name: str, issue_number: int) -> int:
         def should_remove(rec: dict) -> bool:
-            parsed = exec_jsonl.parse_idempotency_key(rec.get("idempotency_key"))
+            key = rec.get("idempotency_key")
+            if not isinstance(key, str):
+                return False
+            parsed = exec_jsonl.parse_idempotency_key(key)
             if parsed is None:
                 return False
             wf, _handler, issue, _gen = parsed
@@ -152,7 +166,10 @@ class TaskQueue:
         issue_number: int,
     ) -> int:
         def should_remove(rec: dict) -> bool:
-            parsed = exec_jsonl.parse_idempotency_key(rec.get("idempotency_key"))
+            key = rec.get("idempotency_key")
+            if not isinstance(key, str):
+                return False
+            parsed = exec_jsonl.parse_idempotency_key(key)
             if parsed is None:
                 return False
             wf, handler, issue, _gen = parsed
@@ -320,7 +337,7 @@ class TaskQueue:
         order_filename: str,
         result_filename: str,
         engine: str,
-        model: str,
+        model: str | None,
         permission: str | Permission | None = None,
     ) -> dict:
         from ghdag.core.capabilities import PERMISSIONS, Permission

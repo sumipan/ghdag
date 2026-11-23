@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import cast
 
 
 def cmd_ui(args) -> None:
@@ -58,4 +59,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Maximum number of tasks to display (default: 30)",
     )
     ui_parser.set_defaults(func=cmd_ui)
-    return ui_parser
+    return cast(argparse.ArgumentParser, ui_parser)

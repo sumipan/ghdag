@@ -6,7 +6,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from ghdag.core.exceptions import GhdagError
 
@@ -223,4 +223,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="YAML file listing remote SSH execution nodes",
     )
     run_parser.set_defaults(func=cmd_run)
-    return run_parser
+    return cast(argparse.ArgumentParser, run_parser)

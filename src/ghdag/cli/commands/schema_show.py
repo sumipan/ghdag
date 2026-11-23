@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from typing import cast
 
 from ghdag.schemas import SCHEMA_NAMES, load_schema
 
@@ -59,4 +60,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Schema logical name (without .schema.json)",
     )
     schema_show_parser.set_defaults(func=cmd_schema_show)
-    return schema_parser
+    return cast(argparse.ArgumentParser, schema_parser)

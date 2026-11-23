@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+from typing import cast
 
 from ghdag.config.env import resolve_runtime_paths
 
@@ -71,4 +72,4 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Auto-fix orphan (Case D) and dead entry (Case F) issues; default is detect-only",
     )
     cleanup_parser.set_defaults(func=cmd_cleanup)
-    return cleanup_parser
+    return cast(argparse.ArgumentParser, cleanup_parser)

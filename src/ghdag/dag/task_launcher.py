@@ -588,7 +588,7 @@ class TaskLauncher:
                     break
                 defer_reason = decision.reason
             if not allowed:
-                defer_key = (",".join(waiting), defer_reason)
+                defer_key: tuple[str | None, str | None] = (",".join(waiting), defer_reason)
                 if self._last_quota_deferred.get(uuid) != defer_key:
                     logger.info(
                         "Task [%s] launch deferred by quota gate: engine=%s reason=%s",
@@ -1043,18 +1043,26 @@ class TaskLauncher:
         if not engines and isinstance(engine, str):
             engines = (engine,)
         observed = datetime.now(timezone.utc)
-        extra = {"set_by": pause.set_by} if pause.set_by is not None else {}
         for eng in engines:
             if not eng:
                 continue
-            self._quota_gate.report(
-                engine=eng,
-                status="paused",
-                observed_at=observed,
-                resume_at=pause.resume_at,
-                reason=pause.reason,
-                **extra,
-            )
+            if pause.set_by is not None:
+                self._quota_gate.report(
+                    engine=eng,
+                    status="paused",
+                    observed_at=observed,
+                    resume_at=pause.resume_at,
+                    reason=pause.reason,
+                    set_by=pause.set_by,
+                )
+            else:
+                self._quota_gate.report(
+                    engine=eng,
+                    status="paused",
+                    observed_at=observed,
+                    resume_at=pause.resume_at,
+                    reason=pause.reason,
+                )
 
     def _unlink_task_result(self, task: Task) -> None:
         if task.result_path and Path(task.result_path).exists():
@@ -1275,11 +1283,14 @@ class TaskLauncher:
     ) -> bool:
         if not decision.fanout_spawn or metrics is None:
             return False
+        fanout_spec = parse_fanout_spec(effective_result_path)
+        if fanout_spec is None:
+            return False
         try:
             self._fanout_manager.spawn(
                 uuid,
                 exit_ctx.task,
-                parse_fanout_spec(effective_result_path),
+                fanout_spec,
                 metrics,
                 queue_dir=self._state_dir(),
             )
