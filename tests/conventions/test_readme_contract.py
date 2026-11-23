@@ -98,13 +98,24 @@ def _parse_public_api_table(readme: str) -> dict[str, frozenset[str]]:
     return rows
 
 
-def _runtime_public_api_exports(package: str) -> frozenset[str]:
-    if package == "ghdag":
-        return frozenset(ghdag.__all__)
-    mod = importlib.import_module(f"ghdag.{package}")
-    names = getattr(mod, "__all__", None)
-    assert names is not None, f"ghdag.{package} missing __all__"
-    return frozenset(names)
+def _runtime_public_api_exports() -> dict[str, frozenset[str]]:
+    """Return non-empty ``__all__`` exports for ghdag and one-segment modules."""
+    root = Path(ghdag.__file__).resolve().parent
+    rows = {"ghdag": frozenset(ghdag.__all__)}
+    for path in sorted(root.iterdir()):
+        if path.name.startswith("_"):
+            continue
+        if path.is_dir() and (path / "__init__.py").is_file():
+            package = path.name
+        elif path.is_file() and path.suffix == ".py":
+            package = path.stem
+        else:
+            continue
+        mod = importlib.import_module(f"ghdag.{package}")
+        names = getattr(mod, "__all__", None)
+        if names:
+            rows[package] = frozenset(names)
+    return rows
 
 
 def _owned_env_variable_names() -> set[str]:
@@ -230,10 +241,16 @@ def test_readme_release_metadata_matches_pyproject() -> None:
     dev_extra = project.get("optional-dependencies", {}).get("dev", [])  # type: ignore[union-attr]
     dev_deps = {d.lower() for d in dev_extra}
 
-    assert f"v{version}" in readme
-    assert requires in _section(readme, "## Status", stop_at="## Installation")
-    assert "MIT" in str(license_meta)
-    assert f"version = \"{version}\"" in readme
+    status = _section(readme, "## Status", stop_at="## Installation")
+    installation = _section(readme, "## Installation", stop_at="## Quick Start")
+    license_section = _section(readme, "## License")
+    assert f"version-v{version}-blue" in status
+    assert f"**v{version}**" in status
+    assert f'version = "{version}"' in status
+    assert requires in status
+    assert f"@v{version}" in installation
+    assert str(license_meta) in status
+    assert str(license_meta) in license_section
 
     runtime_cell = _parse_installation_item(readme, "Runtime dependencies")
     dev_cell = _parse_installation_item(readme, "`dev` extra")
@@ -246,11 +263,15 @@ def test_readme_release_metadata_matches_pyproject() -> None:
 def test_readme_public_api_inventory_matches_package_exports() -> None:
     """Issue sumipan/nexus#7854 — Public API table matches runtime ``__all__`` exports."""
     documented = _parse_public_api_table(_readme_text())
-    assert documented, "README missing Package __all__ rows"
-    for pkg, symbols in documented.items():
-        runtime = _runtime_public_api_exports(pkg)
-        assert symbols == runtime, (
-            f"{pkg}: readme-only={symbols - runtime} runtime-only={runtime - symbols}"
+    runtime = _runtime_public_api_exports()
+    assert documented.keys() == runtime.keys(), (
+        f"readme-only packages={sorted(documented.keys() - runtime.keys())}; "
+        f"runtime-only packages={sorted(runtime.keys() - documented.keys())}"
+    )
+    for pkg, symbols in runtime.items():
+        assert documented[pkg] == symbols, (
+            f"{pkg}: readme-only={documented[pkg] - symbols} "
+            f"runtime-only={symbols - documented[pkg]}"
         )
         mod = ghdag if pkg == "ghdag" else importlib.import_module(f"ghdag.{pkg}")
         for symbol in symbols:
@@ -289,11 +310,12 @@ def test_readme_error_inventory_matches_runtime_exception_types() -> None:
         assert getattr(cls, "code", None) == code, name
         assert getattr(cls, "exit_code", None) == exit_code, name
     non_ghdag_documented = _parse_non_ghdag_exception_table(err)
-    assert non_ghdag_documented == frozenset(
-        name for name in ("OwnershipError", "ConflictError") if name in runtime
-    ), (
+    non_ghdag_runtime = frozenset(
+        name for name, cls in runtime.items() if not issubclass(cls, GhdagError)
+    )
+    assert non_ghdag_documented == non_ghdag_runtime, (
         f"non-GhdagError inventory mismatch: documented={sorted(non_ghdag_documented)} "
-        f"runtime={sorted(name for name, cls in runtime.items() if not issubclass(cls, GhdagError))}"
+        f"runtime={sorted(non_ghdag_runtime)}"
     )
     for name in non_ghdag_documented:
         cls = runtime[name]
@@ -332,5 +354,5 @@ def test_readme_localforge_quick_start_completes(tmp_path: Path) -> None:
     ]
     assert len(exec_lines) == 1
     done_markers = list((tmp_path / "jobs" / "done").glob("*"))
-    assert done_markers, "expected a done marker"
+    assert len(done_markers) == 1, "expected exactly one done marker"
     assert done_markers[0].read_text(encoding="utf-8").strip() == "0"

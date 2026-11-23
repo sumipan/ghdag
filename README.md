@@ -306,14 +306,11 @@ The top-level package exports one name, `GhdagError` (the base class of every gh
 |---|---|
 | `ghdag` | `GhdagError` |
 | `ghdag.cli` | `main` |
-| `ghdag.core.ports` | `ForgePort` |
 | `ghdag.dag` | `AuditHooks`, `DagConfig`, `DagEngine`, `DagHooks`, `DONE_SUCCESS`, `FanOutSpec`, `PIPELINE_WAIT_QUOTA`, `Task`, `WaitQuotaSignal`, `build_child_jsonl_record`, `check_pipeline_status`, `default_check_rejected`, `execute_recover`, `extract_tee_target`, `parse_fanout_spec`, `parse_wait_quota_signal`, `plan_recover`, `running_uuids_from_queue_dir` |
 | `ghdag.files` | `md_read`, `md_write` |
-| `ghdag.files.links` | `job_footer`, `rewrite_links`, `summary_footer` |
 | `ghdag.forge` | `ForgePort`, `GitHubApiError`, `GitHubClient`, `LocalForge`, `get_forge` |
 | `ghdag.io` | `done`, `exec_jsonl`, `queue`, `redact`, `sessions` |
 | `ghdag.llm` | `ENGINE_DEFAULTS`, `ENGINE_SPECS`, `EngineError`, `EngineModelError`, `PERMISSIONS`, `classify_common_failure`, `container_prefix`, `supports_capability`, `Permission`, `LLMResult`, `SessionRecord`, `TEXT_ONLY`, `DANGEROUS_FULL_ACCESS`, `call`, `get_engine_models`, `list_engines`, `validate_engine_model` |
-| `ghdag.llm.adapters` | `EngineOutputAdapter`, `get_output_adapter` |
 | `ghdag.metrics` | `FailureClass`, `MetricsRecorder`, `TaskMetrics`, `TokenUsage` |
 | `ghdag.pipeline` | `AuditContext`, `PipelineConfig`, `TaskQueue`, `OrderBuilder`, `TemplateOrderBuilder`, `InlineOrderBuilder`, `TemplateVariableError`, `build_idempotency_key`, `get_command_adapter`, `resolve_models`, `wait_for_result`, `write_task_exit_audit` |
 | `ghdag.quota` | `QuotaGate`, `QuotaSnapshot`, `EngineQuotaState`, `EngineUsage`, `AdmissionDecision` |
