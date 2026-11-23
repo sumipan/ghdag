@@ -7,7 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## 0.153.4 - 2026-11-24
+## 0.154.0 - 2026-11-24
 
 ### Changed
 
