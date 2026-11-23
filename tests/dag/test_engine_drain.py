@@ -53,7 +53,10 @@ class TestDrainTimeout:
 
     def test_drain_deadline_exceeded_leaves_interrupted_at(self, tmp_path, fake_clock):
         jobs = tmp_path / "jobs"
-        engine = _make_engine(tmp_path, task_timeout=30.0)
+        # This test drives the drain deadline explicitly.  Disabling the
+        # independent task timeout prevents the fast fake clock from racing
+        # ahead and completing the task through the timeout path first.
+        engine = _make_engine(tmp_path, task_timeout=None)
         result_path = str(jobs / f"result-{UUID_A}.md")
         Path(result_path).parent.mkdir(parents=True, exist_ok=True)
         _write_exec_jsonl(jobs, UUID_A, f"sleep 30 && echo ok > {result_path}")
