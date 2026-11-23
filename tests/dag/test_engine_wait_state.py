@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import io
 import json
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+from ghdag_dag_conftest_helpers import RUNNING_MONO_START, RUNNING_WALL_START
 
 from ghdag.core.vocabulary import DONE_SUCCESS
 from ghdag.dag._util import WaitQuotaParseError, parse_wait_quota_signal
@@ -63,8 +64,8 @@ def test_wait_quota_reply_block_without_after_pauses_engine(
         uuid=task.uuid,
         task=task,
         proc=proc,
-        started_at=time.time(),
-        started_at_mono=time.monotonic(),
+        started_at=RUNNING_WALL_START,
+        started_at_mono=RUNNING_MONO_START,
         stderr_buf=io.BytesIO(b""),
         stdout_buf=io.BytesIO(b""),
     )
@@ -97,8 +98,8 @@ def test_legacy_wait_quota_lines_complete_without_pauses(
         uuid=task.uuid,
         task=task,
         proc=proc,
-        started_at=time.time(),
-        started_at_mono=time.monotonic(),
+        started_at=RUNNING_WALL_START,
+        started_at_mono=RUNNING_MONO_START,
         stderr_buf=io.BytesIO(b""),
         stdout_buf=io.BytesIO(b""),
     )
@@ -136,8 +137,8 @@ def _shell_task_wait_quota_recorded(engine: DagEngine, tmp_path: Path) -> Task:
         uuid=task.uuid,
         task=task,
         proc=proc,
-        started_at=time.time(),
-        started_at_mono=time.monotonic(),
+        started_at=RUNNING_WALL_START,
+        started_at_mono=RUNNING_MONO_START,
         stderr_buf=io.BytesIO(b""),
         stdout_buf=io.BytesIO(b""),
     )
@@ -210,8 +211,8 @@ def _record_wait_quota_codex(engine: DagEngine, tmp_path: Path) -> Task:
         uuid=task.uuid,
         task=task,
         proc=proc,
-        started_at=time.time(),
-        started_at_mono=time.monotonic(),
+        started_at=RUNNING_WALL_START,
+        started_at_mono=RUNNING_MONO_START,
         stderr_buf=io.BytesIO(b""),
         stdout_buf=io.BytesIO(b""),
     )

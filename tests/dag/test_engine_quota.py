@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import io
 import json
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from ghdag_dag_conftest_helpers import RUNNING_MONO_START, RUNNING_WALL_START
 
 from ghdag.core.stall_guard import StallTracker
 from ghdag.dag.engine import DagEngine
@@ -46,7 +46,7 @@ def _audit_event_types(audit_path: Path) -> list[str]:
     ]
 
 
-def test_draining_one_engine_still_launches_other_engine(tmp_path: Path) -> None:
+def test_draining_one_engine_still_launches_other_engine(tmp_path: Path, fake_clock) -> None:
     exec_path = tmp_path / "jobs" / "exec.jsonl"
     done_dir = tmp_path / "jobs" / "done"
     done_dir.mkdir(parents=True, exist_ok=True)
@@ -67,7 +67,8 @@ def test_draining_one_engine_still_launches_other_engine(tmp_path: Path) -> None
 
     proc = _DummyProc()
 
-    def stop_after_first_sleep(*_args, **_kwargs):
+    def stop_after_first_sleep(seconds: float) -> None:
+        fake_clock.sleep(seconds)
         engine._shutdown = True
 
     with patch("ghdag.dag._process_host.subprocess.Popen", return_value=proc), patch(
@@ -100,7 +101,7 @@ def test_launch_popen_failure_rolls_back_running_reservation(tmp_path: Path) -> 
     assert "task-1" not in snapshot.running_tasks
 
 
-def test_resume_fallback_relaunches_async_without_blocking(tmp_path: Path) -> None:
+def test_resume_fallback_relaunches_async_without_blocking(tmp_path: Path, fake_clock) -> None:
     """Resume fallback restarts asynchronously via Popen and does not block check_completions."""
     config = DagConfig(
         exec_jsonl_path=tmp_path / "jobs" / "exec.jsonl",
@@ -126,8 +127,8 @@ def test_resume_fallback_relaunches_async_without_blocking(tmp_path: Path) -> No
         uuid=task.uuid,
         task=task,
         proc=proc,
-        started_at=time.time() - 0.1,
-        started_at_mono=time.monotonic() - 0.1,
+        started_at=RUNNING_WALL_START,
+        started_at_mono=RUNNING_MONO_START,
         stderr_buf=io.BytesIO(b"session not found"),
     )
     engine._quota_gate.begin_run(task_uuid=task.uuid, engine="claude")
@@ -140,11 +141,9 @@ def test_resume_fallback_relaunches_async_without_blocking(tmp_path: Path) -> No
     with patch(
         "ghdag.dag._process_host.subprocess.Popen", return_value=fallback_proc
     ) as mock_popen, patch("ghdag.dag.task_launcher.state_mark_done"):
-        started = time.monotonic()
         engine._launcher.check_completions()
-        elapsed = time.monotonic() - started
 
-    assert elapsed < 0.5
+    assert fake_clock.sleeps == []
     mock_popen.assert_called_once()
     popen_cmd = mock_popen.call_args[0][0]
     assert popen_cmd == ["bash", "-o", "pipefail", "-c", "claude -p hello"]
@@ -187,8 +186,8 @@ def test_resume_fallback_attaches_stall_tracker_for_cursor(
         uuid=task.uuid,
         task=task,
         proc=proc,
-        started_at=time.time() - 0.1,
-        started_at_mono=time.monotonic() - 0.1,
+        started_at=RUNNING_WALL_START,
+        started_at_mono=RUNNING_MONO_START,
         stderr_buf=io.BytesIO(b"session not found"),
     )
     engine._quota_gate.begin_run(task_uuid=task.uuid, engine="cursor")
@@ -248,8 +247,8 @@ def test_resume_fallback_command_forms_unchanged_across_engines(
         uuid=task.uuid,
         task=task,
         proc=proc,
-        started_at=time.time() - 0.1,
-        started_at_mono=time.monotonic() - 0.1,
+        started_at=RUNNING_WALL_START,
+        started_at_mono=RUNNING_MONO_START,
         stderr_buf=io.BytesIO(b"session not found"),
     )
     engine._quota_gate.begin_run(task_uuid=task.uuid, engine=engine_name)
@@ -303,7 +302,7 @@ def test_runtime_quota_error_pauses_engine_without_task_ledger(mock_mark_done, t
 
     result_file = tmp_path / "result.md"
     result_file.write_text("placeholder", encoding="utf-8")
-    resume_at = datetime.now(JST) + timedelta(hours=1)
+    resume_at = datetime(2026, 11, 24, 12, 0, tzinfo=JST)
     stdout = (
         b'{"is_error":true,"error":{"message":"quota exhausted. Try again at '
         + resume_at.isoformat().encode("utf-8")
@@ -317,8 +316,8 @@ def test_runtime_quota_error_pauses_engine_without_task_ledger(mock_mark_done, t
         uuid=task.uuid,
         task=task,
         proc=proc,
-        started_at=time.time() - 0.1,
-        started_at_mono=time.monotonic() - 0.1,
+        started_at=RUNNING_WALL_START,
+        started_at_mono=RUNNING_MONO_START,
         stderr_buf=io.BytesIO(b""),
         stdout_buf=io.BytesIO(stdout),
     )

@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import os
 import threading
-import time
 from pathlib import Path
-from unittest.mock import MagicMock
+
+from ghdag_dag_conftest_helpers import MemoryHooks
 
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig
@@ -27,7 +27,7 @@ def _make_engine(tmp_path: Path, task_timeout: float | None = 30.0) -> DagEngine
         task_timeout=task_timeout,
         kill_grace=0.5,
     )
-    hooks = MagicMock()
+    hooks = MemoryHooks()
     return DagEngine(config, hooks=hooks)
 
 
@@ -41,12 +41,14 @@ def _write_exec_jsonl(jobs: Path, uuid: str, command: str) -> None:
 
 
 def _wait_until(predicate, *, timeout: float = 10.0, interval: float = 0.05) -> bool:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
+    """Compatibility helper for legacy tests outside the T13 ledger."""
+    tick = threading.Event()
+    attempts = max(1, int(timeout / max(interval, 0.001)))
+    for _ in range(attempts):
         if predicate():
             return True
-        time.sleep(interval)
-    return False
+        tick.wait(interval)
+    return predicate()
 
 
 UUID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -56,23 +58,35 @@ UUID_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 class TestDrainTimeout:
     """AC-2: drain deadline exceeded — done marker not written, running file has interrupted_at."""
 
-    def test_drain_deadline_exceeded_leaves_interrupted_at(self, tmp_path):
+    def test_drain_deadline_exceeded_leaves_interrupted_at(self, tmp_path, fake_clock):
         jobs = tmp_path / "jobs"
-        engine = _make_engine(tmp_path, task_timeout=30.0)
+        # This test drives the drain deadline explicitly.  Disabling the
+        # independent task timeout prevents the fast fake clock from racing
+        # ahead and completing the task through the timeout path first.
+        engine = _make_engine(tmp_path, task_timeout=None)
         result_path = str(jobs / f"result-{UUID_A}.md")
         Path(result_path).parent.mkdir(parents=True, exist_ok=True)
         _write_exec_jsonl(jobs, UUID_A, f"sleep 30 && echo ok > {result_path}")
 
-        t = threading.Thread(target=engine.run, daemon=True)
+        engine_stopped = threading.Event()
+
+        def run_engine() -> None:
+            try:
+                engine.run()
+            finally:
+                engine_stopped.set()
+
+        t = threading.Thread(target=run_engine, daemon=True)
         t.start()
         try:
-            assert _wait_until(lambda: engine._launcher.is_running(UUID_A), timeout=5.0)
+            assert engine._hooks.wait_for(lambda: engine._launcher.is_running(UUID_A))
 
             engine._launcher.mark_interrupted_all()
             engine._draining = True
-            engine._drain_deadline = time.monotonic() + 0.2
+            engine._drain_deadline = fake_clock.monotonic() + 0.2
+            fake_clock.advance(0.2)
 
-            assert _wait_until(lambda: not t.is_alive(), timeout=10.0)
+            engine_stopped.wait()
 
             done_dir = jobs / "done"
             assert not is_done(str(done_dir), UUID_A)
@@ -83,11 +97,9 @@ class TestDrainTimeout:
             assert "interrupted_at" in data
         finally:
             engine._shutdown = True
-            t.join(timeout=5)
+            t.join()
             for rt in list(engine._launcher._running.values()):
                 try:
                     os.killpg(rt.proc.pid, 9)
                 except Exception:
                     pass
-
-
