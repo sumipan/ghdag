@@ -53,9 +53,7 @@ _FORGEPORT_BASELINE: frozenset[str] = frozenset({
     "dispatch_event",
     "get_rate_limit",
     "graphql",
-    "get_issue",
     "list_all_issues",
-    "add_comment",
     "get_last_rate_limit",
     "add_sub_issue",
     "list_sub_issues",
@@ -186,6 +184,24 @@ def test_daghooks_compat() -> None:
     changelog = _read_changelog_unreleased()
     violations = compat_violations(methods, _DAGHOOKS_BASELINE, changelog, "DagHooks")
     assert violations == [], violations
+
+
+_FORGE_ISSUE_ALIAS_METHODS: frozenset[str] = frozenset({"get_issue", "add_comment"})
+
+
+def test_forge_exposes_only_canonical_issue_methods() -> None:
+    """ForgePort and implementations must not retain deprecated issue method aliases."""
+    from ghdag.forge.local import LocalForge
+    from ghdag.github_client import GitHubClient
+
+    source = (_SRC / "core" / "ports" / "forge.py").read_text(encoding="utf-8")
+    protocol_names = set(protocol_methods(source, "ForgePort"))
+    assert _FORGE_ISSUE_ALIAS_METHODS.isdisjoint(protocol_names), sorted(
+        _FORGE_ISSUE_ALIAS_METHODS & protocol_names,
+    )
+    for impl_cls in (GitHubClient, LocalForge):
+        present = _FORGE_ISSUE_ALIAS_METHODS & set(dir(impl_cls))
+        assert not present, f"{impl_cls.__name__} still defines {sorted(present)}"
 
 
 def test_forgeport_compat() -> None:

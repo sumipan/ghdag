@@ -53,18 +53,21 @@ handlers:
         mock_dispatch_result.exec_lines = [
             '{"uuid": "33333333-3333-3333-3333-333333333333", "command": "cat"}',
         ]
-        mock_github_client = MagicMock()
-        mock_github_client.get_issue.return_value = {
+        issue_data = {
             "number": 10, "title": "T", "body": "", "labels": [], "url": "",
         }
-        trigger_state = {"dispatched": False}
+        mock_github_client = MagicMock()
+        mock_github_client.issue_get.return_value = issue_data
+        trigger_state: dict[str, object] = {"dispatched": False, "issue": None, "dispatch_count": 0}
 
         class FakeDispatcher:
             def __init__(self, *args, **kwargs):
                 pass
 
-            def dispatch(self, *args, **kwargs):
+            def dispatch(self, issue, *args, **kwargs):
                 trigger_state["dispatched"] = True
+                trigger_state["issue"] = issue
+                trigger_state["dispatch_count"] = int(trigger_state["dispatch_count"]) + 1
                 return mock_dispatch_result
 
         with patch("ghdag.workflow.dispatcher.WorkflowDispatcher", FakeDispatcher), \
@@ -83,7 +86,10 @@ handlers:
                 "--exec-jsonl", str(exec_md),
             ])
 
+        mock_github_client.issue_get.assert_called_once_with(10)
         assert trigger_state["dispatched"] is True
+        assert trigger_state["dispatch_count"] == 1
+        assert trigger_state["issue"] == issue_data
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +175,7 @@ handlers:
         mock_dispatcher_cls = MagicMock()
         mock_dispatcher_cls.return_value.dispatch.return_value = mock_dispatch_result
         mock_github_client = MagicMock()
-        mock_github_client.get_issue.return_value = {
+        mock_github_client.issue_get.return_value = {
             "number": 42, "title": "T", "body": "", "labels": [], "url": "",
         }
         mock_create_github_clients = MagicMock(return_value=[mock_github_client])

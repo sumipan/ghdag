@@ -54,16 +54,18 @@ def _mock_http_error(code: int, message: str = "error", headers: dict | None = N
     )
 
 
-def test_add_comment_calls_expected_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_issue_comment_calls_expected_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     client = _make_client()
     captured: list[object] = []
+    api_response = {"id": 99, "body": "text"}
 
     def fake_urlopen(req, timeout=120):
         captured.append(req)
-        return _mock_urlopen({})
+        return _mock_urlopen(api_response)
 
     monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
-    client.add_comment(42, "text")
+    result = client.issue_comment(42, "text")
+    assert result == api_response
     assert len(captured) == 1
     req = captured[0]
     assert "/issues/42/comments" in req.full_url
@@ -142,7 +144,7 @@ def test_raises_auth_error_for_401(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
     with pytest.raises(AuthError) as exc_info:
-        client.get_issue(1)
+        client.issue_get(1)
     assert exc_info.value.status_code == 401
 
 
@@ -154,7 +156,7 @@ def test_raises_rate_limit_error_for_403_with_empty_remaining(monkeypatch: pytes
 
     monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
     with pytest.raises(RateLimitError) as exc_info:
-        client.get_issue(1)
+        client.issue_get(1)
     assert exc_info.value.status_code == 403
 
 
@@ -167,6 +169,6 @@ def test_raises_network_error_for_url_error(monkeypatch: pytest.MonkeyPatch) -> 
 
     monkeypatch.setattr("ghdag.github_client.urllib.request.urlopen", fake_urlopen)
     with pytest.raises(NetworkError):
-        client.get_issue(1)
+        client.issue_get(1)
 
 

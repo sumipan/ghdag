@@ -107,7 +107,7 @@ def cmd_trigger(args) -> None:
         queue_dir=queue_dir,
     )
 
-    issue = github_client.get_issue(args.issue_number)
+    issue = github_client.issue_get(args.issue_number)
 
     result = dispatcher.dispatch(
         issue,
