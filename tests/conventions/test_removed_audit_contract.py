@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import re
 from pathlib import Path
 
 import pytest
@@ -32,14 +33,11 @@ def test_watchdog_is_not_a_runtime_dependency() -> None:
     """Issue #7830 — ``watchdog`` is not declared as a ghdag runtime dependency."""
     pyproject = Path(__file__).resolve().parents[2] / "pyproject.toml"
     body = pyproject.read_text(encoding="utf-8")
-    in_dependencies = False
-    for line in body.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("dependencies = ["):
-            in_dependencies = True
-            continue
-        if in_dependencies:
-            if stripped.startswith("]"):
-                break
-            if "watchdog" in stripped:
-                pytest.fail(f"watchdog must not appear in [project].dependencies: {stripped!r}")
+    project = re.search(r"(?ms)^\[project\]\s*$\n(?P<body>.*?)(?=^\[|\Z)", body)
+    assert project is not None, "pyproject.toml must contain a [project] table"
+    dependencies = re.search(
+        r"(?ms)^dependencies\s*=\s*\[(?P<items>.*?)\]",
+        project.group("body"),
+    )
+    assert dependencies is not None, "[project].dependencies must be declared"
+    assert "watchdog" not in dependencies.group("items").lower()
