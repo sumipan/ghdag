@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.153.0 - 2026-11-23
+
+### Changed
+
+- audit: remove unused latency span API and watchdog dep
+
 ## 0.152.3 - 2026-11-23
 
 ### Changed
