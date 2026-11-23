@@ -25,7 +25,7 @@ Intake and execution are separate processes that share nothing but files on disk
 
 [llms.txt](./llms.txt) is a short overview for LLM readers. [TESTING.md](./TESTING.md) describes what the tests pin. [CHANGELOG.md](./CHANGELOG.md) lists every release.
 
-Inventory rows in this README (Status, Installation, Public API, Configuration, Error Reference, and the LocalForge quick-start marker) are checked against the installed package by `tests/conventions/test_readme_contract.py` (`@pytest.mark.readme_contract`).
+Inventory rows in this README (Status, Installation, Public API, Configuration, Error Reference, and the LocalForge quick-start marker) are checked against the installed package by `tests/conventions/test_readme_contract.py`.
 
 ## Installation
 

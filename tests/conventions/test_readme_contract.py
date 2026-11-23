@@ -9,7 +9,6 @@ import re
 import subprocess
 from pathlib import Path
 
-import pytest
 import tomllib
 
 import ghdag
@@ -229,7 +228,6 @@ def _localforge_bash_block(readme: str) -> str:
     raise AssertionError("Quick Start marker is not followed by a bash fence")
 
 
-@pytest.mark.readme_contract
 def test_readme_release_metadata_matches_pyproject() -> None:
     """Issue sumipan/nexus#7854 — Status/Installation metadata matches pyproject.toml."""
     project = _pyproject_project()
@@ -259,7 +257,6 @@ def test_readme_release_metadata_matches_pyproject() -> None:
     assert "pytest-timeout" in dev_cell.lower()
 
 
-@pytest.mark.readme_contract
 def test_readme_public_api_inventory_matches_package_exports() -> None:
     """Issue sumipan/nexus#7854 — Public API table matches runtime ``__all__`` exports."""
     documented = _parse_public_api_table(_readme_text())
@@ -278,7 +275,6 @@ def test_readme_public_api_inventory_matches_package_exports() -> None:
             assert hasattr(mod, symbol), f"ghdag.{pkg}.{symbol} missing"
 
 
-@pytest.mark.readme_contract
 def test_readme_environment_inventory_matches_owned_accessors() -> None:
     """Issue sumipan/nexus#7854 — env table matches ``ghdag.config.env`` accessors."""
     config = _section(_readme_text(), "## Configuration", stop_at="## Error Reference")
@@ -290,7 +286,6 @@ def test_readme_environment_inventory_matches_owned_accessors() -> None:
     )
 
 
-@pytest.mark.readme_contract
 def test_readme_error_inventory_matches_runtime_exception_types() -> None:
     """Issue sumipan/nexus#7854 — Error Reference matches runtime exception metadata."""
     err = _section(_readme_text(), "## Error Reference", stop_at="## Not in Scope")
@@ -323,7 +318,6 @@ def test_readme_error_inventory_matches_runtime_exception_types() -> None:
         assert cls.__module__.startswith("ghdag"), name
 
 
-@pytest.mark.readme_contract
 def test_readme_localforge_quick_start_completes(tmp_path: Path) -> None:
     """Issue sumipan/nexus#7854 — marked Quick Start bash block runs without GitHub."""
     script = _localforge_bash_block(_readme_text())
