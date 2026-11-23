@@ -75,12 +75,6 @@ def _force_kill_pgid(pgid: int) -> None:
         pass
 
 
-def _busy_wait_until(predicate) -> None:
-    tick = threading.Event()
-    while not predicate():
-        tick.wait(0)
-
-
 def _read_done(done_dir: Path, uuid: str) -> str:
     return (done_dir / uuid).read_text(encoding="utf-8").strip()
 
@@ -102,7 +96,7 @@ class TestUnmarkedDeadRerun:
         pgid = proc.pid
         _force_kill_pgid(pgid)
         proc.wait()
-        _busy_wait_until(lambda: not LocalProcessHost().group_exists(pgid))
+        assert not LocalProcessHost().group_exists(pgid)
 
         _write_running_file(jobs, UUID_A, proc.pid, pgid)
 
@@ -132,11 +126,9 @@ class TestUnmarkedDeadRerun:
         running_data = json.loads(running_path.read_text(encoding="utf-8"))
         assert running_data.get("interrupted_reruns") == 1
 
-        def _poll():
-            launcher.check_completions()
-            return UUID_A not in launcher._running
-
-        _busy_wait_until(_poll)
+        launcher._running[UUID_A].proc.wait()
+        launcher.check_completions()
+        assert UUID_A not in launcher._running
 
         assert env_file.read_text(encoding="utf-8").strip() == "interrupted"
 
@@ -152,7 +144,7 @@ class TestUnmarkedDeadRerun:
         pgid = proc.pid
         _force_kill_pgid(pgid)
         proc.wait()
-        _busy_wait_until(lambda: not LocalProcessHost().group_exists(pgid))
+        assert not LocalProcessHost().group_exists(pgid)
 
         _write_running_file(
             jobs, UUID_A, proc.pid, pgid, interrupted_reruns=_MAX_INTERRUPTED_RERUNS,
@@ -183,7 +175,7 @@ class TestAdoptedTaskExitRerun:
 
             _force_kill_pgid(pgid)
             proc.wait()
-            _busy_wait_until(lambda: not LocalProcessHost().group_exists(pgid))
+            assert not LocalProcessHost().group_exists(pgid)
 
             launcher.check_completions()
 
@@ -212,7 +204,7 @@ class TestAdoptedTaskExitRerun:
 
             _force_kill_pgid(pgid)
             proc.wait()
-            _busy_wait_until(lambda: not LocalProcessHost().group_exists(pgid))
+            assert not LocalProcessHost().group_exists(pgid)
 
             launcher.check_completions()
 
@@ -235,7 +227,7 @@ class TestExclusiveUnmarkedOrphan:
         pgid = proc.pid
         _force_kill_pgid(pgid)
         proc.wait()
-        _busy_wait_until(lambda: not LocalProcessHost().group_exists(pgid))
+        assert not LocalProcessHost().group_exists(pgid)
 
         _write_running_file(jobs, UUID_A, proc.pid, pgid)
         task = Task(
@@ -268,7 +260,7 @@ class TestExclusiveUnmarkedOrphan:
 
             _force_kill_pgid(pgid)
             proc.wait()
-            _busy_wait_until(lambda: not LocalProcessHost().group_exists(pgid))
+            assert not LocalProcessHost().group_exists(pgid)
 
             launcher.check_completions()
 
@@ -359,8 +351,10 @@ class TestEngineAdoptOnce:
         adopt_event = threading.Event()
         check_proceed = threading.Event()
         dead_done = threading.Event()
+        live_relaunched = threading.Event()
 
         _restore_waiting = engine._launcher.restore_waiting
+        _launch = engine._launcher.launch
 
         def _restore_waiting_sync(tasks, known_done):
             restored = _restore_waiting(tasks, known_done)
@@ -371,6 +365,12 @@ class TestEngineAdoptOnce:
         def _on_task_success_side_effect(uuid, *args, **kwargs):
             if uuid == UUID_DEAD:
                 dead_done.set()
+
+        def _launch_and_notify(uuid, task):
+            launched = _launch(uuid, task)
+            if uuid == UUID_LIVE and launched:
+                live_relaunched.set()
+            return launched
 
         hooks.on_task_success.side_effect = _on_task_success_side_effect
 
@@ -383,7 +383,7 @@ class TestEngineAdoptOnce:
             with patch.object(
                 engine._launcher, "adopt_orphans", wraps=engine._launcher.adopt_orphans
             ) as spy, patch.object(
-                engine._launcher, "launch", wraps=engine._launcher.launch
+                engine._launcher, "launch", side_effect=_launch_and_notify
             ) as launch_spy, patch.object(
                 engine._launcher,
                 "restore_waiting",
@@ -414,12 +414,10 @@ class TestEngineAdoptOnce:
                 _force_kill_pgid(pgid)
                 proc.wait()
 
-                _busy_wait_until(
-                    lambda: sum(
-                        1 for c in launch_spy.call_args_list if c.args[0] == UUID_LIVE
-                    )
-                    == 1
-                )
+                live_relaunched.wait()
+                assert sum(
+                    1 for c in launch_spy.call_args_list if c.args[0] == UUID_LIVE
+                ) == 1
                 assert not is_done(str(done), UUID_LIVE)
         finally:
             engine._shutdown = True

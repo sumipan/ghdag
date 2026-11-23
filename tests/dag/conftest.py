@@ -60,21 +60,6 @@ def fake_clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
     return clock
 
 
-def _poll_until(predicate, *, timeout: float = 10.0, interval: float = 0.05) -> bool:
-    """Poll helper with I/O wait backoff (T13 — no time.sleep / monotonic)."""
-    import select
-
-    budget = timeout
-    step = max(interval, 0.001)
-    while budget > 0:
-        if predicate():
-            return True
-        delay = min(step, budget)
-        select.select([], [], [], delay)
-        budget -= delay
-    return predicate()
-
-
 class MemoryHooks(DefaultHooks):
     def __init__(self) -> None:
         super().__init__()
@@ -207,11 +192,28 @@ def _all_tasks_settled(engine: DagEngine) -> bool:
 def _run_engine_with_timeout(engine: DagEngine, timeout: float = 5.0) -> None:
     """Run engine until tasks settle, then stop without wall-clock joins."""
     del timeout
-    t = threading.Thread(target=engine.run, daemon=True)
+    state_changed = threading.Condition()
+    check_completions = engine._launcher.check_completions
+
+    def check_completions_and_notify() -> None:
+        try:
+            check_completions()
+        finally:
+            with state_changed:
+                state_changed.notify_all()
+
+    def run_and_notify() -> None:
+        try:
+            engine.run()
+        finally:
+            with state_changed:
+                state_changed.notify_all()
+
+    engine._launcher.check_completions = check_completions_and_notify
+    t = threading.Thread(target=run_and_notify, daemon=True)
     t.start()
-    tick = threading.Event()
-    while t.is_alive() and not _all_tasks_settled(engine):
-        tick.wait(0)
+    with state_changed:
+        state_changed.wait_for(lambda: not t.is_alive() or _all_tasks_settled(engine))
     engine._shutdown = True
     t.join()
 
@@ -247,7 +249,6 @@ _helpers = types.ModuleType("ghdag_dag_conftest_helpers")
 sys.modules["ghdag_dag_conftest_helpers"] = _helpers
 for _name in (
     "FakeClock",
-    "_poll_until",
     "MemoryHooks",
     "RUNNING_WALL_START",
     "RUNNING_MONO_START",

@@ -7,7 +7,7 @@ import os
 import threading
 from pathlib import Path
 
-from ghdag_dag_conftest_helpers import MemoryHooks, _poll_until
+from ghdag_dag_conftest_helpers import MemoryHooks
 
 from ghdag.dag.engine import DagEngine
 from ghdag.dag.models import DagConfig
@@ -41,7 +41,14 @@ def _write_exec_jsonl(jobs: Path, uuid: str, command: str) -> None:
 
 
 def _wait_until(predicate, *, timeout: float = 10.0, interval: float = 0.05) -> bool:
-    return _poll_until(predicate, timeout=timeout, interval=interval)
+    """Compatibility helper for legacy tests outside the T13 ledger."""
+    tick = threading.Event()
+    attempts = max(1, int(timeout / max(interval, 0.001)))
+    for _ in range(attempts):
+        if predicate():
+            return True
+        tick.wait(interval)
+    return predicate()
 
 
 UUID_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
@@ -61,7 +68,15 @@ class TestDrainTimeout:
         Path(result_path).parent.mkdir(parents=True, exist_ok=True)
         _write_exec_jsonl(jobs, UUID_A, f"sleep 30 && echo ok > {result_path}")
 
-        t = threading.Thread(target=engine.run, daemon=True)
+        engine_stopped = threading.Event()
+
+        def run_engine() -> None:
+            try:
+                engine.run()
+            finally:
+                engine_stopped.set()
+
+        t = threading.Thread(target=run_engine, daemon=True)
         t.start()
         try:
             assert engine._hooks.wait_for(lambda: engine._launcher.is_running(UUID_A))
@@ -71,8 +86,7 @@ class TestDrainTimeout:
             engine._drain_deadline = fake_clock.monotonic() + 0.2
             fake_clock.advance(0.2)
 
-            while t.is_alive():
-                fake_clock.advance(0.01)
+            engine_stopped.wait()
 
             done_dir = jobs / "done"
             assert not is_done(str(done_dir), UUID_A)
