@@ -6,6 +6,8 @@ import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from ghdag.quota import QuotaGate
 
 JST = timezone(timedelta(hours=9))
@@ -46,6 +48,44 @@ def test_read_state_on_missing_state_creates_nothing(tmp_path: Path) -> None:
     assert not state_path.parent.exists()
     assert not state_path.exists()
     assert not lock_path.exists()
+
+
+def test_read_state_missing_check_is_linearized_before_concurrent_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state_path = tmp_path / "quota-gate.json"
+    gate = QuotaGate(state_path)
+    real_exists = Path.exists
+    injected = False
+
+    def exists_after_concurrent_write(path: Path) -> bool:
+        nonlocal injected
+        if path == state_path and not injected:
+            state_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "engines": {"claude": {"status": "paused"}},
+                        "draining_engines": {},
+                        "running_tasks": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            injected = True
+            return False
+        return real_exists(path)
+
+    monkeypatch.setattr(Path, "exists", exists_after_concurrent_write)
+
+    state = gate.read_state()
+
+    assert state == {
+        "schema_version": 1,
+        "engines": {},
+        "draining_engines": {},
+        "running_tasks": {},
+    }
 
 
 def test_snapshot_with_existing_state_reads_under_lock(tmp_path: Path) -> None:

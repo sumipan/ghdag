@@ -513,7 +513,12 @@ class QuotaGate:
         Invalid JSON or an unknown schema raises ``ValueError``.
         """
         if not self._state_path.exists():
-            return self._load_state_unlocked()
+            return {
+                "schema_version": 1,
+                "engines": {},
+                "draining_engines": {},
+                "running_tasks": {},
+            }
         with self._lock(exclusive=False):
             return self._load_state_unlocked()
 
@@ -1192,4 +1197,3 @@ __all__ = [
     "EngineUsage",
     "AdmissionDecision",
 ]
-
