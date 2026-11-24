@@ -92,10 +92,11 @@ def repair_jobs_done(
             skipped += 1
             continue
 
-        content = result_path.read_text(encoding="utf-8")
-        if content.startswith("REJECTED:"):
+        from ghdag.dag._util import default_check_rejected
+
+        if default_check_rejected(str(result_path)):
             status = "REJECTED"
-        elif content == "":
+        elif result_path.read_text(encoding="utf-8") == "":
             status = "EMPTY_RESULT"
         else:
             status = "0"

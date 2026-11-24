@@ -84,7 +84,27 @@ class TestRepairJobsDone:
         p.write_text(content, encoding="utf-8")
         return p
 
-    def test_rejected_result_writes_rejected_status(self, tmp_path):
+    def test_reply_block_rejected_writes_rejected_status(self, tmp_path):
+        """Issue #7919 AC2 — repair_jobs_done uses default_check_rejected."""
+        jobs_dir = tmp_path / "jobs"
+        jobs_dir.mkdir()
+        done_dir = jobs_dir / "done"
+        done_dir.mkdir()
+        self._make_result_file(
+            jobs_dir,
+            "result-a.md",
+            "```ghdag\nstatus: rejected\nreason: too long\n```\n",
+        )
+        exec_jsonl = jobs_dir / "exec.jsonl"
+        self._make_exec_jsonl(exec_jsonl, [
+            {"uuid": "aaa", "result_path": "result-a.md"},
+        ])
+        stats = repair_jobs_done(exec_jsonl, done_dir)
+        assert stats == {"restored": 1, "skipped": 0}
+        assert (done_dir / "aaa").read_text() == "REJECTED"
+
+    def test_legacy_rejected_line_writes_success_status(self, tmp_path):
+        """Issue #7919 AC2 — first-line REJECTED: only is not treated as rejected."""
         jobs_dir = tmp_path / "jobs"
         jobs_dir.mkdir()
         done_dir = jobs_dir / "done"
@@ -96,7 +116,7 @@ class TestRepairJobsDone:
         ])
         stats = repair_jobs_done(exec_jsonl, done_dir)
         assert stats == {"restored": 1, "skipped": 0}
-        assert (done_dir / "aaa").read_text() == "REJECTED"
+        assert (done_dir / "aaa").read_text() == "0"
 
     def test_empty_result_writes_empty_result_status(self, tmp_path):
         jobs_dir = tmp_path / "jobs"
