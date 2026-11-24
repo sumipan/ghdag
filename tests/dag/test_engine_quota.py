@@ -268,6 +268,7 @@ def test_resume_fallback_command_forms_unchanged_across_engines(
 
 
 def test_enqueue_records_are_kept_without_task_ledger(tmp_path: Path) -> None:
+    """Paused engines do not block append_task; admission fails only at launch (sumipan/nexus#7888)."""
     exec_path = tmp_path / "jobs" / "exec.jsonl"
     done_dir = tmp_path / "jobs" / "done"
     done_dir.mkdir(parents=True, exist_ok=True)
@@ -294,6 +295,7 @@ def test_enqueue_records_are_kept_without_task_ledger(tmp_path: Path) -> None:
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
 def test_runtime_quota_error_pauses_engine_without_task_ledger(mock_mark_done, tmp_path: Path) -> None:
+    """Engine JSON quota errors pause the engine with no done marker or task ledger (sumipan/nexus#7888)."""
     config = DagConfig(exec_jsonl_path=tmp_path / "exec.jsonl", exec_done_dir=tmp_path / "done")
     hooks = MagicMock()
     hooks.check_rejected.return_value = False
@@ -329,6 +331,7 @@ def test_runtime_quota_error_pauses_engine_without_task_ledger(mock_mark_done, t
     hooks.on_task_failure.assert_not_called()
     assert not result_file.exists()
     mock_mark_done.assert_not_called()
-    assert engine._quota_gate.snapshot().engines["claude"].status == "paused"
+    snapshot = engine._quota_gate.snapshot(now=resume_at - timedelta(hours=1))
+    assert snapshot.engines["claude"].status == "paused"
 
 
