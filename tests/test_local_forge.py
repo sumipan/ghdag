@@ -224,6 +224,50 @@ def test_pr_get_missing_raises_404(forge: LocalForge) -> None:
 
 
 
+def test_issue_close_not_planned_sets_state_reason(forge: LocalForge) -> None:
+    """Issue #7952 AC1: close with not_planned persists state_reason."""
+    number = forge.issue_create("x", "b")
+    forge.issue_close(number, reason="not_planned")
+    got = forge.issue_get(number, fields=["state", "state_reason"])
+    assert got == {"state": "CLOSED", "state_reason": "not_planned"}
+
+
+def test_issue_close_default_completed_and_reopen_clears_reason(
+    forge: LocalForge,
+) -> None:
+    """Issue #7952 AC2: default completed; reopen clears state_reason."""
+    number = forge.issue_create("x", "b")
+    forge.issue_close(number)
+    assert (
+        forge.issue_get(number, fields=["state_reason"])["state_reason"] == "completed"
+    )
+    forge.reopen_issue(number)
+    assert forge.issue_get(number, fields=["state_reason"])["state_reason"] is None
+
+
+def test_issue_get_state_reason_legacy_closed_is_completed(
+    forge: LocalForge, forge_root: Path
+) -> None:
+    """Issue #7952 AC3: legacy closed issues without state_reason read as completed."""
+    number = forge.issue_create("legacy", "b")
+    path = forge_root / ".forge" / "issues" / f"{number}.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["state"] = "closed"
+    data.pop("state_reason", None)
+    path.write_text(json.dumps(data), encoding="utf-8")
+    assert (
+        forge.issue_get(number, fields=["state_reason"])["state_reason"] == "completed"
+    )
+
+
+def test_issue_close_invalid_reason_raises_without_change(forge: LocalForge) -> None:
+    """Issue #7952 AC4: invalid reason leaves issue open."""
+    number = forge.issue_create("x", "b")
+    with pytest.raises(ValueError):
+        forge.issue_close(number, reason="other")
+    assert forge.issue_get(number, fields=["state"])["state"] == "OPEN"
+
+
 def test_graphql_not_supported_and_protocol_conformance(tmp_path: Path) -> None:
     from ghdag.github_client import GitHubClient
 

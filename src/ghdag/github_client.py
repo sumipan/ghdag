@@ -37,7 +37,7 @@ from ghdag.core.exceptions import (
     PermissionDeniedError,
     RateLimitError,
 )
-from ghdag.core.ports.forge import ForgePort
+from ghdag.core.ports.forge import ISSUE_CLOSE_REASONS, ForgePort
 
 # rel="next" in the GitHub Link header (observed 2026-09-10):
 #   <https://api.github.com/repositories/.../issues?per_page=1&...&page=2>; rel="next"
@@ -608,6 +608,12 @@ class GitHubClient:
                     if isinstance(summary, dict)
                     else {"total": 0, "completed": 0, "percent_completed": 0}
                 )
+            elif field == "state_reason":
+                state = str(raw.get("state", "")).lower()
+                if state == "open":
+                    out["state_reason"] = None
+                else:
+                    out["state_reason"] = raw.get("state_reason")
             else:
                 out[field] = raw.get(field)
         return out
@@ -716,11 +722,16 @@ class GitHubClient:
             ),
         )
 
-    def issue_close(self, number: int) -> None:
+    def issue_close(self, number: int, *, reason: str = "completed") -> None:
+        if reason not in ISSUE_CLOSE_REASONS:
+            raise ValueError(
+                f"invalid issue close reason {reason!r}; "
+                f"expected one of {ISSUE_CLOSE_REASONS}"
+            )
         self._request(
             "PATCH",
             f"/repos/{self._owner}/{self._repo}/issues/{number}",
-            body={"state": "closed"},
+            body={"state": "closed", "state_reason": reason},
         )
 
     def reopen_issue(self, number: int) -> None:

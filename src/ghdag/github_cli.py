@@ -329,8 +329,13 @@ def _cli_issue_comment(client: ForgePort, args: list[str]) -> int:
 def _cli_issue_close(client: ForgePort, args: list[str]) -> int:
     parser = _StrictParser(prog="issue close", add_help=False)
     parser.add_argument("number", type=int)
+    parser.add_argument(
+        "--reason",
+        choices=["completed", "not_planned"],
+        default="completed",
+    )
     ns = parser.parse_args(args)
-    client.issue_close(ns.number)
+    client.issue_close(ns.number, reason=ns.reason)
     return 0
 
 

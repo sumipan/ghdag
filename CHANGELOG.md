@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.155.2 - 2026-11-25
+
+### Added
+
+- forge: propagate issue close state_reason
+
 ## 0.155.1 - 2026-11-25
 
 ### Fixed
