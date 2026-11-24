@@ -6,7 +6,6 @@ import json
 
 import pytest
 
-from ghdag.files.links.obsidian import job_footer
 from ghdag.pipeline.task_queue import TaskQueue
 
 UUID1 = "38d6b791-1072-42f0-838d-45c7d10748ff"
@@ -34,19 +33,23 @@ class TestWriteOrderFileFooter:
         state = TaskQueue(state_dir=tmp_path / "state", exec_jsonl_path=tmp_path / "exec.jsonl")
         order_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         ts = "20260509120000"
+        engine = "cursor"
+
+        def order_footer(received_ts: str, received_uuid: str, received_engine: str) -> str:
+            return f"\n<!-- footer:{received_ts}:{received_uuid}:{received_engine} -->\n"
 
         filename = state.write_order(
             ts,
             order_uuid,
             "order body",
             str(queue_dir),
-            engine="cursor",
-            order_footer_fn=job_footer,
+            engine=engine,
+            order_footer_fn=order_footer,
         )
 
+        expected_footer = order_footer(ts, order_uuid, engine)
         content = (queue_dir / filename).read_text(encoding="utf-8")
-        assert "## DAG (Obsidian)" in content
-        assert "[[jobs/done/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee]]" in content
+        assert content == "order body" + expected_footer
 
 
 @pytest.fixture
