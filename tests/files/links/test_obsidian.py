@@ -1,31 +1,8 @@
-"""Tests for ghdag.files.links.obsidian (Issue #759 AC1–AC6b)."""
+"""Tests for ghdag.files.links.obsidian (Issue #7916)."""
 
 from __future__ import annotations
 
-from ghdag.files.links.obsidian import rewrite_links, summary_footer
-
-TS = "20260509120000"
-
-
-class TestSummaryFooter:
-    def test_summary_footer_includes_slack_done_link(self) -> None:
-        out = summary_footer(
-            TS,
-            "sum-456",
-            [
-                "jobs/20260509-cursor-result-abc.md",
-                "jobs/20260509-cursor-result-def.md",
-            ],
-            slack_uuid="slack-789",
-        )
-        assert "[[jobs/done/sum-456]]" in out
-        assert "[[jobs/20260509-cursor-result-abc.md]]" in out
-        assert "[[jobs/20260509-cursor-result-def.md]]" in out
-        assert "[[jobs/done/slack-789]]" in out
-
-    def test_summary_footer_omits_slack_when_not_given(self) -> None:
-        out = summary_footer(TS, "sum-456", ["jobs/20260509-cursor-result-abc.md"])
-        assert "[[jobs/done/slack-789]]" not in out
+from ghdag.files.links.obsidian import rewrite_links
 
 
 class TestRewriteLinks:
