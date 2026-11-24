@@ -16,14 +16,6 @@ class TestDefaultHooksCheckRejected:
         assert hooks.check_rejected(str(f)) is True
 
 
-    def test_legacy_rejected_on_first_line(self, tmp_path) -> None:
-        f = tmp_path / "result.md"
-        f.write_text("REJECTED: x\n", encoding="utf-8")
-        hooks = DefaultHooks()
-        assert hooks.check_rejected(str(f)) is True
-
-
-
 class TestDefaultHooksLoggingOnly:
     def test_no_args_init(self):
         """AC-2: DefaultHooks() can be instantiated with no arguments."""

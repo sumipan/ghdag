@@ -4,7 +4,12 @@ import io
 import threading
 from unittest.mock import MagicMock
 
-from ghdag.dag._util import _extract_tee_target, _stderr_reader, _stdout_reader
+from ghdag.dag._util import (
+    _extract_tee_target,
+    _stderr_reader,
+    _stdout_reader,
+    default_check_rejected,
+)
 
 
 class TestExtractTeeTarget:
@@ -68,6 +73,23 @@ class TestStderrReader:
         t.start()
         t.join()
         assert not t.is_alive()
+
+
+class TestDefaultCheckRejected:
+    """Issue #7919 AC1 — reply block only; legacy first-line REJECTED: is not read."""
+
+    def test_legacy_rejected_line_returns_false(self, tmp_path) -> None:
+        f = tmp_path / "result.md"
+        f.write_text("REJECTED: too long\n", encoding="utf-8")
+        assert default_check_rejected(str(f)) is False
+
+    def test_reply_block_rejected_returns_true(self, tmp_path) -> None:
+        f = tmp_path / "result.md"
+        f.write_text(
+            "```ghdag\nstatus: rejected\nreason: retry\n```\n",
+            encoding="utf-8",
+        )
+        assert default_check_rejected(str(f)) is True
 
 
 class TestStdoutReader:

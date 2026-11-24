@@ -224,7 +224,7 @@ def _extract_tee_target(command: str, result_path: str | None = None) -> str | N
 
 
 def default_check_rejected(result_path: str) -> bool:
-    """Return True when the result is rejected (reply block or legacy REJECTED: line)."""
+    """Return True when the result contains a reply block with status: rejected."""
     try:
         content = Path(result_path).read_text(encoding="utf-8", errors="replace")
     except OSError:
@@ -234,10 +234,4 @@ def default_check_rejected(result_path: str) -> bool:
         return parsed.status == "rejected"
     if isinstance(parsed, ReplyBlockError):
         return False
-    for line in content.splitlines()[:10]:
-        stripped = line.strip()
-        if stripped.startswith("REJECTED:"):
-            return True
-        if stripped.startswith("ACCEPTED"):
-            return False
     return False
