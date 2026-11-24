@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.154.2 - 2026-11-24
+
+### Fixed
+
+- quota: skip lock when state file is absent on read paths
+
 ## 0.154.1 - 2026-11-24
 
 ### Fixed

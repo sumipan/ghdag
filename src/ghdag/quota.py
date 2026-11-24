@@ -512,6 +512,8 @@ class QuotaGate:
         A missing state file yields the default state (no file is created).
         Invalid JSON or an unknown schema raises ``ValueError``.
         """
+        if not self._state_path.exists():
+            return self._load_state_unlocked()
         with self._lock(exclusive=False):
             return self._load_state_unlocked()
 
@@ -594,6 +596,14 @@ class QuotaGate:
 
     def snapshot(self, *, now: datetime | None = None) -> QuotaSnapshot:
         current = _aware_now(now)
+        if not self._state_path.exists():
+            return QuotaSnapshot(
+                engines={},
+                draining_engines={},
+                running_tasks={},
+                limits={},
+                usage={},
+            )
         with self._lock(exclusive=False):
             state = self._load_state_unlocked()
         engines: dict[str, EngineQuotaState] = {}
