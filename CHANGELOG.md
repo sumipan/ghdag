@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.154.2 - 2026-11-24
+
+### Fixed
+
+- test: drop README-locking convention checks and stabilize quota resume_at (#7889)
+
 ## 0.154.1 - 2026-11-24
 
 ### Fixed
