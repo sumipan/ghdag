@@ -304,7 +304,7 @@ def test_runtime_quota_error_pauses_engine_without_task_ledger(mock_mark_done, t
 
     result_file = tmp_path / "result.md"
     result_file.write_text("placeholder", encoding="utf-8")
-    resume_at = datetime(2099, 6, 15, 12, 0, tzinfo=timezone.utc)
+    resume_at = datetime(2026, 11, 24, 12, 0, tzinfo=JST)
     stdout = (
         b'{"is_error":true,"error":{"message":"quota exhausted. Try again at '
         + resume_at.isoformat().encode("utf-8")
@@ -331,6 +331,7 @@ def test_runtime_quota_error_pauses_engine_without_task_ledger(mock_mark_done, t
     hooks.on_task_failure.assert_not_called()
     assert not result_file.exists()
     mock_mark_done.assert_not_called()
-    assert engine._quota_gate.snapshot().engines["claude"].status == "paused"
+    snapshot = engine._quota_gate.snapshot(now=resume_at - timedelta(hours=1))
+    assert snapshot.engines["claude"].status == "paused"
 
 

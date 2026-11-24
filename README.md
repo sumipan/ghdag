@@ -521,7 +521,7 @@ The intake side and the execution side never import each other; `import-linter` 
 | Timeout / cancel | SIGTERM to the process group, SIGKILL after `DagConfig.kill_grace`; done marker `TIMEOUT` / `CANCELLED` |
 | Reply block | A result may end with a fenced YAML block whose info string is `ghdag` (schema `reply-block`). It carries the task status, and `status: ok` with `children` declares fan-out: the runner enqueues the children and the parent completes when they do. |
 | Repair turn | When the reply block or fan-out is invalid and the task has a stored session, the runner resumes that session once with a repair order (`DagConfig.max_repair_turns`, audit event `llm.repair_turn`). The relaunch goes through quota admission like any launch; if it is refused, the original failure stands |
-| Quota wait | A task whose reply block reports `status: wait_quota` stays pending without a done marker. The named engines are paused in the quota gate and the task is relaunched when one of them is available again (no per-task defer ledger; only engine admission) |
+| Quota wait | A task whose reply block reports `status: wait_quota` stays pending without a done marker. The named engines are paused in the quota gate and the task is relaunched when one of them is available again |
 | Retry | Retryable engine errors are relaunched up to `DagConfig.max_retry` times |
 | Engine quarantine | An engine whose environment is broken (missing binary, for example) is temporarily blocked from launching |
 | Circuit breaker | The runner stops after `max_consecutive_failures` failures in a row (audit event `circuit_breaker_tripped`); the count resets when failures are more than `failure_window_sec` apart |
@@ -548,7 +548,7 @@ Some work, such as replacing the runner's own code, must not overlap with any ot
 | Interactive prompts | A failed run whose last non-empty output line ends with `?` (or a suffix from the language pack) is `INTERACTIVE_PROMPT`: permanent, never retried |
 | Missing engine binary | `command not found`, `No such file or directory` or `permission denied` for the engine's CLI, or exit `127`, is `ENGINE_ENVIRONMENT_ERROR` |
 | Authentication | Auth wording in the output (`unauthorized`, `not logged in`, `invalid api key`, `authentication_error`, ...) is classified `AUTH` |
-| Quota exhaustion | `QUOTA_EXHAUSTED` (stderr, non-zero exit, or engine JSON with `is_error` even at exit 0) pauses the engine in the quota gate until the reported reset time, or for `GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS` when the engine gives none. The task stays pending: no `done/` marker, the attempt result file is removed, and launch is blocked only through engine-level admission |
+| Quota exhaustion | `QUOTA_EXHAUSTED` pauses the engine in the quota gate until the reported reset time, or for `GHDAG_QUOTA_DEFAULT_PAUSE_SECONDS` when the engine gives none |
 | cursor `RetriableError:` | `[resource_exhausted]` is a rate limit, other codes are capacity errors; both are retried |
 
 ### Reviewing task runs
@@ -1000,7 +1000,7 @@ sinks:
 
 Written by `QuotaGate` and by `ghdag quota`. Top-level keys: `engines`, `draining_engines`, `running_tasks`, and optionally `limits` and `usage`.
 
-An engine is unavailable while it is draining or while any active pause source says so. Each `engines.<name>` entry keeps a `sources` list; a source has a `kind` (`budget`, `failure`, `manual` or `drain`), `reason`, `until`, `set_by`, `observed_at` and `available`. `QuotaGate.report(kind=...)` adds or updates the source of that kind. `ghdag quota report` always records a `failure` source. There is no per-task defer ledger in this file: intake still appends lines to `exec.jsonl` while an engine is paused; the runner refuses new launches through `admit` / `begin_run` until a pause expires or is cleared.
+An engine is unavailable while it is draining or while any active pause source says so. Each `engines.<name>` entry keeps a `sources` list; a source has a `kind` (`budget`, `failure`, `manual` or `drain`), `reason`, `until`, `set_by`, `observed_at` and `available`. `QuotaGate.report(kind=...)` adds or updates the source of that kind. `ghdag quota report` always records a `failure` source.
 
 `usage.<engine>` holds the latest utilization windows an engine reported (`window_minutes`, `used_percent`, `resets_at`); today only claude reports them. They are informational and never pause an engine. `ghdag quota status` prints them together with per-engine `queued` / `running` / `idle` counts.
 
