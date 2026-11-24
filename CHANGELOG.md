@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.154.1 - 2026-11-24
+
+### Fixed
+
+- test: stabilize quota ledger tests and document engine-only pauses
+- repair: drop readme contract test and README reference (#7888)
+
 ## 0.154.0 - 2026-11-24
 
 ### Changed
