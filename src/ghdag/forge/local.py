@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from ghdag.core.exceptions import GitHubApiError
+from ghdag.core.ports.forge import ISSUE_CLOSE_REASONS
 
 
 def _utcnow() -> str:
@@ -199,6 +200,15 @@ class LocalForge:
     def _set_labels(self, issue: dict[str, Any], names: list[str]) -> None:
         issue["labels"] = [{"name": n} for n in names]
 
+    def _state_reason_value(self, raw: dict[str, Any]) -> str | None:
+        state = str(raw.get("state", "open")).lower()
+        if state != "closed":
+            return None
+        reason = raw.get("state_reason")
+        if reason is None:
+            return "completed"
+        return str(reason)
+
     # --- Issue ---
 
     def issue_get(self, number: int, fields: list[str] | None = None) -> dict:
@@ -211,6 +221,7 @@ class LocalForge:
             "title": raw.get("title", ""),
             "body": raw.get("body", ""),
             "state": state,
+            "state_reason": self._state_reason_value(raw),
             "labels": [
                 {"name": n} for n in self._label_names(raw)
             ],
@@ -245,6 +256,8 @@ class LocalForge:
                     out["milestone"] = self._milestone_ref(int(ms))
             elif field == "state":
                 out["state"] = state.upper()
+            elif field == "state_reason":
+                out["state_reason"] = self._state_reason_value(raw)
             elif field == "number":
                 out["number"] = int(raw["number"])
             elif field == "id":
@@ -364,9 +377,15 @@ class LocalForge:
             self._set_labels(data, names)
         self._save_issue(data)
 
-    def issue_close(self, number: int) -> None:
+    def issue_close(self, number: int, *, reason: str = "completed") -> None:
+        if reason not in ISSUE_CLOSE_REASONS:
+            raise ValueError(
+                f"invalid issue close reason {reason!r}; "
+                f"expected one of {ISSUE_CLOSE_REASONS}"
+            )
         data = self._load_issue(number)
         data["state"] = "closed"
+        data["state_reason"] = reason
         self._save_issue(data)
         pull_path = self._pull_path(number)
         if pull_path.exists():
@@ -377,6 +396,7 @@ class LocalForge:
     def reopen_issue(self, number: int) -> None:
         data = self._load_issue(number)
         data["state"] = "open"
+        data.pop("state_reason", None)
         self._save_issue(data)
 
     def issue_comment(self, number: int, body: str) -> dict:

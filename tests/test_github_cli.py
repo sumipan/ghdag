@@ -185,6 +185,19 @@ def test_unknown_subcommand_lists_available_subcommands(
         assert name in err
 
 
+def test_cli_issue_close_reason_not_planned(
+    local_forge_cli: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Issue #7952 AC8: issue close --reason not_planned persists via LocalForge."""
+    rc = cli_main(["issue", "close", "1", "--reason", "not_planned"])
+    assert rc == 0
+    forge = LocalForge(local_forge_cli, repo="local/test")
+    assert forge.issue_get(1, fields=["state", "state_reason"]) == {
+        "state": "CLOSED",
+        "state_reason": "not_planned",
+    }
+
+
 def test_pr_create_body_file(
     local_forge_cli: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

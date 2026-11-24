@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+ISSUE_CLOSE_REASONS = ("completed", "not_planned")
+
 
 @runtime_checkable
 class ForgePort(Protocol):
@@ -38,7 +40,7 @@ class ForgePort(Protocol):
         milestone: int | None = None,
     ) -> None: ...
 
-    def issue_close(self, number: int) -> None: ...
+    def issue_close(self, number: int, *, reason: str = "completed") -> None: ...
 
     def reopen_issue(self, number: int) -> None: ...
 

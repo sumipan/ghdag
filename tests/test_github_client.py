@@ -491,6 +491,66 @@ def _rate_limited_http_error(reset: str | None = None) -> urllib.error.HTTPError
     )
 
 
+def test_issue_close_sends_state_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Issue #7952 AC5: PATCH includes state and state_reason."""
+    client = GitHubClient(token="tok", repo="o/r")
+    calls: list[tuple[str, str, dict | None]] = []
+
+    def fake_request(method: str, path: str, **kwargs: object) -> dict:
+        body = kwargs.get("body")
+        calls.append((method, path, body if isinstance(body, dict) else None))
+        return {}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    client.issue_close(3, reason="not_planned")
+    assert calls == [
+        (
+            "PATCH",
+            "/repos/o/r/issues/3",
+            {"state": "closed", "state_reason": "not_planned"},
+        )
+    ]
+
+
+def test_issue_close_invalid_reason_raises_without_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #7952 AC6: invalid reason does not call _request."""
+    client = GitHubClient(token="tok", repo="o/r")
+    calls: list[tuple[str, str]] = []
+
+    def fake_request(method: str, path: str, **kwargs: object) -> dict:
+        calls.append((method, path))
+        return {}
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    with pytest.raises(ValueError):
+        client.issue_close(1, reason="other")
+    assert calls == []
+
+
+def test_issue_get_state_reason_none_when_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #7952 AC7: open issues expose state_reason None even if API says reopened."""
+    client = GitHubClient(token="tok", repo="o/r")
+
+    def fake_request(method: str, path: str, **kwargs: object) -> dict:
+        if kwargs.get("return_link_header"):
+            raise AssertionError("unexpected pagination")
+        if method == "GET" and path.endswith("/issues/1"):
+            return {"state": "open", "state_reason": "reopened"}
+        if method == "GET" and path.endswith("/issues/2"):
+            return {"state": "closed", "state_reason": "not_planned"}
+        raise AssertionError(f"unexpected: {method} {path}")
+
+    monkeypatch.setattr(client, "_request", fake_request)
+    assert client.issue_get(1, fields=["state_reason"]) == {"state_reason": None}
+    assert client.issue_get(2, fields=["state_reason"]) == {
+        "state_reason": "not_planned"
+    }
+
+
 def test_graphql_rate_limit_beyond_wait_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     import time as _time
 
