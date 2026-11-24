@@ -268,6 +268,7 @@ def test_resume_fallback_command_forms_unchanged_across_engines(
 
 
 def test_enqueue_records_are_kept_without_task_ledger(tmp_path: Path) -> None:
+    """Paused engines do not block append_task; admission fails only at launch (sumipan/nexus#7888)."""
     exec_path = tmp_path / "jobs" / "exec.jsonl"
     done_dir = tmp_path / "jobs" / "done"
     done_dir.mkdir(parents=True, exist_ok=True)
@@ -294,6 +295,7 @@ def test_enqueue_records_are_kept_without_task_ledger(tmp_path: Path) -> None:
 
 @patch("ghdag.dag.task_launcher.state_mark_done")
 def test_runtime_quota_error_pauses_engine_without_task_ledger(mock_mark_done, tmp_path: Path) -> None:
+    """Engine JSON quota errors pause the engine with no done marker or task ledger (sumipan/nexus#7888)."""
     config = DagConfig(exec_jsonl_path=tmp_path / "exec.jsonl", exec_done_dir=tmp_path / "done")
     hooks = MagicMock()
     hooks.check_rejected.return_value = False
@@ -302,7 +304,7 @@ def test_runtime_quota_error_pauses_engine_without_task_ledger(mock_mark_done, t
 
     result_file = tmp_path / "result.md"
     result_file.write_text("placeholder", encoding="utf-8")
-    resume_at = datetime(2026, 11, 24, 12, 0, tzinfo=JST)
+    resume_at = datetime(2099, 6, 15, 12, 0, tzinfo=timezone.utc)
     stdout = (
         b'{"is_error":true,"error":{"message":"quota exhausted. Try again at '
         + resume_at.isoformat().encode("utf-8")
