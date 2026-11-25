@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.156.1 - 2026-11-25
+
+### Fixed
+
+- core: shell-quote permission flags in render_exec_command
+
 ## 0.156.0 - 2026-11-25
 
 ### Fixed

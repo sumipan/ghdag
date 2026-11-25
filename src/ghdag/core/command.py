@@ -300,7 +300,7 @@ def render_exec_command(
             if spec.danger_flag:
                 parts.append(spec.danger_flag)
         else:
-            parts.extend(perm_flags)
+            parts.extend(shlex.quote(flag) for flag in perm_flags)
 
     if spec.danger_flag_position == "leading":
         # cursor: model → prompt → resume → danger/perm → extra_args
