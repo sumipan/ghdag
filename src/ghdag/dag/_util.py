@@ -15,6 +15,7 @@ from ghdag.core.reply_block import (
     ReplyBlock,
     ReplyBlockError,
     find_reply_block,
+    is_rejected_reply,
     parse_reply_block,
 )
 from ghdag.core.vocabulary import (
@@ -229,9 +230,4 @@ def default_check_rejected(result_path: str) -> bool:
         content = Path(result_path).read_text(encoding="utf-8", errors="replace")
     except OSError:
         return False
-    parsed = _parse_reply(content)
-    if isinstance(parsed, ReplyBlock):
-        return parsed.status == "rejected"
-    if isinstance(parsed, ReplyBlockError):
-        return False
-    return False
+    return is_rejected_reply(content)

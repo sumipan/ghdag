@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 from pathlib import Path
 
@@ -171,6 +172,40 @@ class TestRepairJobsDone:
         ])
         stats = repair_jobs_done(exec_jsonl, done_dir)
         assert stats == {"restored": 0, "skipped": 0}
+
+
+_EXECUTION_PACKAGES = frozenset(
+    {"ghdag.dag", "ghdag.pipeline", "ghdag.workflow", "ghdag.cli", "ghdag.ui"}
+)
+
+
+def _module_root(name: str | None) -> str | None:
+    if name is None:
+        return None
+    parts = name.split(".")
+    if len(parts) < 2:
+        return name
+    return ".".join(parts[:2])
+
+
+def test_maintenance_does_not_import_execution_packages() -> None:
+    """Issue #7967 AC2 — maintenance must not import execution packages."""
+    source_path = Path(__file__).resolve().parents[1] / "src" / "ghdag" / "maintenance.py"
+    tree = ast.parse(source_path.read_text(encoding="utf-8"))
+    offenders: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = _module_root(alias.name)
+                if root in _EXECUTION_PACKAGES:
+                    offenders.append(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module is None:
+                continue
+            root = _module_root(node.module)
+            if root in _EXECUTION_PACKAGES:
+                offenders.append(node.module)
+    assert offenders == []
 
 
 # ---------------------------------------------------------------------------

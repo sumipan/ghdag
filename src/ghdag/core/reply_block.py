@@ -80,6 +80,17 @@ def parse_reply_block(text: str) -> ReplyBlock | None:
     return _parse_reply_body(body)
 
 
+def is_rejected_reply(text: str) -> bool:
+    """Return True when the last top-level reply block in text has status: rejected."""
+    try:
+        block = parse_reply_block(text)
+    except ReplyBlockError:
+        return False
+    if block is None:
+        return False
+    return block.status == "rejected"
+
+
 def _parse_reply_body(body: str) -> ReplyBlock:
     try:
         data = yaml.safe_load(body)

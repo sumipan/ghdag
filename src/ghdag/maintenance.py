@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from ghdag.core.reply_block import is_rejected_reply
 from ghdag.io.done import is_done as _is_done
 from ghdag.io.done import mark_done as _mark_done
 
@@ -92,11 +93,10 @@ def repair_jobs_done(
             skipped += 1
             continue
 
-        from ghdag.dag._util import default_check_rejected
-
-        if default_check_rejected(str(result_path)):
+        content = result_path.read_text(encoding="utf-8", errors="replace")
+        if is_rejected_reply(content):
             status = "REJECTED"
-        elif result_path.read_text(encoding="utf-8") == "":
+        elif content == "":
             status = "EMPTY_RESULT"
         else:
             status = "0"
