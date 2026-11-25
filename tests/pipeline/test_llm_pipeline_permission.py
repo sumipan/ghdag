@@ -55,6 +55,7 @@ class TestStepConfigPermission:
         """Issue #7332 AC1: host-supplied Permission is baked into the exec command."""
         import json as _json
         import shlex
+        import subprocess
 
         from ghdag.core.capabilities import Permission
 
@@ -69,6 +70,15 @@ class TestStepConfigPermission:
         exec_lines = api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
 
         record = _json.loads(exec_lines[0])
+        # Issue #7969: runner executes the command via `bash -c`, so tool
+        # patterns with parentheses must be shell-quoted (syntax check only).
+        check = subprocess.run(
+            ["bash", "-n", "-c", record["command"]],
+            capture_output=True,
+            text=True,
+        )
+        assert check.returncode == 0, check.stderr
+
         cmd = shlex.split(record["command"])
         allowed_idx = cmd.index("--allowed-tools")
         assert cmd[allowed_idx + 1] == "Read,Bash(ls:*)"
@@ -108,39 +118,6 @@ class TestStepConfigPermission:
         with pytest.raises(ConfigError) as exc_info:
             api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
         assert exc_info.value.code == "STEP_PERMISSION_UNKNOWN"
-
-    def test_step_permission_command_with_parentheses_passes_bash_syntax_check(self):
-        """Issue #7969: tool patterns with parentheses are shell-quoted in exec commands."""
-        import json as _json
-        import shlex
-        import subprocess
-
-        from ghdag.core.capabilities import Permission
-
-        api, _, _ = _make_api()
-        perm = Permission(
-            allowed_tools=("Read", "Bash(ls:*)"),
-            disallowed_tools=("WebFetch",),
-        )
-        steps = [
-            StepConfig(template="brushup", model="claude-sonnet-4-6", permission=perm),
-        ]
-        exec_lines = api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
-
-        record = _json.loads(exec_lines[0])
-        command = record["command"]
-        check = subprocess.run(
-            ["bash", "-n", "-c", command],
-            capture_output=True,
-            text=True,
-        )
-        assert check.returncode == 0, check.stderr
-
-        cmd = shlex.split(command)
-        allowed_idx = cmd.index("--allowed-tools")
-        assert cmd[allowed_idx + 1] == "Read,Bash(ls:*)"
-        disallowed_idx = cmd.index("--disallowed-tools")
-        assert cmd[disallowed_idx + 1] == "WebFetch"
 
 
 # ---------------------------------------------------------------------------
