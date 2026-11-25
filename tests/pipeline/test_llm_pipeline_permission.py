@@ -109,6 +109,39 @@ class TestStepConfigPermission:
             api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
         assert exc_info.value.code == "STEP_PERMISSION_UNKNOWN"
 
+    def test_step_permission_command_with_parentheses_passes_bash_syntax_check(self):
+        """Issue #7969: tool patterns with parentheses are shell-quoted in exec commands."""
+        import json as _json
+        import shlex
+        import subprocess
+
+        from ghdag.core.capabilities import Permission
+
+        api, _, _ = _make_api()
+        perm = Permission(
+            allowed_tools=("Read", "Bash(ls:*)"),
+            disallowed_tools=("WebFetch",),
+        )
+        steps = [
+            StepConfig(template="brushup", model="claude-sonnet-4-6", permission=perm),
+        ]
+        exec_lines = api.enqueue(steps, {}, audit_context=_TEST_AUDIT_CTX)
+
+        record = _json.loads(exec_lines[0])
+        command = record["command"]
+        check = subprocess.run(
+            ["bash", "-n", "-c", command],
+            capture_output=True,
+            text=True,
+        )
+        assert check.returncode == 0, check.stderr
+
+        cmd = shlex.split(command)
+        allowed_idx = cmd.index("--allowed-tools")
+        assert cmd[allowed_idx + 1] == "Read,Bash(ls:*)"
+        disallowed_idx = cmd.index("--disallowed-tools")
+        assert cmd[disallowed_idx + 1] == "WebFetch"
+
 
 # ---------------------------------------------------------------------------
 # S0-2 (#1295): default permission audit annotations (AC1–AC3, AC7)
