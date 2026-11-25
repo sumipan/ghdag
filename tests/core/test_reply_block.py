@@ -8,6 +8,7 @@ from ghdag.core.reply_block import (
     ReplyBlock,
     ReplyBlockError,
     find_reply_block,
+    is_rejected_reply,
     parse_reply_block,
 )
 
@@ -104,3 +105,25 @@ class TestParseReplyBlock:
                 "    prompt: x\n"
                 "```\n"
             )
+
+
+class TestIsRejectedReply:
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            (
+                "```ghdag\nstatus: rejected\nreason: x\n```\n",
+                True,
+            ),
+            ("no block", False),
+            ("```ghdag\nstatus: rejected\n```\n", False),
+            (
+                "```ghdag\nstatus: ok\ncode: IMPL_DONE\n```\n",
+                False,
+            ),
+        ],
+        ids=["rejected", "no_block", "invalid_rejected", "ok"],
+    )
+    def test_cases(self, text: str, expected: bool) -> None:
+        """Issue #7967 AC3."""
+        assert is_rejected_reply(text) is expected
