@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.158.0 - 2026-11-26
+
+### Added
+
+- quota: add ghdag quota probe for isolated usage windows
+
+### Fixed
+
+- repair: document ghdag quota probe in README CLI tables (#8087)
+
 ## 0.157.0 - 2026-11-26
 
 ### Added
