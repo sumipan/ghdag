@@ -46,6 +46,8 @@ class MetricsRecorder:
             "cache_read_tokens": metrics.cache_read_tokens,
             "cache_creation_tokens": metrics.cache_creation_tokens,
         }
+        if metrics.correlation_id is not None:
+            record["correlation_id"] = metrics.correlation_id
         if metrics.additional_tags is not None:
             record.update(metrics.additional_tags)
         line = json.dumps(record, ensure_ascii=False) + "\n"

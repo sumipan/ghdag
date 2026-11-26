@@ -675,7 +675,35 @@ class TaskLauncher:
             interrupted_reruns,
             node=spawn_node_name,
         )
-        self._hooks.on_task_start(uuid, task)
+        try:
+            self._hooks.on_task_start(uuid, task)
+        except Exception as exc:
+            logger.exception(
+                "on_task_start hook failed for task [%s]: %s",
+                uuid,
+                exc,
+            )
+            try:
+                append_audit_record(
+                    self._queue_audit_path(),
+                    {
+                        "schema_version": 3,
+                        "event_type": "task_start_hook_failed",
+                        "timestamp": now_ts(self._config.timezone),
+                        "uuid": uuid,
+                        "status": "running",
+                        "component": "hooks.on_task_start",
+                        "exception_type": type(exc).__name__,
+                        "error_message": str(exc),
+                        "correlation_id": task.idempotency_key,
+                        "request_id": _task_request_id(task),
+                    },
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to write on_task_start hook failure audit for task [%s]",
+                    uuid,
+                )
         return True
 
     def request_cancel(self, uuid: str) -> None:

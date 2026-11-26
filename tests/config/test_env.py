@@ -27,6 +27,30 @@ def test_github_token_none_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     assert env.github_token() is None
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, True),
+        ("", True),
+        ("1", True),
+        ("0", False),
+        ("off", True),
+        (" 0 ", False),
+    ],
+)
+def test_run_recorder_enabled_only_zero_disables(
+    monkeypatch: pytest.MonkeyPatch,
+    value: str | None,
+    expected: bool,
+) -> None:
+    """Refs sumipan/ghdag#8060 AC1; host pre-migrated in sumipan/nexus#8059 (``6a08e38``)."""
+    monkeypatch.delenv("GHDAG_RUN_RECORDER", raising=False)
+    if value is not None:
+        monkeypatch.setenv("GHDAG_RUN_RECORDER", value)
+    assert env.run_recorder_enabled() is expected
+    assert "run_recorder_enabled" in env.__all__
+
+
 def test_engine_isolation_enabled_unset(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GHDAG_ENGINE_ISOLATION", raising=False)
     assert env.engine_isolation_enabled() is False

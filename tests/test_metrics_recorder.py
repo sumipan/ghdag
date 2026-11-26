@@ -53,6 +53,26 @@ def test_record_errors_log(tmp_path):
 
 
 
+def test_record_includes_correlation_id(tmp_path):
+    """Refs sumipan/ghdag#8060 AC6."""
+    output = tmp_path / "metrics.jsonl"
+    recorder = MetricsRecorder(output)
+    recorder.record(make_metrics(uuid="t-corr", correlation_id="corr-1"))
+
+    data = json.loads(output.read_text().splitlines()[0])
+    assert data["correlation_id"] == "corr-1"
+
+
+def test_record_omits_none_correlation_id(tmp_path):
+    """Refs sumipan/ghdag#8060 AC7."""
+    output = tmp_path / "metrics.jsonl"
+    recorder = MetricsRecorder(output)
+    recorder.record(make_metrics(uuid="t-none", correlation_id=None))
+
+    data = json.loads(output.read_text().splitlines()[0])
+    assert "correlation_id" not in data
+
+
 def test_record_expands_additional_tags(tmp_path):
     """When additional_tags is set, expand key-value pairs onto the JSONL record."""
     output = tmp_path / "metrics.jsonl"
