@@ -44,6 +44,7 @@ __all__ = [
     "ghdag_forge",
     "ghdag_forge_root",
     "ghdag_exec_jsonl",
+    "run_recorder_enabled",
     "set_pending_env_denied_count",
     "pending_env_denied_count",
 ]
@@ -261,3 +262,8 @@ def ghdag_forge_root() -> str | None:
 def ghdag_exec_jsonl() -> str | None:
     """Return raw ``GHDAG_EXEC_JSONL`` if set."""
     return os.environ.get("GHDAG_EXEC_JSONL")
+
+
+def run_recorder_enabled() -> bool:
+    """Return whether ``ghdag run`` installs the built-in audit/metrics recorder (default on)."""
+    return os.environ.get("GHDAG_RUN_RECORDER", "1").strip() != "0"

@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
+from ghdag.core.models.metrics import TaskMetrics
 from ghdag.dag.models import DagConfig as RealDagConfig
 
 
@@ -23,6 +24,12 @@ def _capture_config(**kwargs):
 
 
 _capture_config.last_kwargs = {}
+
+
+@pytest.fixture(autouse=True)
+def _run_recorder_enabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Host env may set GHDAG_RUN_RECORDER=0; unit tests assume recorder on."""
+    monkeypatch.setenv("GHDAG_RUN_RECORDER", "1")
 
 
 class _RecordingEngine:
@@ -77,7 +84,9 @@ class TestRunHooks:
             from ghdag.cli import main
             main(["run", str(exec_md), "--hooks", "my_hooks"])
 
-        assert isinstance(_RecordingEngine.last_hooks, MyHooks)
+        from ghdag.cli.commands.run import _HookChain
+
+        assert isinstance(_RecordingEngine.last_hooks, _HookChain)
 
     def test_hooks_invalid_module_exits_1(self, tmp_path, capsys):
         exec_md = tmp_path / "exec.jsonl"
@@ -208,11 +217,66 @@ class TestRunCliOptions:
         from ghdag.cli.commands.run import _HookChain
 
         assert isinstance(hooks, _HookChain)
-        hooks.on_task_success("u", None, None)
+        sample_metrics = TaskMetrics(
+            uuid="u",
+            engine=None,
+            model=None,
+            wall_time_sec=0.0,
+            token_count=None,
+            status="success",
+            started_at=0.0,
+            finished_at=0.0,
+        )
+        hooks.on_task_success("u", None, sample_metrics)
         assert calls == ["a", "b"]
 
-    def test_run_single_hooks_passed_unwrapped(self, tmp_path):
-        """Refs sumipan/nexus#7095 AC4."""
+    def test_run_single_partial_hook_is_wrapped_with_default_checks(self, tmp_path):
+        """Refs sumipan/ghdag#8060 AC2 — recorder on wraps a partial custom hook."""
+        exec_md = tmp_path / "exec.jsonl"
+        exec_md.write_text("")
+
+        class PartialHooks:
+            def on_task_success(self, uuid, task, metrics):
+                pass
+
+        mod = self._hooks_module("hook_partial", PartialHooks)
+
+        with patch("ghdag.dag.engine.DagEngine", _RecordingEngine), \
+             patch("ghdag.dag.models.DagConfig", _capture_config), \
+             patch("importlib.import_module", return_value=mod):
+            from ghdag.cli import main
+            main(["run", str(exec_md), "--hooks", "hook_partial"])
+
+        from ghdag.cli.commands.run import _HookChain
+        from ghdag.dag import _util
+
+        hooks = _RecordingEngine.last_hooks
+        assert isinstance(hooks, _HookChain)
+        result_path = str(tmp_path / "pipeline-result.md")
+        assert hooks.check_pipeline_status(result_path) == _util.check_pipeline_status(
+            result_path,
+        )
+        for method in (
+            "on_task_start",
+            "on_task_success",
+            "on_task_failure",
+            "on_task_rejected",
+            "on_task_dep_failed",
+            "on_task_empty_result",
+            "on_task_cancelled",
+            "on_task_progress",
+            "on_shutdown",
+            "check_rejected",
+            "check_pipeline_status",
+            "check_promote_target",
+        ):
+            assert callable(getattr(hooks, method))
+
+    def test_run_single_hook_is_unwrapped_when_recorder_disabled(
+        self, tmp_path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Refs sumipan/ghdag#8060 AC3 — GHDAG_RUN_RECORDER=0 passes hook unwrapped."""
+        monkeypatch.setenv("GHDAG_RUN_RECORDER", "0")
         exec_md = tmp_path / "exec.jsonl"
         exec_md.write_text("")
 

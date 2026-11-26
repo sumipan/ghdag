@@ -8,10 +8,81 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from ghdag.config.env import resolve_runtime_paths, run_recorder_enabled
 from ghdag.core.exceptions import GhdagError
 
 if TYPE_CHECKING:
+    from ghdag.core.models.metrics import TaskMetrics
     from ghdag.dag.hooks import DagHooks
+    from ghdag.dag.models import Task
+
+
+class _RunRecorder:
+    """Private audit + metrics recorder for ``ghdag run`` (issue sumipan/ghdag#8060)."""
+
+    def __init__(
+        self,
+        audit_path: Path,
+        metrics_path: Path,
+        *,
+        tz_name: str | None,
+    ) -> None:
+        from ghdag.dag.audit_hooks import AuditHooks
+        from ghdag.metrics.recorder import MetricsRecorder
+
+        self._audit = AuditHooks(audit_path=audit_path, tz_name=tz_name)
+        self._metrics = MetricsRecorder(metrics_path, tz_name=tz_name or "UTC")
+
+    def on_task_start(self, uuid: str, task: Task) -> None:
+        self._audit.on_task_start(uuid, task)
+
+    def on_task_success(self, uuid: str, task: Task, metrics: TaskMetrics) -> None:
+        self._audit.on_task_success(uuid, task, metrics)
+        self._metrics.record(metrics)
+
+    def on_task_failure(
+        self,
+        uuid: str,
+        task: Task,
+        returncode: int,
+        stderr_text: str,
+        metrics: TaskMetrics,
+    ) -> None:
+        self._audit.on_task_failure(uuid, task, returncode, stderr_text, metrics)
+        self._metrics.record(metrics)
+
+    def on_task_rejected(
+        self,
+        uuid: str,
+        task: Task,
+        retry_depth: int,
+        is_final: bool,
+        metrics: TaskMetrics,
+    ) -> None:
+        self._audit.on_task_rejected(uuid, task, retry_depth, is_final, metrics)
+        self._metrics.record(metrics)
+
+    def on_task_dep_failed(self, uuid: str, task: Task, failed_dep: str) -> None:
+        self._audit.on_task_dep_failed(uuid, task, failed_dep)
+
+    def on_task_empty_result(
+        self,
+        uuid: str,
+        task: Task,
+        stderr_text: str,
+        metrics: TaskMetrics,
+    ) -> None:
+        self._audit.on_task_empty_result(uuid, task, stderr_text, metrics)
+        self._metrics.record(metrics)
+
+    def on_task_cancelled(self, uuid: str, task: Task) -> None:
+        self._audit.on_task_cancelled(uuid, task)
+
+    def on_task_progress(self, uuid: str, event: dict) -> None:
+        self._audit.on_task_progress(uuid, event)
+
+    def on_shutdown(self, signum: int) -> None:
+        self._audit.on_shutdown(signum)
 
 
 class _HookChain:
@@ -116,11 +187,26 @@ def cmd_run(args) -> None:
         nodes_path=getattr(args, "nodes", None),
     )
     hook_modules = args.hooks
-    if hook_modules:
-        loaded: list[DagHooks] = [_load_hooks(module_path) for module_path in hook_modules]
-        hooks: DagHooks = loaded[0] if len(loaded) == 1 else _HookChain(loaded)
+    if run_recorder_enabled():
+        runtime = resolve_runtime_paths(args.exec_jsonl)
+        recorder = _RunRecorder(
+            config.audit_path,
+            runtime.state_dir / "metrics.jsonl",
+            tz_name=config.timezone,
+        )
+        if hook_modules:
+            loaded: list[DagHooks] = [
+                _load_hooks(module_path) for module_path in hook_modules
+            ]
+            hooks: DagHooks = _HookChain([recorder, *loaded])
+        else:
+            hooks = _HookChain([recorder])
+    elif hook_modules:
+        loaded = [_load_hooks(module_path) for module_path in hook_modules]
+        hooks = loaded[0] if len(loaded) == 1 else _HookChain(loaded)
     else:
         from ghdag.dag.audit_hooks import AuditHooks
+
         hooks = AuditHooks(audit_path=config.audit_path, tz_name=config.timezone)
     engine = DagEngine(config, hooks)
     if hooks is not None and hasattr(hooks, "set_engine"):
