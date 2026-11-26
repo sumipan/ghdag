@@ -267,10 +267,7 @@ def ghdag_exec_jsonl() -> str | None:
 def run_recorder_enabled() -> bool:
     """Return whether ``ghdag run`` installs the built-in audit/metrics recorder (default on).
 
-    Pinned host consumers (``sumipan/nexus``) keep custom ``--hooks`` that already write
-    audit/metrics; set ``GHDAG_RUN_RECORDER=0`` before adopting a ghdag pin with this
-    default-on recorder (pre-migrated on host in sumipan/nexus#8059, commit ``6a08e38``).
-    Pin bumps for tagged releases follow the host ``release-watcher`` queue (ghdag pyproject
-    pin updated in the bump PR together with any remaining consumer edits).
+    Consumers with custom hooks that already write audit and metrics can set
+    ``GHDAG_RUN_RECORDER=0`` before adopting a release with this default-on recorder.
     """
     return os.environ.get("GHDAG_RUN_RECORDER", "1").strip() != "0"

@@ -168,9 +168,8 @@ class _HookChain:
 def cmd_run(args) -> None:
     """Thin wrapper that builds a DagConfig and calls DagEngine.run().
 
-    When the built-in recorder is enabled (see ``run_recorder_enabled``), host consumers
-    that still pass ``--hooks`` must set ``GHDAG_RUN_RECORDER=0`` before their ghdag pin
-    catches this release; ``sumipan/nexus#8059`` (commit ``6a08e38``) pre-migrated Procfile.
+    Host consumers whose custom hooks already record audit and metrics can set
+    ``GHDAG_RUN_RECORDER=0`` before adopting this default-on recorder.
     """
     if not os.path.exists(args.exec_jsonl):
         raise GhdagError(
