@@ -43,7 +43,7 @@ def test_run_recorder_enabled_only_zero_disables(
     value: str | None,
     expected: bool,
 ) -> None:
-    """Refs sumipan/ghdag#8060 AC1."""
+    """Refs sumipan/ghdag#8060 AC1; host pre-migrated in sumipan/nexus#8059 (``6a08e38``)."""
     monkeypatch.delenv("GHDAG_RUN_RECORDER", raising=False)
     if value is not None:
         monkeypatch.setenv("GHDAG_RUN_RECORDER", value)
