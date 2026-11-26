@@ -227,12 +227,13 @@ Every leaf command accepts `--json`. With `--json`, success is one JSON object o
 | `ghdag dag` | Group: `recover`, `cancel` |
 | `ghdag dag recover` | Reset the failed and pending steps of a handler run so they run again |
 | `ghdag dag cancel` | Request cancellation of a running task |
-| `ghdag quota` | Group: `report`, `clear`, `drain`, `resume`, `status` |
+| `ghdag quota` | Group: `report`, `clear`, `drain`, `resume`, `status`, `probe` |
 | `ghdag quota report` | Report an engine as `available` or `paused` |
 | `ghdag quota clear` | Clear the quota state of an engine |
 | `ghdag quota drain` | Stop new launches for an engine |
 | `ghdag quota resume` | Take an engine out of drain mode |
 | `ghdag quota status` | Print a per-engine quota / drain / queue snapshot as JSON |
+| `ghdag quota probe` | Probe engine quota usage via a minimal LLM call and record windows in the quota gate |
 | `ghdag schema` | Group: `list`, `show` |
 | `ghdag schema list` | List the bundled JSON Schema names |
 | `ghdag schema show` | Print one bundled JSON Schema |
@@ -263,6 +264,7 @@ Every leaf command accepts `--json`. With `--json`, success is one JSON object o
 | `quota drain` | `engine`; `--reason TEXT`; `--state-dir DIR` (as above) |
 | `quota resume` | `engine`; `--state-dir DIR` (as above) |
 | `quota status` | `--state-dir DIR` (as above); `--exec-jsonl PATH` (`jobs/exec.jsonl`); `--done-dir PATH` (`$GHDAG_STATE_DIR/done` or `<exec.jsonl parent>/done`) |
+| `quota probe` | `engine`; `--model MODEL` (probe-specific default); `--timeout SEC` (`120`); `--state-dir DIR` (as above) |
 | `schema list` | none |
 | `schema show` | `name` (logical name without `.schema.json`) |
 | `tools list` | `--path PATH` (required) |

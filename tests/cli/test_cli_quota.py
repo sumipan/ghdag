@@ -9,8 +9,61 @@ Test approach:
 from __future__ import annotations
 
 import json
+import os
+import stat
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
+
+
+def _rate_limit_line(
+    *,
+    five_util: float = 0.43,
+    seven_util: float = 0.76,
+) -> str:
+    return json.dumps(
+        {
+            "type": "rate_limit_event",
+            "rate_limit_info": {
+                "unifiedWindows": {
+                    "five_hour": {"utilization": five_util, "resetsAt": 1794667200},
+                    "seven_day": {"utilization": seven_util, "resetsAt": 1794682800},
+                },
+            },
+        }
+    )
+
+
+def _install_claude_script(bin_dir: Path, body: str) -> None:
+    script = bin_dir / "claude"
+    script.write_text(body, encoding="utf-8")
+    script.chmod(script.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
+def _worktree_src() -> Path:
+    return Path(__file__).resolve().parents[2] / "src"
+
+
+def _probe_env(bin_dir: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+    env["PYTHONPATH"] = str(_worktree_src())
+    return env
+
+
+def _run_quota_probe(
+    *extra: str,
+    state_dir: Path,
+    bin_dir: Path,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "ghdag", "quota", "probe", "claude", "--state-dir", str(state_dir), *extra],
+        capture_output=True,
+        text=True,
+        env=_probe_env(bin_dir),
+    )
 
 
 class TestQuotaCli:
@@ -346,3 +399,130 @@ class TestQuotaCli:
         with pytest.raises(SystemExit) as exc:
             main(argv)
         assert exc.value.code == 2
+
+    def test_quota_probe_records_while_paused_and_draining(self, tmp_path: Path) -> None:
+        """Refs sumipan/ghdag#8087 AC8."""
+        from datetime import datetime, timezone
+
+        from ghdag.quota import QuotaGate
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        gate = QuotaGate(state_dir / "quota-gate.json", pause_ttl_seconds=None)
+        observed = datetime(2026, 11, 26, 10, 0, tzinfo=timezone.utc)
+        gate.report(
+            engine="claude",
+            status="paused",
+            observed_at=observed,
+            kind="budget",
+            reason="budget pause",
+        )
+        gate.drain(engine="claude", reason="drain", now=observed)
+        before = gate.read_state()
+        before_claude = before.get("engines", {}).get("claude", {})
+        before_kinds = tuple(s.get("kind") for s in before_claude.get("sources", []))
+        before_draining = "claude" in before.get("draining_engines", {})
+
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        _install_claude_script(
+            bin_dir,
+            f"""#!/bin/sh
+cat <<'EOF'
+{_rate_limit_line()}
+EOF
+exit 0
+""",
+        )
+        proc = _run_quota_probe(state_dir=state_dir, bin_dir=bin_dir)
+        assert proc.returncode == 0, proc.stderr
+        payload = json.loads(proc.stdout.strip())
+        assert payload["recorded"] is True
+        usage = payload["usage"]
+        percents = {w["window_minutes"]: w["used_percent"] for w in usage["windows"]}
+        assert percents[300] == 43.0
+        assert percents[10080] == 76.0
+
+        after = gate.read_state()
+        after_claude = after.get("engines", {}).get("claude", {})
+        after_kinds = tuple(s.get("kind") for s in after_claude.get("sources", []))
+        after_draining = "claude" in after.get("draining_engines", {})
+        assert after_kinds == before_kinds
+        assert after_draining == before_draining
+
+    def test_quota_probe_records_windows_from_nonzero_child(self, tmp_path: Path) -> None:
+        """Refs sumipan/ghdag#8087 AC9."""
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        _install_claude_script(
+            bin_dir,
+            f"""#!/bin/sh
+cat <<'EOF'
+{_rate_limit_line()}
+EOF
+exit 1
+""",
+        )
+        proc = _run_quota_probe(state_dir=state_dir, bin_dir=bin_dir)
+        assert proc.returncode == 0, proc.stderr
+        payload = json.loads(proc.stdout.strip())
+        assert payload["recorded"] is True
+        assert payload["returncode"] == 1
+        assert payload["usage"] is not None
+
+    def test_quota_probe_without_windows_preserves_usage(self, tmp_path: Path) -> None:
+        """Refs sumipan/ghdag#8087 AC10."""
+        from datetime import datetime, timezone
+
+        from ghdag.core.models.metrics import QuotaWindow
+        from ghdag.quota import QuotaGate
+
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        gate = QuotaGate(state_dir / "quota-gate.json")
+        observed = datetime(2026, 11, 25, 10, 26, 58, tzinfo=timezone.utc)
+        gate.observe(
+            engine="claude",
+            windows=(
+                QuotaWindow(
+                    window_minutes=300,
+                    used_percent=35.0,
+                    resets_at=datetime(2026, 11, 25, 15, 0, tzinfo=timezone.utc),
+                ),
+            ),
+            observed_at=observed,
+        )
+        before_usage = gate.read_state()["usage"]["claude"]
+
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        _install_claude_script(
+            bin_dir,
+            """#!/bin/sh
+echo no windows >&2
+exit 1
+""",
+        )
+        proc = _run_quota_probe(state_dir=state_dir, bin_dir=bin_dir)
+        assert proc.returncode == 1, proc.stdout
+        payload = json.loads(proc.stdout.strip())
+        assert payload["recorded"] is False
+        assert payload["usage"] is None
+        assert gate.read_state()["usage"]["claude"] == before_usage
+
+    def test_quota_probe_help_lists_arguments(self) -> None:
+        """Refs sumipan/ghdag#8087 AC11."""
+        proc = subprocess.run(
+            [sys.executable, "-m", "ghdag", "quota", "probe", "--help"],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONPATH": str(_worktree_src())},
+        )
+        assert proc.returncode == 0
+        help_text = proc.stdout
+        assert "ENGINE" in help_text or "engine" in help_text.lower()
+        assert "--model" in help_text
+        assert "--timeout" in help_text
+        assert "--state-dir" in help_text

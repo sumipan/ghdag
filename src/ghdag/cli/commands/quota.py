@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, cast
@@ -13,6 +14,7 @@ from ghdag.config.env import state_dir as resolve_state_dir
 from ghdag.core.exceptions import GhdagError
 from ghdag.io import exec_jsonl
 from ghdag.io.done import load_done_from_dir
+from ghdag.llm.quota_probe import probe_quota_windows
 from ghdag.metrics.parsers import parse_engine_model
 from ghdag.quota import EngineUsage, QuotaGate
 
@@ -65,6 +67,49 @@ def cmd_quota_resume(args) -> None:
 
     payload = _engine_status_payload(snapshot, args.engine)
     payload["released"] = released
+    print(json.dumps(payload, ensure_ascii=False))
+
+
+def cmd_quota_probe(args) -> None:
+    result = probe_quota_windows(
+        args.engine,
+        model=args.model,
+        timeout=args.timeout,
+    )
+
+    if not result.windows:
+        payload = {
+            "engine": result.engine,
+            "model": result.model,
+            "recorded": False,
+            "observed_at": None,
+            "returncode": result.returncode,
+            "usage": None,
+        }
+        print(json.dumps(payload, ensure_ascii=False))
+        for line in reversed(result.stderr.splitlines()):
+            stripped = line.strip()
+            if stripped:
+                print(stripped, file=sys.stderr)
+                break
+        sys.exit(1)
+
+    gate = _build_gate(args.state_dir)
+    observed_at = datetime.now(timezone.utc)
+    gate.observe(
+        engine=result.engine,
+        windows=result.windows,
+        observed_at=observed_at,
+    )
+    usage = EngineUsage(observed_at=observed_at, windows=result.windows)
+    payload = {
+        "engine": result.engine,
+        "model": result.model,
+        "recorded": True,
+        "observed_at": observed_at.isoformat(),
+        "returncode": result.returncode,
+        "usage": _usage_to_json(usage),
+    }
     print(json.dumps(payload, ensure_ascii=False))
 
 
@@ -335,4 +380,29 @@ def add_parser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParse
         help="Path to done marker directory (default: $GHDAG_STATE_DIR/done or <exec.jsonl parent>/done)",
     )
     quota_status.set_defaults(func=cmd_quota_status)
+
+    quota_probe = quota_subparsers.add_parser(
+        "probe", allow_abbrev=False, help="Probe engine quota usage via a minimal LLM call",
+    )
+    quota_probe.add_argument("engine", help="Engine name (e.g. claude)")
+    quota_probe.add_argument(
+        "--model",
+        default=None,
+        help="Model ID (default: probe-specific model for the engine)",
+    )
+    quota_probe.add_argument(
+        "--timeout",
+        type=int,
+        default=120,
+        metavar="SEC",
+        help="Probe timeout in seconds (default: 120)",
+    )
+    quota_probe.add_argument(
+        "--state-dir",
+        default=None,
+        dest="state_dir",
+        metavar="DIR",
+        help="State directory containing quota-gate.json (default: $GHDAG_STATE_DIR or jobs)",
+    )
+    quota_probe.set_defaults(func=cmd_quota_probe)
     return cast(argparse.ArgumentParser, quota_parser)
