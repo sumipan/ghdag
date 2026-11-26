@@ -866,6 +866,87 @@
     {
       "path": [
         "quota",
+        "probe"
+      ],
+      "prog": "ghdag quota probe",
+      "description": null,
+      "epilog": null,
+      "formatter_class": null,
+      "allow_abbrev": false,
+      "actions": [
+        {
+          "class": "_StoreAction",
+          "option_strings": [],
+          "dest": "engine",
+          "required": true,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Engine name (e.g. claude)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--model"
+          ],
+          "dest": "model",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": null,
+          "help": "Model ID (default: probe-specific model for the engine)",
+          "const": null
+        },
+        {
+          "class": "_StoreTrueAction",
+          "option_strings": [
+            "--json"
+          ],
+          "dest": "output_json",
+          "required": false,
+          "nargs": 0,
+          "default": false,
+          "metavar": null,
+          "help": "Emit JSON",
+          "const": true
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--state-dir"
+          ],
+          "dest": "state_dir",
+          "required": false,
+          "nargs": null,
+          "default": null,
+          "metavar": "DIR",
+          "help": "State directory containing quota-gate.json (default: $GHDAG_STATE_DIR or jobs)",
+          "const": null
+        },
+        {
+          "class": "_StoreAction",
+          "option_strings": [
+            "--timeout"
+          ],
+          "dest": "timeout",
+          "required": false,
+          "nargs": null,
+          "default": 120,
+          "metavar": "SEC",
+          "help": "Probe timeout in seconds (default: 120)",
+          "type": "int",
+          "const": null
+        }
+      ],
+      "handler": {
+        "module": "ghdag.cli.commands.quota",
+        "qualname": "cmd_quota_probe"
+      }
+    },
+    {
+      "path": [
+        "quota",
         "report"
       ],
       "prog": "ghdag quota report",
