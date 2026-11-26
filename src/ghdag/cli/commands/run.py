@@ -190,17 +190,18 @@ def cmd_run(args) -> None:
     if run_recorder_enabled():
         runtime = resolve_runtime_paths(args.exec_jsonl)
         recorder = _RunRecorder(
-            config.audit_path,
+            cast(Path, config.audit_path),
             runtime.state_dir / "metrics.jsonl",
             tz_name=config.timezone,
         )
+        recorder_hook = cast("DagHooks", recorder)
         if hook_modules:
             loaded: list[DagHooks] = [
                 _load_hooks(module_path) for module_path in hook_modules
             ]
-            hooks: DagHooks = _HookChain([recorder, *loaded])
+            hooks: DagHooks = _HookChain([recorder_hook, *loaded])
         else:
-            hooks = _HookChain([recorder])
+            hooks = _HookChain([recorder_hook])
     elif hook_modules:
         loaded = [_load_hooks(module_path) for module_path in hook_modules]
         hooks = loaded[0] if len(loaded) == 1 else _HookChain(loaded)
