@@ -107,6 +107,94 @@ class TestParseReplyBlock:
             )
 
 
+class TestReplyBlockProblems:
+    """Issue #8165 — optional problems on status failed."""
+
+    def test_failed_with_problems_preserves_item_text(self) -> None:
+        block = parse_reply_block(
+            "```ghdag\n"
+            "status: failed\n"
+            "code: IMPL\n"
+            "problems:\n"
+            "  - lint failed\n"
+            "  - '  spaced  '\n"
+            "```\n"
+        )
+        assert block == ReplyBlock(
+            status="failed",
+            code="IMPL",
+            problems=("lint failed", "  spaced  "),
+        )
+
+    def test_failed_without_problems_yields_empty_tuple(self) -> None:
+        block = parse_reply_block("```ghdag\nstatus: failed\ncode: IMPL\n```\n")
+        assert block is not None
+        assert block.problems == ()
+
+    def test_failed_with_null_or_empty_problems_yields_empty_tuple(self) -> None:
+        block = parse_reply_block(
+            "```ghdag\nstatus: failed\ncode: IMPL\nproblems: []\n```\n"
+        )
+        assert block is not None
+        assert block.problems == ()
+
+    def test_ok_with_nonempty_problems_raises(self) -> None:
+        with pytest.raises(ReplyBlockError) as exc:
+            parse_reply_block("```ghdag\nstatus: ok\nproblems: [detail]\n```\n")
+        assert "status: failed" in (exc.value.hint or "")
+
+    def test_rejected_with_nonempty_problems_raises(self) -> None:
+        with pytest.raises(ReplyBlockError) as exc:
+            parse_reply_block(
+                "```ghdag\n"
+                "status: rejected\n"
+                "reason: need context\n"
+                "problems: [detail]\n"
+                "```\n"
+            )
+        assert "status: failed" in (exc.value.hint or "")
+
+    def test_wait_quota_with_nonempty_problems_raises(self) -> None:
+        with pytest.raises(ReplyBlockError) as exc:
+            parse_reply_block(
+                "```ghdag\n"
+                "status: wait_quota\n"
+                "engines: [claude]\n"
+                "problems: [detail]\n"
+                "```\n"
+            )
+        assert "status: failed" in (exc.value.hint or "")
+
+    def test_problems_must_be_a_list(self) -> None:
+        with pytest.raises(ReplyBlockError):
+            parse_reply_block(
+                "```ghdag\nstatus: failed\ncode: IMPL\nproblems: one\n```\n"
+            )
+
+    def test_problems_entries_must_be_strings(self) -> None:
+        with pytest.raises(ReplyBlockError):
+            parse_reply_block(
+                "```ghdag\n"
+                "status: failed\n"
+                "code: IMPL\n"
+                "problems:\n"
+                "  - 1\n"
+                "```\n"
+            )
+
+    @pytest.mark.parametrize("blank", ["''", "'   '"])
+    def test_problems_rejects_blank_item(self, blank: str) -> None:
+        with pytest.raises(ReplyBlockError):
+            parse_reply_block(
+                "```ghdag\n"
+                "status: failed\n"
+                "code: IMPL\n"
+                "problems:\n"
+                f"  - {blank}\n"
+                "```\n"
+            )
+
+
 class TestIsRejectedReply:
     @pytest.mark.parametrize(
         ("text", "expected"),

@@ -7,6 +7,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## 0.158.1 - 2026-11-28
+
+### Added
+
+- reply-block: add problems list for failed status
+
+### Fixed
+
+- repair: replace CJK hint with English for problems guard (#8165)
+
 ## 0.158.0 - 2026-11-26
 
 ### Added

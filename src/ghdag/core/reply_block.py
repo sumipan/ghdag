@@ -14,7 +14,9 @@ from ghdag.core.vocabulary import REPLY_BLOCK_INFO, REPLY_STATUS_VALUES
 
 _FENCE_LINE_RE = re.compile(r"^```(\S*)?\s*$")
 _CODE_RE = re.compile(r"^[A-Z][A-Z0-9_]*$")
-_ALLOWED_KEYS = frozenset({"status", "reason", "code", "engines", "after", "children"})
+_ALLOWED_KEYS = frozenset(
+    {"status", "reason", "code", "engines", "after", "children", "problems"}
+)
 
 
 class ReplyBlockError(ConfigError):
@@ -34,6 +36,7 @@ class ReplyBlock:
     engines: tuple[str, ...] = ()
     after: str | None = None
     children: tuple[dict[str, Any], ...] = ()
+    problems: tuple[str, ...] = ()
 
 
 def find_reply_block(text: str) -> str | None:
@@ -100,7 +103,7 @@ def _parse_reply_body(body: str) -> ReplyBlock:
     if not isinstance(data, dict):
         raise ReplyBlockError(
             "reply block must be a YAML mapping",
-            hint="use keys such as status, reason, code, engines, after, children",
+            hint="use keys such as status, reason, code, engines, after, children, problems",
         )
 
     unknown = sorted(set(data) - _ALLOWED_KEYS)
@@ -132,6 +135,13 @@ def _parse_reply_body(body: str) -> ReplyBlock:
     after = _after_str(data.get("after"))
     engines = _parse_engines(data.get("engines"))
     children = _parse_children(data.get("children"))
+    problems = _parse_problems(data.get("problems"))
+
+    if problems and status != "failed":
+        raise ReplyBlockError(
+            "problems is only allowed when status is failed",
+            hint="problems is allowed only with status: failed; remove problems",
+        )
 
     if status == "ok":
         if reason is not None:
@@ -204,6 +214,7 @@ def _parse_reply_body(body: str) -> ReplyBlock:
         engines=engines,
         after=after,
         children=children,
+        problems=problems,
     )
 
 
@@ -237,6 +248,21 @@ def _parse_engines(value: object) -> tuple[str, ...]:
             seen.add(name)
             names.append(name)
     return tuple(names)
+
+
+def _parse_problems(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ReplyBlockError("problems must be a list of strings")
+    out: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise ReplyBlockError("problems entries must be strings")
+        if not item or not item.strip():
+            raise ReplyBlockError("problems entries must be non-empty strings")
+        out.append(item)
+    return tuple(out)
 
 
 def _parse_children(value: object) -> tuple[dict[str, Any], ...]:

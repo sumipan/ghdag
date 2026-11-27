@@ -122,6 +122,26 @@ def test_reply_block_children_keys_match_fanout_item() -> None:
     assert set(item_props) == {f.name for f in fields(FanOutItem)}
 
 
+def test_reply_block_problems_schema_matches_parser() -> None:
+    """Issue #8165 — schema items enforce non-blank strings."""
+    from ghdag.core.reply_block import ReplyBlock
+
+    schema = load_schema("reply-block")
+    assert "problems" in schema["properties"]
+    item = schema["properties"]["problems"]["items"]
+    assert item["type"] == "string"
+    assert item.get("minLength") == 1
+    assert item.get("pattern")
+    assert "problems" in {f.name for f in fields(ReplyBlock)}
+
+
+def test_reply_block_properties_match_allowed_keys() -> None:
+    """Issue #8165 — schema properties and parser allowed keys must not drift."""
+    from ghdag.core.reply_block import _ALLOWED_KEYS
+
+    assert set(load_schema("reply-block")["properties"]) == set(_ALLOWED_KEYS)
+
+
 def test_done_marker_enum_matches_vocabulary() -> None:
     schema = load_schema("done-marker")
     assert _done_enum_from_schema(schema) == _done_marker_enum_values()
