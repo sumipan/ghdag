@@ -30,6 +30,15 @@
       "type": "string",
       "description": "Timezone-aware resume time for wait_quota."
     },
+    "problems": {
+      "type": "array",
+      "description": "Structured failure details when status is failed.",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": ".*\\S.*"
+      }
+    },
     "children": {
       "type": "array",
       "description": "Fan-out child declarations when status is ok.",
@@ -106,6 +115,11 @@
     {
       "status": "failed",
       "code": "SCHEMA"
+    },
+    {
+      "status": "failed",
+      "code": "IMPL",
+      "problems": ["lint: E501", "tests: 2 failed"]
     }
   ]
 }
