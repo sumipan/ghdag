@@ -141,7 +141,7 @@ class TestReplyBlockProblems:
     def test_ok_with_nonempty_problems_raises(self) -> None:
         with pytest.raises(ReplyBlockError) as exc:
             parse_reply_block("```ghdag\nstatus: ok\nproblems: [detail]\n```\n")
-        assert exc.value.hint == "problems \u306f status: failed \u306e\u3068\u304d\u3060\u3051"
+        assert exc.value.hint == "use problems only when status is failed"
 
     def test_rejected_with_nonempty_problems_raises(self) -> None:
         with pytest.raises(ReplyBlockError) as exc:
@@ -152,7 +152,7 @@ class TestReplyBlockProblems:
                 "problems: [detail]\n"
                 "```\n"
             )
-        assert exc.value.hint == "problems \u306f status: failed \u306e\u3068\u304d\u3060\u3051"
+        assert exc.value.hint == "use problems only when status is failed"
 
     def test_wait_quota_with_nonempty_problems_raises(self) -> None:
         with pytest.raises(ReplyBlockError) as exc:
@@ -163,7 +163,7 @@ class TestReplyBlockProblems:
                 "problems: [detail]\n"
                 "```\n"
             )
-        assert exc.value.hint == "problems \u306f status: failed \u306e\u3068\u304d\u3060\u3051"
+        assert exc.value.hint == "use problems only when status is failed"
 
     def test_problems_must_be_a_list(self) -> None:
         with pytest.raises(ReplyBlockError):

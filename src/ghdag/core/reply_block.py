@@ -140,7 +140,7 @@ def _parse_reply_body(body: str) -> ReplyBlock:
     if problems and status != "failed":
         raise ReplyBlockError(
             "problems is only allowed when status is failed",
-            hint="problems \u306f status: failed \u306e\u3068\u304d\u3060\u3051",
+            hint="use problems only when status is failed",
         )
 
     if status == "ok":
