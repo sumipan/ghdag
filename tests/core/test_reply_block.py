@@ -141,7 +141,7 @@ class TestReplyBlockProblems:
     def test_ok_with_nonempty_problems_raises(self) -> None:
         with pytest.raises(ReplyBlockError) as exc:
             parse_reply_block("```ghdag\nstatus: ok\nproblems: [detail]\n```\n")
-        assert exc.value.hint == "use problems only when status is failed"
+        assert "status: failed" in (exc.value.hint or "")
 
     def test_rejected_with_nonempty_problems_raises(self) -> None:
         with pytest.raises(ReplyBlockError) as exc:
@@ -152,7 +152,7 @@ class TestReplyBlockProblems:
                 "problems: [detail]\n"
                 "```\n"
             )
-        assert exc.value.hint == "use problems only when status is failed"
+        assert "status: failed" in (exc.value.hint or "")
 
     def test_wait_quota_with_nonempty_problems_raises(self) -> None:
         with pytest.raises(ReplyBlockError) as exc:
@@ -163,7 +163,7 @@ class TestReplyBlockProblems:
                 "problems: [detail]\n"
                 "```\n"
             )
-        assert exc.value.hint == "use problems only when status is failed"
+        assert "status: failed" in (exc.value.hint or "")
 
     def test_problems_must_be_a_list(self) -> None:
         with pytest.raises(ReplyBlockError):
@@ -182,14 +182,15 @@ class TestReplyBlockProblems:
                 "```\n"
             )
 
-    def test_problems_rejects_whitespace_only_item(self) -> None:
+    @pytest.mark.parametrize("blank", ["''", "'   '"])
+    def test_problems_rejects_blank_item(self, blank: str) -> None:
         with pytest.raises(ReplyBlockError):
             parse_reply_block(
                 "```ghdag\n"
                 "status: failed\n"
                 "code: IMPL\n"
                 "problems:\n"
-                "  - '   '\n"
+                f"  - {blank}\n"
                 "```\n"
             )
 

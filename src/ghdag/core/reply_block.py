@@ -103,7 +103,7 @@ def _parse_reply_body(body: str) -> ReplyBlock:
     if not isinstance(data, dict):
         raise ReplyBlockError(
             "reply block must be a YAML mapping",
-            hint="use keys such as status, reason, code, engines, after, children",
+            hint="use keys such as status, reason, code, engines, after, children, problems",
         )
 
     unknown = sorted(set(data) - _ALLOWED_KEYS)
@@ -140,7 +140,7 @@ def _parse_reply_body(body: str) -> ReplyBlock:
     if problems and status != "failed":
         raise ReplyBlockError(
             "problems is only allowed when status is failed",
-            hint="use problems only when status is failed",
+            hint="problems is allowed only with status: failed; remove problems",
         )
 
     if status == "ok":
